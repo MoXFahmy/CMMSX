@@ -101,6 +101,10 @@ public static class WorkOrderEndpoints
                     Cost = l.Hours * l.Rate + l.OvertimeHours * l.OvertimeRate }).ToListAsync(ct);
             var costs = await db.WorkOrderCosts.AsNoTracking().Where(c => c.WorkOrderId == id).OrderBy(c => c.CreatedAt)
                 .Select(c => new { c.Id, c.Description, c.Quantity, c.UnitCost, c.Vendor, c.Reference, Total = c.Quantity * c.UnitCost, c.CreatedAt }).ToListAsync(ct);
+            var parts = await db.StockTransactions.AsNoTracking().Where(t => t.WorkOrderId == id && (t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Issue || t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Return))
+                .OrderByDescending(t => t.Date).ThenByDescending(t => t.CreatedAt)
+                .Select(t => new { t.Id, t.Type, t.Date, t.PartId, t.Part!.PartNumber, PartName = t.Part.Name, t.Part.UnitOfMeasure, t.StoreId, StoreCode = t.Store!.Code,
+                    Quantity = -t.Quantity, t.UnitCost, Total = Math.Round(-t.Quantity * t.UnitCost, 2), t.BatchNumber, t.Notes, t.CreatedByName }).ToListAsync(ct);
             var request = w.WorkRequestId is { } rid ? await db.WorkRequests.AsNoTracking().Where(r => r.Id == rid).Select(r => new { r.Id, r.Number, r.RequesterName }).FirstOrDefaultAsync(ct) : null;
             var mine = await perms.GetAsync(UserId(http));
             var transitions = WorkOrderWorkflow.NextStatuses(w.Status)
@@ -119,11 +123,11 @@ public static class WorkOrderEndpoints
                 w.PlannedStart, w.DueDate, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 LocationNotesToTechnician = locationNotes, Request = request, Pm = pm, w.PmDueDate,
                 Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy }),
-                Labor = labor, Costs = costs,
+                Labor = labor, Costs = costs, Parts = parts,
                 Totals = new
                 {
-                    LaborHours = labor.Sum(l => l.Hours + l.OvertimeHours), LaborCost = labor.Sum(l => l.Cost), OtherCost = costs.Sum(c => c.Total),
-                    TotalCost = labor.Sum(l => l.Cost) + costs.Sum(c => c.Total),
+                    LaborHours = labor.Sum(l => l.Hours + l.OvertimeHours), LaborCost = labor.Sum(l => l.Cost), PartsCost = parts.Sum(p => p.Total), OtherCost = costs.Sum(c => c.Total),
+                    TotalCost = labor.Sum(l => l.Cost) + parts.Sum(p => p.Total) + costs.Sum(c => c.Total),
                 },
                 AllowedTransitions = transitions, IsOverdue = w.DueDate < Today && WorkOrderWorkflow.IsActive(w.Status),
                 w.CreatedAt, w.UpdatedAt, w.LegacyRef, RowVersion = Convert.ToBase64String(w.RowVersion),

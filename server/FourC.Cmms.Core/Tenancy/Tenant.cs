@@ -25,6 +25,9 @@ public class TenantSettings
     public bool RequireCompletionNotes { get; set; } = true;
     /// <summary>Generate PM work orders automatically when they come within each schedule's lead time.</summary>
     public bool AutoGeneratePm { get; set; } = true;
+    public string PurchaseOrderNumberPrefix { get; set; } = "PO-";
+    /// <summary>Default sales tax / VAT applied to new purchase orders.</summary>
+    public decimal DefaultTaxPercent { get; set; }
     public string Currency { get; set; } = "USD";
     public string DateFormat { get; set; } = "yyyy-MM-dd";
     public string TimeZone { get; set; } = "UTC";

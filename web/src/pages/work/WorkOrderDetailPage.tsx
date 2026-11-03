@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
-import { IconAlertTriangle, IconCheck, IconDots, IconEdit, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconDots, IconEdit, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp } from '@tabler/icons-react';
 import { del, get, post, put } from '@/api/client';
 import { HOLD_REASONS, type ActivityItem, type Lookup, type WorkOrderDetail, type WorkOrderStatus } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -17,7 +17,9 @@ import { useEmployees } from '@/components/EmployeePicker';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { CriticalityBadge } from '@/components/Badges';
 import { confirmDelete } from '@/components/confirm';
-import { fmtDate, fmtDateTime, fmtMoney, fromNow, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { StockTxModal } from '@/components/StockTxModal';
+import { TxTypeBadge } from '@/components/InventoryBadges';
+import { fmtDate, fmtDateTime, fmtMoney, fmtPrice, fmtQty, fromNow, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={2}><Text fz="xs" c="dimmed">{label}</Text><Text fz="sm" fw={500} style={{ whiteSpace: 'pre-wrap' }}>{children === undefined || children === null || children === '' ? '—' : children}</Text></Stack>;
@@ -87,6 +89,7 @@ export function WorkOrderDetailPage() {
           <Tabs.Tab value="details">{t('wo.details')}</Tabs.Tab>
           <Tabs.Tab value="tasks" rightSection={w.tasks.length ? <Badge size="xs" variant="default">{doneTasks}/{w.tasks.length}</Badge> : null}>{t('wo.tasks')}</Tabs.Tab>
           <Tabs.Tab value="labor" rightSection={w.labor.length ? <Badge size="xs" variant="default">{w.totals.laborHours}h</Badge> : null}>{t('wo.labor')}</Tabs.Tab>
+          {can(P.inventoryView) && <Tabs.Tab value="parts" rightSection={w.parts.length ? <Badge size="xs" variant="default">{w.parts.length}</Badge> : null}>{t('wo.parts')}</Tabs.Tab>}
           <Tabs.Tab value="costs">{t('wo.costs')}</Tabs.Tab>
           <Tabs.Tab value="activity">{t('wo.activity')}</Tabs.Tab>
           <Tabs.Tab value="files">{t('wo.files')}</Tabs.Tab>
@@ -150,6 +153,7 @@ export function WorkOrderDetailPage() {
                   <Table verticalSpacing={4}><Table.Tbody>
                     <Table.Tr><Table.Td>{t('wo.laborHours')}</Table.Td><Table.Td ta="right">{w.totals.laborHours}</Table.Td></Table.Tr>
                     <Table.Tr><Table.Td>{t('wo.laborCost')}</Table.Td><Table.Td ta="right">{fmtMoney(w.totals.laborCost, currency)}</Table.Td></Table.Tr>
+                    <Table.Tr><Table.Td>{t('wo.partsCost')}</Table.Td><Table.Td ta="right">{fmtMoney(w.totals.partsCost, currency)}</Table.Td></Table.Tr>
                     <Table.Tr><Table.Td>{t('wo.otherCost')}</Table.Td><Table.Td ta="right">{fmtMoney(w.totals.otherCost, currency)}</Table.Td></Table.Tr>
                     <Table.Tr><Table.Td fw={700}>{t('wo.totalCost')}</Table.Td><Table.Td ta="right" fw={700}>{fmtMoney(w.totals.totalCost, currency)}</Table.Td></Table.Tr>
                   </Table.Tbody></Table>
@@ -160,6 +164,7 @@ export function WorkOrderDetailPage() {
         </Tabs.Panel>
         <Tabs.Panel value="tasks"><TasksPanel w={w} canExec={canExec} onChange={refresh} /></Tabs.Panel>
         <Tabs.Panel value="labor"><LaborPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Tabs.Panel>
+        <Tabs.Panel value="parts"><WoPartsPanel w={w} canIssue={can(P.inventoryTransact) && !locked} canOrder={can(P.purchasingCreate) && !locked} onChange={refresh} currency={currency} /></Tabs.Panel>
         <Tabs.Panel value="costs"><CostsPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Tabs.Panel>
         <Tabs.Panel value="activity"><ActivityPanel id={w.id} /></Tabs.Panel>
         <Tabs.Panel value="files"><Card><Attachments entityType="WorkOrder" entityId={w.id} canEdit={canExec} /></Card></Tabs.Panel>
@@ -251,6 +256,58 @@ function LaborPanel({ w, canExec, onChange, currency }: { w: WorkOrderDetail; ca
         </Stack></form>
       </Modal>
     </Card>
+  );
+}
+
+function WoPartsPanel({ w, canIssue, canOrder, onChange, currency }: { w: WorkOrderDetail; canIssue: boolean; canOrder: boolean; onChange: () => Promise<void>; currency: string }) {
+  const { t } = useTranslation();
+  const [kind, setKind] = useState<'issue' | 'return' | null>(null);
+  const [part, setPart] = useState<{ id: string; partNumber: string; name: string } | null>(null);
+  const net = Object.values(w.parts.reduce<Record<string, { partId: string; partNumber: string; partName: string; unit: string; qty: number; cost: number }>>((a, p) => {
+    const x = (a[p.partId] ??= { partId: p.partId, partNumber: p.partNumber, partName: p.partName, unit: p.unitOfMeasure, qty: 0, cost: 0 });
+    x.qty += p.quantity; x.cost += p.total; return a;
+  }, {}));
+  return (
+    <Stack>
+      <Card p={0}>
+        <Group justify="space-between" p="md" wrap="wrap">
+          <Title order={5}>{t('wo.parts')} · {fmtPrice(w.totals.partsCost, currency)}</Title>
+          <Group gap="xs">
+            {canOrder && <Button size="xs" variant="default" component={Link} to={`/purchasing/orders/new?workOrderId=${w.id}`}>{t('wo.orderForJob')}</Button>}
+            {canIssue && <Button size="xs" variant="default" leftSection={<IconArrowBackUp size={14} />} disabled={!net.some((n) => n.qty > 0)} onClick={() => { setPart(null); setKind('return'); }}>{t('inv.tx.return')}</Button>}
+            {canIssue && <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => { setPart(null); setKind('issue'); }}>{t('wo.issuePart')}</Button>}
+          </Group>
+        </Group>
+        <Table.ScrollContainer minWidth={640}>
+          <Table verticalSpacing="sm">
+            <Table.Thead><Table.Tr><Table.Th>{t('inv.part')}</Table.Th><Table.Th ta="right">{t('wo.netIssued')}</Table.Th><Table.Th ta="right">{t('wo.total')}</Table.Th><Table.Th w={110} /></Table.Tr></Table.Thead>
+            <Table.Tbody>
+              {net.length === 0 && <Table.Tr><Table.Td colSpan={4}><Text c="dimmed" ta="center" py="md" fz="sm">{t('wo.noParts')}</Text></Table.Td></Table.Tr>}
+              {net.map((n) => (
+                <Table.Tr key={n.partId}>
+                  <Table.Td><Anchor component={Link} to={`/inventory/parts/${n.partId}`} fz="sm" fw={600}>{n.partNumber}</Anchor><Text fz="xs" c="dimmed">{n.partName}</Text></Table.Td>
+                  <Table.Td ta="right">{fmtQty(n.qty)} {n.unit}</Table.Td><Table.Td ta="right">{fmtPrice(n.cost, currency)}</Table.Td>
+                  <Table.Td ta="right">{canIssue && n.qty > 0 && <Button size="compact-xs" variant="subtle" onClick={() => { setPart({ id: n.partId, partNumber: n.partNumber, name: n.partName }); setKind('return'); }}>{t('inv.tx.return')}</Button>}</Table.Td>
+                </Table.Tr>
+              ))}
+            </Table.Tbody>
+          </Table>
+        </Table.ScrollContainer>
+      </Card>
+      {w.parts.length > 0 && (
+        <Card p={0}>
+          <Text fw={600} p="md" pb={0}>{t('wo.partsMovements')}</Text>
+          <Table verticalSpacing={6} mt="xs">
+            <Table.Tbody>
+              {w.parts.map((p) => <Table.Tr key={p.id}><Table.Td>{fmtDate(p.date)}</Table.Td><Table.Td><TxTypeBadge type={p.type} /></Table.Td><Table.Td>{p.partNumber}</Table.Td><Table.Td>{p.storeCode}</Table.Td>
+                <Table.Td ta="right">{fmtQty(p.quantity)}</Table.Td><Table.Td ta="right">{fmtPrice(p.unitCost, currency)}</Table.Td><Table.Td c="dimmed" fz="sm">{p.createdByName}{p.notes && ` · ${p.notes}`}</Table.Td></Table.Tr>)}
+            </Table.Tbody>
+          </Table>
+        </Card>
+      )}
+      {kind && <StockTxModal kind={kind} opened onClose={() => setKind(null)} onDone={onChange}
+        defaults={{ workOrderId: w.id, workOrder: { id: w.id, number: w.number, title: w.title }, partId: part?.id, part }} />}
+    </Stack>
   );
 }
 

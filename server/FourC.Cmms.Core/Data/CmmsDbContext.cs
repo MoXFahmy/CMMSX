@@ -8,6 +8,8 @@ using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Locations;
 using FourC.Cmms.Core.People;
 using FourC.Cmms.Core.Pm;
+using FourC.Cmms.Core.Inventory;
+using FourC.Cmms.Core.Purchasing;
 using FourC.Cmms.Core.Work;
 using FourC.Cmms.Core.Settings;
 using FourC.Cmms.Core.Tenancy;
@@ -55,6 +57,14 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<PmScheduleTask> PmScheduleTasks => Set<PmScheduleTask>();
     public DbSet<Meter> Meters => Set<Meter>();
     public DbSet<MeterReading> MeterReadings => Set<MeterReading>();
+    public DbSet<Store> Stores => Set<Store>();
+    public DbSet<PartGroup> PartGroups => Set<PartGroup>();
+    public DbSet<Part> Parts => Set<Part>();
+    public DbSet<StockLevel> StockLevels => Set<StockLevel>();
+    public DbSet<StockTransaction> StockTransactions => Set<StockTransaction>();
+    public DbSet<Supplier> Suppliers => Set<Supplier>();
+    public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
+    public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -301,6 +311,80 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<WorkOrder>(e =>
         {
             e.HasIndex(x => new { x.TenantId, x.PmScheduleId, x.PmDueDate }).IsUnique().HasFilter("[PmScheduleId] IS NOT NULL AND [PmDueDate] IS NOT NULL AND [IsDeleted] = 0");
+        });
+
+        b.Entity<AppUser>(e => e.Property(x => x.PurchaseApprovalLimit).HasPrecision(18, 2));
+        b.Entity<Store>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<PartGroup>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<Part>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.PartNumber).HasMaxLength(100); e.Property(x => x.Name).HasMaxLength(300); e.Property(x => x.Manufacturer).HasMaxLength(200);
+            e.Property(x => x.ManufacturerPartNumber).HasMaxLength(100); e.Property(x => x.UnitOfMeasure).HasMaxLength(30); e.Property(x => x.Barcode).HasMaxLength(200);
+            e.Property(x => x.StandardPrice).HasPrecision(18, 4); e.Property(x => x.AverageCost).HasPrecision(18, 4); e.Property(x => x.LastPurchasePrice).HasPrecision(18, 4);
+            e.HasOne(x => x.Group).WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.PartNumber }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => new { x.TenantId, x.Barcode });
+        });
+        b.Entity<StockLevel>(e =>
+        {
+            e.Property(x => x.Bin).HasMaxLength(100); e.Property(x => x.LegacyRef).HasMaxLength(200);
+            foreach (var p in new System.Linq.Expressions.Expression<Func<StockLevel, decimal>>[] { x => x.MinLevel, x => x.ReorderLevel, x => x.MaxLevel, x => x.ReorderQuantity, x => x.QuantityOnHand })
+                e.Property(p).HasPrecision(18, 3);
+            e.HasOne(x => x.Part).WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Store).WithMany().HasForeignKey(x => x.StoreId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.PartId, x.StoreId }).IsUnique();
+        });
+        b.Entity<StockTransaction>(e =>
+        {
+            e.Property(x => x.Quantity).HasPrecision(18, 3); e.Property(x => x.UnitCost).HasPrecision(18, 4);
+            e.Property(x => x.Reference).HasMaxLength(100); e.Property(x => x.BatchNumber).HasMaxLength(100); e.Property(x => x.Notes).HasMaxLength(1000);
+            e.Property(x => x.CreatedByName).HasMaxLength(200); e.Property(x => x.LegacyRef).HasMaxLength(200);
+            e.HasOne(x => x.Part).WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Store).WithMany().HasForeignKey(x => x.StoreId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.PartId, x.Date });
+            e.HasIndex(x => new { x.TenantId, x.WorkOrderId });
+            e.HasIndex(x => new { x.TenantId, x.LegacyRef }).HasFilter("[LegacyRef] IS NOT NULL");
+        });
+        b.Entity<Supplier>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(300); e.Property(x => x.ContactName).HasMaxLength(200);
+            e.Property(x => x.Email).HasMaxLength(256); e.Property(x => x.Phone).HasMaxLength(50); e.Property(x => x.City).HasMaxLength(100);
+            e.Property(x => x.Country).HasMaxLength(100); e.Property(x => x.TaxNumber).HasMaxLength(100); e.Property(x => x.PaymentTerms).HasMaxLength(200); e.Property(x => x.Currency).HasMaxLength(3);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<PurchaseOrder>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Number).HasMaxLength(50); e.Property(x => x.Currency).HasMaxLength(3); e.Property(x => x.RequestedBy).HasMaxLength(200);
+            e.Property(x => x.PaymentTerms).HasMaxLength(200); e.Property(x => x.ShippingMethod).HasMaxLength(100); e.Property(x => x.SupplierQuoteRef).HasMaxLength(100);
+            e.Property(x => x.ApprovedByName).HasMaxLength(200); e.Property(x => x.CancelReason).HasMaxLength(1000);
+            e.Property(x => x.ExchangeRate).HasPrecision(18, 6); e.Property(x => x.TaxPercent).HasPrecision(9, 3); e.Property(x => x.ShippingCost).HasPrecision(18, 2);
+            e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Restrict);
+            e.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => new { x.TenantId, x.Status });
+        });
+        b.Entity<PurchaseOrderLine>(e =>
+        {
+            e.Property(x => x.Description).HasMaxLength(500); e.Property(x => x.UnitOfMeasure).HasMaxLength(30); e.Property(x => x.AccountCode).HasMaxLength(50);
+            e.Property(x => x.Quantity).HasPrecision(18, 3); e.Property(x => x.QuantityReceived).HasPrecision(18, 3);
+            e.Property(x => x.UnitPrice).HasPrecision(18, 4); e.Property(x => x.DiscountPercent).HasPrecision(9, 3);
+            e.HasOne(x => x.Part).WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Restrict);
+            e.Ignore(x => x.NetUnitPrice); e.Ignore(x => x.LineTotal);
         });
 
         // Tenant isolation (+ soft delete) for every tenant-owned entity.

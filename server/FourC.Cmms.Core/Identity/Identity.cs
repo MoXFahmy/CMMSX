@@ -13,6 +13,8 @@ public class AppUser : IdentityUser<Guid>
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastLoginAt { get; set; }
     public string? LegacyRef { get; set; }
+    /// <summary>Largest purchase order (base currency) this user may approve; null = no limit (legacy authorization limit).</summary>
+    public decimal? PurchaseApprovalLimit { get; set; }
     public List<UserRole> Roles { get; set; } = [];
 }
 
@@ -59,6 +61,15 @@ public static class Permissions
     public const string PmManage = "pm.manage";
     public const string PmGenerate = "pm.generate";
     public const string MetersRecord = "meters.record";
+    public const string InventoryView = "inventory.view";
+    public const string InventoryManage = "inventory.manage";
+    public const string InventoryTransact = "inventory.transact";
+    public const string PurchasingView = "purchasing.view";
+    public const string PurchasingCreate = "purchasing.create";
+    public const string PurchasingApprove = "purchasing.approve";
+    public const string PurchasingReceive = "purchasing.receive";
+    public const string SuppliersManage = "suppliers.manage";
+    public const string ReportsView = "reports.view";
     public const string UsersManage = "users.manage";
     public const string SettingsManage = "settings.manage";
 
@@ -89,6 +100,15 @@ public static class Permissions
         new(PmManage, "Preventive maintenance", "Create and edit PM tasks, schedules and meters"),
         new(PmGenerate, "Preventive maintenance", "Generate PM work orders"),
         new(MetersRecord, "Preventive maintenance", "Log meter readings"),
+        new(InventoryView, "Inventory", "View parts, stores, stock and transactions"),
+        new(InventoryManage, "Inventory", "Create and edit parts, stores and stock levels"),
+        new(InventoryTransact, "Inventory", "Receive, issue, return, adjust, transfer and count stock"),
+        new(PurchasingView, "Purchasing", "View suppliers and purchase orders"),
+        new(PurchasingCreate, "Purchasing", "Create, edit and submit purchase orders"),
+        new(PurchasingApprove, "Purchasing", "Approve purchase orders (up to the user's approval limit)"),
+        new(PurchasingReceive, "Purchasing", "Receive goods against purchase orders"),
+        new(SuppliersManage, "Purchasing", "Manage suppliers"),
+        new(ReportsView, "Reports", "View reports and KPIs"),
         new(UsersManage, "Administration", "Manage users and roles"),
         new(SettingsManage, "Administration", "Manage organization settings, categories and custom fields"),
     ];

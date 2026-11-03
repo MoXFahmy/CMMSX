@@ -9,3 +9,17 @@ body { background: var(--app-bg); }
 .tree-node[data-selected='true'] { background: var(--mantine-color-brand-light); color: var(--mantine-color-brand-light-color); }
 .kpi-card { transition: box-shadow 120ms ease, transform 120ms ease; }
 a.kpi-card:hover { box-shadow: var(--mantine-shadow-sm); transform: translateY(-1px); }
+
+/* Printing: documents (purchase orders, reports, count sheets) print without the app chrome. */
+.print-doc { max-width: 960px; margin: 0 auto; padding: 32px; background: var(--mantine-color-body); min-height: 100vh; }
+@media print {
+  .no-print, .mantine-AppShell-header, .mantine-AppShell-navbar { display: none !important; }
+  .mantine-AppShell-main { padding: 0 !important; }
+  .print-doc { padding: 0; max-width: none; }
+  body { background: #fff !important; }
+  .mantine-Card-root { box-shadow: none !important; }
+}
+.hover-card { text-decoration: none; color: inherit; transition: box-shadow 120ms ease, transform 120ms ease, border-color 120ms ease; border: 1px solid var(--mantine-color-default-border); }
+.hover-card:hover { box-shadow: var(--mantine-shadow-md); transform: translateY(-1px); border-color: var(--mantine-color-brand-4, var(--mantine-color-blue-4)); }
+.print-only { display: none; }
+@media print { .print-only { display: block; } }

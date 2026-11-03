@@ -112,7 +112,7 @@ public static class PeopleEndpoints
     }
 
     /// <summary>Generic code/name CRUD for simple lookups.</summary>
-    private static void MapLookup<T>(RouteGroupBuilder api, string path, string tag, Func<CmmsDbContext, DbSet<T>> set, Func<T> create, string managePermission,
+    internal static void MapLookup<T>(RouteGroupBuilder api, string path, string tag, Func<CmmsDbContext, DbSet<T>> set, Func<T> create, string managePermission,
         Func<CmmsDbContext, Guid, CancellationToken, Task<bool>> inUse, Action<T, string?>? setColor, Func<T, string?>? getColor) where T : TenantEntity, ICodeLookup
     {
         var g = api.MapGroup(path).WithTags(tag);

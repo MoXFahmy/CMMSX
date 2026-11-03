@@ -13,7 +13,7 @@ namespace FourC.Cmms.Api.Features;
 
 public static class AdminEndpoints
 {
-    public sealed record UserInput(string FullName, string Email, string? JobTitle, string? Phone, bool IsActive, List<Guid> RoleIds, string? Password);
+    public sealed record UserInput(string FullName, string Email, string? JobTitle, string? Phone, bool IsActive, List<Guid> RoleIds, string? Password, decimal? PurchaseApprovalLimit = null);
     public sealed record RoleInput(string Name, string? Description, List<string> Permissions);
     public sealed record SettingsInput(string Name, TenantSettings Settings);
     public sealed record PasswordInput(string Password);
@@ -26,7 +26,7 @@ public static class AdminEndpoints
             await db.Users.AsNoTracking().Where(u => u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
                 .Select(u => new
                 {
-                    u.Id, u.FullName, u.Email, u.JobTitle, u.Phone, u.IsActive, u.LastLoginAt, u.CreatedAt,
+                    u.Id, u.FullName, u.Email, u.JobTitle, u.Phone, u.IsActive, u.LastLoginAt, u.CreatedAt, u.PurchaseApprovalLimit,
                     Roles = db.UserRoles.Where(r => r.UserId == u.Id).Select(r => new { r.RoleId, r.Role!.Name }).ToList(),
                 }).ToListAsync(ct));
 
@@ -36,7 +36,7 @@ public static class AdminEndpoints
             if (string.IsNullOrWhiteSpace(input.Password)) v.Add("password", "Set an initial password.");
             if (!v.IsValid) return v.Problem();
             var user = TenantProvisioning.NewUser(db.CurrentTenantId!.Value, input.FullName, input.Email);
-            user.JobTitle = input.JobTitle.Clean(); user.Phone = input.Phone.Clean(); user.IsActive = input.IsActive;
+            user.JobTitle = input.JobTitle.Clean(); user.Phone = input.Phone.Clean(); user.IsActive = input.IsActive; user.PurchaseApprovalLimit = input.PurchaseApprovalLimit;
             user.PasswordHash = hasher.HashPassword(user, input.Password!);
             db.Users.Add(user);
             db.UserRoles.AddRange(input.RoleIds.Distinct().Select(r => new UserRole { UserId = user.Id, RoleId = r }));
@@ -55,7 +55,7 @@ public static class AdminEndpoints
                 v.Add("roleIds", "You cannot remove the Administrator role from yourself.");
             if (!v.IsValid) return v.Problem();
             var emailChanged = !string.Equals(user.Email, input.Email.Trim(), StringComparison.OrdinalIgnoreCase);
-            user.FullName = input.FullName.Trim(); user.JobTitle = input.JobTitle.Clean(); user.Phone = input.Phone.Clean(); user.IsActive = input.IsActive;
+            user.FullName = input.FullName.Trim(); user.JobTitle = input.JobTitle.Clean(); user.Phone = input.Phone.Clean(); user.IsActive = input.IsActive; user.PurchaseApprovalLimit = input.PurchaseApprovalLimit;
             if (emailChanged)
             {
                 user.Email = user.UserName = input.Email.Trim();
@@ -148,7 +148,8 @@ public static class AdminEndpoints
         settings.MapPost("/sample-data", async (CmmsDbContext db, CancellationToken ct) =>
         {
             var created = await SampleData.SeedAsync(db, ct: ct);
-            return Results.Ok(new { created });
+            var history = await db.InTransactionAsync(tk => SampleOperations.SeedAsync(db, ct: tk), ct);
+            return Results.Ok(new { created, history });
         }).RequirePermission(Permissions.SettingsManage);
     }
 
@@ -157,7 +158,7 @@ public static class AdminEndpoints
     private static async Task<Validator> ValidateUserAsync(UserInput i, Guid? id, CmmsDbContext db, UserManager<AppUser> um, CancellationToken ct)
     {
         var v = new Validator().Required("fullName", i.FullName, "Name", 200).Required("email", i.Email, "Email", 256)
-            .MaxLength("jobTitle", i.JobTitle, "Job title", 200).MaxLength("phone", i.Phone, "Phone", 50);
+            .MaxLength("jobTitle", i.JobTitle, "Job title", 200).MaxLength("phone", i.Phone, "Phone", 50).When(i.PurchaseApprovalLimit < 0, "purchaseApprovalLimit", "The limit cannot be negative.");
         if (!string.IsNullOrWhiteSpace(i.Email))
         {
             if (!i.Email.Contains('@')) v.Add("email", "Enter a valid email address.");

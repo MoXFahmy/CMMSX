@@ -15,7 +15,7 @@ export type Terminology = { site: string; sites: string; location: string; locat
 export type TenantSettings = {
   terminology: Terminology; assetNumberPrefix: string; assetNumberPadding: number; autoNumberAssets: boolean;
   workOrderNumberPrefix: string; workRequestNumberPrefix: string; requireCompletionNotes: boolean; autoGeneratePm: boolean;
-  currency: string; dateFormat: string; timeZone: string;
+  purchaseOrderNumberPrefix: string; defaultTaxPercent: number; currency: string; dateFormat: string; timeZone: string;
 };
 export type Me = {
   user: { id: string; fullName: string; email: string; jobTitle?: string };
@@ -67,7 +67,7 @@ export type CustomField = {
 export type Attachment = { id: string; fileName: string; contentType: string; size: number; description?: string; isPrimaryImage: boolean; createdAt: string; createdBy?: string };
 export type AuditItem = { id: string; action: string; changes?: string; userName?: string; timestamp: string };
 export type Transfer = { id: string; transferredAt: string; reason?: string; fromSite?: string; fromLocation?: string; toSite?: string; toLocation?: string; transferredBy?: string };
-export type User = { id: string; fullName: string; email: string; jobTitle?: string; phone?: string; isActive: boolean; lastLoginAt?: string; createdAt: string; roles: { roleId: string; name: string }[] };
+export type User = { id: string; fullName: string; email: string; jobTitle?: string; phone?: string; isActive: boolean; lastLoginAt?: string; createdAt: string; roles: { roleId: string; name: string }[]; purchaseApprovalLimit?: number | null };
 export type Role = { id: string; name: string; description?: string; isSystem: boolean; permissions: string[]; userCount: number };
 export type PermissionInfo = { code: string; group: string; name: string };
 export type Dashboard = {
@@ -118,7 +118,8 @@ export type WorkOrderDetail = {
   tasks: { id: string; sequence: number; description: string; isDone: boolean; doneAt?: string; doneBy?: string }[];
   labor: { id: string; employeeId: string; employeeName: string; workDate: string; createdAt: string; hours: number; overtimeHours: number; rate: number; overtimeRate: number; notes?: string; cost: number }[];
   costs: { id: string; description: string; quantity: number; unitCost: number; vendor?: string; reference?: string; total: number; createdAt: string }[];
-  totals: { laborHours: number; laborCost: number; otherCost: number; totalCost: number };
+  parts: WoPartItem[];
+  totals: { laborHours: number; laborCost: number; partsCost: number; otherCost: number; totalCost: number };
   allowedTransitions: WorkOrderStatus[]; isOverdue: boolean; createdAt: string; updatedAt?: string; legacyRef?: string; rowVersion: string;
 };
 export type ActivityItem = { id: string; kind: 'comment' | 'status'; body?: string; from?: WorkOrderStatus; to?: WorkOrderStatus; holdReason?: HoldReason; by?: string; at: string };
@@ -176,3 +177,61 @@ export type PmRunResult = { scheduleId: string; code: string; name: string; dueD
 export type ForecastItem = { date: string; id: string; code: string; name: string; assetNumber?: string; siteName: string; type: PmScheduleType; taskName: string; overdue: boolean };
 export type MeterItem = { id: string; code: string; name: string; assetId: string; assetNumber: string; assetName: string; unit: string; currentReading?: number; lastReadAt?: string; maxDailyIncrement?: number; isActive: boolean; schedules: number };
 export type MeterReadingItem = { id: string; value: number; readAt: string; note?: string; source: string; byName?: string; workOrderId?: string };
+
+// ---------------- Inventory ----------------
+export type StockTransactionType = 'Receipt' | 'Issue' | 'Return' | 'Adjustment' | 'TransferOut' | 'TransferIn';
+export type StoreItem = { id: string; code: string; name: string; siteId: string; siteName: string; description?: string; isActive: boolean; parts: number; stockValue: number };
+export type PartListItem = {
+  id: string; partNumber: string; name: string; manufacturer?: string; unitOfMeasure: string; groupName?: string; averageCost: number; isCritical: boolean; isShelfItem: boolean;
+  isActive: boolean; onHand: number; onOrder: number; low: boolean; value: number;
+};
+export type PartLookup = { id: string; partNumber: string; name: string; unitOfMeasure: string; averageCost: number; lastPurchasePrice?: number; isShelfItem: boolean; preferredSupplierId?: string; onHand: number };
+export type StockLevelItem = { id: string; storeId: string; storeCode: string; storeName: string; bin?: string; minLevel: number; reorderLevel: number; maxLevel: number; reorderQuantity: number; quantityOnHand: number };
+export type PartDetail = {
+  id: string; partNumber: string; name: string; specification?: string; manufacturer?: string; manufacturerPartNumber?: string; unitOfMeasure: string; groupId?: string; groupName?: string;
+  standardPrice: number; averageCost: number; lastPurchasePrice?: number; leadTimeDays?: number; isCritical: boolean; isShelfItem: boolean; allowNegativeStock: boolean;
+  preferredSupplierId?: string; preferredSupplier?: { id: string; code: string; name: string }; barcode?: string; alternatePartIds: string[];
+  alternates: { id: string; partNumber: string; name: string }[]; notes?: string; isActive: boolean; levels: StockLevelItem[];
+  batches: { storeId: string; batchNumber: string; quantity: number; expiry?: string }[]; onHand: number; onOrder: number; stockValue: number; legacyRef?: string; rowVersion: string;
+};
+export type StockTransactionItem = {
+  id: string; type: StockTransactionType; date: string; partId: string; partNumber: string; partName: string; unit: string; storeId: string; storeCode: string;
+  quantity: number; unitCost: number; total: number; workOrderId?: string; workOrderNumber?: string; purchaseOrderId?: string; reference?: string; batchNumber?: string;
+  expiryDate?: string; notes?: string; createdByName?: string; createdAt: string;
+};
+export type ProposalItem = {
+  partId: string; partNumber: string; partName: string; unitOfMeasure: string; isCritical: boolean; storeId: string; storeCode: string; siteId: string; quantityOnHand: number;
+  onOrder: number; minLevel: number; reorderLevel: number; maxLevel: number; suggestedQuantity: number; preferredSupplierId?: string; supplierName?: string; unitPrice: number; belowMinimum: boolean;
+};
+export type WoPartItem = { id: string; type: StockTransactionType; date: string; partId: string; partNumber: string; partName: string; unitOfMeasure: string; storeId: string; storeCode: string; quantity: number; unitCost: number; total: number; batchNumber?: string; notes?: string; createdByName?: string };
+
+// ---------------- Purchasing ----------------
+export type PurchaseOrderStatus = 'Draft' | 'Submitted' | 'Approved' | 'PartiallyReceived' | 'Received' | 'Closed' | 'Cancelled';
+export const PO_STATUSES: PurchaseOrderStatus[] = ['Draft', 'Submitted', 'Approved', 'PartiallyReceived', 'Received', 'Closed', 'Cancelled'];
+export type SupplierItem = { id: string; code: string; name: string; contactName?: string; email?: string; phone?: string; city?: string; country?: string; currency?: string; paymentTerms?: string; isContractor: boolean; isActive: boolean; openOrders: number; receivedYtd: number };
+export type SupplierDetail = { id: string; code: string; name: string; contactName?: string; email?: string; phone?: string; address?: string; city?: string; country?: string; taxNumber?: string; paymentTerms?: string; currency?: string; isContractor: boolean; notes?: string; isActive: boolean };
+export type SupplierLookup = { id: string; code: string; name: string; currency?: string; paymentTerms?: string };
+export type PoListItem = { id: string; number: string; status: PurchaseOrderStatus; orderDate: string; expectedDate?: string; supplierId: string; supplierName: string; siteName: string; currency: string; requestedBy?: string; lines: number; total: number; receivedPercent: number; isOverdue: boolean };
+export type PoLine = {
+  id: string; lineNumber: number; partId?: string; partNumber?: string; isShelfItem: boolean; description: string; unitOfMeasure?: string; quantity: number; unitPrice: number; discountPercent: number;
+  netUnitPrice: number; lineTotal: number; quantityReceived: number; outstanding: number; storeId?: string; storeCode?: string; workOrderId?: string; workOrderNumber?: string; accountCode?: string;
+};
+export type PoDetail = {
+  id: string; number: string; status: PurchaseOrderStatus; siteId: string; siteName: string; supplierId: string;
+  supplier: { id: string; code: string; name: string; contactName?: string; email?: string; phone?: string; address?: string; city?: string; country?: string; taxNumber?: string };
+  orderDate: string; expectedDate?: string; requestedBy?: string; currency: string; exchangeRate: number; paymentTerms?: string; shippingMethod?: string; deliverTo?: string; supplierQuoteRef?: string;
+  taxPercent: number; shippingCost: number; notes?: string; submittedAt?: string; approvedAt?: string; approvedByName?: string; cancelledAt?: string; cancelReason?: string; createdAt: string; legacyRef?: string;
+  lines: PoLine[]; totals: { subtotal: number; tax: number; shippingCost: number; total: number; totalInBase: number };
+  receipts: { id: string; date: string; purchaseOrderLineId?: string; partNumber: string; storeCode: string; quantity: number; unitCost: number; reference?: string; batchNumber?: string; createdByName?: string }[];
+  isOverdue: boolean; actions: { edit: boolean; submit: boolean; approve: boolean; approvalLimitExceeded: boolean; reject: boolean; receive: boolean; close: boolean; cancel: boolean; delete: boolean };
+  rowVersion: string;
+};
+
+// ---------------- Reports ----------------
+export type ReportParam = { name: string; type: 'dateRange' | 'site' | 'select' | 'number'; options?: { value: string; label: string }[]; default?: string | number };
+export type ReportDef = { key: string; category: string; title: string; description: string; permission: string; params: ReportParam[] };
+export type ReportColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date' | 'hours';
+export type ReportResult = {
+  key: string; title: string; subtitle?: string; columns: { key: string; label: string; type: ReportColumnType }[]; rows: Record<string, string | number | null>[];
+  chart?: { type: 'bar' | 'line' | 'donut'; x: string; series: string[]; stacked: boolean }; summary: { label: string; value: number | null; type: ReportColumnType }[];
+};

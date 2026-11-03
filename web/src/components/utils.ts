@@ -11,6 +11,10 @@ export const fmtDateTime = (v?: string | null) => (v ? dayjs(v).format('DD MMM Y
 export const fromNow = (v?: string | null) => (v ? dayjs(v).fromNow() : '—');
 export const fmtMoney = (v?: number | null, currency = 'USD') =>
   v === undefined || v === null ? '—' : new Intl.NumberFormat(undefined, { style: 'currency', currency, maximumFractionDigits: 0 }).format(v);
+/** Money with cents — unit prices, order lines, stock values. */
+export const fmtPrice = (v?: number | null, currency = 'USD', digits = 2) =>
+  v === undefined || v === null ? '—' : new Intl.NumberFormat(undefined, { style: 'currency', currency, minimumFractionDigits: digits, maximumFractionDigits: digits }).format(v);
+export const fmtQty = (v?: number | null) => (v === undefined || v === null ? '—' : new Intl.NumberFormat(undefined, { maximumFractionDigits: 3 }).format(v));
 export const fmtNumber = (v?: number | null) => (v === undefined || v === null ? '—' : new Intl.NumberFormat().format(v));
 export const fmtBytes = (n: number) => (n < 1024 ? `${n} B` : n < 1048576 ? `${(n / 1024).toFixed(1)} KB` : `${(n / 1048576).toFixed(1)} MB`);
 export const toIsoDate = (d: Date | string | null | undefined) => (d ? dayjs(d).format('YYYY-MM-DD') : null);

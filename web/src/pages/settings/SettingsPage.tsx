@@ -102,6 +102,13 @@ function OrganizationSettings() {
           <Switch label={t('settings.requireCompletionNotes')} disabled={!editable} {...form.getInputProps('settings.requireCompletionNotes', { type: 'checkbox' })} />
           <Switch label={t('settings.autoGeneratePm')} disabled={!editable} {...form.getInputProps('settings.autoGeneratePm', { type: 'checkbox' })} />
         </Stack></Card>
+        <Card><Stack>
+          <Title order={5}>{t('settings.purchasing')}</Title>
+          <SimpleGrid cols={2}>
+            <TextInput label={t('settings.poPrefix')} disabled={!editable} {...form.getInputProps('settings.purchaseOrderNumberPrefix')} />
+            <NumberInput label={t('settings.defaultTax')} min={0} max={100} suffix="%" decimalScale={3} disabled={!editable} {...form.getInputProps('settings.defaultTaxPercent')} />
+          </SimpleGrid>
+        </Stack></Card>
         {editable && <Group justify="flex-end"><Button type="submit" loading={form.submitting}>{t('common.saveChanges')}</Button></Group>}
         {editable && (
           <Card><Group justify="space-between" wrap="nowrap">
@@ -220,16 +227,17 @@ function UserSettings() {
   const [opened, m] = useDisclosure();
   const [pwUser, setPwUser] = useState<User | null>(null);
   const [editing, setEditing] = useState<User | null>(null);
-  const blank = { fullName: '', email: '', jobTitle: '', phone: '', isActive: true, roleIds: [] as string[], password: '' };
+  const blank = { fullName: '', email: '', jobTitle: '', phone: '', isActive: true, roleIds: [] as string[], password: '', purchaseApprovalLimit: '' as number | '' };
   const form = useForm({ initialValues: blank });
   const pwForm = useForm({ initialValues: { password: '' } });
   const open = (u: User | null) => {
     setEditing(u);
-    form.setValues(u ? { fullName: u.fullName, email: u.email, jobTitle: u.jobTitle ?? '', phone: u.phone ?? '', isActive: u.isActive, roleIds: u.roles.map((r) => r.roleId), password: '' } : blank);
+    form.setValues(u ? { fullName: u.fullName, email: u.email, jobTitle: u.jobTitle ?? '', phone: u.phone ?? '', isActive: u.isActive, roleIds: u.roles.map((r) => r.roleId), password: '', purchaseApprovalLimit: u.purchaseApprovalLimit ?? '' } : blank);
     form.clearErrors(); m.open();
   };
   const submit = form.onSubmit(async (v) => {
-    try { if (editing) await put(`/users/${editing.id}`, { ...v, password: null }); else await post('/users', v); notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['users'] }); m.close(); }
+    const body = { ...v, purchaseApprovalLimit: v.purchaseApprovalLimit === '' ? null : v.purchaseApprovalLimit };
+    try { if (editing) await put(`/users/${editing.id}`, { ...body, password: null }); else await post('/users', body); notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['users'] }); m.close(); }
     catch (e) { handleFormError(form, e); }
   });
   const submitPw = pwForm.onSubmit(async (v) => {
@@ -259,6 +267,7 @@ function UserSettings() {
             <TextInput label={t('settings.phone')} {...form.getInputProps('phone')} />
           </SimpleGrid>
           <MultiSelect label={t('settings.rolesLabel')} required data={(roles ?? []).map((r) => ({ value: r.id, label: r.name }))} {...form.getInputProps('roleIds')} />
+          <NumberInput label={t('settings.approvalLimit')} description={t('settings.approvalLimitHint')} min={0} thousandSeparator {...form.getInputProps('purchaseApprovalLimit')} />
           {!editing && <PasswordInput label={t('settings.initialPassword')} required {...form.getInputProps('password')} />}
           <Switch label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
           <Group justify="flex-end"><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>

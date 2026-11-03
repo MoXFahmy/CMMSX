@@ -36,9 +36,11 @@ export function AppLayout() {
       { label: t('nav.preventive'), to: '/pm', icon: IconCalendarRepeat, perm: P.pmView },
     ] },
     { title: t('nav.materials'), items: [
-      { label: t('nav.inventory'), to: '/soon/inventory', icon: IconPackage, soon: true },
-      { label: t('nav.purchasing'), to: '/soon/purchasing', icon: IconShoppingCart, soon: true },
-      { label: t('nav.reports'), to: '/soon/reports', icon: IconChartBar, soon: true },
+      { label: t('nav.inventory'), to: '/inventory', icon: IconPackage, perm: P.inventoryView },
+      { label: t('nav.purchasing'), to: '/purchasing', icon: IconShoppingCart, perm: P.purchasingView },
+    ] },
+    { title: t('nav.insights'), items: [
+      { label: t('nav.reports'), to: '/reports', icon: IconChartBar, perm: P.reportsView },
     ] },
     { title: t('nav.administration'), items: [
       { label: t('nav.people'), to: '/people', icon: IconUsers, perm: P.peopleView },

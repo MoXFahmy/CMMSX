@@ -154,6 +154,9 @@ public static class AttachmentEndpoints
         ["WorkOrder"] = (Permissions.WorkOrdersView, Permissions.WorkOrdersExecute),
         ["WorkRequest"] = (Permissions.RequestsCreate, Permissions.RequestsCreate),
         ["PmTask"] = (Permissions.PmView, Permissions.PmManage),
+        ["Part"] = (Permissions.InventoryView, Permissions.InventoryManage),
+        ["Supplier"] = (Permissions.PurchasingView, Permissions.SuppliersManage),
+        ["PurchaseOrder"] = (Permissions.PurchasingView, Permissions.PurchasingCreate),
     };
 
     public static void MapAttachmentEndpoints(this RouteGroupBuilder api)

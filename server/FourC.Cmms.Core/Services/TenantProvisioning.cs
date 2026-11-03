@@ -17,9 +17,10 @@ public static partial class TenantProvisioning
             Permissions.All.Select(p => p.Code).Where(c => c is not Permissions.UsersManage and not Permissions.SettingsManage).ToArray()),
         ("Technician", "Executes work orders and raises requests",
             [Permissions.DashboardView, Permissions.LocationsView, Permissions.AssetsView, Permissions.PeopleView, Permissions.RequestsView, Permissions.RequestsCreate,
-             Permissions.WorkOrdersView, Permissions.WorkOrdersCreate, Permissions.WorkOrdersExecute, Permissions.PmView, Permissions.MetersRecord]),
+             Permissions.WorkOrdersView, Permissions.WorkOrdersCreate, Permissions.WorkOrdersExecute, Permissions.PmView, Permissions.MetersRecord, Permissions.InventoryView, Permissions.InventoryTransact]),
         ("Requester", "Submits and follows their own work requests", [Permissions.RequestsCreate, Permissions.LocationsView, Permissions.AssetsView]),
-        ("Viewer", "Read-only access", [Permissions.DashboardView, Permissions.LocationsView, Permissions.AssetsView, Permissions.PeopleView, Permissions.RequestsView, Permissions.WorkOrdersView, Permissions.PmView]),
+        ("Viewer", "Read-only access", [Permissions.DashboardView, Permissions.LocationsView, Permissions.AssetsView, Permissions.PeopleView, Permissions.RequestsView, Permissions.WorkOrdersView, Permissions.PmView,
+             Permissions.InventoryView, Permissions.PurchasingView, Permissions.ReportsView]),
     ];
 
     public static readonly (string Code, string Name, string Color)[] DefaultTrades =
@@ -32,6 +33,12 @@ public static partial class TenantProvisioning
     [
         ("WEAR", "Wear and tear"), ("ELEC", "Electrical fault"), ("LUBE", "Lubrication failure"), ("MISU", "Misuse / operator error"),
         ("LEAK", "Leak"), ("BLOCK", "Blockage / jam"), ("CTRL", "Control / sensor fault"), ("UNK", "Unknown"),
+    ];
+
+    public static readonly (string Code, string Name)[] DefaultPartGroups =
+    [
+        ("BEAR", "Bearings & seals"), ("ELEC", "Electrical"), ("MECH", "Mechanical"), ("FILT", "Filters"), ("LUBE", "Lubricants"),
+        ("HYD", "Hydraulics & pneumatics"), ("CONS", "Consumables"), ("SAFE", "Safety"),
     ];
 
     public static readonly (string Code, string Name, string Color)[] DefaultCategories =
@@ -68,6 +75,7 @@ public static partial class TenantProvisioning
             db.AssetCategories.AddRange(DefaultCategories.Select(c => new AssetCategory { TenantId = tenantId, Code = c.Code, Name = c.Name, Color = c.Color }));
             db.Trades.AddRange(DefaultTrades.Select(t => new FourC.Cmms.Core.People.Trade { TenantId = tenantId, Code = t.Code, Name = t.Name, Color = t.Color }));
             db.FailureCodes.AddRange(DefaultFailureCodes.Select(f => new FourC.Cmms.Core.Work.FailureCode { TenantId = tenantId, Code = f.Code, Name = f.Name }));
+            db.PartGroups.AddRange(DefaultPartGroups.Select(g => new FourC.Cmms.Core.Inventory.PartGroup { TenantId = tenantId, Code = g.Code, Name = g.Name }));
         }
         var admin = NewUser(tenantId, adminName, adminEmail);
         admin.PasswordHash = hasher.HashPassword(admin, adminPassword);

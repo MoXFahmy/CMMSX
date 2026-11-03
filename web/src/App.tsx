@@ -17,6 +17,13 @@ import { WorkRequestsPage } from './pages/work/WorkRequestsPage';
 import { PeoplePage } from './pages/people/PeoplePage';
 import { PmPage } from './pages/pm/PmPage';
 import { PmScheduleFormPage } from './pages/pm/PmScheduleFormPage';
+import { InventoryPage } from './pages/inventory/InventoryPage';
+import { PartDetailPage } from './pages/inventory/PartDetailPage';
+import { PartFormPage } from './pages/inventory/PartFormPage';
+import { PurchasingPage } from './pages/purchasing/PurchasingPage';
+import { PoFormPage } from './pages/purchasing/PoFormPage';
+import { PoDetailPage, PoPrintPage } from './pages/purchasing/PoDetailPage';
+import { ReportsPage, ReportViewPage } from './pages/reports/ReportsPage';
 
 export function App() {
   const { me, loading } = useAuth();
@@ -33,6 +40,7 @@ export function App() {
   }
   return (
     <Routes>
+      <Route path="purchasing/orders/:id/print" element={<PoPrintPage />} />
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path="locations" element={<LocationsPage />} />
@@ -50,6 +58,18 @@ export function App() {
         <Route path="pm/schedules/new" element={<PmScheduleFormPage />} />
         <Route path="pm/schedules/:id" element={<PmScheduleFormPage />} />
         <Route path="pm/:tab" element={<PmPage />} />
+        <Route path="inventory" element={<InventoryPage />} />
+        <Route path="inventory/parts/new" element={<PartFormPage />} />
+        <Route path="inventory/parts/:id" element={<PartDetailPage />} />
+        <Route path="inventory/parts/:id/edit" element={<PartFormPage />} />
+        <Route path="inventory/:tab" element={<InventoryPage />} />
+        <Route path="purchasing" element={<PurchasingPage />} />
+        <Route path="purchasing/orders/new" element={<PoFormPage />} />
+        <Route path="purchasing/orders/:id" element={<PoDetailPage />} />
+        <Route path="purchasing/orders/:id/edit" element={<PoFormPage />} />
+        <Route path="purchasing/:tab" element={<PurchasingPage />} />
+        <Route path="reports" element={<ReportsPage />} />
+        <Route path="reports/:key" element={<ReportViewPage />} />
         <Route path="settings/*" element={<SettingsPage />} />
         <Route path="soon/:module" element={<ComingSoonPage />} />
         <Route path="login" element={<AfterLogin />} />

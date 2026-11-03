@@ -94,6 +94,9 @@ api.MapPeopleEndpoints();
 api.MapWorkRequestEndpoints();
 api.MapWorkOrderEndpoints();
 api.MapPmEndpoints();
+api.MapInventoryEndpoints();
+api.MapPurchasingEndpoints();
+api.MapReportEndpoints();
 api.MapDashboardEndpoints();
 
 app.MapFallbackToFile("index.html");

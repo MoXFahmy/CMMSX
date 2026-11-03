@@ -50,4 +50,7 @@ export const P = {
   peopleView: 'people.view', peopleManage: 'people.manage', requestsView: 'requests.view', requestsCreate: 'requests.create', requestsManage: 'requests.manage',
   woView: 'workorders.view', woCreate: 'workorders.create', woEdit: 'workorders.edit', woExecute: 'workorders.execute', woClose: 'workorders.close', woDelete: 'workorders.delete',
   pmView: 'pm.view', pmManage: 'pm.manage', pmGenerate: 'pm.generate', metersRecord: 'meters.record',
+  inventoryView: 'inventory.view', inventoryManage: 'inventory.manage', inventoryTransact: 'inventory.transact',
+  purchasingView: 'purchasing.view', purchasingCreate: 'purchasing.create', purchasingApprove: 'purchasing.approve', purchasingReceive: 'purchasing.receive',
+  suppliersManage: 'suppliers.manage', reportsView: 'reports.view',
 } as const;

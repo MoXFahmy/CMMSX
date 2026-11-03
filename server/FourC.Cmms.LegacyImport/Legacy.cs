@@ -143,6 +143,56 @@ public sealed class LegacyData
     public Dictionary<int, string> NameplateCaptions = [];
 }
 
+// ---------- Materials & purchasing ----------
+public sealed class LSubStore { public string SubStoreCode { get; set; } public string? SubStoreDesc { get; set; } public string? SiteCode { get; set; } public int? isDefault { get; set; } }
+public sealed class LStock
+{
+    public string StockNo { get; set; } public string? StockDescription { get; set; } public string? UOM { get; set; } public string? AttrGroup { get; set; } public string? Status { get; set; }
+    public string? Location { get; set; } public double? Price2 { get; set; } public string? Notes { get; set; } public string? SiteCode { get; set; } public int? LeadTime { get; set; }
+    public double? AvgPrice { get; set; } public double? StockBalance { get; set; } public double? MinLevel { get; set; } public double? MaxLevel { get; set; } public string? Specification { get; set; }
+    public string? Manufacturer { get; set; } public string? SAPNo { get; set; } public string? BarcodeId { get; set; } public short? Criticality { get; set; } public short? ShelfItem { get; set; }
+    public bool? allow_negative_value { get; set; } public string? supplier_no { get; set; }
+}
+public sealed class LStockLevel { public string stock_no { get; set; } public string? sub_store_code { get; set; } public double? max_level { get; set; } public double? re_order_level { get; set; } public double? min_level { get; set; } public int? location { get; set; } public double? reorder_qty { get; set; } }
+public sealed class LSupplier
+{
+    public string SupplierNo { get; set; } public string? SupplierName { get; set; } public string? ContactName { get; set; } public string? Address { get; set; } public string? City { get; set; }
+    public string? PostalCode { get; set; } public string? StateOrProvince { get; set; } public string? Country { get; set; } public string? PhoneNumber { get; set; } public string? FaxNumber { get; set; }
+    public string? Services { get; set; } public string? AccountNo { get; set; } public short? Active { get; set; } public string? EmailAddress { get; set; }
+}
+public sealed class LReceive { public long ReceiveID { get; set; } public string? Stockcode { get; set; } public DateTime? Date { get; set; } public string? MRNNo { get; set; } public string? Vendor { get; set; } public double? QtyRec { get; set; } public string? PONo { get; set; } public double? Price1 { get; set; } public string? SiteCode { get; set; } public string? SubStoreCode { get; set; } public string? BatchNo { get; set; } public DateTime? BatchExpiryDate { get; set; } public string? Comments { get; set; } public string? FromSubStore { get; set; } public short? Transfer { get; set; } public DateTime? CreatedDate { get; set; } }
+public sealed class LIssue { public long IssueID { get; set; } public string? StockNo { get; set; } public DateTime? DateIssue { get; set; } public string? IWTNo { get; set; } public double? QtyIssue { get; set; } public string? WONo { get; set; } public double? Price3 { get; set; } public string? SiteCode { get; set; } public string? SubStoreCode { get; set; } public string? BatchNo { get; set; } public string? ToSubStoreCode { get; set; } public short? Transfer { get; set; } public string? Comments { get; set; } public string? CreatedByEmpNo { get; set; } }
+public sealed class LReturn { public long ReturnID { get; set; } public string? StockNo { get; set; } public string? IWTNo { get; set; } public double? Qty { get; set; } public DateTime? Date { get; set; } public string? Person { get; set; } public string? Comment { get; set; } public string? WONo { get; set; } public string? SiteCode { get; set; } public double? RetPrice { get; set; } public string? SubStoreCode { get; set; } public string? BatchNo { get; set; } }
+public sealed class LAdjust { public long AdjustmentID { get; set; } public string? StockNo { get; set; } public DateTime? Date { get; set; } public string? Person { get; set; } public decimal? QtyAdj { get; set; } public string? Comment { get; set; } public double? Price4 { get; set; } public string? SiteCode { get; set; } public string? SubStoreCode { get; set; } public string? BatchNo { get; set; } }
+public sealed class LPrMaster
+{
+    public string pr_no { get; set; } public DateTime? pr_date { get; set; } public DateTime? order_date { get; set; } public int? status_id { get; set; } public int? auth_status { get; set; }
+    public string? order_by { get; set; } public string? req_by { get; set; } public string? del_to { get; set; } public decimal? delivery_charges { get; set; } public int? pay_term_id { get; set; }
+    public string? supplier_no { get; set; } public DateTime? exp_del_date { get; set; } public string? order_notes { get; set; } public DateTime? cancel_date { get; set; } public string? cancel_notes { get; set; }
+    public string? po_no { get; set; } public string? sitecode { get; set; } public string? quote_ref { get; set; } public long? ship_id { get; set; } public double? freight { get; set; } public long? currency_id { get; set; }
+    public double? conv_rate { get; set; } public double? gst_percent { get; set; } public double? LumpDiscount { get; set; } public double? TaxRate { get; set; } public double? MiscValue { get; set; }
+}
+public sealed class LPrDetail { public string? pr_id { get; set; } public string po_req_no { get; set; } public string? part_no { get; set; } public string? part_desc { get; set; } public decimal? qty { get; set; } public decimal? unit_price { get; set; } public decimal? disc { get; set; } public string? uom { get; set; } public string? wo_no { get; set; } public decimal? received_qty { get; set; } public string? SubStoreCode { get; set; } }
+
+public sealed class LegacyMaterials
+{
+    public List<LSubStore> Stores = [];
+    public List<LStock> Parts = [];
+    public List<LStockLevel> Levels = [];
+    public List<(string Part, string Alternate)> Alternates = [];
+    public List<(string Part, string Supplier)> PartSuppliers = [];
+    public List<LSupplier> Suppliers = [];
+    public List<LReceive> Receipts = [];
+    public List<LIssue> Issues = [];
+    public List<LReturn> Returns = [];
+    public List<LAdjust> Adjustments = [];
+    public List<LPrMaster> Orders = [];
+    public List<LPrDetail> OrderLines = [];
+    public Dictionary<int, string> PaymentTerms = [];
+    public Dictionary<int, string> ShipVia = [];
+    public Dictionary<int, string> Currencies = [];
+}
+
 public static class Legacy
 {
     public static async Task<string?> VersionAsync(SqlConnection c) =>
@@ -199,6 +249,30 @@ public static class Legacy
             MultiplePm = (await Try(() => c.QueryAsync<LMultiplePm>("SELECT MPMNo, MTaskNo, MTaskSeq FROM multiplepm")) ?? []).ToList(),
             Meters = (await Try(() => c.QueryAsync<LPmMeter>("SELECT MeterNo, CAST(MeterDescription AS nvarchar(max)) AS MeterDescription, AssetNo, MeterType, Lowerlimit, UpperLimit, LastPMreading, PMLowTaskNo, PMUppTaskNo, PMIncTaskNo, Units, IncFreq, IncPMDue, FreqUnits, Frequency, NextDate, PMCounter, PMActive, PMWOTrade, TimeBased, PMType, SiteCode, max_daily_reading FROM pmmeters")) ?? []).ToList(),
             Readings = (await Try(() => c.QueryAsync<LReading>("SELECT ReadingID, Date, MeterNo, Reading FROM readings", commandTimeout: 600)) ?? []).ToList(),
+        };
+    }
+
+    public static async Task<LegacyMaterials> LoadMaterialsAsync(SqlConnection c)
+    {
+        async Task<Dictionary<int, string>> Map(string sql) => (await Try(() => c.QueryAsync<LIdName>(sql)) ?? []).Where(x => x.Name != null).GroupBy(x => x.Id).ToDictionary(g => g.Key, g => g.First().Name!.Trim());
+        async Task<List<T>> All<T>(string sql) => (await Try(() => c.QueryAsync<T>(sql, commandTimeout: 900)) ?? []).ToList();
+        return new LegacyMaterials
+        {
+            Stores = await All<LSubStore>("SELECT SubStoreCode, SubStoreDesc, SiteCode, CAST(isDefault AS int) AS isDefault FROM substore"),
+            Parts = await All<LStock>("SELECT StockNo, StockDescription, UOM, AttrGroup, Status, Location, Price2, CAST(Notes AS nvarchar(max)) AS Notes, SiteCode, LeadTime, AvgPrice, StockBalance, MinLevel, MaxLevel, CAST(Specification AS nvarchar(max)) AS Specification, Manufacturer, SAPNo, BarcodeId, Criticality, ShelfItem, allow_negative_value, supplier_no FROM stockcode"),
+            Levels = await All<LStockLevel>("SELECT stock_no, sub_store_code, max_level, re_order_level, min_level, location, reorder_qty FROM stockcode_levels"),
+            Alternates = (await All<(string, string)>("SELECT StockCode, AlternativePart FROM stock_alternative")).Where(x => x.Item1 != null && x.Item2 != null).ToList(),
+            PartSuppliers = (await All<(string, string)>("SELECT stock_no, supplier_no FROM stock_code_supplier")).Where(x => x.Item1 != null && x.Item2 != null).ToList(),
+            Suppliers = await All<LSupplier>("SELECT SupplierNo, SupplierName, ContactName, CAST(Address AS nvarchar(max)) AS Address, City, PostalCode, StateOrProvince, Country, PhoneNumber, FaxNumber, CAST(Services AS nvarchar(max)) AS Services, AccountNo, Active, EmailAddress FROM suppliers"),
+            Receipts = await All<LReceive>("SELECT ReceiveID, Stockcode, Date, MRNNo, Vendor, QtyRec, PONo, Price1, SiteCode, SubStoreCode, BatchNo, BatchExpiryDate, Comments, FromSubStore, Transfer, CreatedDate FROM receive"),
+            Issues = await All<LIssue>("SELECT IssueID, StockNo, DateIssue, IWTNo, QtyIssue, WONo, Price3, SiteCode, SubStoreCode, BatchNo, ToSubStoreCode, Transfer, Comments, CreatedByEmpNo FROM issue"),
+            Returns = await All<LReturn>("SELECT ReturnID, StockNo, IWTNo, Qty, Date, Person, Comment, WONo, SiteCode, RetPrice, SubStoreCode, BatchNo FROM [return]"),
+            Adjustments = await All<LAdjust>("SELECT AdjustmentID, StockNo, Date, Person, QtyAdj, CAST(Comment AS nvarchar(max)) AS Comment, Price4, SiteCode, SubStoreCode, BatchNo FROM adjustment"),
+            Orders = await All<LPrMaster>("SELECT pr_no, pr_date, order_date, status_id, auth_status, order_by, req_by, CAST(del_to AS nvarchar(max)) AS del_to, delivery_charges, pay_term_id, supplier_no, exp_del_date, order_notes, cancel_date, cancel_notes, po_no, sitecode, quote_ref, ship_id, freight, currency_id, conv_rate, gst_percent, LumpDiscount, TaxRate, MiscValue FROM purchase_req_master"),
+            OrderLines = await All<LPrDetail>("SELECT pr_id, po_req_no, part_no, part_desc, qty, unit_price, disc, uom, wo_no, received_qty, SubStoreCode FROM purchase_req_details"),
+            PaymentTerms = await Map("SELECT pay_term_id AS Id, CAST(pay_term_desc AS nvarchar(200)) AS Name FROM payment_term"),
+            ShipVia = await Map("SELECT CAST(ship_id AS int) AS Id, CAST(ship_name AS nvarchar(200)) AS Name FROM ship_via"),
+            Currencies = await Map("SELECT CAST(currency_id AS int) AS Id, CAST(currency_name AS nvarchar(200)) AS Name FROM currency_rate"),
         };
     }
 
