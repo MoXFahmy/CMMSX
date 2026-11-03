@@ -83,7 +83,7 @@ public static partial class CustomFieldEndpoints
             var key = string.IsNullOrWhiteSpace(input.Key) ? KeyFrom(input.Label ?? "") : input.Key.Trim();
             var v = await ValidateAsync(input with { Key = key }, null, db, ct);
             if (!v.IsValid) return v.Problem();
-            var f = new CustomFieldDefinition { EntityType = input.EntityType, Key = key, Label = input.Label.Trim() };
+            var f = new CustomFieldDefinition { EntityType = input.EntityType, Key = key, Label = input.Label!.Trim() };
             Apply(f, input);
             db.CustomFields.Add(f);
             await db.SaveChangesAsync(ct);
