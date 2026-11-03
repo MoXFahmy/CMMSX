@@ -17,7 +17,7 @@ public static class PurchasingEndpoints
         string? TaxNumber, string? PaymentTerms, string? Currency, bool IsContractor, string? Notes, bool IsActive = true);
     public sealed record LineInput(Guid? Id, Guid? PartId, string? Description, string? UnitOfMeasure, decimal Quantity, decimal UnitPrice, decimal DiscountPercent,
         Guid? StoreId, Guid? WorkOrderId, string? AccountCode);
-    public sealed record PoInput(Guid SiteId, Guid SupplierId, DateOnly? OrderDate, DateOnly? ExpectedDate, string? RequestedBy, string? Currency, decimal? ExchangeRate,
+    public sealed record PoInput(Guid? SiteId, Guid? SupplierId, DateOnly? OrderDate, DateOnly? ExpectedDate, string? RequestedBy, string? Currency, decimal? ExchangeRate,
         string? PaymentTerms, string? ShippingMethod, string? DeliverTo, string? SupplierQuoteRef, decimal? TaxPercent, decimal ShippingCost, string? Notes,
         List<LineInput> Lines, string? RowVersion = null);
     public sealed record ReasonInput(string? Reason);
@@ -345,7 +345,7 @@ public static class PurchasingEndpoints
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var number = await Numbering.NextAsync(db, "PurchaseOrder", settings.PurchaseOrderNumberPrefix, 5,
             n => db.PurchaseOrders.AnyAsync(o => o.Number == n, ct), p => db.PurchaseOrders.Where(o => o.Number.StartsWith(p)).Select(o => o.Number).ToListAsync(ct), ct);
-        var o = new PurchaseOrder { Number = number, SiteId = i.SiteId, SupplierId = i.SupplierId, Currency = settings.Currency, TaxPercent = settings.DefaultTaxPercent, RequestedBy = ctx.UserName };
+        var o = new PurchaseOrder { Number = number, SiteId = i.SiteId!.Value, SupplierId = i.SupplierId!.Value, Currency = settings.Currency, TaxPercent = settings.DefaultTaxPercent, RequestedBy = ctx.UserName };
         await ApplyPoAsync(db, o, i with { TaxPercent = i.TaxPercent ?? settings.DefaultTaxPercent, Currency = i.Currency.Clean() ?? settings.Currency, RequestedBy = i.RequestedBy.Clean() ?? ctx.UserName }, ct);
         db.PurchaseOrders.Add(o);
         await db.SaveChangesAsync(ct);
@@ -354,7 +354,7 @@ public static class PurchasingEndpoints
 
     private static async Task ApplyPoAsync(CmmsDbContext db, PurchaseOrder o, PoInput i, CancellationToken ct)
     {
-        o.SiteId = i.SiteId; o.SupplierId = i.SupplierId; o.OrderDate = i.OrderDate ?? Today; o.ExpectedDate = i.ExpectedDate; o.RequestedBy = i.RequestedBy.Clean();
+        o.SiteId = i.SiteId!.Value; o.SupplierId = i.SupplierId!.Value; o.OrderDate = i.OrderDate ?? Today; o.ExpectedDate = i.ExpectedDate; o.RequestedBy = i.RequestedBy.Clean();
         o.Currency = i.Currency.Clean()?.ToUpperInvariant() ?? o.Currency; o.ExchangeRate = i.ExchangeRate is > 0 ? i.ExchangeRate.Value : 1;
         o.PaymentTerms = i.PaymentTerms.Clean(); o.ShippingMethod = i.ShippingMethod.Clean(); o.DeliverTo = i.DeliverTo.Clean(); o.SupplierQuoteRef = i.SupplierQuoteRef.Clean();
         o.TaxPercent = i.TaxPercent ?? o.TaxPercent; o.ShippingCost = i.ShippingCost; o.Notes = i.Notes.Clean();
@@ -378,8 +378,8 @@ public static class PurchasingEndpoints
         var v = new Validator().MaxLength("supplierQuoteRef", i.SupplierQuoteRef, "Quote ref.", 100).MaxLength("notes", i.Notes, "Notes", 4000)
             .When(i.ShippingCost < 0, "shippingCost", "Shipping cannot be negative.").When(i.TaxPercent is < 0 or > 100, "taxPercent", "Tax must be between 0 and 100%.")
             .When(i.ExchangeRate is <= 0, "exchangeRate", "Exchange rate must be positive.").When(i.ExpectedDate < i.OrderDate, "expectedDate", "Expected date is before the order date.");
-        if (!await db.Sites.AnyAsync(x => x.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
-        if (!await db.Suppliers.AnyAsync(x => x.Id == i.SupplierId && x.IsActive, ct)) v.Add("supplierId", "Choose an active supplier.");
+        if (i.SiteId is null || !await db.Sites.AnyAsync(x => x.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
+        if (i.SupplierId is null || !await db.Suppliers.AnyAsync(x => x.Id == i.SupplierId && x.IsActive, ct)) v.Add("supplierId", "Choose an active supplier.");
         var lines = i.Lines ?? [];
         for (var k = 0; k < lines.Count; k++)
         {

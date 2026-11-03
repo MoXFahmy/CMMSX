@@ -338,7 +338,7 @@ public static class SampleOperations
                 }
             }
             // weekly replenishment run (Sunday): order what is at or below re-order, grouped by supplier and store
-            if (weekday == DayOfWeek.Sunday && day > start && day < today.AddDays(-12)) // the last fortnight is left for the re-order proposal
+            if (weekday == DayOfWeek.Sunday && day > start && day < today.AddDays(-35)) // the last month is left for the re-order proposal
             {
                 var due = levels.Where(l => onHand[l.Key] + onOrder[l.Key] <= l.Value.ReorderLevel).ToList();
                 foreach (var grp in due.GroupBy(l => (parts.Values.First(p => p.Part.Id == l.Key.Item1).Spec.Supplier, l.Key.Item2)))

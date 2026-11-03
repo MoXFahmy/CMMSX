@@ -90,7 +90,7 @@ export function PoDetailPage() {
             </Tabs.List>
             <Tabs.Panel value="lines">
               <Card p={0}>
-                <Table.ScrollContainer minWidth={900}>
+                <Table.ScrollContainer minWidth={760}>
                   <Table verticalSpacing="sm" styles={{ th: { whiteSpace: 'nowrap' } }}>
                     <Table.Thead><Table.Tr>
                       <Table.Th w={36}>#</Table.Th><Table.Th>{t('common.description')}</Table.Th><Table.Th>{t('po.deliverTo')}</Table.Th><Table.Th ta="right">{t('inv.quantity')}</Table.Th>

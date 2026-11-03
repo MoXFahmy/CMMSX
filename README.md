@@ -21,6 +21,12 @@ One cloud service shared by all customers; each customer is an isolated *organiz
 | ![Work orders](docs/screenshots/work-orders.png) | ![Work order](docs/screenshots/work-order.png) |
 | **PM schedules** | **PM generation** |
 | ![PM schedules](docs/screenshots/pm-schedules.png) | ![PM generation](docs/screenshots/pm-generate.png) |
+| **Inventory** | **Part** |
+| ![Inventory](docs/screenshots/inventory.png) | ![Part](docs/screenshots/part-detail.png) |
+| **Re-order proposal** | **Purchase order** |
+| ![Re-order proposal](docs/screenshots/reorder-proposal.png) | ![Purchase order](docs/screenshots/purchase-order.png) |
+| **Maintenance cost report** | **Reliability report (MTBF / MTTR)** |
+| ![Maintenance costs](docs/screenshots/report-costs.png) | ![Reliability](docs/screenshots/report-reliability.png) |
 
 ## Modules
 
@@ -33,8 +39,11 @@ One cloud service shared by all customers; each customer is an isolated *organiz
 | **Work requests**: anyone can request work; triage → approve (creates a work order) / reject; duplicate & warranty check | ✅ |
 | **Work orders**: workflow (Open → In progress ⇄ On hold → Completed → Closed), assignees, task checklist, labour & other costs, completion details (action/cause/prevention, failure code, downtime), activity feed, files | ✅ |
 | **Preventive maintenance**: PM tasks (checklists) and schedules on assets or locations — fixed interval (by scheduled or actual date), nth weekday of month, fixed date of month, meter-based (incremental or threshold, optionally whichever-comes-first with time); multiple PM (heavier task every Nth time); preview & generate, automatic generation with lead time, forecast; meters and readings | ✅ |
-| **4CSQL importer** (locations, assets, people, trades, failure codes, work requests, work orders with labour, costs, tasks, notes and status history, PM tasks, schedules, meters and readings) | ✅ |
-| Inventory → Purchasing → Reports | Next — see [docs/ROADMAP.md](docs/ROADMAP.md) |
+| **Inventory**: stores, part groups, parts with per-store bins and min / re-order / max levels, alternates, shelf-life batches with expiry; receive, issue and return to work orders or locations, adjust, transfer, stock take; moving average cost; stock never goes negative unless the part allows it; parts cost on work orders | ✅ |
+| **Purchasing**: suppliers; purchase orders (draft → awaiting approval → approved → partly received → received → closed, or cancelled) with per-user approval limits, currency and exchange rate, tax, shipping and line discounts; partial receipts into stores; service lines charged to work orders; re-order proposal that raises draft orders per supplier; printable PO | ✅ |
+| **Reports**: 14 reports — work order backlog and throughput, PM compliance, labour hours, asset reliability (MTBF / MTTR / availability), failure Pareto, maintenance costs by asset/site/category/type/trade/month, asset register, stock valuation, re-order, parts consumption, dormant stock, supplier spend with on-time delivery, open purchase orders — with KPIs, charts, sorting, CSV export and print | ✅ |
+| **4CSQL importer** (locations, assets, people, trades, failure codes, work requests, work orders with labour, costs, tasks, notes and status history, PM tasks, schedules, meters and readings, stores, parts, levels, suppliers, purchase orders and the stock ledger) | ✅ |
+| Mobile & offline, integrations, Arabic | Next — see [docs/ROADMAP.md](docs/ROADMAP.md) |
 
 ## Run locally
 
@@ -52,7 +61,10 @@ dotnet run --project server/FourC.Cmms.Api --urls http://127.0.0.1:5080
 cd web && npm install && npm run dev
 ```
 
-Open the app, choose **Create an organization**, then *Settings → Organization → Load sample data* to explore with ~230 demo assets.
+Open the app, choose **Create an organization**, then *Settings → Organization → Load sample data*. This creates ~230 demo assets
+across three sites and simulates a year of operations — technicians, ~1,000 work orders with labour, downtime and failure codes,
+36 PM schedules with realistic compliance, 34 spare parts in three stores, and ~100 replenishment purchase orders — so every
+screen and report has data. (It takes a few seconds and runs once per organization.)
 API reference: `http://127.0.0.1:5080/api/docs`.
 
 Full stack in containers: `SA_PASSWORD='YourStr0ng!Pass' docker compose up --build` → http://localhost:8080
@@ -78,7 +90,7 @@ server/
   FourC.Cmms.LegacyImport/  4CSQL → cloud importer (console)
   FourC.Cmms.Tests/         API integration tests
 web/src/
-  pages/                    dashboard, locations, assets, settings
+  pages/                    dashboard, locations, assets, work, pm, inventory, purchasing, reports, settings
   components/               layout, pickers, attachments, audit timeline
   locales/en.json           all UI text (add ar.json etc. for more languages)
 ```
@@ -90,5 +102,10 @@ web/src/
 - **Audit**: every create/update/delete on business records is recorded with field-level before/after values.
 - **Concurrency**: records carry a `RowVersion`; stale edits return HTTP 409 instead of silently overwriting.
 - **Hierarchy**: locations store a materialized path, so "all assets under Building A" is a single indexed query.
+- **Stock ledger**: every movement is an immutable transaction; the store balance is updated in the same database
+  transaction with a conditional `UPDATE … WHERE balance + change >= 0`, so two people issuing the last item at the same
+  moment cannot drive stock negative. Average cost is recalculated on each receipt; issues are costed at average cost.
+- **Reports** are computed on the server and returned in one generic shape (columns, rows, chart, KPIs), so the web
+  client renders, charts, prints and exports every report the same way and new reports need no UI code.
 - **Customer-specific needs** are handled with configuration, not code forks: terminology (rename Site/Location/Asset),
   custom fields per asset category, and roles — replacing 4CSQL's 30 `NameplateInfo` columns and 300+ per-client feature flags.

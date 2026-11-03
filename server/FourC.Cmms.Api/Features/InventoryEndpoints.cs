@@ -11,15 +11,15 @@ namespace FourC.Cmms.Api.Features;
 
 public static class InventoryEndpoints
 {
-    public sealed record StoreInput(string Code, string Name, Guid SiteId, string? Description, bool IsActive = true);
+    public sealed record StoreInput(string Code, string Name, Guid? SiteId, string? Description, bool IsActive = true);
     public sealed record PartInput(string PartNumber, string Name, string? Specification, string? Manufacturer, string? ManufacturerPartNumber, string UnitOfMeasure,
         Guid? GroupId, decimal StandardPrice, int? LeadTimeDays, bool IsCritical, bool IsShelfItem, bool AllowNegativeStock, Guid? PreferredSupplierId,
         string? Barcode, List<Guid>? AlternatePartIds, string? Notes, bool IsActive = true, List<LevelInput>? Levels = null, string? RowVersion = null);
     public sealed record LevelInput(Guid StoreId, string? Bin, decimal MinLevel, decimal ReorderLevel, decimal MaxLevel, decimal ReorderQuantity);
-    public sealed record ReceiveInput(Guid PartId, Guid StoreId, decimal Quantity, decimal UnitCost, DateOnly? Date, Guid? SupplierId, string? Reference, string? BatchNumber, DateOnly? ExpiryDate, string? Notes);
-    public sealed record IssueInput(Guid PartId, Guid StoreId, decimal Quantity, DateOnly? Date, Guid? WorkOrderId, Guid? LocationId, string? BatchNumber, string? Notes);
-    public sealed record AdjustInput(Guid PartId, Guid StoreId, decimal Quantity, DateOnly? Date, string? BatchNumber, string Notes);
-    public sealed record TransferInput(Guid PartId, Guid FromStoreId, Guid ToStoreId, decimal Quantity, DateOnly? Date, string? BatchNumber, string? Notes);
+    public sealed record ReceiveInput(Guid? PartId, Guid? StoreId, decimal Quantity, decimal UnitCost, DateOnly? Date, Guid? SupplierId, string? Reference, string? BatchNumber, DateOnly? ExpiryDate, string? Notes);
+    public sealed record IssueInput(Guid? PartId, Guid? StoreId, decimal Quantity, DateOnly? Date, Guid? WorkOrderId, Guid? LocationId, string? BatchNumber, string? Notes);
+    public sealed record AdjustInput(Guid? PartId, Guid? StoreId, decimal Quantity, DateOnly? Date, string? BatchNumber, string Notes);
+    public sealed record TransferInput(Guid? PartId, Guid? FromStoreId, Guid? ToStoreId, decimal Quantity, DateOnly? Date, string? BatchNumber, string? Notes);
     public sealed record CountLine(Guid PartId, decimal CountedQuantity);
     public sealed record StockTakeInput(Guid StoreId, DateOnly? Date, List<CountLine> Lines, string? Notes);
 
@@ -49,7 +49,7 @@ public static class InventoryEndpoints
         {
             var v = await ValidateStoreAsync(i, null, db, ct);
             if (!v.IsValid) return v.Problem();
-            var s = new Store { Code = i.Code.Trim(), Name = i.Name.Trim(), SiteId = i.SiteId, Description = i.Description.Clean(), IsActive = i.IsActive };
+            var s = new Store { Code = i.Code.Trim(), Name = i.Name.Trim(), SiteId = i.SiteId!.Value, Description = i.Description.Clean(), IsActive = i.IsActive };
             db.Stores.Add(s);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/stores/{s.Id}", new { s.Id });
@@ -61,7 +61,7 @@ public static class InventoryEndpoints
             var v = await ValidateStoreAsync(i, id, db, ct);
             if (s.SiteId != i.SiteId && await db.StockLevels.AnyAsync(l => l.StoreId == id && l.QuantityOnHand != 0, ct)) v.Add("siteId", "Move the stock out before changing the store's site.");
             if (!v.IsValid) return v.Problem();
-            s.Code = i.Code.Trim(); s.Name = i.Name.Trim(); s.SiteId = i.SiteId; s.Description = i.Description.Clean(); s.IsActive = i.IsActive;
+            s.Code = i.Code.Trim(); s.Name = i.Name.Trim(); s.SiteId = i.SiteId!.Value; s.Description = i.Description.Clean(); s.IsActive = i.IsActive;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { s.Id });
         }).RequirePermission(Permissions.InventoryManage);
@@ -208,22 +208,25 @@ public static class InventoryEndpoints
 
         t.MapPost("/receive", async (ReceiveInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
+            if (Missing(i.PartId, i.StoreId) is { } bad) return bad;
             if (i.SupplierId is not null && !await db.Suppliers.AnyAsync(s => s.Id == i.SupplierId, ct)) throw new DomainException("Supplier not found.");
-            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, i.PartId, i.StoreId, i.Quantity, i.Date ?? Today,
+            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
                 i.UnitCost, SupplierId: i.SupplierId, Reference: i.Reference, BatchNumber: i.BatchNumber, ExpiryDate: i.ExpiryDate, Notes: i.Notes), tk), ct);
             return Results.Ok(new { tx.Id });
         }).RequirePermission(Permissions.InventoryTransact);
 
         t.MapPost("/issue", async (IssueInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
+            if (Missing(i.PartId, i.StoreId) is { } bad) return bad;
             await RequireIssueTargetAsync(db, i.WorkOrderId, i.LocationId, ct);
-            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, i.PartId, i.StoreId, i.Quantity, i.Date ?? Today,
+            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
                 WorkOrderId: i.WorkOrderId, LocationId: i.LocationId, BatchNumber: i.BatchNumber, Notes: i.Notes), tk), ct);
             return Results.Ok(new { tx.Id });
         }).RequirePermission(Permissions.InventoryTransact);
 
         t.MapPost("/return", async (IssueInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
+            if (Missing(i.PartId, i.StoreId) is { } bad) return bad;
             Guid? lastIssue = null;
             if (i.WorkOrderId is { } wo)
             {
@@ -233,22 +236,25 @@ public static class InventoryEndpoints
                 if (i.Quantity > -net) throw new DomainException($"Only {-net:0.###} were issued to this work order and not yet returned.");
                 lastIssue = await db.StockTransactions.Where(x => x.WorkOrderId == wo && x.PartId == i.PartId && x.Type == StockTransactionType.Issue).OrderByDescending(x => x.CreatedAt).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
             }
-            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Return, i.PartId, i.StoreId, i.Quantity, i.Date ?? Today,
+            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Return, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
                 WorkOrderId: i.WorkOrderId, LocationId: i.LocationId, BatchNumber: i.BatchNumber, Notes: i.Notes, RelatedTransactionId: lastIssue), tk), ct);
             return Results.Ok(new { tx.Id });
         }).RequirePermission(Permissions.InventoryTransact);
 
         t.MapPost("/adjust", async (AdjustInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
+            if (Missing(i.PartId, i.StoreId) is { } bad) return bad;
             if (string.IsNullOrWhiteSpace(i.Notes)) return new Validator().Required("notes", i.Notes, "Reason").Problem();
-            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Adjustment, i.PartId, i.StoreId, i.Quantity, i.Date ?? Today,
+            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Adjustment, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
                 BatchNumber: i.BatchNumber, Notes: i.Notes), tk), ct);
             return Results.Ok(new { tx.Id });
         }).RequirePermission(Permissions.InventoryTransact);
 
         t.MapPost("/transfer", async (TransferInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
-            var (o, _) = await db.InTransactionAsync(tk => StockLedger.TransferAsync(db, ctx, i.PartId, i.FromStoreId, i.ToStoreId, i.Quantity, i.Date ?? Today, i.BatchNumber.Clean(), i.Notes, tk), ct);
+            if (Missing(i.PartId, i.FromStoreId) is { } bad) return bad;
+            if (i.ToStoreId is null) return new Validator().When(true, "toStoreId", "Choose the receiving store.").Problem();
+            var (o, _) = await db.InTransactionAsync(tk => StockLedger.TransferAsync(db, ctx, i.PartId!.Value, i.FromStoreId!.Value, i.ToStoreId.Value, i.Quantity, i.Date ?? Today, i.BatchNumber.Clean(), i.Notes, tk), ct);
             return Results.Ok(new { o.Id });
         }).RequirePermission(Permissions.InventoryTransact);
 
@@ -304,6 +310,13 @@ public static class InventoryEndpoints
         }).RequirePermission(Permissions.InventoryView);
     }
 
+    /// <summary>Field errors for a missing part or store, so the dialog can mark the fields instead of failing the whole request.</summary>
+    private static IResult? Missing(Guid? partId, Guid? storeId)
+    {
+        var v = new Validator().When(partId is null, "partId", "Choose a part.").When(storeId is null, "storeId", "Choose a store.");
+        return v.IsValid ? null : v.Problem();
+    }
+
     private static async Task RequireIssueTargetAsync(CmmsDbContext db, Guid? workOrderId, Guid? locationId, CancellationToken ct)
     {
         if (workOrderId is null && locationId is null) throw new DomainException("Issue to a work order or a location.");
@@ -318,7 +331,7 @@ public static class InventoryEndpoints
     private static async Task<Validator> ValidateStoreAsync(StoreInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
         var v = new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200);
-        if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
+        if (i.SiteId is null || !await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.Stores.AnyAsync(s => s.Code == i.Code.Trim() && s.Id != id, ct)) v.Add("code", "Another store uses this code.");
         return v;
     }

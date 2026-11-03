@@ -110,6 +110,10 @@ export function ReportViewPage() {
   const narrow = useMediaQuery('(max-width: 48em)');
   const axisW = narrow ? 110 : 240;
   const clip = (v: string) => { const max = narrow ? 14 : 34; return v.length > max ? `${v.slice(0, max - 1)}…` : v; };
+  // Single-line category labels (Recharts would otherwise wrap long names onto several lines).
+  const AxisTick = ({ x, y, payload }: { x: number; y: number; payload: { value: unknown } }) => (
+    <text x={x} y={y} dy={4} textAnchor="end" fontSize={12} fill="var(--mantine-color-dimmed)"><title>{String(payload.value)}</title>{clip(String(payload.value))}</text>
+  );
   const chartRows = (data?.rows ?? []).slice(0, data?.chart?.type === 'donut' ? 10 : 15);
   const label = (k: string) => data?.columns.find((c) => c.key === k)?.label ?? k;
   const chartFmt = (v: number) => (data?.columns.find((c) => data.chart?.series.includes(c.key))?.type === 'currency' ? fmtPrice(v, currency, 0) : fmtNumber(v));
@@ -156,7 +160,7 @@ export function ReportViewPage() {
                 : <BarChart h={Math.min(420, Math.max(220, chartRows.length * (data.chart.x === 'month' || data.chart.x === 'group' && q.groupBy === 'month' ? 0 : 28) + 60))} data={chartRows}
                     dataKey={data.chart.x} type={data.chart.stacked ? 'stacked' : 'default'} withLegend={data.chart.series.length > 1} valueFormatter={chartFmt}
                     orientation={chartRows.length > 6 && !(data.chart.x === 'month' || (data.chart.x === 'group' && q.groupBy === 'month')) ? 'vertical' : 'horizontal'}
-                    yAxisProps={chartRows.length > 6 && !(data.chart.x === 'month' || (data.chart.x === 'group' && q.groupBy === 'month')) ? { width: axisW, interval: 0, tickFormatter: clip, tick: { fontSize: 12 } } : undefined}
+                    yAxisProps={chartRows.length > 6 && !(data.chart.x === 'month' || (data.chart.x === 'group' && q.groupBy === 'month')) ? { width: axisW, interval: 0, tick: AxisTick } : undefined}
                     series={data.chart.series.map((s, i) => ({ name: s, label: label(s), color: PALETTE[i % PALETTE.length] }))} />}
             </Card>
           )}

@@ -157,7 +157,8 @@ export function PoFormPage() {
                   <Table.Td><PartPicker placeholder={t('po.nonStock')} value={l.partId} initial={l.part} withStock={false} onChange={(pid, p) => {
                     form.setFieldValue(`lines.${i}.partId`, pid); form.setFieldValue(`lines.${i}.part`, p ? { id: p.id, partNumber: p.partNumber, name: p.name } : null);
                     if (p) { form.setFieldValue(`lines.${i}.description`, p.name); form.setFieldValue(`lines.${i}.unitOfMeasure`, p.unitOfMeasure); form.setFieldValue(`lines.${i}.unitPrice`, p.lastPurchasePrice ?? p.averageCost);
-                      if (!form.getValues().lines[i].storeId && siteStores.length) form.setFieldValue(`lines.${i}.storeId`, siteStores[0].id); }
+                      if (!form.getValues().lines[i].storeId && siteStores.length) form.setFieldValue(`lines.${i}.storeId`, siteStores[0].id);
+                      if (!form.getValues().siteId && siteStores.length) form.setFieldValue('siteId', siteStores[0].siteId); }
                   }} />
                   {l.partId && <Select mt={4} size="xs" placeholder={t('inv.store')} aria-label={t('inv.store')} data={siteStores.map((s) => ({ value: s.id, label: `${t('po.intoStore')} ${s.code}` }))} {...form.getInputProps(`lines.${i}.storeId`)} error={form.errors[`lines[${i}].storeId`]} />}
                   </Table.Td>

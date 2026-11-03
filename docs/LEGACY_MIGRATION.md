@@ -52,10 +52,22 @@ Connection strings and passwords can be passed as environment variables (`CMMS_I
 | `pmmeters` | A meter on the asset **and** a meter-based schedule (incremental: interval/next due; threshold: limits with lower/upper tasks; time-based → whichever comes first) |
 | `readings` | Meter reading history; the latest becomes the current reading |
 | `workorders.PMNo` / `TaskNo` / `PMTarStartDate` | Link from historical work orders to their PM schedule |
+| `suppliers` | Suppliers (code, name, contact, address, phone, e-mail, active; services, account no. and fax go to notes) |
+| `substore` | Stores (code, description, site); the `isDefault` store receives records with no store |
+| `stockcode` | Parts — number, description, unit, attribute group → part group, standard price (`Price2`), average cost (`AvgPrice`), lead time, critical, shelf item, allow negative balance, manufacturer, barcode, specification, preferred supplier; `Status` other than `A` → inactive; SAP no. → notes |
+| `stockcode_levels` | Store levels (min, re-order level, max, re-order qty); parts without store levels get one in the default store from the part's min/max |
+| `stock_alternative`, `stock_code_supplier` | Alternate parts; preferred supplier when the part has none |
+| `receive` / `issue` / `return` / `adjustment` | The stock ledger, with dates, prices, references (MRN / IWT), batches and expiry. `Transfer` rows become transfer out / transfer in between stores. Issues and returns are linked to their work orders. Balances per store are recomputed from the ledger; a part with a 4CSQL balance but no history gets an opening-balance adjustment |
+| `purchase_req_master` + `purchase_req_details` | Purchase orders (PO number, or `PR-<no>` when no PO was raised). Status: delivery status 3/2 → Received / Partly received, cancelled (status 4, authorisation 3 or a cancel date) → Cancelled, authorised → Approved, verified / partly authorised / numbered → Awaiting approval, else Draft. Currency from `currency_rate`, `conv_rate` → exchange rate (international → local, as in the User's Guide), GST % + Tax % → tax, freight + delivery + misc → shipping, lump discount folded into each line's discount; lines keep part, store, work order and received quantity |
 
-The import prints created/updated counts per record type and warnings (unknown locations, missing assets, cycles).
+The import prints created/updated counts per record type and warnings (unknown locations, missing assets, cycles,
+ledger rows for unknown parts, and parts whose 4CSQL balance differs from the sum of their transactions).
 
-## Not yet imported (arrives with each module)
+Note: the two customer databases supplied so far have no materials or purchasing data, so that part of the importer was
+verified against a synthetic 4CSQL database covering every case above (transfers, returns, shelf-life batches, foreign
+currency, cancelled and partly received orders, unknown parts and work orders).
 
-User logins, PM materials, stock & stores, issued parts, suppliers,
-purchase orders, attachments (`ExtFiles`), and reports.
+## Not yet imported
+
+User logins (invite users afresh), PM materials, attachments (`ExtFiles`), purchase-order receiving log (`Trans`; receipts
+come from `receive`), cost centres, and the legacy report definitions.
