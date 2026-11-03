@@ -7,7 +7,10 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
 import dayjs from 'dayjs';
-import { IconArrowsTransferUp, IconBox, IconCopy, IconDots, IconEdit, IconInfoCircle, IconPlus, IconShieldCheck, IconShieldX, IconTrash } from '@tabler/icons-react';
+import { IconArrowsTransferUp, IconBox, IconCopy, IconDots, IconEdit, IconInfoCircle, IconPlus, IconShieldCheck, IconShieldX, IconTrash, IconTool, IconClipboardText } from '@tabler/icons-react';
+import type { Paged, WorkOrderListItem } from '@/api/types';
+import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
+import { RequestFormModal } from '@/pages/work/WorkRequestsPage';
 import { del, get, post } from '@/api/client';
 import type { AssetDetail, AssetListItem, CustomField, Transfer } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -36,9 +39,11 @@ export function AssetDetailPage() {
   const { me, terms, can } = useAuth();
   const [tab, setTab] = useState<string | null>('overview');
   const [transferOpen, transfer] = useDisclosure();
+  const [requestOpen, request] = useDisclosure();
   const { data: a, isLoading, error } = useQuery({ queryKey: ['asset', id], queryFn: () => get<AssetDetail>(`/assets/${id}`) });
   const { data: fields } = useQuery({ queryKey: ['custom-fields', 'Asset'], queryFn: () => get<CustomField[]>('/custom-fields', { entityType: 'Asset' }) });
   const { data: children } = useQuery({ queryKey: ['asset', id, 'children'], queryFn: () => get<AssetListItem[]>(`/assets/${id}/children`), enabled: tab === 'components' });
+  const { data: wos, isFetching: wosLoading } = useQuery({ queryKey: ['work-orders', 'asset', id], queryFn: () => get<Paged<WorkOrderListItem>>('/work-orders', { assetId: id, pageSize: 50, sort: 'createdAt', dir: 'desc' }), enabled: tab === 'work' && can(P.woView) });
   const { data: transfers } = useQuery({ queryKey: ['asset', id, 'transfers'], queryFn: () => get<Transfer[]>(`/assets/${id}/transfers`), enabled: tab === 'transfers' });
   const currency = me?.tenant.settings.currency ?? 'USD';
 
@@ -67,11 +72,14 @@ export function AssetDetailPage() {
         subtitle={<>{a.assetNumber}{a.category && <> · {a.category.name}</>}{a.legacyRef && <> · <Badge size="xs" variant="outline" color="gray">4CSQL</Badge></>}</>}
         actions={<>
           {can(P.assetsEdit) && <Button leftSection={<IconEdit size={16} />} component={Link} to={`/assets/${a.id}/edit`}>{t('common.edit')}</Button>}
+          {can(P.woCreate) && <Button variant="default" leftSection={<IconTool size={16} />} component={Link} to={`/work-orders/new?assetId=${a.id}`}>{t('wo.createFromAsset')}</Button>}
+          {!can(P.woCreate) && can(P.requestsCreate) && <Button variant="default" leftSection={<IconClipboardText size={16} />} onClick={request.open}>{t('assets.requestWork')}</Button>}
           {can(P.assetsTransfer) && <Button variant="default" leftSection={<IconArrowsTransferUp size={16} />} onClick={transfer.open}>{t('assets.transfer')}</Button>}
           {(can(P.assetsCreate) || can(P.assetsDelete)) && (
             <Menu position="bottom-end">
               <Menu.Target><ActionIcon variant="default" size="lg" aria-label={t('common.actions')}><IconDots size={16} /></ActionIcon></Menu.Target>
               <Menu.Dropdown>
+                {can(P.requestsCreate) && can(P.woCreate) && <Menu.Item leftSection={<IconClipboardText size={16} />} onClick={request.open}>{t('assets.requestWork')}</Menu.Item>}
                 {can(P.assetsCreate) && <Menu.Item leftSection={<IconCopy size={16} />} onClick={duplicate}>{t('assets.duplicate')}</Menu.Item>}
                 {can(P.assetsCreate) && <Menu.Item leftSection={<IconPlus size={16} />} component={Link} to={`/assets/new?parentId=${a.id}`}>{t('assets.addComponent')}</Menu.Item>}
                 {can(P.assetsDelete) && <><Menu.Divider /><Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={remove}>{t('common.delete')}</Menu.Item></>}
@@ -84,6 +92,7 @@ export function AssetDetailPage() {
           <Tabs.Tab value="overview">{t('assets.overview')}</Tabs.Tab>
           {applicableFields.length > 0 && <Tabs.Tab value="specs">{t('assets.specifications')}</Tabs.Tab>}
           <Tabs.Tab value="components" rightSection={a.childCount ? <Badge size="xs" variant="default">{a.childCount}</Badge> : null}>{t('assets.components')}</Tabs.Tab>
+          {can(P.woView) && <Tabs.Tab value="work">{t('assets.workOrders')}</Tabs.Tab>}
           <Tabs.Tab value="files">{t('assets.files')}</Tabs.Tab>
           <Tabs.Tab value="transfers">{t('assets.transfers')}</Tabs.Tab>
           <Tabs.Tab value="history">{t('assets.history')}</Tabs.Tab>
@@ -169,6 +178,20 @@ export function AssetDetailPage() {
               ]} />
           </Card>
         </Tabs.Panel>
+        <Tabs.Panel value="work">
+          <Card p={0}>
+            <DataTable minHeight={140} fetching={wosLoading} records={wos?.items ?? []} noRecordsText={t('wo.emptyTitle')} highlightOnHover rowClassName={() => 'clickable-row'}
+              onRowClick={({ record }) => navigate(`/work-orders/${record.id}`)}
+              columns={[
+                { accessor: 'number', title: t('wo.number'), noWrap: true }, { accessor: 'title', title: t('common.name') },
+                { accessor: 'type', title: t('workType.label'), render: (w) => t(`workType.${w.type}`) },
+                { accessor: 'status', title: t('common.status'), noWrap: true, render: (w) => <WoStatusBadge status={w.status} /> },
+                { accessor: 'priority', title: t('priority.label'), noWrap: true, render: (w) => <PriorityBadge value={w.priority} /> },
+                { accessor: 'assetNumber', title: t('wo.asset'), noWrap: true },
+                { accessor: 'createdAt', title: t('wo.createdOn'), noWrap: true, render: (w) => fmtDate(w.createdAt) },
+              ]} />
+          </Card>
+        </Tabs.Panel>
         <Tabs.Panel value="files"><Card><Attachments entityType="Asset" entityId={a.id} canEdit={can(P.assetsEdit)} onChanged={refresh} /></Card></Tabs.Panel>
         <Tabs.Panel value="transfers">
           <Card>
@@ -190,6 +213,7 @@ export function AssetDetailPage() {
         <Tabs.Panel value="history"><Card><AuditTimeline entityType="Asset" entityId={a.id} /></Card></Tabs.Panel>
       </Tabs>
       <TransferModal opened={transferOpen} onClose={transfer.close} asset={a} />
+      <RequestFormModal opened={requestOpen} onClose={request.close} assetId={a.id} />
     </>
   );
 }

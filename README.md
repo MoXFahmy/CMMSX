@@ -17,6 +17,8 @@ One cloud service shared by all customers; each customer is an isolated *organiz
 | ![Dashboard](docs/screenshots/dashboard.png) | ![Locations](docs/screenshots/locations.png) |
 | **Assets** | **Asset detail** |
 | ![Assets](docs/screenshots/assets.png) | ![Asset detail](docs/screenshots/asset-detail.png) |
+| **Work orders** | **Work order** |
+| ![Work orders](docs/screenshots/work-orders.png) | ![Work order](docs/screenshots/work-order.png) |
 
 ## Modules
 
@@ -25,8 +27,11 @@ One cloud service shared by all customers; each customer is an isolated *organiz
 | Platform: organizations, users, roles/permissions, audit trail, files, settings, terminology | ✅ |
 | **Locations**: sites → unlimited-depth location tree (areas, buildings, floors, rooms, lines) | ✅ |
 | **Assets**: hierarchy (components), categories, custom fields, warranty, financials, transfers, photos/documents, bulk edit, CSV export | ✅ |
-| **4CSQL importer** (sites, departments, locations, categories, assets, nameplate fields, parent links, transfer history) | ✅ |
-| Work requests → Work orders → Preventive maintenance → Inventory → Purchasing → Reports | Next — see [docs/ROADMAP.md](docs/ROADMAP.md) |
+| **People**: employees/contractors with trades, rates and sites (optionally linked to a login); trades; failure codes | ✅ |
+| **Work requests**: anyone can request work; triage → approve (creates a work order) / reject; duplicate & warranty check | ✅ |
+| **Work orders**: workflow (Open → In progress ⇄ On hold → Completed → Closed), assignees, task checklist, labour & other costs, completion details (action/cause/prevention, failure code, downtime), activity feed, files | ✅ |
+| **4CSQL importer** (locations, assets, people, trades, failure codes, work requests, work orders with labour, costs, tasks, notes and status history) | ✅ |
+| Preventive maintenance → Inventory → Purchasing → Reports | Next — see [docs/ROADMAP.md](docs/ROADMAP.md) |
 
 ## Run locally
 

@@ -19,6 +19,10 @@ public class TenantSettings
     public string AssetNumberPrefix { get; set; } = "AST-";
     public int AssetNumberPadding { get; set; } = 5;
     public bool AutoNumberAssets { get; set; } = true;
+    public string WorkOrderNumberPrefix { get; set; } = "WO-";
+    public string WorkRequestNumberPrefix { get; set; } = "WR-";
+    /// <summary>Require "action taken" notes before a work order can be completed.</summary>
+    public bool RequireCompletionNotes { get; set; } = true;
     public string Currency { get; set; } = "USD";
     public string DateFormat { get; set; } = "yyyy-MM-dd";
     public string TimeZone { get; set; } = "UTC";

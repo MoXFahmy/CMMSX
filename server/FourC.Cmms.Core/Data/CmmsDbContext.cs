@@ -6,6 +6,8 @@ using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Locations;
+using FourC.Cmms.Core.People;
+using FourC.Cmms.Core.Work;
 using FourC.Cmms.Core.Settings;
 using FourC.Cmms.Core.Tenancy;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
@@ -35,6 +37,17 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<NumberSequence> NumberSequences => Set<NumberSequence>();
+    public DbSet<Trade> Trades => Set<Trade>();
+    public DbSet<Employee> Employees => Set<Employee>();
+    public DbSet<FailureCode> FailureCodes => Set<FailureCode>();
+    public DbSet<WorkRequest> WorkRequests => Set<WorkRequest>();
+    public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
+    public DbSet<WorkOrderAssignee> WorkOrderAssignees => Set<WorkOrderAssignee>();
+    public DbSet<WorkOrderTask> WorkOrderTasks => Set<WorkOrderTask>();
+    public DbSet<WorkOrderLabor> WorkOrderLabor => Set<WorkOrderLabor>();
+    public DbSet<WorkOrderCost> WorkOrderCosts => Set<WorkOrderCost>();
+    public DbSet<WorkOrderComment> WorkOrderComments => Set<WorkOrderComment>();
+    public DbSet<WorkOrderStatusChange> WorkOrderStatusChanges => Set<WorkOrderStatusChange>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -167,6 +180,79 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Name).HasMaxLength(50);
         });
 
+        b.Entity<Trade>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.Color).HasMaxLength(20);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<FailureCode>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<Employee>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.FullName).HasMaxLength(200); e.Property(x => x.JobTitle).HasMaxLength(200);
+            e.Property(x => x.Email).HasMaxLength(256); e.Property(x => x.Phone).HasMaxLength(50); e.Property(x => x.Company).HasMaxLength(200);
+            e.Property(x => x.HourlyRate).HasPrecision(18, 2); e.Property(x => x.OvertimeRate).HasPrecision(18, 2);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => new { x.TenantId, x.UserId });
+        });
+        b.Entity<WorkRequest>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Number).HasMaxLength(50); e.Property(x => x.Title).HasMaxLength(300);
+            e.Property(x => x.RequesterName).HasMaxLength(200); e.Property(x => x.RequesterEmail).HasMaxLength(256); e.Property(x => x.RequesterPhone).HasMaxLength(50);
+            e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => new { x.TenantId, x.Status });
+        });
+        b.Entity<WorkOrder>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Number).HasMaxLength(50); e.Property(x => x.Title).HasMaxLength(300);
+            e.Property(x => x.EstimatedHours).HasPrecision(9, 2); e.Property(x => x.DowntimeHours).HasPrecision(9, 2); e.Property(x => x.RequestedBy).HasMaxLength(200);
+            e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Trade).WithMany().HasForeignKey(x => x.TradeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.FailureCode).WithMany().HasForeignKey(x => x.FailureCodeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasMany(x => x.Assignees).WithOne().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => new { x.TenantId, x.Status, x.DueDate });
+            e.HasIndex(x => new { x.TenantId, x.AssetId });
+        });
+        b.Entity<WorkOrderAssignee>(e =>
+        {
+            e.HasKey(x => new { x.WorkOrderId, x.EmployeeId });
+            e.HasOne(x => x.Employee).WithMany().HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+        });
+        b.Entity<WorkOrderTask>(e => { e.Property(x => x.Description).HasMaxLength(1000); e.Property(x => x.DoneBy).HasMaxLength(200); e.HasIndex(x => new { x.TenantId, x.WorkOrderId }); });
+        b.Entity<WorkOrderLabor>(e =>
+        {
+            e.Property(x => x.Hours).HasPrecision(9, 2); e.Property(x => x.OvertimeHours).HasPrecision(9, 2);
+            e.Property(x => x.Rate).HasPrecision(18, 2); e.Property(x => x.OvertimeRate).HasPrecision(18, 2); e.Property(x => x.LegacyRef).HasMaxLength(200);
+            e.HasOne(x => x.Employee).WithMany().HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.WorkOrderId });
+        });
+        b.Entity<WorkOrderCost>(e =>
+        {
+            e.Property(x => x.Description).HasMaxLength(500); e.Property(x => x.Vendor).HasMaxLength(200); e.Property(x => x.Reference).HasMaxLength(100);
+            e.Property(x => x.Quantity).HasPrecision(18, 3); e.Property(x => x.UnitCost).HasPrecision(18, 2);
+            e.HasIndex(x => new { x.TenantId, x.WorkOrderId });
+        });
+        b.Entity<WorkOrderComment>(e => { e.Property(x => x.UserName).HasMaxLength(200); e.HasIndex(x => new { x.TenantId, x.WorkOrderId }); });
+        b.Entity<WorkOrderStatusChange>(e =>
+        {
+            e.Property(x => x.Note).HasMaxLength(2000); e.Property(x => x.ChangedByName).HasMaxLength(200); e.Property(x => x.LegacyRef).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.WorkOrderId, x.ChangedAt });
+        });
+
         // Tenant isolation (+ soft delete) for every tenant-owned entity.
         foreach (var type in b.Model.GetEntityTypes().Select(t => t.ClrType).Where(t => typeof(ITenantOwned).IsAssignableFrom(t)).ToList())
             GetType().GetMethod(nameof(ApplyTenantFilter), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
@@ -222,7 +308,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             }
             if (entry.Entity is IAuditable a)
             {
-                if (entry.State == EntityState.Added) { a.CreatedAt = now; a.CreatedById ??= tenant.UserId; }
+                if (entry.State == EntityState.Added) { if (a.CreatedAt == default) a.CreatedAt = now; a.CreatedById ??= tenant.UserId; } // imports keep legacy dates
                 else if (entry.State == EntityState.Modified) { a.UpdatedAt = now; a.UpdatedById = tenant.UserId; }
             }
             if (entry.Entity is TenantEntity te && entry.State is EntityState.Added or EntityState.Modified)

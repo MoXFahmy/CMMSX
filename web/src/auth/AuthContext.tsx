@@ -47,4 +47,6 @@ export const P = {
   dashboardView: 'dashboard.view', locationsView: 'locations.view', locationsManage: 'locations.manage',
   assetsView: 'assets.view', assetsCreate: 'assets.create', assetsEdit: 'assets.edit', assetsDelete: 'assets.delete',
   assetsTransfer: 'assets.transfer', usersManage: 'users.manage', settingsManage: 'settings.manage',
+  peopleView: 'people.view', peopleManage: 'people.manage', requestsView: 'requests.view', requestsCreate: 'requests.create', requestsManage: 'requests.manage',
+  woView: 'workorders.view', woCreate: 'workorders.create', woEdit: 'workorders.edit', woExecute: 'workorders.execute', woClose: 'workorders.close', woDelete: 'workorders.delete',
 } as const;

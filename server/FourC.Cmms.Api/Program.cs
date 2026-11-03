@@ -89,6 +89,9 @@ api.MapCustomFieldEndpoints();
 api.MapAttachmentEndpoints();
 api.MapAuditEndpoints();
 api.MapAdminEndpoints();
+api.MapPeopleEndpoints();
+api.MapWorkRequestEndpoints();
+api.MapWorkOrderEndpoints();
 api.MapDashboardEndpoints();
 
 app.MapFallbackToFile("index.html");

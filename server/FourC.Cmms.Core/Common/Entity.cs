@@ -60,3 +60,12 @@ public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page,
 
 /// <summary>Business rule violation; surfaced to clients as HTTP 400 with the message.</summary>
 public class DomainException(string message) : Exception(message);
+
+/// <summary>Simple per-tenant lookup with a code and a name (trades, failure codes, categories...).</summary>
+public interface ICodeLookup
+{
+    Guid Id { get; }
+    string Code { get; set; }
+    string Name { get; set; }
+    bool IsActive { get; set; }
+}

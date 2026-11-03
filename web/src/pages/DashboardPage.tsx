@@ -3,7 +3,8 @@ import { DonutChart, BarChart } from '@mantine/charts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { IconAlertTriangle, IconBox, IconCash, IconShieldCheck, IconTool, IconDatabaseImport } from '@tabler/icons-react';
+import { IconAlertTriangle, IconBox, IconCash, IconShieldCheck, IconTool, IconDatabaseImport, IconClipboardList, IconClockExclamation, IconCircleCheck, IconInbox } from '@tabler/icons-react';
+import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { get, post } from '@/api/client';
 import type { Dashboard } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -61,6 +62,33 @@ export function DashboardPage() {
   return (
     <>
       <PageHeader title={t('dashboard.greeting', { name: firstName })} subtitle={t('dashboard.subtitle', { sites: terms.sites.toLowerCase() })} />
+      {can(P.woView) && (
+        <>
+          <SimpleGrid cols={{ base: 1, xs: 2, lg: 4 }} mb="lg">
+            <Kpi label={t('dashboard.openWork')} value={data.work.open.toLocaleString()} icon={IconClipboardList} color="blue" to="/work-orders" />
+            <Kpi label={t('dashboard.overdueWork')} value={data.work.overdue.toLocaleString()} icon={IconClockExclamation} color="red" to="/work-orders?view=overdue" />
+            <Kpi label={t('dashboard.completed30')} value={data.work.completedLast30.toLocaleString()} icon={IconCircleCheck} color="teal" to="/work-orders?tab=Completed" />
+            <Kpi label={t('dashboard.requestsAwaiting')} value={data.work.requestsAwaiting.toLocaleString()} icon={IconInbox} color="grape" to="/work-requests" />
+          </SimpleGrid>
+          {data.work.urgent.length > 0 && (
+            <Card mb="lg">
+              <Title order={5} mb="sm">{t('dashboard.urgentWork')}</Title>
+              <Table verticalSpacing={6}><Table.Tbody>
+                {data.work.urgent.map((w) => (
+                  <Table.Tr key={w.id}>
+                    <Table.Td w={110}><Anchor component={Link} to={`/work-orders/${w.id}`} fz="sm" fw={600}>{w.number}</Anchor></Table.Td>
+                    <Table.Td><Text fz="sm" lineClamp={1}>{w.title}</Text></Table.Td>
+                    <Table.Td visibleFrom="sm"><Text fz="sm" c="dimmed">{w.assetNumber}</Text></Table.Td>
+                    <Table.Td w={110}><PriorityBadge value={w.priority} /></Table.Td>
+                    <Table.Td w={120}><WoStatusBadge status={w.status} /></Table.Td>
+                    <Table.Td w={110} visibleFrom="sm"><Text fz="sm" c="dimmed">{fmtDate(w.dueDate)}</Text></Table.Td>
+                  </Table.Tr>
+                ))}
+              </Table.Tbody></Table>
+            </Card>
+          )}
+        </>
+      )}
       <SimpleGrid cols={{ base: 1, xs: 2, lg: 4 }} mb="lg">
         <Kpi label={t('dashboard.totalAssets')} value={data.totals.assets.toLocaleString()} icon={IconBox} color="brand" to="/assets" />
         <Kpi label={t('dashboard.critical')} value={data.totals.criticalAssets.toLocaleString()} icon={IconAlertTriangle} color="red" to="/assets?criticality=Critical" />

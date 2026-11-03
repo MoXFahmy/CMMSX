@@ -78,9 +78,10 @@ public sealed class PermissionService(IMemoryCache cache, IServiceScopeFactory s
         if (tenantId is null) return [];
         var key = $"perm:{userId}:{Versions.GetValueOrDefault(tenantId.Value)}";
         if (cache.TryGetValue(key, out HashSet<string>? cached)) return cached!;
-        var perms = await db.Roles.IgnoreQueryFilters().Where(r => r.TenantId == tenantId && db.UserRoles.Any(ur => ur.UserId == userId && ur.RoleId == r.Id))
-            .Select(r => r.Permissions).ToListAsync();
-        var set = perms.SelectMany(p => p).ToHashSet();
+        var roles = await db.Roles.IgnoreQueryFilters().Where(r => r.TenantId == tenantId && db.UserRoles.Any(ur => ur.UserId == userId && ur.RoleId == r.Id))
+            .Select(r => new { r.IsSystem, r.Permissions }).ToListAsync();
+        // The system Administrator role always has every permission, including those added by later releases.
+        var set = roles.Any(r => r.IsSystem) ? Permissions.All.Select(p => p.Code).ToHashSet() : roles.SelectMany(r => r.Permissions).ToHashSet();
         cache.Set(key, set, TimeSpan.FromMinutes(5));
         return set;
     }

@@ -35,10 +35,21 @@ Connection strings and passwords can be passed as environment variables (`CMMS_I
 | `assetstransfer` | Transfer history (from/to reconstructed in date order) |
 | `assetstatus` | Active, Inactive, In storage, Under repair (Sent for repair), Disposed |
 | `relable` Site/Location/Asset | Organization terminology |
+| `worktrade` | Trades |
+| `failurecause` | Failure codes |
+| `employees` | People (workforce records: number, name, position, contact, trade, site, hourly/overtime rate, contractor flag). Logins and passwords are **not** migrated — invite users afresh. |
+| `worequest` | Work requests (status: Open → New, WO raised/Closed → Approved and linked to the work order, Cancelled) |
+| `workorders` | Work orders — number kept as-is; first line of the problem description becomes the title; type/priority/status mapped by their descriptions (Waiting for parts/approval/access → On hold with that reason, Acknowledged → In progress, WO Raised → Open); received/required/actual dates, action taken, cause, prevention, failure code, downtime, requester |
+| `assigntoworkorder` | Assignees |
+| `workorderlabor` | Labour (normal + OT1–OT4 hours; the rate is derived from the legacy total cost so historical costs are preserved) |
+| `direct` | Other costs (description, qty, price, supplier, PR/invoice reference) |
+| `jobtask` | Work order tasks |
+| `workorders.Notes` | A comment on the work order |
+| `WOStatusAudit` | Status history (who and when) |
 
 The import prints created/updated counts per record type and warnings (unknown locations, missing assets, cycles).
 
 ## Not yet imported (arrives with each module)
 
-Employees/users, work requests, work orders, PM schedules & meters, checklists, stock & stores, suppliers,
+User logins, PM schedules & meters, PM checklists, stock & stores, issued parts, suppliers,
 purchase orders, attachments (`ExtFiles`), and reports.

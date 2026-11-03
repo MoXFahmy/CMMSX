@@ -52,7 +52,55 @@ public sealed class LAsset
     private static readonly PropertyInfo[] NameplateProps = Enumerable.Range(1, 30).Select(n => typeof(LAsset).GetProperty($"NameplateInfo{n}")!).ToArray();
     public string? Nameplate(int n) => (string?)NameplateProps[n - 1].GetValue(this);
 }
+public sealed class LIdName { public int Id { get; set; } public string? Name { get; set; } }
+public sealed class LFailure { public string FailureCauseCode { get; set; } public string? FailureCauseDescription { get; set; } public bool? IsActive { get; set; } }
+public sealed class LEmployee
+{
+    public string EmployeeNO { get; set; } public string? FirstName { get; set; } public string? Positions { get; set; } public string? Email { get; set; }
+    public string? HandPhone { get; set; } public string? WorkPhone { get; set; } public double? HourlySalary { get; set; } public double? OverTime1 { get; set; }
+    public int? WorkTrade { get; set; } public string? SiteCode { get; set; } public bool? IsInternal { get; set; } public int? Central { get; set; }
+}
+public sealed class LRequest
+{
+    public string RequestNo { get; set; } public string? SiteCode { get; set; } public int? RequestStatus { get; set; } public DateTime? ReceivedDate { get; set; }
+    public string? ProblemDesc { get; set; } public DateTime? RequiredDate { get; set; } public int? WorkType { get; set; } public int? WorkPriority { get; set; }
+    public string? EmployeeNo { get; set; } public string? AssetNo { get; set; } public string? WorkorderNo { get; set; } public string? Remarks { get; set; }
+    public string? LocationNo { get; set; } public string? requestby { get; set; } public string? telno { get; set; }
+}
+public sealed class LWorkOrder
+{
+    public string WorkorderNo { get; set; } public string? RequestorNo { get; set; } public string? EmployeeNo { get; set; } public string? AssetNo { get; set; }
+    public string? LocationNo { get; set; } public string? ProblemDescription { get; set; } public DateTime? DateReceived { get; set; } public DateTime? EstDateStart { get; set; }
+    public DateTime? ActDateStart { get; set; } public DateTime? ActDateEnd { get; set; } public DateTime? DateRequired { get; set; } public double? EstDuration { get; set; }
+    public string? ActionTaken { get; set; } public string? FailureCauseCode { get; set; } public int? WorkType { get; set; } public string? CauseDescription { get; set; }
+    public string? PreventionTaken { get; set; } public int? WorkStatus { get; set; } public int? WorkPriority { get; set; } public int? WOTrade { get; set; }
+    public string? SiteCode { get; set; } public double? DownTime { get; set; } public string? Notes { get; set; } public string? requestby { get; set; }
+}
+public sealed class LAssign { public string EmployeeNo { get; set; } public string WorkorderNo { get; set; } }
+public sealed class LLabor
+{
+    public long WorkorderLaborID { get; set; } public string WorkorderNo { get; set; } public string EmployeeNo { get; set; } public string? Comment { get; set; }
+    public double? SalaryHours { get; set; } public double? OverTime1 { get; set; } public double? OverTime2 { get; set; } public double? OverTime3 { get; set; } public double? OverTime4 { get; set; }
+    public DateTime? StartDate { get; set; } public DateTime? LogDate { get; set; } public double? TotHour { get; set; } public double? TotCost { get; set; }
+}
+public sealed class LDirect { public long DirectID { get; set; } public string? StockDesc { get; set; } public DateTime? Date { get; set; } public string? PRNo { get; set; } public string WONo { get; set; } public double? Qty { get; set; } public double? Price { get; set; } public string? supplier { get; set; } public string? invoicenumber { get; set; } }
+public sealed class LStatusAudit { public string ID { get; set; } public string WONo { get; set; } public int WOStatus { get; set; } public DateTime? DT { get; set; } public string? EmpNo { get; set; } }
+public sealed class LJobTask { public long AutoId { get; set; } public double? SeqId { get; set; } public string? Details { get; set; } public string? Remarks { get; set; } public string WoNo { get; set; } }
 #pragma warning restore CS8618
+
+public sealed class LegacyWork
+{
+    public Dictionary<int, string> WorkTypes = [], Priorities = [], Statuses = [], RequestStatuses = [], Trades = [];
+    public List<LFailure> FailureCodes = [];
+    public List<LEmployee> Employees = [];
+    public List<LRequest> Requests = [];
+    public List<LWorkOrder> WorkOrders = [];
+    public List<LAssign> Assignments = [];
+    public List<LLabor> Labor = [];
+    public List<LDirect> Direct = [];
+    public List<LStatusAudit> StatusAudit = [];
+    public List<LJobTask> Tasks = [];
+}
 
 public sealed class LegacyData
 {
@@ -98,6 +146,28 @@ public static class Legacy
             if (int.TryParse(name[5..], out var label) && label is >= 6 and <= 25 && !string.IsNullOrWhiteSpace(text) && !text.StartsWith("Additional Info", StringComparison.OrdinalIgnoreCase))
                 d.NameplateCaptions[label - 5] = text.Trim();
         return d;
+    }
+
+    public static async Task<LegacyWork> LoadWorkAsync(SqlConnection c)
+    {
+        async Task<Dictionary<int, string>> Map(string sql) => (await Try(() => c.QueryAsync<LIdName>(sql)) ?? []).Where(x => x.Name != null).ToDictionary(x => x.Id, x => x.Name!.Trim());
+        return new LegacyWork
+        {
+            WorkTypes = await Map("SELECT WorkTypeID AS Id, CAST(WorkTypeDescription AS nvarchar(200)) AS Name FROM worktype"),
+            Priorities = await Map("SELECT WorkPriorityID AS Id, CAST(WorkPriority AS nvarchar(200)) AS Name FROM workpriority"),
+            Statuses = await Map("SELECT WorkStatusID AS Id, CAST(WorkStatus AS nvarchar(200)) AS Name FROM workstatus"),
+            RequestStatuses = await Map("SELECT Statusid AS Id, CAST(Description AS nvarchar(200)) AS Name FROM workrequeststatus"),
+            Trades = await Map("SELECT WorkTradeID AS Id, CAST(WorkTrade AS nvarchar(200)) AS Name FROM worktrade"),
+            FailureCodes = (await Try(() => c.QueryAsync<LFailure>("SELECT * FROM failurecause")) ?? []).ToList(),
+            Employees = (await Try(() => c.QueryAsync<LEmployee>("SELECT * FROM employees")) ?? []).ToList(),
+            Requests = (await Try(() => c.QueryAsync<LRequest>("SELECT * FROM worequest", commandTimeout: 600)) ?? []).ToList(),
+            WorkOrders = (await Try(() => c.QueryAsync<LWorkOrder>("SELECT * FROM workorders", commandTimeout: 600)) ?? []).ToList(),
+            Assignments = (await Try(() => c.QueryAsync<LAssign>("SELECT EmployeeNo, WorkorderNo FROM assigntoworkorder")) ?? []).ToList(),
+            Labor = (await Try(() => c.QueryAsync<LLabor>("SELECT * FROM workorderlabor", commandTimeout: 600)) ?? []).ToList(),
+            Direct = (await Try(() => c.QueryAsync<LDirect>("SELECT * FROM direct")) ?? []).ToList(),
+            StatusAudit = (await Try(() => c.QueryAsync<LStatusAudit>("SELECT ID, WONo, WOStatus, DT, EmpNo FROM WOStatusAudit", commandTimeout: 600)) ?? []).ToList(),
+            Tasks = (await Try(() => c.QueryAsync<LJobTask>("SELECT * FROM jobtask")) ?? []).ToList(),
+        };
     }
 
     private static async Task<T?> Try<T>(Func<Task<T>> f)

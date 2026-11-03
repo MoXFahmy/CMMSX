@@ -13,11 +13,25 @@ public static partial class TenantProvisioning
     public static readonly (string Name, string Description, string[] Permissions)[] DefaultRoles =
     [
         ("Administrator", "Full access to everything in the organization", Permissions.All.Select(p => p.Code).ToArray()),
-        ("Maintenance Manager", "Manages assets, locations and maintenance work",
-            [Permissions.DashboardView, Permissions.LocationsView, Permissions.LocationsManage, Permissions.AssetsView, Permissions.AssetsCreate, Permissions.AssetsEdit, Permissions.AssetsDelete, Permissions.AssetsTransfer]),
-        ("Technician", "Performs maintenance work; read access to assets",
-            [Permissions.DashboardView, Permissions.LocationsView, Permissions.AssetsView]),
-        ("Viewer", "Read-only access", [Permissions.DashboardView, Permissions.LocationsView, Permissions.AssetsView]),
+        ("Maintenance Manager", "Manages assets, locations, people and all maintenance work",
+            Permissions.All.Select(p => p.Code).Where(c => c is not Permissions.UsersManage and not Permissions.SettingsManage).ToArray()),
+        ("Technician", "Executes work orders and raises requests",
+            [Permissions.DashboardView, Permissions.LocationsView, Permissions.AssetsView, Permissions.PeopleView, Permissions.RequestsView, Permissions.RequestsCreate,
+             Permissions.WorkOrdersView, Permissions.WorkOrdersCreate, Permissions.WorkOrdersExecute]),
+        ("Requester", "Submits and follows their own work requests", [Permissions.RequestsCreate, Permissions.LocationsView, Permissions.AssetsView]),
+        ("Viewer", "Read-only access", [Permissions.DashboardView, Permissions.LocationsView, Permissions.AssetsView, Permissions.PeopleView, Permissions.RequestsView, Permissions.WorkOrdersView]),
+    ];
+
+    public static readonly (string Code, string Name, string Color)[] DefaultTrades =
+    [
+        ("MECH", "Mechanical", "#868e96"), ("ELEC", "Electrical", "#fab005"), ("HVAC", "HVAC", "#228be6"), ("CIVIL", "Civil / Building", "#fd7e14"),
+        ("INST", "Instrumentation", "#7950f2"), ("PLMB", "Plumbing", "#15aabf"), ("GEN", "General", "#40c057"),
+    ];
+
+    public static readonly (string Code, string Name)[] DefaultFailureCodes =
+    [
+        ("WEAR", "Wear and tear"), ("ELEC", "Electrical fault"), ("LUBE", "Lubrication failure"), ("MISU", "Misuse / operator error"),
+        ("LEAK", "Leak"), ("BLOCK", "Blockage / jam"), ("CTRL", "Control / sensor fault"), ("UNK", "Unknown"),
     ];
 
     public static readonly (string Code, string Name, string Color)[] DefaultCategories =
@@ -50,7 +64,11 @@ public static partial class TenantProvisioning
         var roles = DefaultRoles.Select(r => new Role { TenantId = tenantId, Name = r.Name, Description = r.Description, Permissions = [.. r.Permissions], IsSystem = r.Name == "Administrator" }).ToList();
         db.Roles.AddRange(roles);
         if (seedCategories)
+        {
             db.AssetCategories.AddRange(DefaultCategories.Select(c => new AssetCategory { TenantId = tenantId, Code = c.Code, Name = c.Name, Color = c.Color }));
+            db.Trades.AddRange(DefaultTrades.Select(t => new FourC.Cmms.Core.People.Trade { TenantId = tenantId, Code = t.Code, Name = t.Name, Color = t.Color }));
+            db.FailureCodes.AddRange(DefaultFailureCodes.Select(f => new FourC.Cmms.Core.Work.FailureCode { TenantId = tenantId, Code = f.Code, Name = f.Name }));
+        }
         var admin = NewUser(tenantId, adminName, adminEmail);
         admin.PasswordHash = hasher.HashPassword(admin, adminPassword);
         db.Users.Add(admin);

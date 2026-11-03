@@ -11,6 +11,7 @@ import { del, get, post, put } from '@/api/client';
 import { FIELD_TYPES, type Category, type CustomField, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
+import { LookupTable } from '@/components/LookupTable';
 import { confirmDelete } from '@/components/confirm';
 import { fromNow, handleFormError, notifyError, notifySuccess } from '@/components/utils';
 
@@ -23,6 +24,7 @@ export function SettingsPage() {
     { value: 'organization', label: t('settings.organization'), show: true },
     { value: 'categories', label: t('settings.categories'), show: can(P.assetsView) },
     { value: 'fields', label: t('settings.customFields'), show: can(P.settingsManage) },
+    { value: 'failure-codes', label: t('settings.failureCodes'), show: can(P.woView) },
     { value: 'users', label: t('settings.users'), show: can(P.usersManage) },
     { value: 'roles', label: t('settings.roles'), show: can(P.usersManage) },
   ].filter((x) => x.show);
@@ -35,6 +37,7 @@ export function SettingsPage() {
         <Tabs.Panel value="organization"><OrganizationSettings /></Tabs.Panel>
         <Tabs.Panel value="categories"><CategorySettings /></Tabs.Panel>
         <Tabs.Panel value="fields"><FieldSettings /></Tabs.Panel>
+        <Tabs.Panel value="failure-codes"><LookupTable path="/failure-codes" title={t('settings.failureCodes')} newLabel={t('settings.newFailureCode')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="users"><UserSettings /></Tabs.Panel>
         <Tabs.Panel value="roles"><RoleSettings /></Tabs.Panel>
       </Tabs>
@@ -89,6 +92,14 @@ function OrganizationSettings() {
             <NumberInput label={t('settings.padding')} min={1} max={12} disabled={!editable} {...form.getInputProps('settings.assetNumberPadding')} />
           </SimpleGrid>
           <Text fz="sm" c="dimmed">{t('settings.example', { value: `${s.assetNumberPrefix}${'1'.padStart(Number(s.assetNumberPadding) || 1, '0')}` })}</Text>
+        </Stack></Card>
+        <Card><Stack>
+          <Title order={5}>{t('settings.woNumbering')}</Title>
+          <SimpleGrid cols={2}>
+            <TextInput label={t('settings.woPrefix')} disabled={!editable} {...form.getInputProps('settings.workOrderNumberPrefix')} />
+            <TextInput label={t('settings.wrPrefix')} disabled={!editable} {...form.getInputProps('settings.workRequestNumberPrefix')} />
+          </SimpleGrid>
+          <Switch label={t('settings.requireCompletionNotes')} disabled={!editable} {...form.getInputProps('settings.requireCompletionNotes', { type: 'checkbox' })} />
         </Stack></Card>
         {editable && <Group justify="flex-end"><Button type="submit" loading={form.submitting}>{t('common.saveChanges')}</Button></Group>}
         {editable && (

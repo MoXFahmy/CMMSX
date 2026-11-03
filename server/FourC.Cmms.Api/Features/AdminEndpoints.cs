@@ -197,8 +197,23 @@ public static class DashboardEndpoints
                 .OrderBy(a => a.WarrantyExpiresOn).Take(8).Select(a => new { a.Id, a.AssetNumber, a.Name, a.WarrantyExpiresOn, a.WarrantyType }).ToListAsync(ct);
             var recent = await db.Assets.AsNoTracking().OrderByDescending(a => a.CreatedAt).Take(8)
                 .Select(a => new { a.Id, a.AssetNumber, a.Name, a.Status, a.CreatedAt, SiteName = a.Site!.Name }).ToListAsync(ct);
+            var active = new[] { FourC.Cmms.Core.Work.WorkOrderStatus.Open, FourC.Cmms.Core.Work.WorkOrderStatus.InProgress, FourC.Cmms.Core.Work.WorkOrderStatus.OnHold };
+            var since = DateTimeOffset.UtcNow.AddDays(-30);
+            var woByStatus = await db.WorkOrders.GroupBy(w => w.Status).Select(x => new { Status = x.Key, Count = x.Count() }).ToListAsync(ct);
+            var woByPriority = await db.WorkOrders.Where(w => active.Contains(w.Status)).GroupBy(w => w.Priority).Select(x => new { Priority = x.Key, Count = x.Count() }).ToListAsync(ct);
+            var work = new
+            {
+                Open = woByStatus.Where(x => active.Contains(x.Status)).Sum(x => x.Count),
+                Overdue = await db.WorkOrders.CountAsync(w => w.DueDate < today && active.Contains(w.Status), ct),
+                CompletedLast30 = await db.WorkOrders.CountAsync(w => w.CompletedAt >= since, ct),
+                RequestsAwaiting = await db.WorkRequests.CountAsync(r => r.Status == FourC.Cmms.Core.Work.WorkRequestStatus.New, ct),
+                ByStatus = woByStatus, ByPriority = woByPriority,
+                Urgent = await db.WorkOrders.AsNoTracking().Where(w => active.Contains(w.Status)).OrderByDescending(w => w.Priority).ThenBy(w => w.DueDate).Take(6)
+                    .Select(w => new { w.Id, w.Number, w.Title, w.Priority, w.Status, w.DueDate, AssetNumber = w.Asset!.AssetNumber }).ToListAsync(ct),
+            };
             return new
             {
+                Work = work,
                 Totals = new
                 {
                     Sites = await db.Sites.CountAsync(ct), Locations = await db.Locations.CountAsync(ct), Assets = byStatus.Sum(x => x.Count),

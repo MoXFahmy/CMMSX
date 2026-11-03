@@ -6,7 +6,7 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import {
   IconLayoutDashboard, IconMapPin, IconBox, IconClipboardText, IconTool, IconCalendarRepeat, IconPackage, IconShoppingCart,
-  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown,
+  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers,
 } from '@tabler/icons-react';
 import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -31,8 +31,8 @@ export function AppLayout() {
       { label: terms.assets, to: '/assets', icon: IconBox, perm: P.assetsView },
     ] },
     { title: t('nav.maintenance'), items: [
-      { label: t('nav.workRequests'), to: '/soon/work-requests', icon: IconClipboardText, soon: true },
-      { label: t('nav.workOrders'), to: '/soon/work-orders', icon: IconTool, soon: true },
+      { label: t('nav.workRequests'), to: '/work-requests', icon: IconClipboardText, perm: P.requestsCreate },
+      { label: t('nav.workOrders'), to: '/work-orders', icon: IconTool, perm: P.woView },
       { label: t('nav.preventive'), to: '/soon/preventive-maintenance', icon: IconCalendarRepeat, soon: true },
     ] },
     { title: t('nav.materials'), items: [
@@ -40,7 +40,10 @@ export function AppLayout() {
       { label: t('nav.purchasing'), to: '/soon/purchasing', icon: IconShoppingCart, soon: true },
       { label: t('nav.reports'), to: '/soon/reports', icon: IconChartBar, soon: true },
     ] },
-    { title: t('nav.administration'), items: [{ label: t('nav.settings'), to: '/settings', icon: IconSettings }] },
+    { title: t('nav.administration'), items: [
+      { label: t('nav.people'), to: '/people', icon: IconUsers, perm: P.peopleView },
+      { label: t('nav.settings'), to: '/settings', icon: IconSettings },
+    ] },
   ];
 
   const isActive = (to: string) => (to === '/' ? pathname === '/' : pathname.startsWith(to));

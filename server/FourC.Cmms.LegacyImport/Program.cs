@@ -251,6 +251,11 @@ foreach (var group in data.Transfers.GroupBy(t => K(t.AssetNo), ci))
 }
 await db.SaveChangesAsync();
 
+// ---------- Work management history ----------
+var work = await Legacy.LoadWorkAsync(legacy);
+Console.WriteLine($"Legacy work: {work.Employees.Count} employees, {work.Requests.Count} requests, {work.WorkOrders.Count} work orders, {work.Labor.Count} labour, {work.StatusAudit.Count} status changes");
+await WorkImport.RunAsync(db, tenantId, work, report, SiteFor, locByCode, assetByNumber);
+
 Console.WriteLine();
 report.Print();
 if (tx is not null) { await tx.RollbackAsync(); Console.WriteLine("\nDry run: all changes were rolled back."); }

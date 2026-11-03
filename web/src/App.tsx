@@ -10,6 +10,11 @@ import { AssetDetailPage } from './pages/assets/AssetDetailPage';
 import { AssetFormPage } from './pages/assets/AssetFormPage';
 import { SettingsPage } from './pages/settings/SettingsPage';
 import { ComingSoonPage } from './pages/ComingSoonPage';
+import { WorkOrdersPage } from './pages/work/WorkOrdersPage';
+import { WorkOrderDetailPage } from './pages/work/WorkOrderDetailPage';
+import { WorkOrderFormPage } from './pages/work/WorkOrderFormPage';
+import { WorkRequestsPage } from './pages/work/WorkRequestsPage';
+import { PeoplePage } from './pages/people/PeoplePage';
 
 export function App() {
   const { me, loading } = useAuth();
@@ -33,6 +38,12 @@ export function App() {
         <Route path="assets/new" element={<AssetFormPage />} />
         <Route path="assets/:id" element={<AssetDetailPage />} />
         <Route path="assets/:id/edit" element={<AssetFormPage />} />
+        <Route path="work-orders" element={<WorkOrdersPage />} />
+        <Route path="work-orders/new" element={<WorkOrderFormPage />} />
+        <Route path="work-orders/:id" element={<WorkOrderDetailPage />} />
+        <Route path="work-orders/:id/edit" element={<WorkOrderFormPage />} />
+        <Route path="work-requests" element={<WorkRequestsPage />} />
+        <Route path="people" element={<PeoplePage />} />
         <Route path="settings/*" element={<SettingsPage />} />
         <Route path="soon/:module" element={<ComingSoonPage />} />
         <Route path="login" element={<AfterLogin />} />

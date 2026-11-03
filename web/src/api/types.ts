@@ -14,6 +14,7 @@ export const FIELD_TYPES: CustomFieldType[] = ['Text', 'LongText', 'Number', 'Da
 export type Terminology = { site: string; sites: string; location: string; locations: string; asset: string; assets: string };
 export type TenantSettings = {
   terminology: Terminology; assetNumberPrefix: string; assetNumberPadding: number; autoNumberAssets: boolean;
+  workOrderNumberPrefix: string; workRequestNumberPrefix: string; requireCompletionNotes: boolean;
   currency: string; dateFormat: string; timeZone: string;
 };
 export type Me = {
@@ -70,6 +71,7 @@ export type User = { id: string; fullName: string; email: string; jobTitle?: str
 export type Role = { id: string; name: string; description?: string; isSystem: boolean; permissions: string[]; userCount: number };
 export type PermissionInfo = { code: string; group: string; name: string };
 export type Dashboard = {
+  work: WorkDashboard;
   totals: { sites: number; locations: number; assets: number; criticalAssets: number; underRepair: number; warrantyExpiring90: number; assetValue: number };
   byStatus: { status: AssetStatus; count: number }[];
   byCriticality: { criticality: Criticality; count: number }[];
@@ -77,4 +79,66 @@ export type Dashboard = {
   bySite: { siteId: string; name: string; count: number }[];
   warrantyExpiring: { id: string; assetNumber: string; name: string; warrantyExpiresOn: string; warrantyType: WarrantyType }[];
   recentAssets: { id: string; assetNumber: string; name: string; status: AssetStatus; createdAt: string; siteName: string }[];
+};
+
+// ---------------- People & work ----------------
+export type WorkType = 'Corrective' | 'Preventive' | 'Breakdown' | 'Inspection' | 'Predictive' | 'Project' | 'Safety' | 'Other';
+export type WorkPriority = 'Low' | 'Medium' | 'High' | 'Urgent';
+export type WorkOrderStatus = 'Open' | 'InProgress' | 'OnHold' | 'Completed' | 'Closed' | 'Cancelled';
+export type HoldReason = 'WaitingForParts' | 'WaitingForApproval' | 'WaitingForAccess' | 'WaitingForContractor' | 'Other';
+export type WorkRequestStatus = 'New' | 'Approved' | 'Rejected' | 'Cancelled';
+export const WORK_TYPES: WorkType[] = ['Corrective', 'Preventive', 'Breakdown', 'Inspection', 'Predictive', 'Project', 'Safety', 'Other'];
+export const WORK_PRIORITIES: WorkPriority[] = ['Low', 'Medium', 'High', 'Urgent'];
+export const WO_STATUSES: WorkOrderStatus[] = ['Open', 'InProgress', 'OnHold', 'Completed', 'Closed', 'Cancelled'];
+export const HOLD_REASONS: HoldReason[] = ['WaitingForParts', 'WaitingForApproval', 'WaitingForAccess', 'WaitingForContractor', 'Other'];
+export const WR_STATUSES: WorkRequestStatus[] = ['New', 'Approved', 'Rejected', 'Cancelled'];
+
+export type Lookup = { id: string; code: string; name: string; color?: string; isActive: boolean };
+export type Employee = {
+  id: string; code: string; fullName: string; jobTitle?: string; email?: string; phone?: string; tradeIds: string[]; siteIds: string[];
+  hourlyRate?: number; overtimeRate?: number; isContractor: boolean; company?: string; userId?: string; notes?: string; isActive: boolean;
+  openWorkOrders: number; rowVersion: string;
+};
+export type EmployeeLookup = { id: string; code: string; fullName: string; tradeIds: string[]; isContractor: boolean; company?: string };
+export type WorkOrderListItem = {
+  id: string; number: string; title: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
+  siteId: string; siteName: string; locationId?: string; locationPath?: string; assetId?: string; assetNumber?: string; assetName?: string;
+  tradeName?: string; assignees: string[]; dueDate?: string; createdAt: string; completedAt?: string; isOverdue: boolean;
+};
+export type WorkOrderDetail = {
+  id: string; number: string; title: string; description?: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
+  siteId: string; site: { id: string; name: string }; locationId?: string; locationTrail: { id: string; name: string }[];
+  assetId?: string; asset?: { id: string; assetNumber: string; name: string; status: AssetStatus; criticality: Criticality; notesToTechnician?: string; warrantyType: WarrantyType; warrantyExpiresOn?: string; underWarranty: boolean };
+  requestedBy?: string; preventionNotes?: string;
+  tradeId?: string; tradeName?: string; failureCodeId?: string; failureCode?: { code: string; name: string };
+  assignees: { employeeId: string; fullName: string; code: string }[]; plannedStart?: string; dueDate?: string; estimatedHours?: number;
+  startedAt?: string; completedAt?: string; closedAt?: string; completionNotes?: string; causeNotes?: string; assetWasDown: boolean; downtimeHours?: number;
+  locationNotesToTechnician?: string; request?: { id: string; number: string; requesterName?: string };
+  tasks: { id: string; sequence: number; description: string; isDone: boolean; doneAt?: string; doneBy?: string }[];
+  labor: { id: string; employeeId: string; employeeName: string; workDate: string; createdAt: string; hours: number; overtimeHours: number; rate: number; overtimeRate: number; notes?: string; cost: number }[];
+  costs: { id: string; description: string; quantity: number; unitCost: number; vendor?: string; reference?: string; total: number; createdAt: string }[];
+  totals: { laborHours: number; laborCost: number; otherCost: number; totalCost: number };
+  allowedTransitions: WorkOrderStatus[]; isOverdue: boolean; createdAt: string; updatedAt?: string; legacyRef?: string; rowVersion: string;
+};
+export type ActivityItem = { id: string; kind: 'comment' | 'status'; body?: string; from?: WorkOrderStatus; to?: WorkOrderStatus; holdReason?: HoldReason; by?: string; at: string };
+export type WorkRequestListItem = {
+  id: string; number: string; title: string; status: WorkRequestStatus; priority: WorkPriority; type: WorkType; siteId: string; siteName: string;
+  locationName?: string; assetId?: string; assetNumber?: string; assetName?: string; requesterName?: string; requiredBy?: string; createdAt: string;
+  workOrderId?: string; workOrderNumber?: string;
+};
+export type WorkRequestDetail = {
+  id: string; number: string; title: string; description?: string; status: WorkRequestStatus; priority: WorkPriority; type: WorkType;
+  siteId: string; site: { id: string; name: string }; locationId?: string; locationName?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
+  requesterName?: string; requesterEmail?: string; requesterPhone?: string; requiredBy?: string; decisionNote?: string; decidedAt?: string; decidedBy?: string;
+  workOrder?: { id: string; number: string; status: WorkOrderStatus }; createdAt: string; createdBy?: string; canCancel: boolean;
+};
+export type WorkDashboard = {
+  open: number; overdue: number; completedLast30: number; requestsAwaiting: number;
+  byStatus: { status: WorkOrderStatus; count: number }[]; byPriority: { priority: WorkPriority; count: number }[];
+  urgent: { id: string; number: string; title: string; priority: WorkPriority; status: WorkOrderStatus; dueDate?: string; assetNumber?: string }[];
+};
+export type AssetOpenWork = {
+  status: AssetStatus; warrantyType: WarrantyType; warrantyExpiresOn?: string; underWarranty: boolean;
+  openWorkOrders: { id: string; number: string; title: string; status: WorkOrderStatus; priority: WorkPriority }[];
+  openRequests: { id: string; number: string; title: string }[];
 };
