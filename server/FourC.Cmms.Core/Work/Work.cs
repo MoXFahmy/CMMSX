@@ -62,6 +62,10 @@ public class WorkOrder : TenantEntity
     public Guid? TradeId { get; set; }
     public Trade? Trade { get; set; }
     public Guid? WorkRequestId { get; set; }
+    public Guid? PmScheduleId { get; set; }
+    public Guid? PmTaskId { get; set; }
+    /// <summary>Target start of the PM occurrence that generated this work order (prevents duplicate generation).</summary>
+    public DateOnly? PmDueDate { get; set; }
     public Guid? FailureCodeId { get; set; }
     public FailureCode? FailureCode { get; set; }
 

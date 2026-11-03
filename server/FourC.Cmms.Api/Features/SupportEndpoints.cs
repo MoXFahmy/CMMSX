@@ -153,6 +153,7 @@ public static class AttachmentEndpoints
         ["Site"] = (Permissions.LocationsView, Permissions.LocationsManage),
         ["WorkOrder"] = (Permissions.WorkOrdersView, Permissions.WorkOrdersExecute),
         ["WorkRequest"] = (Permissions.RequestsCreate, Permissions.RequestsCreate),
+        ["PmTask"] = (Permissions.PmView, Permissions.PmManage),
     };
 
     public static void MapAttachmentEndpoints(this RouteGroupBuilder api)
@@ -182,6 +183,7 @@ public static class AttachmentEndpoints
                 "Site" => await db.Sites.AnyAsync(a => a.Id == entityId, ct),
                 "WorkOrder" => await db.WorkOrders.AnyAsync(a => a.Id == entityId, ct),
                 "WorkRequest" => await db.WorkRequests.AnyAsync(a => a.Id == entityId, ct),
+                "PmTask" => await db.PmTasks.AnyAsync(a => a.Id == entityId, ct),
                 _ => false,
             };
             if (!exists) return Results.NotFound();

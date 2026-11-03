@@ -987,6 +987,428 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.ToTable("Trades");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.Meter", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("CurrentReading")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("LastReadAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<decimal?>("MaxDailyIncrement")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Unit")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.ToTable("Meters");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.MeterReading", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("MeterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<DateTimeOffset>("ReadAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Value")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid?>("WorkOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "MeterId", "ReadAt");
+
+                    b.ToTable("MeterReadings");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmSchedule", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AssetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.PrimitiveCollection<string>("AssigneeIds")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Basis")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("DayOfMonth")
+                        .HasColumnType("int");
+
+                    b.Property<int?>("DayOfWeek")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<int>("Frequency")
+                        .HasColumnType("int");
+
+                    b.Property<int>("GenerationCount")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateOnly?>("LastDueDate")
+                        .HasColumnType("date");
+
+                    b.Property<DateTimeOffset?>("LastGeneratedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("LastWorkOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("LeadDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("LocationId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("LowerLimit")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid?>("LowerTaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("MeterId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("MeterInterval")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<int?>("MeterTrigger")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<DateOnly?>("NextDueDate")
+                        .HasColumnType("date");
+
+                    b.Property<decimal?>("NextDueReading")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid>("PmTaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Priority")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("SiteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("TimeBased")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("TradeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Type")
+                        .HasColumnType("int");
+
+                    b.Property<int>("Unit")
+                        .HasColumnType("int");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("UpperLimit")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid?>("UpperTaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("WeekOfMonth")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("WholeMonth")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("WorkPeriodDays")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("LocationId");
+
+                    b.HasIndex("MeterId");
+
+                    b.HasIndex("PmTaskId");
+
+                    b.HasIndex("SiteId");
+
+                    b.HasIndex("TenantId", "AssetId");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "IsActive", "NextDueDate");
+
+                    b.ToTable("PmSchedules");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmScheduleTask", b =>
+                {
+                    b.Property<Guid>("PmScheduleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PmTaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("EveryNth")
+                        .HasColumnType("int");
+
+                    b.HasKey("PmScheduleId", "PmTaskId");
+
+                    b.ToTable("PmScheduleTasks");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmTask", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("Description")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<decimal?>("EstimatedHours")
+                        .HasPrecision(9, 2)
+                        .HasColumnType("decimal(9,2)");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("SafetyNotes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("TradeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.ToTable("PmTasks");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmTaskStep", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<Guid>("PmTaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PmTaskId");
+
+                    b.ToTable("PmTaskSteps");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Settings.NumberSequence", b =>
                 {
                     b.Property<Guid>("TenantId")
@@ -1171,6 +1593,15 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<DateOnly?>("PlannedStart")
                         .HasColumnType("date");
 
+                    b.Property<DateOnly?>("PmDueDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid?>("PmScheduleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PmTaskId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("PreventionNotes")
                         .HasColumnType("nvarchar(max)");
 
@@ -1239,6 +1670,10 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasIndex("TenantId", "Number")
                         .IsUnique()
                         .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "PmScheduleId", "PmDueDate")
+                        .IsUnique()
+                        .HasFilter("[PmScheduleId] IS NOT NULL AND [PmDueDate] IS NOT NULL AND [IsDeleted] = 0");
 
                     b.HasIndex("TenantId", "Status", "DueDate");
 
@@ -1736,6 +2171,75 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Navigation("Site");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.Meter", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Assets.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmSchedule", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Assets.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FourC.Cmms.Core.Locations.Location", "Location")
+                        .WithMany()
+                        .HasForeignKey("LocationId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FourC.Cmms.Core.Pm.Meter", "Meter")
+                        .WithMany()
+                        .HasForeignKey("MeterId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FourC.Cmms.Core.Pm.PmTask", "PmTask")
+                        .WithMany()
+                        .HasForeignKey("PmTaskId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.Locations.Site", "Site")
+                        .WithMany()
+                        .HasForeignKey("SiteId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+
+                    b.Navigation("Location");
+
+                    b.Navigation("Meter");
+
+                    b.Navigation("PmTask");
+
+                    b.Navigation("Site");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmScheduleTask", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Pm.PmSchedule", null)
+                        .WithMany("ExtraTasks")
+                        .HasForeignKey("PmScheduleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmTaskStep", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Pm.PmTask", null)
+                        .WithMany("Steps")
+                        .HasForeignKey("PmTaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrder", b =>
                 {
                     b.HasOne("FourC.Cmms.Core.Assets.Asset", "Asset")
@@ -1858,6 +2362,16 @@ namespace FourC.Cmms.Core.Data.Migrations
             modelBuilder.Entity("FourC.Cmms.Core.Identity.AppUser", b =>
                 {
                     b.Navigation("Roles");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmSchedule", b =>
+                {
+                    b.Navigation("ExtraTasks");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmTask", b =>
+                {
+                    b.Navigation("Steps");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrder", b =>

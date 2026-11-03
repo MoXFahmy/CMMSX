@@ -52,6 +52,7 @@ services.AddSingleton<PermissionService>();
 services.AddAuthorization();
 
 services.AddSingleton<IFileStorage, LocalFileStorage>();
+services.AddHostedService<PmSchedulerService>();
 services.AddExceptionHandler<ApiExceptionHandler>();
 services.AddProblemDetails();
 services.ConfigureHttpJsonOptions(o =>
@@ -92,6 +93,7 @@ api.MapAdminEndpoints();
 api.MapPeopleEndpoints();
 api.MapWorkRequestEndpoints();
 api.MapWorkOrderEndpoints();
+api.MapPmEndpoints();
 api.MapDashboardEndpoints();
 
 app.MapFallbackToFile("index.html");

@@ -17,9 +17,9 @@ public static partial class TenantProvisioning
             Permissions.All.Select(p => p.Code).Where(c => c is not Permissions.UsersManage and not Permissions.SettingsManage).ToArray()),
         ("Technician", "Executes work orders and raises requests",
             [Permissions.DashboardView, Permissions.LocationsView, Permissions.AssetsView, Permissions.PeopleView, Permissions.RequestsView, Permissions.RequestsCreate,
-             Permissions.WorkOrdersView, Permissions.WorkOrdersCreate, Permissions.WorkOrdersExecute]),
+             Permissions.WorkOrdersView, Permissions.WorkOrdersCreate, Permissions.WorkOrdersExecute, Permissions.PmView, Permissions.MetersRecord]),
         ("Requester", "Submits and follows their own work requests", [Permissions.RequestsCreate, Permissions.LocationsView, Permissions.AssetsView]),
-        ("Viewer", "Read-only access", [Permissions.DashboardView, Permissions.LocationsView, Permissions.AssetsView, Permissions.PeopleView, Permissions.RequestsView, Permissions.WorkOrdersView]),
+        ("Viewer", "Read-only access", [Permissions.DashboardView, Permissions.LocationsView, Permissions.AssetsView, Permissions.PeopleView, Permissions.RequestsView, Permissions.WorkOrdersView, Permissions.PmView]),
     ];
 
     public static readonly (string Code, string Name, string Color)[] DefaultTrades =

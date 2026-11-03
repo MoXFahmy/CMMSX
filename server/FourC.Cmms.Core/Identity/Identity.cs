@@ -55,6 +55,10 @@ public static class Permissions
     public const string WorkOrdersExecute = "workorders.execute";
     public const string WorkOrdersClose = "workorders.close";
     public const string WorkOrdersDelete = "workorders.delete";
+    public const string PmView = "pm.view";
+    public const string PmManage = "pm.manage";
+    public const string PmGenerate = "pm.generate";
+    public const string MetersRecord = "meters.record";
     public const string UsersManage = "users.manage";
     public const string SettingsManage = "settings.manage";
 
@@ -81,6 +85,10 @@ public static class Permissions
         new(WorkOrdersExecute, "Work orders", "Start work, log labour, tick tasks, complete work"),
         new(WorkOrdersClose, "Work orders", "Close, cancel and reopen work orders"),
         new(WorkOrdersDelete, "Work orders", "Delete work orders"),
+        new(PmView, "Preventive maintenance", "View PM tasks, schedules, meters and forecast"),
+        new(PmManage, "Preventive maintenance", "Create and edit PM tasks, schedules and meters"),
+        new(PmGenerate, "Preventive maintenance", "Generate PM work orders"),
+        new(MetersRecord, "Preventive maintenance", "Log meter readings"),
         new(UsersManage, "Administration", "Manage users and roles"),
         new(SettingsManage, "Administration", "Manage organization settings, categories and custom fields"),
     ];

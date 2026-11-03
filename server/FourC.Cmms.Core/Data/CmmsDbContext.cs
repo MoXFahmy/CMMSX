@@ -7,6 +7,7 @@ using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Locations;
 using FourC.Cmms.Core.People;
+using FourC.Cmms.Core.Pm;
 using FourC.Cmms.Core.Work;
 using FourC.Cmms.Core.Settings;
 using FourC.Cmms.Core.Tenancy;
@@ -48,6 +49,12 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<WorkOrderCost> WorkOrderCosts => Set<WorkOrderCost>();
     public DbSet<WorkOrderComment> WorkOrderComments => Set<WorkOrderComment>();
     public DbSet<WorkOrderStatusChange> WorkOrderStatusChanges => Set<WorkOrderStatusChange>();
+    public DbSet<PmTask> PmTasks => Set<PmTask>();
+    public DbSet<PmTaskStep> PmTaskSteps => Set<PmTaskStep>();
+    public DbSet<PmSchedule> PmSchedules => Set<PmSchedule>();
+    public DbSet<PmScheduleTask> PmScheduleTasks => Set<PmScheduleTask>();
+    public DbSet<Meter> Meters => Set<Meter>();
+    public DbSet<MeterReading> MeterReadings => Set<MeterReading>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {
@@ -251,6 +258,49 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         {
             e.Property(x => x.Note).HasMaxLength(2000); e.Property(x => x.ChangedByName).HasMaxLength(200); e.Property(x => x.LegacyRef).HasMaxLength(200);
             e.HasIndex(x => new { x.TenantId, x.WorkOrderId, x.ChangedAt });
+        });
+
+        b.Entity<PmTask>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(300); e.Property(x => x.EstimatedHours).HasPrecision(9, 2);
+            e.HasMany(x => x.Steps).WithOne().HasForeignKey(x => x.PmTaskId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<PmTaskStep>(e => e.Property(x => x.Description).HasMaxLength(2000));
+        b.Entity<PmSchedule>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(300);
+            foreach (var p in new System.Linq.Expressions.Expression<Func<PmSchedule, decimal?>>[] { x => x.MeterInterval, x => x.NextDueReading, x => x.LowerLimit, x => x.UpperLimit })
+                e.Property(p).HasPrecision(18, 3);
+            e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.PmTask).WithMany().HasForeignKey(x => x.PmTaskId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Meter).WithMany().HasForeignKey(x => x.MeterId).OnDelete(DeleteBehavior.Restrict);
+            e.HasMany(x => x.ExtraTasks).WithOne().HasForeignKey(x => x.PmScheduleId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => new { x.TenantId, x.IsActive, x.NextDueDate });
+            e.HasIndex(x => new { x.TenantId, x.AssetId });
+        });
+        b.Entity<PmScheduleTask>(e => e.HasKey(x => new { x.PmScheduleId, x.PmTaskId }));
+        b.Entity<Meter>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.Unit).HasMaxLength(30);
+            e.Property(x => x.CurrentReading).HasPrecision(18, 3); e.Property(x => x.MaxDailyIncrement).HasPrecision(18, 3);
+            e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<MeterReading>(e =>
+        {
+            e.Property(x => x.Value).HasPrecision(18, 3); e.Property(x => x.Note).HasMaxLength(1000); e.Property(x => x.ByName).HasMaxLength(200); e.Property(x => x.LegacyRef).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.MeterId, x.ReadAt });
+        });
+        b.Entity<WorkOrder>(e =>
+        {
+            e.HasIndex(x => new { x.TenantId, x.PmScheduleId, x.PmDueDate }).IsUnique().HasFilter("[PmScheduleId] IS NOT NULL AND [PmDueDate] IS NOT NULL AND [IsDeleted] = 0");
         });
 
         // Tenant isolation (+ soft delete) for every tenant-owned entity.

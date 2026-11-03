@@ -23,6 +23,8 @@ public class TenantSettings
     public string WorkRequestNumberPrefix { get; set; } = "WR-";
     /// <summary>Require "action taken" notes before a work order can be completed.</summary>
     public bool RequireCompletionNotes { get; set; } = true;
+    /// <summary>Generate PM work orders automatically when they come within each schedule's lead time.</summary>
+    public bool AutoGeneratePm { get; set; } = true;
     public string Currency { get; set; } = "USD";
     public string DateFormat { get; set; } = "yyyy-MM-dd";
     public string TimeZone { get; set; } = "UTC";

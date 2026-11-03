@@ -106,6 +106,7 @@ public static class WorkOrderEndpoints
             var transitions = WorkOrderWorkflow.NextStatuses(w.Status)
                 .Where(s => mine.Contains(Permissions.WorkOrdersExecute) && (!WorkOrderWorkflow.RequiresClosePermission(w.Status, s) || mine.Contains(Permissions.WorkOrdersClose)));
             var locationNotes = w.Location?.NotesToTechnician;
+            var pm = w.PmScheduleId is { } pmId ? await db.PmSchedules.AsNoTracking().Where(p => p.Id == pmId).Select(p => new { p.Id, p.Code, p.Name }).FirstOrDefaultAsync(ct) : null;
             return Results.Ok(new
             {
                 w.Id, w.Number, w.Title, w.Description, w.Type, w.Priority, w.Status, w.HoldReason,
@@ -116,7 +117,7 @@ public static class WorkOrderEndpoints
                 w.TradeId, TradeName = w.Trade?.Name, w.FailureCodeId, FailureCode = w.FailureCode is null ? null : new { w.FailureCode.Code, w.FailureCode.Name },
                 Assignees = w.Assignees.Select(a => new { a.EmployeeId, a.Employee!.FullName, a.Employee.Code }),
                 w.PlannedStart, w.DueDate, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
-                LocationNotesToTechnician = locationNotes, Request = request,
+                LocationNotesToTechnician = locationNotes, Request = request, Pm = pm, w.PmDueDate,
                 Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy }),
                 Labor = labor, Costs = costs,
                 Totals = new
@@ -209,6 +210,8 @@ public static class WorkOrderEndpoints
                 case WorkOrderStatus.Closed: w.ClosedAt = now; w.CompletedAt ??= now; break;
                 case WorkOrderStatus.Open: w.CompletedAt = null; w.ClosedAt = null; break;
             }
+            if (w.PmScheduleId is not null && input.Status is WorkOrderStatus.Completed or WorkOrderStatus.Cancelled)
+                await PmGenerator.OnWorkOrderFinishedAsync(db, w, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { w.Id, w.Status });
         }).RequirePermission(Permissions.WorkOrdersExecute);
@@ -389,7 +392,8 @@ public static class WorkOrderEndpoints
         return v;
     }
 
-    public static async Task<WorkOrder> CreateAsync(CmmsDbContext db, ITenantContext ctx, WorkOrderInput input, Guid? requestId, CancellationToken ct)
+    public static async Task<WorkOrder> CreateAsync(CmmsDbContext db, ITenantContext ctx, WorkOrderInput input, Guid? requestId, CancellationToken ct,
+        Action<WorkOrder>? configure = null, string? note = null)
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var number = await Numbering.NextAsync(db, "WorkOrder", settings.WorkOrderNumberPrefix, 5,
@@ -400,12 +404,13 @@ public static class WorkOrderEndpoints
             input = input with { LocationId = await db.Assets.Where(a => a.Id == input.AssetId).Select(a => a.LocationId).FirstOrDefaultAsync(ct) };
         Apply(w, input);
         SyncAssignees(w, input.AssigneeIds);
+        configure?.Invoke(w);
         db.WorkOrders.Add(w);
         var seq = 0;
         foreach (var t in (input.Tasks ?? []).Select(x => x.Clean()).OfType<string>())
             db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = ++seq, Description = t.Length > 1000 ? t[..1000] : t });
         db.WorkOrderStatusChanges.Add(new WorkOrderStatusChange { WorkOrderId = w.Id, ToStatus = WorkOrderStatus.Open, ChangedAt = DateTimeOffset.UtcNow,
-            ChangedById = ctx.UserId, ChangedByName = ctx.UserName, Note = requestId is null ? null : "Created from work request" });
+            ChangedById = ctx.UserId, ChangedByName = ctx.UserName, Note = note ?? (requestId is null ? null : "Created from work request") });
         await db.SaveChangesAsync(ct);
         return w;
     }
