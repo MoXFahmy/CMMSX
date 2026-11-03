@@ -1,0 +1,11 @@
+@layer mantine, mantine-datatable;
+:root { --app-bg: var(--mantine-color-gray-0); }
+body { background: var(--app-bg); }
+[data-mantine-color-scheme='dark'] { --app-bg: var(--mantine-color-dark-8); }
+.clickable-row { cursor: pointer; }
+.tree-node { border-radius: var(--mantine-radius-sm); }
+.tree-node:hover { background: var(--mantine-color-gray-1); }
+[data-mantine-color-scheme='dark'] .tree-node:hover { background: var(--mantine-color-dark-6); }
+.tree-node[data-selected='true'] { background: var(--mantine-color-brand-light); color: var(--mantine-color-brand-light-color); }
+.kpi-card { transition: box-shadow 120ms ease, transform 120ms ease; }
+a.kpi-card:hover { box-shadow: var(--mantine-shadow-sm); transform: translateY(-1px); }

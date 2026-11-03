@@ -1,0 +1,82 @@
+{
+  "app": { "name": "4C CMMS", "tagline": "Maintenance management for modern operations" },
+  "nav": {
+    "dashboard": "Dashboard", "locations": "Locations", "assets": "Assets", "workRequests": "Work Requests", "workOrders": "Work Orders",
+    "preventive": "Preventive Maintenance", "inventory": "Inventory", "purchasing": "Purchasing", "reports": "Reports", "settings": "Settings",
+    "operations": "Operations", "maintenance": "Maintenance", "materials": "Materials", "administration": "Administration", "soon": "Soon"
+  },
+  "common": {
+    "save": "Save", "saveChanges": "Save changes", "cancel": "Cancel", "create": "Create", "edit": "Edit", "delete": "Delete", "close": "Close",
+    "search": "Search", "filters": "Filters", "clear": "Clear", "export": "Export CSV", "actions": "Actions", "yes": "Yes", "no": "No",
+    "active": "Active", "inactive": "Inactive", "status": "Status", "name": "Name", "code": "Code", "description": "Description", "notes": "Notes",
+    "loading": "Loading…", "noRecords": "No records found", "saved": "Saved", "deleted": "Deleted", "created": "Created",
+    "confirmDeleteTitle": "Delete {{name}}?", "confirmDeleteBody": "This cannot be undone.", "back": "Back", "all": "All", "none": "None",
+    "recordsCount": "{{count}} records", "createdBy": "Created by {{name}}", "updatedAt": "Updated {{date}}", "details": "Details",
+    "upload": "Upload", "download": "Download", "type": "Type", "viewAll": "View all", "optional": "Optional", "logout": "Log out",
+    "changePassword": "Change password", "required": "Required", "showInactive": "Show inactive", "apply": "Apply", "selected": "{{count}} selected"
+  },
+  "auth": {
+    "signIn": "Sign in", "signInTitle": "Welcome back", "signInSubtitle": "Sign in to your organization", "email": "Email", "password": "Password",
+    "rememberMe": "Keep me signed in", "noAccount": "New to 4C CMMS?", "createOrg": "Create an organization", "haveAccount": "Already have an account?",
+    "registerTitle": "Create your organization", "registerSubtitle": "Start managing your assets in minutes", "organizationName": "Organization name",
+    "fullName": "Your name", "register": "Create organization", "currentPassword": "Current password", "newPassword": "New password", "passwordChanged": "Password changed"
+  },
+  "status": { "Active": "Active", "Inactive": "Inactive", "InStorage": "In storage", "UnderRepair": "Under repair", "Disposed": "Disposed" },
+  "criticality": { "Low": "Low", "Medium": "Medium", "High": "High", "Critical": "Critical", "label": "Criticality" },
+  "locationType": { "Area": "Area / Department", "Building": "Building", "Floor": "Floor", "Room": "Room", "Zone": "Zone", "ProductionLine": "Production line", "Space": "Space", "Other": "Other" },
+  "warrantyType": { "None": "None", "Warranty": "Warranty", "ServiceContract": "Service contract" },
+  "dashboard": {
+    "title": "Dashboard", "greeting": "Hello, {{name}}", "subtitle": "Here is what is happening across your {{sites}}.",
+    "totalAssets": "Total assets", "critical": "Critical assets", "underRepair": "Under repair", "warrantyExpiring": "Warranties expiring (90 days)",
+    "assetValue": "Asset value", "byStatus": "Assets by status", "byCategory": "Assets by category", "bySite": "Assets by site",
+    "upcomingWarranty": "Upcoming warranty expiries", "recentAssets": "Recently added", "emptyTitle": "Your organization is empty",
+    "emptyBody": "Add your first site and assets, import from 4CSQL, or load sample data to explore.", "loadSample": "Load sample data",
+    "sampleLoaded": "Sample data loaded: {{count}} assets created"
+  },
+  "locations": {
+    "title": "Locations", "subtitle": "Sites and the physical hierarchy where assets live", "newSite": "New site", "newLocation": "New location",
+    "addChild": "Add sub-location", "searchTree": "Search locations…", "selectNode": "Select a site or location to see its details",
+    "site": "Site", "parent": "Parent location", "topLevel": "Top level (directly under the site)", "childLocations": "Sub-locations",
+    "assetsHere": "Assets here", "assetsSubtree": "Assets incl. sub-locations", "notesToTechnician": "Notes to technician",
+    "notesToTechnicianHint": "Shown to technicians on every work order at this location", "latitude": "Latitude", "longitude": "Longitude",
+    "address": "Address", "city": "City", "country": "Country", "timeZone": "Time zone", "editSite": "Edit site", "editLocation": "Edit location",
+    "move": "Move", "viewAssets": "View assets", "expandAll": "Expand all", "collapseAll": "Collapse all", "locationsCount": "Locations",
+    "noSites": "No sites yet", "noSitesBody": "Create your first site to start building the location hierarchy."
+  },
+  "assets": {
+    "title": "Assets", "subtitle": "Equipment and systems you maintain", "new": "New asset", "edit": "Edit asset", "number": "Asset no.",
+    "numberHint": "Leave empty to generate automatically", "category": "Category", "location": "Location", "site": "Site", "parent": "Parent asset",
+    "parentHint": "Make this a component of another asset", "manufacturer": "Manufacturer", "model": "Model", "serialNumber": "Serial number",
+    "barcode": "Barcode / tag", "operationNumber": "Operation no.", "commissionedOn": "Commissioned on", "disposedOn": "Disposed on",
+    "purchasePrice": "Purchase price", "currentValue": "Current value", "salvageValue": "Salvage value", "expectedLife": "Expected life (years)",
+    "downtimeCost": "Downtime cost / hour", "warranty": "Warranty / contract", "warrantyType": "Coverage", "warrantyExpires": "Expires on",
+    "warrantyNotes": "Coverage notes", "notesToTechnician": "Notes to technician", "general": "General", "identification": "Identification",
+    "placement": "Placement", "financial": "Financial", "specifications": "Specifications", "overview": "Overview", "components": "Components",
+    "files": "Files & photos", "transfers": "Transfers", "history": "History", "transfer": "Transfer", "duplicate": "Duplicate",
+    "duplicated": "Asset duplicated as {{number}}", "transferTitle": "Transfer {{name}}", "transferReason": "Reason",
+    "includeChildren": "Also move components ({{count}})", "transferred": "Asset transferred", "noComponents": "No components",
+    "addComponent": "Add component", "searchPlaceholder": "Search number, name, serial, model…", "includeSub": "Include sub-locations",
+    "topLevelOnly": "Top-level assets only", "warrantyActive": "Under warranty until {{date}}", "warrantyExpired": "Coverage expired {{date}}",
+    "bulkUpdate": "Bulk update", "setStatus": "Set status", "setCriticality": "Set criticality", "setCategory": "Set category",
+    "bulkUpdated": "{{count}} assets updated", "noFiles": "No files yet. Drop photos, manuals or certificates here.",
+    "dropFiles": "Drag files here or click to select", "dropHint": "Up to 25 MB each", "setPrimary": "Set as main photo",
+    "noTransfers": "This asset has not been moved", "noHistory": "No changes recorded", "from": "From", "to": "To", "by": "By",
+    "unassigned": "No location", "columns": "Columns", "age": "Age", "years": "{{count}} yrs"
+  },
+  "settings": {
+    "title": "Settings", "organization": "Organization", "categories": "Asset categories", "customFields": "Custom fields",
+    "users": "Users", "roles": "Roles & permissions", "terminology": "Terminology", "terminologyHint": "Rename hierarchy levels to match how your teams talk.",
+    "singular": "Singular", "plural": "Plural", "numbering": "Asset numbering", "autoNumber": "Generate asset numbers automatically",
+    "prefix": "Prefix", "padding": "Digits", "example": "Example: {{value}}", "regional": "Regional", "currency": "Currency",
+    "newCategory": "New category", "color": "Color", "assets": "Assets", "newField": "New field", "label": "Label", "key": "Key",
+    "fieldType": "Field type", "options": "Options", "optionsHint": "Press Enter after each option", "requiredField": "Required",
+    "showInList": "Show as column in asset list", "categoriesHint": "Only for these categories (empty = all)", "sortOrder": "Order",
+    "fieldTypes": { "Text": "Text", "LongText": "Long text", "Number": "Number", "Date": "Date", "Select": "Dropdown", "Boolean": "Yes / No" },
+    "newUser": "New user", "editUser": "Edit user", "jobTitle": "Job title", "phone": "Phone", "rolesLabel": "Roles", "lastLogin": "Last login",
+    "never": "Never", "initialPassword": "Initial password", "resetPassword": "Reset password", "passwordReset": "Password updated",
+    "newRole": "New role", "editRole": "Edit role", "permissions": "Permissions", "users_count": "Users", "systemRole": "System role",
+    "sampleData": "Sample data", "sampleDataHint": "Adds 3 demo sites with buildings, production lines and ~200 assets. Useful for training and evaluation."
+  },
+  "audit": { "Created": "created this record", "Updated": "updated", "Deleted": "deleted this record", "changed": "{{field}} changed" },
+  "comingSoon": { "title": "{{module}} is on the roadmap", "body": "This module is being rebuilt for the web. Locations and Assets are available now; the remaining 4CSQL modules follow in the order shown in the navigation." }
+}

@@ -1,0 +1,6 @@
+<Solution>
+  <Project Path="FourC.Cmms.Api/FourC.Cmms.Api.csproj" />
+  <Project Path="FourC.Cmms.Core/FourC.Cmms.Core.csproj" />
+  <Project Path="FourC.Cmms.LegacyImport/FourC.Cmms.LegacyImport.csproj" />
+  <Project Path="FourC.Cmms.Tests/FourC.Cmms.Tests.csproj" />
+</Solution>

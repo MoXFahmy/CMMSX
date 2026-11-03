@@ -1,0 +1,29 @@
+# .NET
+bin/
+obj/
+*.user
+.vs/
+TestResults/
+server/FourC.Cmms.Api/wwwroot
+server/FourC.Cmms.Api/App_Data/
+appsettings.Local.json
+
+# Web
+web/node_modules/
+web/dist/
+*.tsbuildinfo
+
+# Customer data must never be committed
+*.bak
+*.mdf
+*.ldf
+*.bacpac
+*.zip
+.env
+.env.*
+
+# OS / editors
+.DS_Store
+.idea/
+.vscode/*
+!.vscode/extensions.json
