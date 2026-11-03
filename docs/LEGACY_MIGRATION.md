@@ -46,10 +46,16 @@ Connection strings and passwords can be passed as environment variables (`CMMS_I
 | `jobtask` | Work order tasks |
 | `workorders.Notes` | A comment on the work order |
 | `WOStatusAudit` | Status history (who and when) |
+| `pmchecklist` + `checklistelements` | PM tasks with ordered sub-tasks |
+| `pmschedule` | PM schedules. `TypePMgen` 1/2 → fixed interval by scheduled/actual date; 3 → nth weekday (`WeekofMonth` 0–4 → 1st–last, `DayofWeek` VB 1 = Sunday); 4 → fixed date; 5 → fixed date with whole-month work period. `TypePM` 1/2 → asset/location. Interval = `FreqUnits` × `Frequency` days (weeks and years kept as such; 4CSQL "months" of 28 days are kept as exact days). `PeriodDays` → work period, `NextDate` → next due, `PMCounter` → generation count |
+| `multiplepm` | Multiple-PM rules (task + every Nth) |
+| `pmmeters` | A meter on the asset **and** a meter-based schedule (incremental: interval/next due; threshold: limits with lower/upper tasks; time-based → whichever comes first) |
+| `readings` | Meter reading history; the latest becomes the current reading |
+| `workorders.PMNo` / `TaskNo` / `PMTarStartDate` | Link from historical work orders to their PM schedule |
 
 The import prints created/updated counts per record type and warnings (unknown locations, missing assets, cycles).
 
 ## Not yet imported (arrives with each module)
 
-User logins, PM schedules & meters, PM checklists, stock & stores, issued parts, suppliers,
+User logins, PM materials, stock & stores, issued parts, suppliers,
 purchase orders, attachments (`ExtFiles`), and reports.

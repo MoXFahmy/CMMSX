@@ -33,7 +33,7 @@ export function AppLayout() {
     { title: t('nav.maintenance'), items: [
       { label: t('nav.workRequests'), to: '/work-requests', icon: IconClipboardText, perm: P.requestsCreate },
       { label: t('nav.workOrders'), to: '/work-orders', icon: IconTool, perm: P.woView },
-      { label: t('nav.preventive'), to: '/soon/preventive-maintenance', icon: IconCalendarRepeat, soon: true },
+      { label: t('nav.preventive'), to: '/pm', icon: IconCalendarRepeat, perm: P.pmView },
     ] },
     { title: t('nav.materials'), items: [
       { label: t('nav.inventory'), to: '/soon/inventory', icon: IconPackage, soon: true },

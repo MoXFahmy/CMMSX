@@ -14,7 +14,7 @@ export const FIELD_TYPES: CustomFieldType[] = ['Text', 'LongText', 'Number', 'Da
 export type Terminology = { site: string; sites: string; location: string; locations: string; asset: string; assets: string };
 export type TenantSettings = {
   terminology: Terminology; assetNumberPrefix: string; assetNumberPadding: number; autoNumberAssets: boolean;
-  workOrderNumberPrefix: string; workRequestNumberPrefix: string; requireCompletionNotes: boolean;
+  workOrderNumberPrefix: string; workRequestNumberPrefix: string; requireCompletionNotes: boolean; autoGeneratePm: boolean;
   currency: string; dateFormat: string; timeZone: string;
 };
 export type Me = {
@@ -114,6 +114,7 @@ export type WorkOrderDetail = {
   assignees: { employeeId: string; fullName: string; code: string }[]; plannedStart?: string; dueDate?: string; estimatedHours?: number;
   startedAt?: string; completedAt?: string; closedAt?: string; completionNotes?: string; causeNotes?: string; assetWasDown: boolean; downtimeHours?: number;
   locationNotesToTechnician?: string; request?: { id: string; number: string; requesterName?: string };
+  pm?: { id: string; code: string; name: string }; pmDueDate?: string;
   tasks: { id: string; sequence: number; description: string; isDone: boolean; doneAt?: string; doneBy?: string }[];
   labor: { id: string; employeeId: string; employeeName: string; workDate: string; createdAt: string; hours: number; overtimeHours: number; rate: number; overtimeRate: number; notes?: string; cost: number }[];
   costs: { id: string; description: string; quantity: number; unitCost: number; vendor?: string; reference?: string; total: number; createdAt: string }[];
@@ -142,3 +143,36 @@ export type AssetOpenWork = {
   openWorkOrders: { id: string; number: string; title: string; status: WorkOrderStatus; priority: WorkPriority }[];
   openRequests: { id: string; number: string; title: string }[];
 };
+
+// ---------------- Preventive maintenance ----------------
+export type PmScheduleType = 'FixedInterval' | 'DayOfWeekInMonth' | 'DateOfMonth' | 'Meter';
+export type PmBasis = 'Scheduled' | 'Actual';
+export type FrequencyUnit = 'Day' | 'Week' | 'Month' | 'Year';
+export type MeterTrigger = 'Incremental' | 'Threshold';
+export type DayName = 'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';
+export const PM_TYPES: PmScheduleType[] = ['FixedInterval', 'DayOfWeekInMonth', 'DateOfMonth', 'Meter'];
+export const FREQ_UNITS: FrequencyUnit[] = ['Day', 'Week', 'Month', 'Year'];
+export const DAY_NAMES: DayName[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
+
+export type PmTaskListItem = { id: string; code: string; name: string; tradeId?: string; estimatedHours?: number; isActive: boolean; stepCount: number; scheduleCount: number };
+export type PmTaskDetail = { id: string; code: string; name: string; description?: string; tradeId?: string; estimatedHours?: number; safetyNotes?: string; isActive: boolean; steps: string[]; rowVersion: string };
+export type PmScheduleListItem = {
+  id: string; code: string; name: string; type: PmScheduleType; basis: PmBasis; isActive: boolean; siteId: string; siteName: string; assetId?: string; assetNumber?: string;
+  assetName?: string; locationName?: string; taskCode: string; taskName: string; schedule: string; nextDueDate?: string; nextDueReading?: number; meterUnit?: string;
+  meterReading?: number; lastGeneratedAt?: string; lastWorkOrderId?: string; lastWorkOrderNumber?: string; openWorkOrders: number; isOverdue: boolean; multipleTasks: number;
+};
+export type PmScheduleDetail = {
+  id: string; code: string; name: string; description?: string; siteId: string; locationId?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
+  tradeId?: string; priority: WorkPriority; assigneeIds: string[]; pmTaskId: string; task: { id: string; code: string; name: string };
+  extraTasks: { pmTaskId: string; everyNth: number }[]; type: PmScheduleType; basis: PmBasis; frequency: number; unit: FrequencyUnit;
+  weekOfMonth?: number; dayOfWeek?: DayName; dayOfMonth?: number; workPeriodDays: number; wholeMonth: boolean; leadDays: number; startDate: string;
+  nextDueDate?: string; lastDueDate?: string; lastGeneratedAt?: string; generationCount: number; meterId?: string;
+  meter?: { id: string; code: string; name: string; unit: string; currentReading?: number }; meterTrigger?: MeterTrigger; meterInterval?: number;
+  nextDueReading?: number; lowerLimit?: number; upperLimit?: number; lowerTaskId?: string; upperTaskId?: string; timeBased: boolean; isActive: boolean;
+  schedule: string; upcoming: string[]; recentWorkOrders: { id: string; number: string; title: string; status: WorkOrderStatus; pmDueDate?: string; completedAt?: string }[];
+  legacyRef?: string; rowVersion: string;
+};
+export type PmRunResult = { scheduleId: string; code: string; name: string; dueDate?: string; taskName?: string; assetNumber?: string; workOrderId?: string; workOrderNumber?: string; skipped?: string };
+export type ForecastItem = { date: string; id: string; code: string; name: string; assetNumber?: string; siteName: string; type: PmScheduleType; taskName: string; overdue: boolean };
+export type MeterItem = { id: string; code: string; name: string; assetId: string; assetNumber: string; assetName: string; unit: string; currentReading?: number; lastReadAt?: string; maxDailyIncrement?: number; isActive: boolean; schedules: number };
+export type MeterReadingItem = { id: string; value: number; readAt: string; note?: string; source: string; byName?: string; workOrderId?: string };

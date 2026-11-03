@@ -64,7 +64,8 @@ export function WorkOrderDetailPage() {
       <PageHeader crumbs={[{ label: t('wo.title'), to: '/work-orders' }, { label: w.number }]} title={w.title}
         badge={<Group gap={6}><WoStatusBadge status={w.status} /><PriorityBadge value={w.priority} />{w.isOverdue && <Badge color="red" variant="filled">{t('wo.overdueBadge')}</Badge>}</Group>}
         subtitle={<>{w.number} · {t(`workType.${w.type}`)}{w.tradeName && ` · ${w.tradeName}`}{w.status === 'OnHold' && w.holdReason && ` · ${t(`holdReason.${w.holdReason}`)}`}
-          {w.request && <> · <Anchor component={Link} to={`/work-requests?open=${w.request.id}`} fz="sm">{t('wo.fromRequest', { number: w.request.number })}</Anchor></>}</>}
+          {w.request && <> · <Anchor component={Link} to={`/work-requests?open=${w.request.id}`} fz="sm">{t('wo.fromRequest', { number: w.request.number })}</Anchor></>}
+          {w.pm && <> · <Anchor component={Link} to={`/pm/schedules/${w.pm.id}`} fz="sm">{t('pm.fromPm', { code: w.pm.code })}</Anchor></>}</>}
         actions={<>
           {primary.map((s) => { const Icon = transitionIcon[s] ?? IconCheck; return (
             <Button key={s} leftSection={<Icon size={16} />} variant={s === 'Completed' || (s === 'InProgress' && w.status !== 'Completed') ? 'filled' : 'default'}

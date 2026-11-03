@@ -19,6 +19,8 @@ One cloud service shared by all customers; each customer is an isolated *organiz
 | ![Assets](docs/screenshots/assets.png) | ![Asset detail](docs/screenshots/asset-detail.png) |
 | **Work orders** | **Work order** |
 | ![Work orders](docs/screenshots/work-orders.png) | ![Work order](docs/screenshots/work-order.png) |
+| **PM schedules** | **PM generation** |
+| ![PM schedules](docs/screenshots/pm-schedules.png) | ![PM generation](docs/screenshots/pm-generate.png) |
 
 ## Modules
 
@@ -30,8 +32,9 @@ One cloud service shared by all customers; each customer is an isolated *organiz
 | **People**: employees/contractors with trades, rates and sites (optionally linked to a login); trades; failure codes | ✅ |
 | **Work requests**: anyone can request work; triage → approve (creates a work order) / reject; duplicate & warranty check | ✅ |
 | **Work orders**: workflow (Open → In progress ⇄ On hold → Completed → Closed), assignees, task checklist, labour & other costs, completion details (action/cause/prevention, failure code, downtime), activity feed, files | ✅ |
-| **4CSQL importer** (locations, assets, people, trades, failure codes, work requests, work orders with labour, costs, tasks, notes and status history) | ✅ |
-| Preventive maintenance → Inventory → Purchasing → Reports | Next — see [docs/ROADMAP.md](docs/ROADMAP.md) |
+| **Preventive maintenance**: PM tasks (checklists) and schedules on assets or locations — fixed interval (by scheduled or actual date), nth weekday of month, fixed date of month, meter-based (incremental or threshold, optionally whichever-comes-first with time); multiple PM (heavier task every Nth time); preview & generate, automatic generation with lead time, forecast; meters and readings | ✅ |
+| **4CSQL importer** (locations, assets, people, trades, failure codes, work requests, work orders with labour, costs, tasks, notes and status history, PM tasks, schedules, meters and readings) | ✅ |
+| Inventory → Purchasing → Reports | Next — see [docs/ROADMAP.md](docs/ROADMAP.md) |
 
 ## Run locally
 
@@ -58,7 +61,7 @@ Full stack in containers: `SA_PASSWORD='YourStr0ng!Pass' docker compose up --bui
 
 ```bash
 export CMMS_TEST_SQL="Server=localhost,1433;User Id=sa;Password=YourStr0ng!Pass;TrustServerCertificate=True"
-dotnet test server/FourC.Cmms.sln      # integration tests create and drop their own database
+dotnet test server/FourC.Cmms.sln      # unit tests + integration tests (they create and drop their own database)
 cd web && npm run build                 # type-check + production build
 ```
 

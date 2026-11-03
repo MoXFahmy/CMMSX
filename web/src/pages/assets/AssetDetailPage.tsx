@@ -11,6 +11,8 @@ import { IconArrowsTransferUp, IconBox, IconCopy, IconDots, IconEdit, IconInfoCi
 import type { Paged, WorkOrderListItem } from '@/api/types';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { RequestFormModal } from '@/pages/work/WorkRequestsPage';
+import { MetersTab } from '@/pages/pm/PmPage';
+import type { PmScheduleListItem } from '@/api/types';
 import { del, get, post } from '@/api/client';
 import type { AssetDetail, AssetListItem, CustomField, Transfer } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -44,6 +46,7 @@ export function AssetDetailPage() {
   const { data: fields } = useQuery({ queryKey: ['custom-fields', 'Asset'], queryFn: () => get<CustomField[]>('/custom-fields', { entityType: 'Asset' }) });
   const { data: children } = useQuery({ queryKey: ['asset', id, 'children'], queryFn: () => get<AssetListItem[]>(`/assets/${id}/children`), enabled: tab === 'components' });
   const { data: wos, isFetching: wosLoading } = useQuery({ queryKey: ['work-orders', 'asset', id], queryFn: () => get<Paged<WorkOrderListItem>>('/work-orders', { assetId: id, pageSize: 50, sort: 'createdAt', dir: 'desc' }), enabled: tab === 'work' && can(P.woView) });
+  const { data: pms } = useQuery({ queryKey: ['pm-schedules', 'asset', id], queryFn: () => get<Paged<PmScheduleListItem>>('/pm-schedules', { assetId: id, pageSize: 50 }), enabled: tab === 'pm' && can(P.pmView) });
   const { data: transfers } = useQuery({ queryKey: ['asset', id, 'transfers'], queryFn: () => get<Transfer[]>(`/assets/${id}/transfers`), enabled: tab === 'transfers' });
   const currency = me?.tenant.settings.currency ?? 'USD';
 
@@ -93,6 +96,7 @@ export function AssetDetailPage() {
           {applicableFields.length > 0 && <Tabs.Tab value="specs">{t('assets.specifications')}</Tabs.Tab>}
           <Tabs.Tab value="components" rightSection={a.childCount ? <Badge size="xs" variant="default">{a.childCount}</Badge> : null}>{t('assets.components')}</Tabs.Tab>
           {can(P.woView) && <Tabs.Tab value="work">{t('assets.workOrders')}</Tabs.Tab>}
+          {can(P.pmView) && <Tabs.Tab value="pm">{t('pm.maintenancePlan')}</Tabs.Tab>}
           <Tabs.Tab value="files">{t('assets.files')}</Tabs.Tab>
           <Tabs.Tab value="transfers">{t('assets.transfers')}</Tabs.Tab>
           <Tabs.Tab value="history">{t('assets.history')}</Tabs.Tab>
@@ -191,6 +195,22 @@ export function AssetDetailPage() {
                 { accessor: 'createdAt', title: t('wo.createdOn'), noWrap: true, render: (w) => fmtDate(w.createdAt) },
               ]} />
           </Card>
+        </Tabs.Panel>
+        <Tabs.Panel value="pm">
+          <Stack>
+            <Card p={0}>
+              <Group justify="space-between" p="md"><Title order={5}>{t('pm.schedules')}</Title>
+                {can(P.pmManage) && <Button size="xs" leftSection={<IconPlus size={14} />} component={Link} to={`/pm/schedules/new?assetId=${a.id}`}>{t('pm.newSchedule')}</Button>}</Group>
+              <DataTable minHeight={120} records={pms?.items ?? []} noRecordsText={t('common.noRecords')} highlightOnHover rowClassName={() => 'clickable-row'}
+                onRowClick={({ record }) => navigate(`/pm/schedules/${record.id}`)}
+                columns={[
+                  { accessor: 'code', title: t('pm.code'), noWrap: true }, { accessor: 'name', title: t('common.name') }, { accessor: 'taskName', title: t('pm.task') },
+                  { accessor: 'schedule', title: t('pm.schedule') },
+                  { accessor: 'nextDueDate', title: t('pm.nextDue'), noWrap: true, render: (p) => p.nextDueDate ? <Text fz="sm" c={p.isOverdue ? 'red' : undefined}>{fmtDate(p.nextDueDate)}</Text> : p.nextDueReading != null ? `@ ${p.nextDueReading} ${p.meterUnit ?? ''}` : '—' },
+                ]} />
+            </Card>
+            <MetersTab assetId={a.id} />
+          </Stack>
         </Tabs.Panel>
         <Tabs.Panel value="files"><Card><Attachments entityType="Asset" entityId={a.id} canEdit={can(P.assetsEdit)} onChanged={refresh} /></Card></Tabs.Panel>
         <Tabs.Panel value="transfers">

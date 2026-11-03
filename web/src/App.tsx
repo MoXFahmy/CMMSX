@@ -15,6 +15,8 @@ import { WorkOrderDetailPage } from './pages/work/WorkOrderDetailPage';
 import { WorkOrderFormPage } from './pages/work/WorkOrderFormPage';
 import { WorkRequestsPage } from './pages/work/WorkRequestsPage';
 import { PeoplePage } from './pages/people/PeoplePage';
+import { PmPage } from './pages/pm/PmPage';
+import { PmScheduleFormPage } from './pages/pm/PmScheduleFormPage';
 
 export function App() {
   const { me, loading } = useAuth();
@@ -44,6 +46,10 @@ export function App() {
         <Route path="work-orders/:id/edit" element={<WorkOrderFormPage />} />
         <Route path="work-requests" element={<WorkRequestsPage />} />
         <Route path="people" element={<PeoplePage />} />
+        <Route path="pm" element={<PmPage />} />
+        <Route path="pm/schedules/new" element={<PmScheduleFormPage />} />
+        <Route path="pm/schedules/:id" element={<PmScheduleFormPage />} />
+        <Route path="pm/:tab" element={<PmPage />} />
         <Route path="settings/*" element={<SettingsPage />} />
         <Route path="soon/:module" element={<ComingSoonPage />} />
         <Route path="login" element={<AfterLogin />} />

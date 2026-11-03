@@ -75,7 +75,27 @@ public sealed class LWorkOrder
     public string? ActionTaken { get; set; } public string? FailureCauseCode { get; set; } public int? WorkType { get; set; } public string? CauseDescription { get; set; }
     public string? PreventionTaken { get; set; } public int? WorkStatus { get; set; } public int? WorkPriority { get; set; } public int? WOTrade { get; set; }
     public string? SiteCode { get; set; } public double? DownTime { get; set; } public string? Notes { get; set; } public string? requestby { get; set; }
+    public string? PMNo { get; set; } public string? TaskNo { get; set; } public DateTime? PMTarStartDate { get; set; }
 }
+public sealed class LChecklist { public string ChecklistNo { get; set; } public string? CheckListName { get; set; } public double? EstimatedLaborHours { get; set; } public string? Tasks { get; set; } public int? Active { get; set; } }
+public sealed class LChecklistStep { public long ElementId { get; set; } public string ChecklistNo { get; set; } public long? SeqNo { get; set; } public string? TaskDesc { get; set; } }
+public sealed class LPmSchedule
+{
+    public string PMNo { get; set; } public string? PMName { get; set; } public string? AssetNo { get; set; } public string? PhyLocationNo { get; set; } public string? ChecklistNo { get; set; }
+    public int? PeriodDays { get; set; } public int? FreqUnits { get; set; } public int? Frequency { get; set; } public DateTime? StartDate { get; set; } public DateTime? TargetStartDate { get; set; }
+    public DateTime? NextDate { get; set; } public string? TypePMgen { get; set; } public string? TypePM { get; set; } public int? PMCounter { get; set; } public int? PMActive { get; set; }
+    public string? PMWOTrade { get; set; } public int? WeekofMonth { get; set; } public int? DayofWeek { get; set; } public string? SiteCode { get; set; } public int? workpriority { get; set; }
+}
+public sealed class LMultiplePm { public string MPMNo { get; set; } public string MTaskNo { get; set; } public int? MTaskSeq { get; set; } }
+public sealed class LPmMeter
+{
+    public string MeterNo { get; set; } public string? MeterDescription { get; set; } public string? AssetNo { get; set; } public string? MeterType { get; set; }
+    public double? Lowerlimit { get; set; } public double? UpperLimit { get; set; } public double? LastPMreading { get; set; } public string? PMLowTaskNo { get; set; }
+    public string? PMUppTaskNo { get; set; } public string? PMIncTaskNo { get; set; } public string? Units { get; set; } public double? IncFreq { get; set; } public double? IncPMDue { get; set; }
+    public int? FreqUnits { get; set; } public int? Frequency { get; set; } public DateTime? NextDate { get; set; } public int? PMCounter { get; set; } public int? PMActive { get; set; }
+    public string? PMWOTrade { get; set; } public int? TimeBased { get; set; } public int? PMType { get; set; } public string? SiteCode { get; set; } public decimal? max_daily_reading { get; set; }
+}
+public sealed class LReading { public long ReadingID { get; set; } public DateTime? Date { get; set; } public string MeterNo { get; set; } public double? Reading { get; set; } }
 public sealed class LAssign { public string EmployeeNo { get; set; } public string WorkorderNo { get; set; } }
 public sealed class LLabor
 {
@@ -100,6 +120,12 @@ public sealed class LegacyWork
     public List<LDirect> Direct = [];
     public List<LStatusAudit> StatusAudit = [];
     public List<LJobTask> Tasks = [];
+    public List<LChecklist> Checklists = [];
+    public List<LChecklistStep> ChecklistSteps = [];
+    public List<LPmSchedule> PmSchedules = [];
+    public List<LMultiplePm> MultiplePm = [];
+    public List<LPmMeter> Meters = [];
+    public List<LReading> Readings = [];
 }
 
 public sealed class LegacyData
@@ -167,6 +193,12 @@ public static class Legacy
             Direct = (await Try(() => c.QueryAsync<LDirect>("SELECT * FROM direct")) ?? []).ToList(),
             StatusAudit = (await Try(() => c.QueryAsync<LStatusAudit>("SELECT ID, WONo, WOStatus, DT, EmpNo FROM WOStatusAudit", commandTimeout: 600)) ?? []).ToList(),
             Tasks = (await Try(() => c.QueryAsync<LJobTask>("SELECT * FROM jobtask")) ?? []).ToList(),
+            Checklists = (await Try(() => c.QueryAsync<LChecklist>("SELECT ChecklistNo, CAST(CheckListName AS nvarchar(max)) AS CheckListName, EstimatedLaborHours, CAST(Tasks AS nvarchar(max)) AS Tasks, CAST(Active AS int) AS Active FROM pmchecklist")) ?? []).ToList(),
+            ChecklistSteps = (await Try(() => c.QueryAsync<LChecklistStep>("SELECT ElementId, ChecklistNo, SeqNo, TaskDesc FROM checklistelements")) ?? []).ToList(),
+            PmSchedules = (await Try(() => c.QueryAsync<LPmSchedule>("SELECT PMNo, CAST(PMName AS nvarchar(max)) AS PMName, AssetNo, PhyLocationNo, ChecklistNo, PeriodDays, FreqUnits, Frequency, StartDate, TargetStartDate, NextDate, CAST(TypePMgen AS nvarchar(10)) AS TypePMgen, CAST(TypePM AS nvarchar(10)) AS TypePM, PMCounter, PMActive, PMWOTrade, WeekofMonth, DayofWeek, SiteCode, workpriority FROM pmschedule")) ?? []).ToList(),
+            MultiplePm = (await Try(() => c.QueryAsync<LMultiplePm>("SELECT MPMNo, MTaskNo, MTaskSeq FROM multiplepm")) ?? []).ToList(),
+            Meters = (await Try(() => c.QueryAsync<LPmMeter>("SELECT MeterNo, CAST(MeterDescription AS nvarchar(max)) AS MeterDescription, AssetNo, MeterType, Lowerlimit, UpperLimit, LastPMreading, PMLowTaskNo, PMUppTaskNo, PMIncTaskNo, Units, IncFreq, IncPMDue, FreqUnits, Frequency, NextDate, PMCounter, PMActive, PMWOTrade, TimeBased, PMType, SiteCode, max_daily_reading FROM pmmeters")) ?? []).ToList(),
+            Readings = (await Try(() => c.QueryAsync<LReading>("SELECT ReadingID, Date, MeterNo, Reading FROM readings", commandTimeout: 600)) ?? []).ToList(),
         };
     }
 

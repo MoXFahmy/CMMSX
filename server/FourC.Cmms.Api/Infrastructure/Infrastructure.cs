@@ -140,10 +140,11 @@ public sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> log) : IExc
             DbUpdateConcurrencyException => (409, "This record was changed by someone else. Reload it and try again."),
             DbUpdateException { InnerException: Microsoft.Data.SqlClient.SqlException { Number: 2601 or 2627 } } => (409, "A record with the same code or number already exists."),
             DbUpdateException { InnerException: Microsoft.Data.SqlClient.SqlException { Number: 547 } } => (409, "This record is referenced by other records and cannot be changed this way."),
-            BadHttpRequestException b => (b.StatusCode, "Invalid request."),
+            BadHttpRequestException b => (b.StatusCode, b.StatusCode == 404 ? "Not found." : $"Invalid request: {b.Message}"),
             _ => (500, "An unexpected error occurred."),
         };
         if (status == 500) log.LogError(ex, "Unhandled error on {Path}", ctx.Request.Path);
+        else if (ex is BadHttpRequestException) log.LogWarning("Bad request on {Path}: {Message}", ctx.Request.Path, ex.Message);
         ctx.Response.StatusCode = status;
         await ctx.Response.WriteAsJsonAsync(new { status, title }, ct);
         return true;

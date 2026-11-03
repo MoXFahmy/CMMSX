@@ -10,7 +10,7 @@ Built in the order the business depends on it. Each module ships with API, UI, p
 | ✅ 4 | People & trades | employees, worktrade, EmployeeWorkTrades, Course/EmployeeTrainings | Technicians vs. users, trades, labour rates, skills/certifications |
 | ✅ 5 | Work requests | worequest, workrequeststatus | Triage, approve → work order, duplicate/warranty check. Next: public request portal (QR code per asset/location), email notifications |
 | ✅ 6 | Work orders | workorders, workorderlabor, direct, issue, WOStatusAudit, jobtask, failurecause | Status workflow, labour, other costs, tasks, failure codes, completion details, activity. Next: parts (with Inventory), print/PDF, customer rating |
-| 7 | Preventive maintenance | pmschedule, pmmeters, pmchecklist, readings, pmgenerate | Time-based (5 legacy schedule types) + meter-based PM, checklists, auto-generation, forecast |
+| ✅ 7 | Preventive maintenance | pmschedule, pmmeters, pmchecklist, readings, pmgenerate | All 5 legacy time-based types + incremental/threshold meters (whichever-first), multiple PM, checklists, preview/generate, auto-generation with lead time, forecast. Next: PM materials (with Inventory), calendar view, "meter reading after PM" on closing |
 | 8 | Inventory | stockcode, stockcode_levels, substore, receive/issue/return/adjustment | Multi-store stock, min/max, reservations for WOs, stock take, barcode labels |
 | 9 | Purchasing | purchase_req_master/details, suppliers, currency_rate | Requisition → approval → PO → GRN, purchase proposals from min levels |
 | 10 | Reports & KPIs | reportdb (82 reports) | MTBF, MTTR, PM compliance, backlog, downtime, cost by trade/location/cost center |
