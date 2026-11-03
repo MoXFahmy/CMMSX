@@ -73,7 +73,7 @@ Full stack in containers: `SA_PASSWORD='YourStr0ng!Pass' docker compose up --bui
 
 ```bash
 export CMMS_TEST_SQL="Server=localhost,1433;User Id=sa;Password=YourStr0ng!Pass;TrustServerCertificate=True"
-dotnet test server/FourC.Cmms.sln      # unit tests + integration tests (they create and drop their own database)
+dotnet test server/FourC.Cmms.slnx      # unit tests + integration tests (they create and drop their own database)
 cd web && npm run build                 # type-check + production build
 ```
 
