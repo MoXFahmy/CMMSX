@@ -1,4 +1,5 @@
 # Local full-stack run:  SA_PASSWORD='YourStr0ng!Pass' docker compose up --build   →  http://localhost:8080
+# Optional: SQL_PORT (default 1433; use e.g. 14333 if SQL Server is already installed) and APP_PORT (default 8080).
 services:
   sql:
     image: mcr.microsoft.com/mssql/server:2022-latest
@@ -6,7 +7,7 @@ services:
       ACCEPT_EULA: "Y"
       MSSQL_SA_PASSWORD: ${SA_PASSWORD:?Set SA_PASSWORD}
       MSSQL_PID: Developer
-    ports: ["1433:1433"]
+    ports: ["${SQL_PORT:-1433}:1433"]
     volumes: [sqldata:/var/opt/mssql]
     healthcheck:
       test: ["CMD-SHELL", "/opt/mssql-tools18/bin/sqlcmd -C -S localhost -U sa -P \"$$MSSQL_SA_PASSWORD\" -Q 'SELECT 1' || exit 1"]
@@ -18,7 +19,7 @@ services:
       sql: { condition: service_healthy }
     environment:
       ConnectionStrings__Cmms: "Server=sql,1433;Database=Cmms;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True"
-    ports: ["8080:8080"]
+    ports: ["${APP_PORT:-8080}:8080"]
     volumes: [files:/data]
 volumes:
   sqldata:

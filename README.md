@@ -45,7 +45,31 @@ One cloud service shared by all customers; each customer is an isolated *organiz
 | **4CSQL importer** (locations, assets, people, trades, failure codes, work requests, work orders with labour, costs, tasks, notes and status history, PM tasks, schedules, meters and readings, stores, parts, levels, suppliers, purchase orders and the stock ledger) | ✅ |
 | Mobile & offline, integrations, Arabic | Next — see [docs/ROADMAP.md](docs/ROADMAP.md) |
 
-## Run locally
+## Try it on your computer
+
+Needs only [Docker Desktop](https://www.docker.com/products/docker-desktop/) (running, with about 4 GB of memory free) and
+the source: `git clone https://github.com/MoXFahmy/CMMSX.git` or **Code → Download ZIP** on GitHub, unzipped.
+
+Windows (PowerShell, in the CMMSX folder):
+```powershell
+$env:SA_PASSWORD = "Local_Test_2026!"; $env:SQL_PORT = "14333"; docker compose up --build
+```
+
+macOS / Linux (Terminal, in the CMMSX folder):
+```bash
+SA_PASSWORD='Local_Test_2026!' SQL_PORT=14333 docker compose up --build
+```
+
+The first start downloads and builds everything (5–10 minutes). When the log shows `Now listening on`, open
+**http://localhost:8080**, choose **Create an organization**, then **Load sample data**. Stop with `Ctrl+C`;
+`docker compose up` starts it again with your data, and `docker compose down -v` deletes everything.
+
+- `SA_PASSWORD` is the password of the local test database: at least 8 characters, with upper and lower case letters and a digit or symbol.
+- `SQL_PORT=14333` keeps the test database off port 1433 in case SQL Server (e.g. for 4CSQL) is already installed.
+  If port 8080 is taken, add `APP_PORT=8090` (PowerShell: `$env:APP_PORT = "8090"`) and open http://localhost:8090.
+- On Apple-silicon Macs, turn on *Use Rosetta for x86/amd64 emulation* in Docker Desktop's settings (SQL Server needs it).
+
+## Develop
 
 Prerequisites: .NET 10 SDK, Node 22, a SQL Server (the compose file starts one).
 
@@ -66,8 +90,6 @@ across three sites and simulates a year of operations — technicians, ~1,000 wo
 36 PM schedules with realistic compliance, 34 spare parts in three stores, and ~100 replenishment purchase orders — so every
 screen and report has data. (It takes a few seconds and runs once per organization.)
 API reference: `http://127.0.0.1:5080/api/docs`.
-
-Full stack in containers: `SA_PASSWORD='YourStr0ng!Pass' docker compose up --build` → http://localhost:8080
 
 ## Deploy to Azure
 

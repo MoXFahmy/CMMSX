@@ -18,6 +18,8 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=api /app ./
 COPY --from=web /web/dist ./wwwroot
+# Attachments are written here when local file storage is used (docker compose); the app runs as a non-root user.
+RUN mkdir -p /data/files && chown -R $APP_UID:$APP_UID /data
 # Build identifier (the git commit) reported by /api/health, so a deployment can confirm what is running.
 ARG VERSION=dev
 ENV ASPNETCORE_HTTP_PORTS=8080 \
