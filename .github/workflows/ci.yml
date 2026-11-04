@@ -17,10 +17,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-dotnet@v4
         with: { dotnet-version: "10.0.x" }
+      - name: Start Azurite (Azure Storage emulator)
+        run: docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck --loose
       - run: dotnet build server/FourC.Cmms.slnx -c Release
       - run: dotnet test server/FourC.Cmms.slnx -c Release --no-build
         env:
           CMMS_TEST_SQL: "Server=localhost,1433;User Id=sa;Password=Ci_Passw0rd!x;TrustServerCertificate=True"
+          CMMS_TEST_BLOB: "UseDevelopmentStorage=true"
   web:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: web } }
@@ -30,3 +33,13 @@ jobs:
         with: { node-version: 22, cache: npm, cache-dependency-path: web/package-lock.json }
       - run: npm ci
       - run: npm run build
+  infra:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and lint the Azure template
+        run: |
+          az bicep build --file infra/main.bicep --stdout > /dev/null
+          az bicep lint --file infra/main.bicep
+      - name: Check the setup script
+        run: bash -n deploy/azure/setup.sh && shellcheck deploy/azure/setup.sh

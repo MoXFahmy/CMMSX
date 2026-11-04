@@ -89,7 +89,8 @@
     "register": "Create organization",
     "currentPassword": "Current password",
     "newPassword": "New password",
-    "passwordChanged": "Password changed"
+    "passwordChanged": "Password changed",
+    "registrationClosed": "New organizations can't be created on this server. Ask your administrator to invite you."
   },
   "status": {
     "Active": "Active",

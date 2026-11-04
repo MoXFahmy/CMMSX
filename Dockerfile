@@ -18,7 +18,10 @@ FROM mcr.microsoft.com/dotnet/aspnet:10.0
 WORKDIR /app
 COPY --from=api /app ./
 COPY --from=web /web/dist ./wwwroot
-ENV ASPNETCORE_URLS=http://+:8080 \
+# Build identifier (the git commit) reported by /api/health, so a deployment can confirm what is running.
+ARG VERSION=dev
+ENV ASPNETCORE_HTTP_PORTS=8080 \
+    App__Version=$VERSION \
     Storage__Path=/data/files \
     DOTNET_RUNNING_IN_CONTAINER=true
 VOLUME ["/data"]

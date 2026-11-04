@@ -5,3 +5,6 @@ web/dist
 server/FourC.Cmms.Api/wwwroot
 **/*.bak
 .git
+docs
+infra
+deploy

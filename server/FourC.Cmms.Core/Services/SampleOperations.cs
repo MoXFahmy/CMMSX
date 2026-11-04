@@ -76,7 +76,8 @@ public static class SampleOperations
         var start = today.AddDays(-364);
         var sites = await db.Sites.AsNoTracking().OrderBy(s => s.Code).ToListAsync(ct);
         if (sites.Count == 0) return new { skipped = true };
-        var assets = await db.Assets.AsNoTracking().Where(a => a.Status != AssetStatus.Disposed).Select(a => new { a.Id, a.SiteId, a.LocationId, a.Name, Cat = a.Category!.Code, a.Criticality }).ToListAsync(ct);
+        // Assets without a category are treated as mechanical.
+        var assets = await db.Assets.AsNoTracking().Where(a => a.Status != AssetStatus.Disposed).Select(a => new { a.Id, a.SiteId, a.LocationId, a.Name, Cat = a.Category!.Code ?? "", a.Criticality }).ToListAsync(ct);
         if (assets.Count == 0) return new { skipped = true };
         var trades = await db.Trades.AsNoTracking().ToDictionaryAsync(t => t.Code, t => t.Id, ct);
         var failures = await db.FailureCodes.AsNoTracking().ToListAsync(ct);

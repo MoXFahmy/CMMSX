@@ -6,6 +6,7 @@ using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
 using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.DataProtection;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
@@ -32,6 +33,9 @@ services.AddIdentityCore<AppUser>(o =>
     .AddClaimsPrincipalFactory<AppClaimsFactory>()
     .AddDefaultTokenProviders();
 
+// Sign-in cookies are encrypted with keys kept in the database, so sessions survive restarts and redeployments.
+services.AddDataProtection().SetApplicationName("FourC.Cmms").PersistKeysToDbContext<CmmsDbContext>();
+
 services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
 services.ConfigureApplicationCookie(o =>
 {
@@ -51,7 +55,10 @@ services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 services.AddSingleton<PermissionService>();
 services.AddAuthorization();
 
-services.AddSingleton<IFileStorage, LocalFileStorage>();
+if (string.Equals(builder.Configuration["Storage:Provider"], "AzureBlob", StringComparison.OrdinalIgnoreCase))
+    services.AddSingleton<IFileStorage, AzureBlobFileStorage>();
+else
+    services.AddSingleton<IFileStorage, LocalFileStorage>();
 services.AddHostedService<PmSchedulerService>();
 services.AddExceptionHandler<ApiExceptionHandler>();
 services.AddProblemDetails();
@@ -80,7 +87,8 @@ app.MapOpenApi();
 app.MapScalarApiReference("/api/docs");
 
 var api = app.MapGroup("/api");
-api.MapGet("/health", () => Results.Ok(new { status = "ok" })).AllowAnonymous();
+var version = app.Configuration["App:Version"] is { Length: > 0 } v ? v : "dev";
+api.MapGet("/health", () => Results.Ok(new { status = "ok", version })).AllowAnonymous();
 api.MapAuthEndpoints();
 api.MapSiteEndpoints();
 api.MapLocationEndpoints();

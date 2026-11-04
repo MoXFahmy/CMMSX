@@ -1,10 +1,10 @@
-import { Anchor, Button, Center, Checkbox, Paper, PasswordInput, Stack, Text, TextInput, Title, Group } from '@mantine/core';
+import { Alert, Anchor, Button, Center, Checkbox, Paper, PasswordInput, Stack, Text, TextInput, Title, Group } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
-import { post } from '@/api/client';
+import { get, post } from '@/api/client';
 import { handleFormError, notifyError } from '@/components/utils';
 
 function AuthFrame({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
@@ -22,6 +22,12 @@ function AuthFrame({ title, subtitle, children }: { title: string; subtitle: str
   );
 }
 
+/** Whether this server lets visitors create a new organization (operators can switch it off). */
+function useRegistrationOpen() {
+  const q = useQuery({ queryKey: ['auth-options'], queryFn: () => get<{ allowRegistration: boolean }>('/auth/options'), staleTime: Infinity });
+  return q.data?.allowRegistration;
+}
+
 function useAfterLogin() {
   const qc = useQueryClient();
   // Re-fetching the profile switches the app to the signed-in routes; <AfterLogin> then honours ?next=.
@@ -31,6 +37,7 @@ function useAfterLogin() {
 export function LoginPage() {
   const { t } = useTranslation();
   const after = useAfterLogin();
+  const registrationOpen = useRegistrationOpen();
   const [busy, setBusy] = useState(false);
   const form = useForm({ initialValues: { email: '', password: '', rememberMe: true } });
   const submit = form.onSubmit(async (v) => {
@@ -45,7 +52,7 @@ export function LoginPage() {
           <PasswordInput label={t('auth.password')} autoComplete="current-password" required {...form.getInputProps('password')} />
           <Checkbox label={t('auth.rememberMe')} {...form.getInputProps('rememberMe', { type: 'checkbox' })} />
           <Button type="submit" loading={busy} fullWidth>{t('auth.signIn')}</Button>
-          <Text fz="sm" ta="center">{t('auth.noAccount')} <Anchor component={Link} to="/register">{t('auth.createOrg')}</Anchor></Text>
+          {registrationOpen && <Text fz="sm" ta="center">{t('auth.noAccount')} <Anchor component={Link} to="/register">{t('auth.createOrg')}</Anchor></Text>}
         </Stack>
       </form>
     </AuthFrame>
@@ -55,6 +62,7 @@ export function LoginPage() {
 export function RegisterPage() {
   const { t } = useTranslation();
   const after = useAfterLogin();
+  const registrationOpen = useRegistrationOpen();
   const [busy, setBusy] = useState(false);
   const form = useForm({ initialValues: { organizationName: '', fullName: '', email: '', password: '' } });
   const submit = form.onSubmit(async (v) => {
@@ -63,6 +71,12 @@ export function RegisterPage() {
   });
   return (
     <AuthFrame title={t('auth.registerTitle')} subtitle={t('auth.registerSubtitle')}>
+      {registrationOpen === false ? (
+        <Stack>
+          <Alert color="gray">{t('auth.registrationClosed')}</Alert>
+          <Text fz="sm" ta="center">{t('auth.haveAccount')} <Anchor component={Link} to="/login">{t('auth.signIn')}</Anchor></Text>
+        </Stack>
+      ) : (
       <form onSubmit={submit}>
         <Stack>
           <TextInput label={t('auth.organizationName')} required {...form.getInputProps('organizationName')} />
@@ -73,6 +87,7 @@ export function RegisterPage() {
           <Text fz="sm" ta="center">{t('auth.haveAccount')} <Anchor component={Link} to="/login">{t('auth.signIn')}</Anchor></Text>
         </Stack>
       </form>
+      )}
     </AuthFrame>
   );
 }

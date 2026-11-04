@@ -1,0 +1,105 @@
+name: Deploy to Azure
+
+# Deploys every green build of main to Azure Container Apps, or on demand from the Actions tab.
+# It stays switched off (skipped) until the repository variables from docs/DEPLOY_AZURE.md are set.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # sign in to Azure with GitHub's OIDC token, no stored secrets
+  contents: read
+
+concurrency:
+  group: deploy-azure
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy
+    # Only this repository's own pushes to main (never pull requests from forks) and manual runs.
+    if: >-
+      vars.AZURE_CLIENT_ID != '' && (
+        github.event_name == 'workflow_dispatch' || (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+      ALLOW_REGISTRATION: ${{ vars.CMMS_ALLOW_REGISTRATION || 'true' }}
+      DATABASE_SKU: ${{ vars.CMMS_DATABASE_SKU || 'S1' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.COMMIT }}
+
+      - name: Sign in to Azure
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Create or update Azure resources
+        id: infra
+        run: |
+          out=$(az deployment group create --resource-group "$RESOURCE_GROUP" --name cmms-infra \
+            --template-file infra/main.bicep \
+            --parameters allowRegistration="$ALLOW_REGISTRATION" databaseSku="$DATABASE_SKU" \
+            --query properties.outputs --output json)
+          echo "registry=$(jq -r .registryName.value <<<"$out")" >> "$GITHUB_OUTPUT"
+          echo "login_server=$(jq -r .registryLoginServer.value <<<"$out")" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Sign in to the container registry
+        run: az acr login --name "${{ steps.infra.outputs.registry }}"
+
+      - name: Build and push the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.infra.outputs.login_server }}/cmms:${{ env.COMMIT }}
+          build-args: VERSION=${{ env.COMMIT }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy the new version
+        id: deploy
+        run: |
+          out=$(az deployment group create --resource-group "$RESOURCE_GROUP" --name cmms-app \
+            --template-file infra/main.bicep \
+            --parameters image="${{ steps.infra.outputs.login_server }}/cmms:$COMMIT" \
+                         allowRegistration="$ALLOW_REGISTRATION" databaseSku="$DATABASE_SKU" \
+            --query properties.outputs --output json)
+          echo "url=$(jq -r .url.value <<<"$out")" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for the new version to answer
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          for _ in $(seq 1 40); do
+            version=$(curl -fsS --max-time 10 "$URL/api/health" | jq -r .version 2>/dev/null || true)
+            if [ "$version" = "$COMMIT" ]; then echo "Live at $URL (version $version)"; exit 0; fi
+            sleep 15
+          done
+          echo "::error::$URL did not report version $COMMIT within 10 minutes. In the Azure portal open the container app, then Monitoring > Log stream."
+          exit 1
+
+      - name: Summary
+        if: always() && steps.deploy.outputs.url != ''
+        run: |
+          {
+            echo "### 4C CMMS on Azure"
+            echo ""
+            echo "**${{ steps.deploy.outputs.url }}**"
+            echo ""
+            echo "Commit \`$COMMIT\` · resource group \`$RESOURCE_GROUP\` · database \`$DATABASE_SKU\` · sign-up open: \`$ALLOW_REGISTRATION\`"
+          } >> "$GITHUB_STEP_SUMMARY"

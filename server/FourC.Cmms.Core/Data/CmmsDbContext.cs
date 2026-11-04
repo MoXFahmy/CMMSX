@@ -13,6 +13,7 @@ using FourC.Cmms.Core.Purchasing;
 using FourC.Cmms.Core.Work;
 using FourC.Cmms.Core.Settings;
 using FourC.Cmms.Core.Tenancy;
+using Microsoft.AspNetCore.DataProtection.EntityFrameworkCore;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
@@ -21,7 +22,7 @@ using Microsoft.EntityFrameworkCore.Metadata.Builders;
 namespace FourC.Cmms.Core.Data;
 
 public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantContext tenant)
-    : IdentityUserContext<AppUser, Guid>(options)
+    : IdentityUserContext<AppUser, Guid>(options), IDataProtectionKeyContext
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
 
@@ -65,6 +66,9 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
     public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
+
+    /// <summary>ASP.NET Core data-protection key ring (sign-in cookies), shared by every app instance.</summary>
+    public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
 
     protected override void OnModelCreating(ModelBuilder b)
     {

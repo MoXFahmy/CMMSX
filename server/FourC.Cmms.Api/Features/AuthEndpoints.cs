@@ -14,13 +14,20 @@ public static class AuthEndpoints
     public sealed record LoginRequest(string Email, string Password, bool RememberMe);
     public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
+    /// <summary>Self-service sign-up of new organizations; switch off with Auth:AllowRegistration=false.</summary>
+    private static bool AllowRegistration(IConfiguration config) => config.GetValue("Auth:AllowRegistration", true);
+
     public static void MapAuthEndpoints(this RouteGroupBuilder api)
     {
         var g = api.MapGroup("/auth").WithTags("Auth");
 
+        g.MapGet("/options", (IConfiguration config) => Results.Ok(new { allowRegistration = AllowRegistration(config) })).AllowAnonymous();
+
         g.MapPost("/register", async (RegisterRequest req, UserManager<AppUser> users, SignInManager<AppUser> signIn,
-            DbContextOptions<CmmsDbContext> options, IPasswordHasher<AppUser> hasher, CancellationToken ct) =>
+            DbContextOptions<CmmsDbContext> options, IPasswordHasher<AppUser> hasher, IConfiguration config, CancellationToken ct) =>
         {
+            if (!AllowRegistration(config))
+                return Results.Problem(title: "New organizations can't be created here. Ask your administrator for an invitation.", statusCode: 403);
             var v = new Validator()
                 .Required("organizationName", req.OrganizationName, "Organization name", 200)
                 .Required("fullName", req.FullName, "Your name", 200)

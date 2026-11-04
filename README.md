@@ -69,10 +69,16 @@ API reference: `http://127.0.0.1:5080/api/docs`.
 
 Full stack in containers: `SA_PASSWORD='YourStr0ng!Pass' docker compose up --build` → http://localhost:8080
 
+## Deploy to Azure
+
+Azure Container Apps + Azure SQL + Blob Storage, deployed from GitHub Actions with no stored passwords.
+One-time setup and first deployment take about 20 minutes: see [docs/DEPLOY_AZURE.md](docs/DEPLOY_AZURE.md).
+
 ## Tests
 
 ```bash
 export CMMS_TEST_SQL="Server=localhost,1433;User Id=sa;Password=YourStr0ng!Pass;TrustServerCertificate=True"
+export CMMS_TEST_BLOB="UseDevelopmentStorage=true"   # optional: Azurite, to test Azure Blob attachments
 dotnet test server/FourC.Cmms.slnx      # unit tests + integration tests (they create and drop their own database)
 cd web && npm run build                 # type-check + production build
 ```
@@ -89,6 +95,8 @@ server/
   FourC.Cmms.Api/           HTTP API (Features/*Endpoints.cs), auth, permissions, file storage
   FourC.Cmms.LegacyImport/  4CSQL → cloud importer (console)
   FourC.Cmms.Tests/         API integration tests
+infra/main.bicep            Azure resources (Container Apps, SQL, Storage, registry, logs)
+deploy/azure/setup.sh       one-time Azure ↔ GitHub connection (run in Cloud Shell)
 web/src/
   pages/                    dashboard, locations, assets, work, pm, inventory, purchasing, reports, settings
   components/               layout, pickers, attachments, audit timeline

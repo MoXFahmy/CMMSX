@@ -1,6 +1,10 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Security.Claims;
+using Azure;
+using Azure.Core;
+using Azure.Identity;
+using Azure.Storage.Blobs;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Files;
@@ -126,6 +130,67 @@ public sealed class LocalFileStorage(IConfiguration config, IWebHostEnvironment 
         if (File.Exists(path)) File.Delete(path);
         return Task.CompletedTask;
     }
+}
+
+/// <summary>
+/// Attachments in Azure Blob Storage. In Azure the app signs in with its managed identity (no keys);
+/// a connection string is accepted for local development (e.g. Azurite).
+/// </summary>
+public sealed class AzureBlobFileStorage : IFileStorage
+{
+    private readonly BlobContainerClient _container;
+    private readonly bool _ensureContainer;
+    private volatile bool _containerReady;
+
+    public AzureBlobFileStorage(IConfiguration config)
+    {
+        var name = config["Storage:Container"] is { Length: > 0 } c ? c : "files";
+        if (config["Storage:ConnectionString"] is { Length: > 0 } cs)
+        {
+            _container = new BlobContainerClient(cs, name);
+            _ensureContainer = true; // local emulator: create on first use; in Azure the template creates it
+        }
+        else
+        {
+            var endpoint = config["Storage:BlobEndpoint"] is { Length: > 0 } e ? e
+                : throw new InvalidOperationException("Storage:BlobEndpoint (or Storage:ConnectionString) is required when Storage:Provider is AzureBlob.");
+            _container = new BlobContainerClient(new Uri(new Uri(endpoint), name), AzureCredentials.Create(config));
+        }
+    }
+
+    private async Task EnsureContainerAsync(CancellationToken ct)
+    {
+        if (!_ensureContainer || _containerReady) return;
+        await _container.CreateIfNotExistsAsync(cancellationToken: ct);
+        _containerReady = true;
+    }
+
+    public async Task SaveAsync(string key, Stream content, CancellationToken ct = default)
+    {
+        await EnsureContainerAsync(ct);
+        await _container.GetBlobClient(key).UploadAsync(content, overwrite: true, ct);
+    }
+
+    public async Task<Stream?> OpenReadAsync(string key, CancellationToken ct = default)
+    {
+        try { return await _container.GetBlobClient(key).OpenReadAsync(cancellationToken: ct); }
+        catch (RequestFailedException ex) when (ex.Status == 404) { return null; }
+    }
+
+    public async Task DeleteAsync(string key, CancellationToken ct = default)
+    {
+        try { await _container.GetBlobClient(key).DeleteIfExistsAsync(cancellationToken: ct); }
+        catch (RequestFailedException ex) when (ex.Status == 404) { }
+    }
+}
+
+public static class AzureCredentials
+{
+    /// <summary>The app's user-assigned managed identity when Azure:ClientId is set; otherwise the developer's Azure sign-in.</summary>
+    public static TokenCredential Create(IConfiguration config) =>
+        config["Azure:ClientId"] is { Length: > 0 } clientId
+            ? new ManagedIdentityCredential(ManagedIdentityId.FromUserAssignedClientId(clientId))
+            : new DefaultAzureCredential();
 }
 
 // ---------------- Errors & validation ----------------

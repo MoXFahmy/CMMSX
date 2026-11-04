@@ -187,6 +187,9 @@ public static class AttachmentEndpoints
                 "WorkOrder" => await db.WorkOrders.AnyAsync(a => a.Id == entityId, ct),
                 "WorkRequest" => await db.WorkRequests.AnyAsync(a => a.Id == entityId, ct),
                 "PmTask" => await db.PmTasks.AnyAsync(a => a.Id == entityId, ct),
+                "Part" => await db.Parts.AnyAsync(a => a.Id == entityId, ct),
+                "Supplier" => await db.Suppliers.AnyAsync(a => a.Id == entityId, ct),
+                "PurchaseOrder" => await db.PurchaseOrders.AnyAsync(a => a.Id == entityId, ct),
                 _ => false,
             };
             if (!exists) return Results.NotFound();
