@@ -291,4 +291,6 @@ output databaseName string = database.name
 output storageAccountName string = storage.name
 output identityName string = identity.name
 output containerAppName string = name
+// The app exists whenever an image is given.
+#disable-next-line BCP318
 output url string = empty(image) ? '' : 'https://${app.properties.configuration.ingress.fqdn}'
