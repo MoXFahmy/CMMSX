@@ -7,6 +7,7 @@ using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.DataProtection;
+using Microsoft.AspNetCore.HttpOverrides;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using Scalar.AspNetCore;
@@ -17,7 +18,7 @@ var services = builder.Services;
 services.AddHttpContextAccessor();
 services.AddMemoryCache();
 services.AddScoped<ITenantContext, HttpTenantContext>();
-services.AddDbContext<CmmsDbContext>(o => o.UseSqlServer(builder.Configuration.GetConnectionString("Cmms"),
+services.AddDbContext<CmmsDbContext>(o => o.UseSqlServer(DatabaseConnection.Build(builder.Configuration),
     sql => sql.EnableRetryOnFailure(3).UseQuerySplittingBehavior(QuerySplittingBehavior.SingleQuery)));
 
 services.AddIdentityCore<AppUser>(o =>
@@ -55,10 +56,17 @@ services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 services.AddSingleton<PermissionService>();
 services.AddAuthorization();
 
-if (string.Equals(builder.Configuration["Storage:Provider"], "AzureBlob", StringComparison.OrdinalIgnoreCase))
-    services.AddSingleton<IFileStorage, AzureBlobFileStorage>();
-else
-    services.AddSingleton<IFileStorage, LocalFileStorage>();
+switch (builder.Configuration["Storage:Provider"]?.ToLowerInvariant())
+{
+    case "azureblob": services.AddSingleton<IFileStorage, AzureBlobFileStorage>(); break;
+    case "s3": services.AddSingleton<IFileStorage, S3FileStorage>(); break;
+    default: services.AddSingleton<IFileStorage, LocalFileStorage>(); break;
+}
+
+// Behind a proxy that reports the original scheme in its own header (CloudFront: CloudFront-Forwarded-Proto),
+// read it so HTTPS requests are recognised and sign-in cookies are marked Secure.
+if (builder.Configuration["ForwardedHeaders:ProtoHeaderName"] is { Length: > 0 } protoHeader)
+    services.Configure<ForwardedHeadersOptions>(o => o.ForwardedProtoHeaderName = protoHeader);
 services.AddHostedService<PmSchedulerService>();
 services.AddExceptionHandler<ApiExceptionHandler>();
 services.AddProblemDetails();

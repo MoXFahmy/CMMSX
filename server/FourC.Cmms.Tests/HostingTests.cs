@@ -6,6 +6,7 @@ using Microsoft.AspNetCore.Hosting;
 using FourC.Cmms.Core.Data;
 using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace FourC.Cmms.Tests;
@@ -91,6 +92,61 @@ public class HostingTests(ApiFixture fx) : IClassFixture<ApiFixture>
             b.UseSetting("Storage:Container", $"test-{Guid.NewGuid():N}");
         });
         await AttachmentRoundTripAsync(azure.CreateClient());
+    }
+
+    /// <summary>Runs against an S3-compatible server (MinIO, moto) when CMMS_TEST_S3 holds its URL.</summary>
+    [SkippableFact]
+    public async Task Files_round_trip_through_amazon_s3()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var url = Environment.GetEnvironmentVariable("CMMS_TEST_S3");
+        Skip.If(string.IsNullOrWhiteSpace(url), "Set CMMS_TEST_S3 to test S3 storage.");
+        await using var aws = fx.Factory!.WithWebHostBuilder(b =>
+        {
+            b.UseSetting("Storage:Provider", "S3");
+            b.UseSetting("Storage:Bucket", $"test-{Guid.NewGuid():N}");
+            b.UseSetting("Storage:Region", "me-central-1"); // a region other than us-east-1, as most deployments use
+            b.UseSetting("Storage:S3:ServiceUrl", url);
+            b.UseSetting("Storage:S3:AccessKey", Environment.GetEnvironmentVariable("CMMS_TEST_S3_ACCESS_KEY") ?? "test");
+            b.UseSetting("Storage:S3:SecretKey", Environment.GetEnvironmentVariable("CMMS_TEST_S3_SECRET_KEY") ?? "test");
+        });
+        await AttachmentRoundTripAsync(aws.CreateClient());
+    }
+
+    [SkippableFact]
+    public async Task Https_is_recognised_behind_cloudfront()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        await using var behindCdn = fx.Factory!.WithWebHostBuilder(b =>
+        {
+            b.UseSetting("FORWARDEDHEADERS_ENABLED", "true");
+            b.UseSetting("ForwardedHeaders:ProtoHeaderName", "CloudFront-Forwarded-Proto");
+        });
+        var c = behindCdn.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = false });
+        var viaHttps = new HttpRequestMessage(HttpMethod.Post, "/api/auth/register") { Content = JsonContent.Create(Org("Cdn Co")) };
+        viaHttps.Headers.Add("CloudFront-Forwarded-Proto", "https");
+        var r = await c.SendAsync(viaHttps);
+        await Ok(r);
+        Assert.Contains("secure", r.Headers.GetValues("Set-Cookie").Single(h => h.StartsWith("cmms.auth=")), StringComparison.OrdinalIgnoreCase);
+    }
+
+    [Fact]
+    public void Database_login_can_be_supplied_separately_from_the_connection_string()
+    {
+        var config = new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Cmms"] = "Server=tcp:db.example.com,1433;Database=cmms;Encrypt=True",
+            ["Database:User"] = "cmmsadmin",
+            ["Database:Password"] = "p;w=d\"x",
+        }).Build();
+        var cs = new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(FourC.Cmms.Api.Infrastructure.DatabaseConnection.Build(config));
+        Assert.Equal(("tcp:db.example.com,1433", "cmms", "cmmsadmin", "p;w=d\"x"), (cs.DataSource, cs.InitialCatalog, cs.UserID, cs.Password));
+
+        var plain = new Microsoft.Extensions.Configuration.ConfigurationBuilder().AddInMemoryCollection(new Dictionary<string, string?>
+        {
+            ["ConnectionStrings:Cmms"] = "Server=sql;Database=Cmms;User Id=sa;Password=x",
+        }).Build();
+        Assert.Equal("Server=sql;Database=Cmms;User Id=sa;Password=x", FourC.Cmms.Api.Infrastructure.DatabaseConnection.Build(plain));
     }
 
     private static async Task AttachmentRoundTripAsync(HttpClient c)

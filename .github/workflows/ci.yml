@@ -19,11 +19,16 @@ jobs:
         with: { dotnet-version: "10.0.x" }
       - name: Start Azurite (Azure Storage emulator)
         run: docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite azurite-blob --blobHost 0.0.0.0 --skipApiVersionCheck --loose
+      - name: Start moto (Amazon S3 emulator)
+        run: |
+          pipx install "moto[s3,server]"
+          nohup moto_server -H 127.0.0.1 -p 9000 > moto.log 2>&1 &
       - run: dotnet build server/FourC.Cmms.slnx -c Release
       - run: dotnet test server/FourC.Cmms.slnx -c Release --no-build
         env:
           CMMS_TEST_SQL: "Server=localhost,1433;User Id=sa;Password=Ci_Passw0rd!x;TrustServerCertificate=True"
           CMMS_TEST_BLOB: "UseDevelopmentStorage=true"
+          CMMS_TEST_S3: "http://127.0.0.1:9000"
   web:
     runs-on: ubuntu-latest
     defaults: { run: { working-directory: web } }
@@ -39,7 +44,13 @@ jobs:
       - uses: actions/checkout@v4
       - name: Compile and lint the Azure template
         run: |
-          az bicep build --file infra/main.bicep --stdout > /dev/null
-          az bicep lint --file infra/main.bicep
-      - name: Check the setup script
-        run: bash -n deploy/azure/setup.sh && shellcheck deploy/azure/setup.sh
+          az bicep build --file infra/azure/main.bicep --stdout > /dev/null
+          az bicep lint --file infra/azure/main.bicep
+      - name: Lint the AWS templates
+        run: |
+          pipx install cfn-lint
+          cfn-lint infra/aws/cmms.yml deploy/aws/bootstrap.yml
+      - name: Check the setup scripts
+        run: |
+          bash -n deploy/azure/setup.sh && bash -n deploy/aws/setup.sh
+          shellcheck deploy/azure/setup.sh deploy/aws/setup.sh

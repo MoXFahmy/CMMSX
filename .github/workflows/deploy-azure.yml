@@ -50,7 +50,7 @@ jobs:
         id: infra
         run: |
           out=$(az deployment group create --resource-group "$RESOURCE_GROUP" --name cmms-infra \
-            --template-file infra/main.bicep \
+            --template-file infra/azure/main.bicep \
             --parameters allowRegistration="$ALLOW_REGISTRATION" databaseSku="$DATABASE_SKU" \
             --query properties.outputs --output json)
           echo "registry=$(jq -r .registryName.value <<<"$out")" >> "$GITHUB_OUTPUT"
@@ -75,7 +75,7 @@ jobs:
         id: deploy
         run: |
           out=$(az deployment group create --resource-group "$RESOURCE_GROUP" --name cmms-app \
-            --template-file infra/main.bicep \
+            --template-file infra/azure/main.bicep \
             --parameters image="${{ steps.infra.outputs.login_server }}/cmms:$COMMIT" \
                          allowRegistration="$ALLOW_REGISTRATION" databaseSku="$DATABASE_SKU" \
             --query properties.outputs --output json)

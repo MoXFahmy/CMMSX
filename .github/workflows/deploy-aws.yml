@@ -1,0 +1,127 @@
+name: Deploy to AWS
+
+# Deploys every green build of main to AWS (ECS Fargate + RDS + S3 + CloudFront), or on demand from the Actions tab.
+# It stays switched off (skipped) until the repository variables from docs/DEPLOY_AWS.md are set.
+on:
+  workflow_run:
+    workflows: [CI]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  id-token: write # sign in to AWS with GitHub's OIDC token, no stored keys
+  contents: read
+
+concurrency:
+  group: deploy-aws
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Build and deploy
+    # Only this repository's own pushes to main (never pull requests from forks) and manual runs.
+    if: >-
+      vars.AWS_DEPLOY_ROLE_ARN != '' && (
+        github.event_name == 'workflow_dispatch' || (
+          github.event.workflow_run.conclusion == 'success' &&
+          github.event.workflow_run.event == 'push' &&
+          github.event.workflow_run.head_repository.full_name == github.repository))
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      STACK: cmms-app
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+      ALLOW_REGISTRATION: ${{ vars.CMMS_ALLOW_REGISTRATION || 'true' }}
+      DB_INSTANCE_CLASS: ${{ vars.CMMS_DB_INSTANCE_CLASS || 'db.t3.micro' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.COMMIT }}
+
+      - name: Sign in to AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 7200
+
+      - name: Sign in to the image registry
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Build and push the image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.ecr.outputs.registry }}/cmms:${{ env.COMMIT }}
+          build-args: VERSION=${{ env.COMMIT }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Deploy (the first run takes about 30 minutes, mostly creating the database)
+        id: deploy
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/cmms:${{ env.COMMIT }}
+        run: |
+          account=$(aws sts get-caller-identity --query Account --output text)
+          cfn_role="arn:aws:iam::${account}:role/cmms-cfn-exec-${AWS_REGION}"
+          prefix_list=$(aws ec2 describe-managed-prefix-lists \
+            --filters Name=prefix-list-name,Values=com.amazonaws.global.cloudfront.origin-facing \
+            --query 'PrefixLists[0].PrefixListId' --output text)
+          if [[ ! "$prefix_list" =~ ^pl- ]]; then echo "::error::CloudFront prefix list not found in $AWS_REGION"; exit 1; fi
+
+          # A first deployment that failed and rolled back cannot be updated; remove it and start again.
+          status=$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo NONE)
+          if [ "$status" = ROLLBACK_COMPLETE ]; then
+            echo "Removing the failed first deployment..."
+            aws cloudformation delete-stack --stack-name "$STACK" --role-arn "$cfn_role"
+            aws cloudformation wait stack-delete-complete --stack-name "$STACK"
+          fi
+
+          aws cloudformation deploy --stack-name "$STACK" --template-file infra/aws/cmms.yml \
+            --role-arn "$cfn_role" --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset \
+            --tags application=4c-cmms \
+            --parameter-overrides \
+              ImageUri="$IMAGE" \
+              OriginPrefixListId="$prefix_list" \
+              AllowRegistration="$ALLOW_REGISTRATION" \
+              DbInstanceClass="$DB_INSTANCE_CLASS"
+
+          url=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='Url'].OutputValue" --output text)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+
+      - name: Show why the deployment failed
+        if: failure() && steps.deploy.outcome == 'failure'
+        run: |
+          aws cloudformation describe-stack-events --stack-name "$STACK" --max-items 40 \
+            --query "StackEvents[?contains(ResourceStatus, 'FAILED')].[Timestamp, LogicalResourceId, ResourceStatusReason]" \
+            --output table || true
+
+      - name: Wait for the new version to answer
+        env:
+          URL: ${{ steps.deploy.outputs.url }}
+        run: |
+          for _ in $(seq 1 60); do
+            version=$(curl -fsS --max-time 10 "$URL/api/health" | jq -r .version 2>/dev/null || true)
+            if [ "$version" = "$COMMIT" ]; then echo "Live at $URL (version $version)"; exit 0; fi
+            sleep 15
+          done
+          echo "::error::$URL did not report version $COMMIT within 15 minutes. Check the logs in CloudWatch: log group /ecs/$STACK."
+          exit 1
+
+      - name: Summary
+        if: always() && steps.deploy.outputs.url != ''
+        run: |
+          {
+            echo "### 4C CMMS on AWS"
+            echo ""
+            echo "**${{ steps.deploy.outputs.url }}**"
+            echo ""
+            echo "Commit \`$COMMIT\` · region \`$AWS_REGION\` · stack \`$STACK\` · database \`$DB_INSTANCE_CLASS\` · sign-up open: \`$ALLOW_REGISTRATION\`"
+          } >> "$GITHUB_STEP_SUMMARY"

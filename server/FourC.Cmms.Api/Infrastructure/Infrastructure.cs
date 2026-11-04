@@ -1,6 +1,9 @@
 using System.Collections.Concurrent;
 using System.Linq.Expressions;
 using System.Security.Claims;
+using Amazon;
+using Amazon.S3;
+using Amazon.S3.Model;
 using Azure;
 using Azure.Core;
 using Azure.Identity;
@@ -184,6 +187,67 @@ public sealed class AzureBlobFileStorage : IFileStorage
     }
 }
 
+/// <summary>
+/// Attachments in Amazon S3. On AWS the app uses its ECS task role (no keys); Storage:S3:ServiceUrl plus access keys
+/// point it at an S3-compatible server (MinIO, moto) for local testing.
+/// </summary>
+public sealed class S3FileStorage : IFileStorage, IDisposable
+{
+    private readonly AmazonS3Client _s3;
+    private readonly string _bucket;
+    private readonly string? _region;
+    private readonly bool _ensureBucket;
+    private volatile bool _bucketReady;
+
+    public S3FileStorage(IConfiguration config)
+    {
+        _bucket = config["Storage:Bucket"] is { Length: > 0 } b ? b
+            : throw new InvalidOperationException("Storage:Bucket is required when Storage:Provider is S3.");
+        _region = config["Storage:Region"] is { Length: > 0 } region ? region : null;
+        var s3Config = new AmazonS3Config();
+        if (_region is not null) s3Config.RegionEndpoint = RegionEndpoint.GetBySystemName(_region);
+        if (config["Storage:S3:ServiceUrl"] is { Length: > 0 } url)
+        {
+            s3Config.ServiceURL = url;
+            s3Config.ForcePathStyle = true;
+            s3Config.AuthenticationRegion = _region ?? "us-east-1";
+            _s3 = new AmazonS3Client(new Amazon.Runtime.BasicAWSCredentials(config["Storage:S3:AccessKey"], config["Storage:S3:SecretKey"]), s3Config);
+            _ensureBucket = true; // local emulator: create on first use; on AWS the template creates it
+        }
+        else
+        {
+            _s3 = new AmazonS3Client(s3Config); // default credential chain = the ECS task role
+        }
+    }
+
+    private async Task EnsureBucketAsync(CancellationToken ct)
+    {
+        if (!_ensureBucket || _bucketReady) return;
+        var request = new PutBucketRequest { BucketName = _bucket };
+        if (_region is not null and not "us-east-1") request.BucketRegion = S3Region.FindValue(_region); // S3 needs the region outside us-east-1
+        try { await _s3.PutBucketAsync(request, ct); }
+        catch (AmazonS3Exception ex) when (ex.ErrorCode is "BucketAlreadyOwnedByYou" or "BucketAlreadyExists") { }
+        _bucketReady = true;
+    }
+
+    public async Task SaveAsync(string key, Stream content, CancellationToken ct = default)
+    {
+        await EnsureBucketAsync(ct);
+        await _s3.PutObjectAsync(new PutObjectRequest { BucketName = _bucket, Key = key, InputStream = content, AutoCloseStream = false }, ct);
+    }
+
+    public async Task<Stream?> OpenReadAsync(string key, CancellationToken ct = default)
+    {
+        try { return (await _s3.GetObjectAsync(_bucket, key, ct)).ResponseStream; }
+        catch (AmazonS3Exception ex) when (ex.StatusCode == System.Net.HttpStatusCode.NotFound) { return null; }
+    }
+
+    public async Task DeleteAsync(string key, CancellationToken ct = default) =>
+        await _s3.DeleteObjectAsync(_bucket, key, ct);
+
+    public void Dispose() => _s3.Dispose();
+}
+
 public static class AzureCredentials
 {
     /// <summary>The app's user-assigned managed identity when Azure:ClientId is set; otherwise the developer's Azure sign-in.</summary>
@@ -191,6 +255,22 @@ public static class AzureCredentials
         config["Azure:ClientId"] is { Length: > 0 } clientId
             ? new ManagedIdentityCredential(ManagedIdentityId.FromUserAssignedClientId(clientId))
             : new DefaultAzureCredential();
+}
+
+// ---------------- Database ----------------
+
+public static class DatabaseConnection
+{
+    /// <summary>
+    /// ConnectionStrings:Cmms, plus Database:User / Database:Password when the login is supplied separately
+    /// (e.g. injected from AWS Secrets Manager) so the password never has to be written into the connection string.
+    /// </summary>
+    public static string? Build(IConfiguration config)
+    {
+        var cs = config.GetConnectionString("Cmms");
+        if (config["Database:User"] is not { Length: > 0 } user) return cs;
+        return new Microsoft.Data.SqlClient.SqlConnectionStringBuilder(cs) { UserID = user, Password = config["Database:Password"] ?? "" }.ConnectionString;
+    }
 }
 
 // ---------------- Errors & validation ----------------

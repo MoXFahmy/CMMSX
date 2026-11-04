@@ -91,16 +91,19 @@ across three sites and simulates a year of operations — technicians, ~1,000 wo
 screen and report has data. (It takes a few seconds and runs once per organization.)
 API reference: `http://127.0.0.1:5080/api/docs`.
 
-## Deploy to Azure
+## Deploy to the cloud
 
-Azure Container Apps + Azure SQL + Blob Storage, deployed from GitHub Actions with no stored passwords.
-One-time setup and first deployment take about 20 minutes: see [docs/DEPLOY_AZURE.md](docs/DEPLOY_AZURE.md).
+GitHub Actions deploys every green build of `main`, signing in to the cloud with short-lived tokens (no stored keys).
+
+- **AWS**: ECS Fargate + RDS for SQL Server + S3, served over HTTPS by CloudFront. See [docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md).
+- **Azure**: Container Apps + Azure SQL + Blob Storage. See [docs/DEPLOY_AZURE.md](docs/DEPLOY_AZURE.md).
 
 ## Tests
 
 ```bash
 export CMMS_TEST_SQL="Server=localhost,1433;User Id=sa;Password=YourStr0ng!Pass;TrustServerCertificate=True"
 export CMMS_TEST_BLOB="UseDevelopmentStorage=true"   # optional: Azurite, to test Azure Blob attachments
+export CMMS_TEST_S3="http://127.0.0.1:9000"          # optional: an S3 emulator (moto_server, MinIO), to test S3 attachments
 dotnet test server/FourC.Cmms.slnx      # unit tests + integration tests (they create and drop their own database)
 cd web && npm run build                 # type-check + production build
 ```
@@ -117,7 +120,9 @@ server/
   FourC.Cmms.Api/           HTTP API (Features/*Endpoints.cs), auth, permissions, file storage
   FourC.Cmms.LegacyImport/  4CSQL → cloud importer (console)
   FourC.Cmms.Tests/         API integration tests
-infra/main.bicep            Azure resources (Container Apps, SQL, Storage, registry, logs)
+infra/aws/cmms.yml          AWS resources (VPC, ECS Fargate, load balancer, CloudFront, RDS, S3, logs)
+deploy/aws/                 one-time AWS ↔ GitHub connection (setup.sh + bootstrap.yml, run in CloudShell)
+infra/azure/main.bicep      Azure resources (Container Apps, SQL, Storage, registry, logs)
 deploy/azure/setup.sh       one-time Azure ↔ GitHub connection (run in Cloud Shell)
 web/src/
   pages/                    dashboard, locations, assets, work, pm, inventory, purchasing, reports, settings

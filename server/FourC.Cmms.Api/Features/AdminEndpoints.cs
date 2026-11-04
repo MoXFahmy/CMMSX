@@ -145,8 +145,11 @@ public static class AdminEndpoints
             return Results.Ok(new { t.Name, t.Settings });
         }).RequirePermission(Permissions.SettingsManage);
 
-        settings.MapPost("/sample-data", async (CmmsDbContext db, CancellationToken ct) =>
+        settings.MapPost("/sample-data", async (CmmsDbContext db) =>
         {
+            // Not tied to the request: if a proxy gives up waiting on a slow database, loading still completes
+            // instead of rolling back, and the data is there on the next refresh.
+            var ct = CancellationToken.None;
             var created = await SampleData.SeedAsync(db, ct: ct);
             var history = await db.InTransactionAsync(tk => SampleOperations.SeedAsync(db, ct: tk), ct);
             return Results.Ok(new { created, history });
