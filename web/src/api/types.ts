@@ -115,7 +115,9 @@ export type WorkOrderDetail = {
   startedAt?: string; completedAt?: string; closedAt?: string; completionNotes?: string; causeNotes?: string; assetWasDown: boolean; downtimeHours?: number;
   locationNotesToTechnician?: string; request?: { id: string; number: string; requesterName?: string };
   pm?: { id: string; code: string; name: string }; pmDueDate?: string;
-  tasks: { id: string; sequence: number; description: string; isDone: boolean; doneAt?: string; doneBy?: string }[];
+  /** Assets a PM round work order covers, in order (empty otherwise). */
+  assets: { id: string; assetNumber: string; name: string }[];
+  tasks: { id: string; sequence: number; description: string; isDone: boolean; doneAt?: string; doneBy?: string; assetId?: string; reading?: string; remarks?: string }[];
   labor: { id: string; employeeId: string; employeeName: string; workDate: string; createdAt: string; hours: number; overtimeHours: number; rate: number; overtimeRate: number; notes?: string; cost: number }[];
   costs: { id: string; description: string; quantity: number; unitCost: number; vendor?: string; reference?: string; total: number; createdAt: string }[];
   parts: WoPartItem[];
@@ -161,9 +163,13 @@ export type PmScheduleListItem = {
   id: string; code: string; name: string; type: PmScheduleType; basis: PmBasis; isActive: boolean; siteId: string; siteName: string; assetId?: string; assetNumber?: string;
   assetName?: string; locationName?: string; taskCode: string; taskName: string; schedule: string; nextDueDate?: string; nextDueReading?: number; meterUnit?: string;
   meterReading?: number; lastGeneratedAt?: string; lastWorkOrderId?: string; lastWorkOrderNumber?: string; openWorkOrders: number; isOverdue: boolean; multipleTasks: number;
+  /** Number of assets a round covers; 0 for single-asset/location schedules. */
+  assetCount: number;
 };
 export type PmScheduleDetail = {
   id: string; code: string; name: string; description?: string; siteId: string; locationId?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
+  /** A round's assets in order (empty for single-asset/location schedules). */
+  assets: { id: string; assetNumber: string; name: string }[];
   tradeId?: string; priority: WorkPriority; assigneeIds: string[]; pmTaskId: string; task: { id: string; code: string; name: string };
   extraTasks: { pmTaskId: string; everyNth: number }[]; type: PmScheduleType; basis: PmBasis; frequency: number; unit: FrequencyUnit;
   weekOfMonth?: number; dayOfWeek?: DayName; dayOfMonth?: number; workPeriodDays: number; wholeMonth: boolean; leadDays: number; startDate: string;

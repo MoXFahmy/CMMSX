@@ -118,6 +118,10 @@ export function WorkOrderDetailPage() {
                     <Group gap="xs" mb="md"><Text fz="sm" c="dimmed">{t('wo.asset')}:</Text>
                       <Anchor component={Link} to={`/assets/${w.asset.id}`} fz="sm" fw={500}>{w.asset.assetNumber} · {w.asset.name}</Anchor><CriticalityBadge value={w.asset.criticality} /></Group>
                   )}
+                  {w.assets.length > 0 && (
+                    <Group gap="xs" mb="md" align="flex-start" wrap="nowrap"><Text fz="sm" c="dimmed">{t('wo.assets')}:</Text>
+                      <Group gap={8}>{w.assets.map((a) => <Anchor key={a.id} component={Link} to={`/assets/${a.id}`} fz="sm" fw={500} title={a.name}>{a.assetNumber}</Anchor>)}</Group></Group>
+                  )}
                   <Field label={t('wo.description')}>{w.description}</Field>
                 </Card>
                 {(w.completedAt || w.completionNotes) && (
@@ -175,12 +179,14 @@ export function WorkOrderDetailPage() {
   );
 }
 
+type WoTask = WorkOrderDetail['tasks'][number];
+
 function TasksPanel({ w, canExec, onChange }: { w: WorkOrderDetail; canExec: boolean; onChange: () => Promise<void> }) {
   const { t } = useTranslation();
   const [text, setText] = useState('');
   // Optimistic ticks: the checkbox flips immediately and reverts if the save fails.
   const [pending, setPending] = useState<Record<string, boolean>>({});
-  const isDone = (x: WorkOrderDetail['tasks'][number]) => pending[x.id] ?? x.isDone;
+  const isDone = (x: WoTask) => pending[x.id] ?? x.isDone;
   const toggle = async (taskId: string, value: boolean) => {
     setPending((p) => ({ ...p, [taskId]: value }));
     try { await put(`/work-orders/${w.id}/tasks/${taskId}`, { isDone: value }); await onChange(); }
@@ -192,20 +198,26 @@ function TasksPanel({ w, canExec, onChange }: { w: WorkOrderDetail; canExec: boo
     if (!text.trim()) return;
     try { await post(`/work-orders/${w.id}/tasks`, { description: text }); setText(''); await onChange(); } catch (e) { notifyError(e); }
   };
+  // A PM round lists its steps once per covered asset: group them under each asset, in round order.
+  const groups = w.assets.length > 0
+    ? [...w.assets.map((a) => ({ asset: a as WorkOrderDetail['assets'][number] | null, tasks: w.tasks.filter((x) => x.assetId === a.id) })),
+      { asset: null, tasks: w.tasks.filter((x) => !w.assets.some((a) => a.id === x.assetId)) }].filter((g) => g.asset || g.tasks.length > 0)
+    : [{ asset: null, tasks: w.tasks }];
   return (
     <Card maw={820}>
       {w.tasks.length > 0 && <Group mb="md" gap="sm"><Progress value={(done / w.tasks.length) * 100} style={{ flex: 1 }} color="teal" /><Text fz="sm" c="dimmed">{t('wo.tasksDone', { done, total: w.tasks.length })}</Text></Group>}
       <Stack gap={6}>
         {w.tasks.length === 0 && <Text c="dimmed" fz="sm">{t('wo.noTasks')}</Text>}
-        {w.tasks.map((x) => (
-          <Group key={x.id} justify="space-between" wrap="nowrap" p={6} style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>
-            <Checkbox checked={isDone(x)} disabled={!canExec} label={<Text fz="sm" td={isDone(x) ? 'line-through' : undefined} c={isDone(x) ? 'dimmed' : undefined}>{x.description}</Text>}
-              onChange={(e) => void toggle(x.id, e.currentTarget.checked)} />
-            <Group gap={6} wrap="nowrap">
-              {x.isDone && <Text fz="xs" c="dimmed">{x.doneBy} · {fromNow(x.doneAt)}</Text>}
-              {canExec && <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('common.delete')} onClick={async () => { try { await del(`/work-orders/${w.id}/tasks/${x.id}`); await onChange(); } catch (e) { notifyError(e); } }}><IconTrash size={14} /></ActionIcon>}
-            </Group>
-          </Group>
+        {groups.map((g) => (
+          <Stack key={g.asset?.id ?? 'other'} gap={0}>
+            {g.asset && (
+              <Group justify="space-between" wrap="nowrap" px={6} py={8} bg="var(--mantine-color-default-hover)">
+                <Anchor component={Link} to={`/assets/${g.asset.id}`} fz="sm" fw={600} style={{ minWidth: 0 }} truncate>{g.asset.assetNumber} · {g.asset.name}</Anchor>
+                <Text fz="xs" c="dimmed">{t('wo.assetProgress', { done: g.tasks.filter(isDone).length, total: g.tasks.length })}</Text>
+              </Group>
+            )}
+            {g.tasks.map((x) => <TaskRow key={x.id} w={w} x={x} canExec={canExec} done={isDone(x)} onToggle={(v) => void toggle(x.id, v)} onChange={onChange} />)}
+          </Stack>
         ))}
       </Stack>
       {canExec && (
@@ -213,6 +225,35 @@ function TasksPanel({ w, canExec, onChange }: { w: WorkOrderDetail; canExec: boo
           <Button leftSection={<IconPlus size={14} />} onClick={add}>{t('common.create')}</Button></Group>
       )}
     </Card>
+  );
+}
+
+/** One checklist step: tick it, and optionally record a reading and remarks (saved when the field loses focus). */
+function TaskRow({ w, x, canExec, done, onToggle, onChange }: { w: WorkOrderDetail; x: WoTask; canExec: boolean; done: boolean; onToggle: (v: boolean) => void; onChange: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const save = async (field: 'reading' | 'remarks', value: string) => {
+    if ((x[field] ?? '') === value.trim()) return;
+    try { await put(`/work-orders/${w.id}/tasks/${x.id}`, { [field]: value }); await onChange(); } catch (e) { notifyError(e); }
+  };
+  return (
+    <Stack gap={4} p={6} style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>
+      <Group justify="space-between" wrap="nowrap">
+        <Checkbox checked={done} disabled={!canExec} label={<Text fz="sm" td={done ? 'line-through' : undefined} c={done ? 'dimmed' : undefined}>{x.description}</Text>}
+          onChange={(e) => onToggle(e.currentTarget.checked)} />
+        <Group gap={6} wrap="nowrap">
+          {x.isDone && <Text fz="xs" c="dimmed" visibleFrom="xs">{x.doneBy} · {fromNow(x.doneAt)}</Text>}
+          {canExec && <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('common.delete')} onClick={async () => { try { await del(`/work-orders/${w.id}/tasks/${x.id}`); await onChange(); } catch (e) { notifyError(e); } }}><IconTrash size={14} /></ActionIcon>}
+        </Group>
+      </Group>
+      {canExec ? (
+        <Group gap="xs" pl={30} wrap="wrap">
+          <TextInput key={`r:${x.reading ?? ''}`} size="xs" w={{ base: '100%', xs: 140 }} maxLength={100} placeholder={t('wo.reading')} aria-label={t('wo.reading')}
+            defaultValue={x.reading ?? ''} onBlur={(e) => void save('reading', e.currentTarget.value)} />
+          <TextInput key={`m:${x.remarks ?? ''}`} size="xs" style={{ flex: 1, minWidth: 180 }} maxLength={2000} placeholder={t('wo.remarks')} aria-label={t('wo.remarks')}
+            defaultValue={x.remarks ?? ''} onBlur={(e) => void save('remarks', e.currentTarget.value)} />
+        </Group>
+      ) : (x.reading || x.remarks) && <Text fz="xs" c="dimmed" pl={30}>{[x.reading, x.remarks].filter(Boolean).join(' · ')}</Text>}
+    </Stack>
   );
 }
 

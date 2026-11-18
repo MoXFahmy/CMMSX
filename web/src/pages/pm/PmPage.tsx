@@ -68,7 +68,7 @@ function SchedulesTab() {
         columns={[
           { accessor: 'code', title: t('pm.code'), noWrap: true, render: (s) => <Text fw={600} fz="sm" c={s.isActive ? 'brand' : 'dimmed'}>{s.code}</Text> },
           { accessor: 'name', title: t('common.name'), width: 260, render: (s) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{s.name}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{s.taskCode} · {s.taskName}{s.multipleTasks > 0 && ` +${s.multipleTasks}`}</Text></Stack> },
-          { accessor: 'asset', title: t('pm.target'), width: 220, render: (s) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{s.assetNumber ?? s.locationName}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{s.assetName ?? s.siteName}</Text></Stack> },
+          { accessor: 'asset', title: t('pm.target'), width: 220, render: (s) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{s.assetCount > 0 ? t('pm.assetCount', { count: s.assetCount }) : s.assetNumber ?? s.locationName}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{s.assetCount > 0 ? s.locationName ?? s.siteName : s.assetName ?? s.siteName}</Text></Stack> },
           { accessor: 'schedule', title: t('pm.schedule'), render: (s) => <Stack gap={0}><Text fz="sm">{s.schedule}{s.type === 'Meter' && s.meterUnit ? ` ${s.meterUnit}` : ''}</Text><Text fz="xs" c="dimmed">{t(`pm.types.${s.type}`)}</Text></Stack> },
           { accessor: 'nextDueDate', title: t('pm.nextDue'), noWrap: true, render: (s) => (
             <Stack gap={2}>

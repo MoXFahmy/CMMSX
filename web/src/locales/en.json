@@ -489,7 +489,11 @@
     "netIssued": "Net issued",
     "noParts": "No parts issued to this work order yet.",
     "orderForJob": "Order for this job",
-    "partsMovements": "Stock movements"
+    "partsMovements": "Stock movements",
+    "reading": "Reading",
+    "remarks": "Remarks",
+    "assets": "Assets",
+    "assetProgress": "{{done}}/{{total}}"
   },
   "wr": {
     "title": "Work requests",
@@ -537,7 +541,7 @@
     "schedule": "Schedule",
     "nextDue": "Next due",
     "lastWo": "Last work order",
-    "target": "Asset or location",
+    "target": "Target",
     "type": "Schedule type",
     "types": {
       "FixedInterval": "Fixed interval",
@@ -639,7 +643,16 @@
     "fromPm": "PM {{code}}",
     "overdue": "Overdue",
     "waiting": "Waiting for completion",
-    "active": "Active only"
+    "active": "Active only",
+    "targetAsset": "Asset",
+    "targetLocation": "Location",
+    "targetSeveral": "Several assets",
+    "addAsset": "Add asset",
+    "assetCount": "{{count}} assets",
+    "round": "Round",
+    "noAssets": "Add at least one asset.",
+    "moveUp": "Move up",
+    "moveDown": "Move down"
   },
   "txType": {
     "Receipt": "Receipt",

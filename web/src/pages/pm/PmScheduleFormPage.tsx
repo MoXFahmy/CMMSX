@@ -13,6 +13,7 @@ import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { LocationPicker } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
+import { AssetListEditor, type AssetRef } from '@/components/AssetListEditor';
 import { EmployeePicker } from '@/components/EmployeePicker';
 import { WoStatusBadge } from '@/components/WorkBadges';
 import { confirmDelete } from '@/components/confirm';
@@ -24,19 +25,22 @@ type V = {
   unit: string; weekOfMonth: string | null; dayOfWeek: string | null; dayOfMonth: number | ''; workPeriodDays: number | ''; wholeMonth: boolean; leadDays: number | '';
   startDate: Date | null; nextDueDate: Date | null; meterId: string | null; meterTrigger: string; meterInterval: number | ''; nextDueReading: number | '';
   lowerLimit: number | ''; upperLimit: number | ''; lowerTaskId: string | null; upperTaskId: string | null; timeBased: boolean; isActive: boolean;
+  /** What the schedule maintains: one asset, a location, or several assets (a round). */
+  target: Target; roundAssets: AssetRef[];
 };
+type Target = 'asset' | 'location' | 'several';
 const blank: V = {
   code: '', name: '', description: '', siteId: null, locationId: null, assetId: null, tradeId: null, priority: 'Medium', assigneeIds: [], pmTaskId: null, extraTasks: [],
   type: 'FixedInterval', basis: 'Scheduled', frequency: 1, unit: 'Month', weekOfMonth: '1', dayOfWeek: 'Monday', dayOfMonth: 1, workPeriodDays: 1, wholeMonth: false, leadDays: 7,
   startDate: new Date(), nextDueDate: null, meterId: null, meterTrigger: 'Incremental', meterInterval: '', nextDueReading: '', lowerLimit: '', upperLimit: '', lowerTaskId: null,
-  upperTaskId: null, timeBased: false, isActive: true,
+  upperTaskId: null, timeBased: false, isActive: true, target: 'asset', roundAssets: [],
 };
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 const n = (v: number | '') => (v === '' ? null : v);
 
-function toBody(v: V, rowVersion?: string) {
+function toBody({ target, roundAssets, ...v }: V, rowVersion?: string) {
   return {
-    ...v, frequency: n(v.frequency) ?? 1, dayOfMonth: n(v.dayOfMonth), workPeriodDays: n(v.workPeriodDays) ?? 1, leadDays: n(v.leadDays) ?? 0,
+    ...v, assetId: target === 'asset' ? v.assetId : null, assetIds: target === 'several' ? roundAssets.map((a) => a.id) : [], frequency: n(v.frequency) ?? 1, dayOfMonth: n(v.dayOfMonth), workPeriodDays: n(v.workPeriodDays) ?? 1, leadDays: n(v.leadDays) ?? 0,
     weekOfMonth: v.weekOfMonth ? Number(v.weekOfMonth) : null, startDate: toIsoDate(v.startDate) ?? toIsoDate(new Date()), nextDueDate: toIsoDate(v.nextDueDate),
     meterInterval: n(v.meterInterval), nextDueReading: n(v.nextDueReading), lowerLimit: n(v.lowerLimit), upperLimit: n(v.upperLimit),
     extraTasks: v.extraTasks.filter((x) => x.pmTaskId).map((x) => ({ pmTaskId: x.pmTaskId, everyNth: n(x.everyNth) ?? 2 })), rowVersion,
@@ -69,6 +73,7 @@ export function PmScheduleFormPage() {
         workPeriodDays: s.workPeriodDays, wholeMonth: s.wholeMonth, leadDays: s.leadDays, startDate: d(s.startDate), nextDueDate: d(s.nextDueDate), meterId: s.meterId ?? null,
         meterTrigger: s.meterTrigger ?? 'Incremental', meterInterval: s.meterInterval ?? '', nextDueReading: s.nextDueReading ?? '', lowerLimit: s.lowerLimit ?? '', upperLimit: s.upperLimit ?? '',
         lowerTaskId: s.lowerTaskId ?? null, upperTaskId: s.upperTaskId ?? null, timeBased: s.timeBased, isActive: s.isActive,
+        target: s.assets.length > 0 ? 'several' : s.assetId ? 'asset' : 'location', roundAssets: s.assets,
       });
       form.resetDirty();
     } else if (asset) form.setValues({ ...blank, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id, name: `PM · ${asset.name}` });
@@ -122,16 +127,22 @@ export function PmScheduleFormPage() {
               <Textarea label={t('common.description')} autosize {...form.getInputProps('description')} />
             </Stack></Card>
             <Card><Stack gap="sm">
-              <Title order={5}>{t('pm.target')}</Title>
-              <LocationPicker siteId={v.siteId} locationId={v.locationId} siteError={err('siteId')} locationError={err('locationId')} onChange={(si, l) => form.setValues({ siteId: si, locationId: l, assetId: si === v.siteId ? v.assetId : null })} />
-              <AssetPicker label={t('wo.asset')} value={v.assetId} onChange={(x) => form.setValues({ assetId: x, meterId: null })} error={err('assetId')} initial={s?.asset ?? (asset ? { id: asset.id, assetNumber: asset.assetNumber, name: asset.name } : null)} />
+              <Group justify="space-between" wrap="wrap" gap="xs">
+                <Title order={5}>{t('pm.target')}</Title>
+                <SegmentedControl size="xs" value={v.target} onChange={(x) => form.setValues({ target: x as Target, type: x === 'several' && v.type === 'Meter' ? 'FixedInterval' : v.type, meterId: x === 'asset' ? v.meterId : null })}
+                  data={[{ value: 'asset', label: t('pm.targetAsset') }, { value: 'location', label: t('pm.targetLocation') }, { value: 'several', label: t('pm.targetSeveral') }]} />
+              </Group>
+              <LocationPicker siteId={v.siteId} locationId={v.locationId} siteError={err('siteId')} locationError={err('locationId')} onChange={(si, l) => form.setValues({ siteId: si, locationId: l, assetId: si === v.siteId ? v.assetId : null, roundAssets: si === v.siteId ? v.roundAssets : [] })} />
+              {v.target === 'asset' && <AssetPicker label={t('wo.asset')} value={v.assetId} onChange={(x) => form.setValues({ assetId: x, meterId: null })} error={err('assetId')} initial={s?.asset ?? (asset ? { id: asset.id, assetNumber: asset.assetNumber, name: asset.name } : null)} />}
+              {v.target === 'several' && <AssetListEditor value={v.roundAssets} siteId={v.siteId} onChange={(x) => form.setFieldValue('roundAssets', x)} error={err('assetIds') ?? err('assetId')} />}
+              {v.target === 'location' && err('assetId') && <Text c="red" fz="sm">{err('assetId')}</Text>}
               <EmployeePicker label={t('wo.assignees')} value={v.assigneeIds} onChange={(x) => form.setFieldValue('assigneeIds', x)} siteId={v.siteId} tradeId={v.tradeId} />
             </Stack></Card>
             <Card><Stack gap="sm">
               <Title order={5}>{t('pm.type')}</Title>
               <Radio.Group value={v.type} onChange={(x) => form.setValues({ type: x, basis: x === 'DayOfWeekInMonth' || x === 'DateOfMonth' ? 'Scheduled' : v.basis })}>
                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                  {PM_TYPES.map((x) => <Radio.Card key={x} value={x} p="sm" radius="md" disabled={editing && (s?.generationCount ?? 0) > 0 && x !== s?.type}>
+                  {PM_TYPES.map((x) => <Radio.Card key={x} value={x} p="sm" radius="md" disabled={(editing && (s?.generationCount ?? 0) > 0 && x !== s?.type) || (x === 'Meter' && v.target === 'several')}>
                     <Group wrap="nowrap" align="flex-start"><Radio.Indicator /><div><Text fw={500} fz="sm">{t(`pm.types.${x}`)}</Text><Text fz="xs" c="dimmed">{t(`pm.typeHints.${x}`)}</Text></div></Group>
                   </Radio.Card>)}
                 </SimpleGrid>

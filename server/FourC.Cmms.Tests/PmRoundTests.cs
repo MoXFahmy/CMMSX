@@ -196,4 +196,12 @@ public class PmRoundTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Ok(await x.Http.PutAsJsonAsync($"/api/work-orders/{id}/tasks/{task}", new { reading = "" }));
         Assert.Equal(JsonValueKind.Null, (await Ok(await x.Http.GetAsync($"/api/work-orders/{id}"))).GetProperty("tasks")[2].GetProperty("reading").ValueKind);
     }
+    [SkippableFact]
+    public async Task Asset_lookup_can_be_limited_to_the_rounds_site()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var x = await SetupAsync();
+        var found = (await Ok(await x.Http.GetAsync($"/api/assets/lookup?siteId={x.OtherSite}"))).EnumerateArray().Select(a => a.GetProperty("id").GetGuid()).ToList();
+        Assert.Equal([x.Elsewhere], found);
+    }
 }

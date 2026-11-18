@@ -191,7 +191,7 @@ export function AssetDetailPage() {
                 { accessor: 'type', title: t('workType.label'), render: (w) => t(`workType.${w.type}`) },
                 { accessor: 'status', title: t('common.status'), noWrap: true, render: (w) => <WoStatusBadge status={w.status} /> },
                 { accessor: 'priority', title: t('priority.label'), noWrap: true, render: (w) => <PriorityBadge value={w.priority} /> },
-                { accessor: 'assetNumber', title: t('wo.asset'), noWrap: true },
+                { accessor: 'assetNumber', title: t('wo.asset'), noWrap: true, render: (w) => w.assetId ? w.assetNumber : <Badge size="sm" variant="light">{t('pm.round')}</Badge> },
                 { accessor: 'createdAt', title: t('wo.createdOn'), noWrap: true, render: (w) => fmtDate(w.createdAt) },
               ]} />
           </Card>
@@ -204,7 +204,9 @@ export function AssetDetailPage() {
               <DataTable minHeight={120} records={pms?.items ?? []} noRecordsText={t('common.noRecords')} highlightOnHover rowClassName={() => 'clickable-row'}
                 onRowClick={({ record }) => navigate(`/pm/schedules/${record.id}`)}
                 columns={[
-                  { accessor: 'code', title: t('pm.code'), noWrap: true }, { accessor: 'name', title: t('common.name') }, { accessor: 'taskName', title: t('pm.task') },
+                  { accessor: 'code', title: t('pm.code'), noWrap: true },
+                  { accessor: 'name', title: t('common.name'), render: (p) => <Group gap={6} wrap="nowrap"><Text fz="sm">{p.name}</Text>{p.assetCount > 0 && <Badge size="sm" variant="light">{t('pm.round')} · {p.assetCount}</Badge>}</Group> },
+                  { accessor: 'taskName', title: t('pm.task') },
                   { accessor: 'schedule', title: t('pm.schedule') },
                   { accessor: 'nextDueDate', title: t('pm.nextDue'), noWrap: true, render: (p) => p.nextDueDate ? <Text fz="sm" c={p.isOverdue ? 'red' : undefined}>{fmtDate(p.nextDueDate)}</Text> : p.nextDueReading != null ? `@ ${p.nextDueReading} ${p.meterUnit ?? ''}` : '—' },
                 ]} />

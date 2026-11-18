@@ -61,11 +61,12 @@ public static class AssetEndpoints
             return new PagedResult<object>(paged.Items.Select(i => (object)(i with { LocationPath = names(i.LocationPath) })).ToList(), paged.Total, paged.Page, paged.PageSize);
         }).RequirePermission(Permissions.AssetsView);
 
-        g.MapGet("/lookup", async (CmmsDbContext db, string? search, Guid? excludeId, CancellationToken ct) =>
+        g.MapGet("/lookup", async (CmmsDbContext db, string? search, Guid? excludeId, Guid? siteId, CancellationToken ct) =>
         {
             var q = db.Assets.AsNoTracking();
             if (search.Clean() is { } s) q = q.Where(a => a.AssetNumber.Contains(s) || a.Name.Contains(s));
             if (excludeId is not null) q = q.Where(a => a.Id != excludeId);
+            if (siteId is not null) q = q.Where(a => a.SiteId == siteId);
             return await q.OrderBy(a => a.AssetNumber).Take(30).Select(a => new { a.Id, a.AssetNumber, a.Name, a.SiteId, a.LocationId }).ToListAsync(ct);
         }).RequirePermission(Permissions.AssetsView);
 
