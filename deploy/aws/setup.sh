@@ -48,11 +48,22 @@ if [ "$CREATE_PROVIDER" != "true" ] && [ "$CREATE_PROVIDER" != "false" ]; then
   fi
 fi
 
+# GitHub signs its tokens with a subject that includes the owner's and repository's numeric ids
+# (repo:owner@123/name@456:ref:refs/heads/main); look them up so the role accepts exactly this repository.
+IDS=$(curl -fsSL "https://api.github.com/repos/$REPO" 2>/dev/null | jq -r '"\(.owner.id) \(.id)"' 2>/dev/null || true)
+OWNER_ID=${IDS%% *}
+REPO_ID=${IDS##* }
+if [[ ! "$OWNER_ID" =~ ^[0-9]+$ || ! "$REPO_ID" =~ ^[0-9]+$ ]]; then
+  echo "Note: could not look up $REPO on api.github.com (private repository?); only the name-only token subject will be accepted." >&2
+  OWNER_ID=""
+  REPO_ID=""
+fi
+
 echo "Creating the GitHub deployment role and image repository (stack $STACK, about 1 minute)..."
 aws cloudformation deploy --stack-name "$STACK" --template-file "$TEMPLATE" \
   --capabilities CAPABILITY_NAMED_IAM --no-fail-on-empty-changeset \
   --tags application=4c-cmms \
-  --parameter-overrides GitHubRepo="$REPO" CreateOidcProvider="$CREATE_PROVIDER"
+  --parameter-overrides GitHubRepo="$REPO" CreateOidcProvider="$CREATE_PROVIDER" GitHubOwnerId="$OWNER_ID" GitHubRepoId="$REPO_ID"
 
 ROLE_ARN=$(aws cloudformation describe-stacks --stack-name "$STACK" \
   --query "Stacks[0].Outputs[?OutputKey=='DeployRoleArn'].OutputValue" --output text)

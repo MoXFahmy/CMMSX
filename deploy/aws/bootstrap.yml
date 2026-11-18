@@ -21,9 +21,24 @@ Parameters:
     Type: String
     Default: cmms-app
     Description: Name of the CloudFormation stack that holds the app.
+  GitHubOwnerId:
+    Type: String
+    Default: ""
+    AllowedPattern: "^[0-9]*$"
+    Description: >-
+      Numeric id of the repository owner. GitHub now puts immutable ids in the OIDC subject
+      (repo:owner@ownerId/name@repoId:...); setup.sh looks both ids up. Empty = accept only the name-only subject.
+  GitHubRepoId:
+    Type: String
+    Default: ""
+    AllowedPattern: "^[0-9]*$"
+    Description: Numeric id of the repository (see GitHubOwnerId).
 
 Conditions:
   CreateProvider: !Equals [!Ref CreateOidcProvider, "true"]
+  HasRepoIds: !And
+    - !Not [!Equals [!Ref GitHubOwnerId, ""]]
+    - !Not [!Equals [!Ref GitHubRepoId, ""]]
 
 Resources:
   GitHubOidcProvider:
@@ -104,7 +119,15 @@ Resources:
             Condition:
               StringEquals:
                 token.actions.githubusercontent.com:aud: sts.amazonaws.com
-                token.actions.githubusercontent.com:sub: !Sub "repo:${GitHubRepo}:ref:refs/heads/main"
+                # Either subject format, main branch only; the id form is pinned to this exact owner and repository.
+                token.actions.githubusercontent.com:sub: !If
+                  - HasRepoIds
+                  - - !Sub "repo:${GitHubRepo}:ref:refs/heads/main"
+                    - !Sub
+                      - "repo:${Owner}@${GitHubOwnerId}/${Name}@${GitHubRepoId}:ref:refs/heads/main"
+                      - Owner: !Select [0, !Split ["/", !Ref GitHubRepo]]
+                        Name: !Select [1, !Split ["/", !Ref GitHubRepo]]
+                  - !Sub "repo:${GitHubRepo}:ref:refs/heads/main"
       Policies:
         - PolicyName: deploy
           PolicyDocument:

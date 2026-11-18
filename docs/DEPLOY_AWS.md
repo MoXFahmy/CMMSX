@@ -131,7 +131,7 @@ Repository variables read by the deployment workflow:
 | Symptom | Fix |
 |---|---|
 | Setup: `CAPABILITY_NAMED_IAM` or access denied | Run CloudShell as a user with administrator access to the account. |
-| Deploy: *"Not authorized to perform sts:AssumeRoleWithWebIdentity"* | The workflow ran from a branch other than `main`, or the repository was renamed, or `AWS_REGION` doesn't match the region where you ran the setup. Re-run `setup.sh` (with `REPO=owner/name` if renamed). |
+| Deploy: *"Not authorized to perform sts:AssumeRoleWithWebIdentity"* | The workflow ran from a branch other than `main`, or the repository was renamed, or `AWS_REGION` doesn't match the region where you ran the setup. GitHub now puts the owner's and repository's numeric ids in its token (`repo:owner@123/name@456:ref:refs/heads/main`); `setup.sh` looks them up on api.github.com, so a stack created by an older `setup.sh`, or for a private repository it could not look up, accepts only the name-only form. Re-run the current `setup.sh` (with `REPO=owner/name` if renamed). CloudTrail → Event history → `AssumeRoleWithWebIdentity` shows the subject GitHub sent. |
 | Deploy fails with *"The maximum number of VPCs has been reached"* | AWS allows 5 VPCs per region by default. Ask for more in **Service Quotas**, or use another region. |
 | The first deployment failed | The run's *Show why the deployment failed* step lists the reason. Fix it, then run the workflow again; it removes the failed attempt by itself before retrying. |
 | *"did not report version … within 15 minutes"* | The app failed to start. Look at the newest stream in the CloudWatch log group `/ecs/cmms-app`; the first lines show why. |
