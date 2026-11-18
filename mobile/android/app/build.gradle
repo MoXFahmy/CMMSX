@@ -36,6 +36,9 @@ android {
                 storePassword keystoreProps['storePassword']
                 keyAlias keystoreProps['keyAlias']
                 keyPassword keystoreProps['keyPassword']
+                // v3 signing lets a future key rotation update installed apps without an uninstall.
+                enableV2Signing true
+                enableV3Signing true
             }
         }
     }
