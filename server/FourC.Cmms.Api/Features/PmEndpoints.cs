@@ -18,7 +18,7 @@ public static class PmEndpoints
         List<Guid>? AssigneeIds, Guid PmTaskId, List<ExtraTaskInput>? ExtraTasks, PmScheduleType Type, PmBasis Basis, int Frequency, FrequencyUnit Unit,
         int? WeekOfMonth, DayOfWeek? DayOfWeek, int? DayOfMonth, int WorkPeriodDays, bool WholeMonth, int LeadDays, DateOnly StartDate, DateOnly? NextDueDate,
         Guid? MeterId, MeterTrigger? MeterTrigger, decimal? MeterInterval, decimal? NextDueReading, decimal? LowerLimit, decimal? UpperLimit,
-        Guid? LowerTaskId, Guid? UpperTaskId, bool TimeBased, bool IsActive = true, string? RowVersion = null);
+        Guid? LowerTaskId, Guid? UpperTaskId, bool TimeBased, bool IsActive = true, string? RowVersion = null, List<Guid>? AssetIds = null);
     public sealed record GenerateInput(DateOnly Until, Guid? SiteId, List<Guid>? ScheduleIds);
     public sealed record MeterInput(string Code, string Name, Guid AssetId, string Unit, decimal? MaxDailyIncrement, bool IsActive = true);
     public sealed record ReadingInput(decimal Value, DateTimeOffset? ReadAt, string? Note, bool Confirm = false);
@@ -90,13 +90,13 @@ public static class PmEndpoints
             var q = db.PmSchedules.AsNoTracking();
             if (search.Clean() is { } s) q = q.Where(x => x.Code.Contains(s) || x.Name.Contains(s) || x.Asset!.AssetNumber.Contains(s));
             if (siteId is not null) q = q.Where(x => x.SiteId == siteId);
-            if (assetId is not null) q = q.Where(x => x.AssetId == assetId || (x.Asset != null && x.Asset.ParentAssetId == assetId));
+            if (assetId is not null) q = q.Where(x => x.AssetId == assetId || (x.Asset != null && x.Asset.ParentAssetId == assetId) || x.Assets.Any(a => a.AssetId == assetId));
             if (type is not null) q = q.Where(x => x.Type == type);
             if (activeOnly == true) q = q.Where(x => x.IsActive);
             if (dueWithinDays is { } d) { var until = Today.AddDays(d); q = q.Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= until); }
             var paged = await q.SortBy(sort, dir, SortMap, "nextDueDate").Include(x => x.Meter).Include(x => x.ExtraTasks)
                 .Select(x => new { S = x, SiteName = x.Site!.Name, AssetNumber = x.Asset!.AssetNumber, AssetName = x.Asset.Name, LocationName = x.Location!.Name, TaskCode = x.PmTask!.Code, TaskName = x.PmTask.Name,
-                    MeterUnit = x.Meter!.Unit, MeterReading = x.Meter.CurrentReading,
+                    MeterUnit = x.Meter!.Unit, MeterReading = x.Meter.CurrentReading, AssetCount = x.Assets.Count,
                     LastWorkOrderNumber = db.WorkOrders.Where(w => w.Id == x.LastWorkOrderId).Select(w => w.Number).FirstOrDefault(),
                     OpenWorkOrders = db.WorkOrders.Count(w => w.PmScheduleId == x.Id && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold)) })
                 .ToPagedAsync(page ?? 1, pageSize ?? 25, ct);
@@ -105,19 +105,21 @@ public static class PmEndpoints
             {
                 i.S.Id, i.S.Code, i.S.Name, i.S.Type, i.S.Basis, i.S.IsActive, i.S.SiteId, i.SiteName, i.S.AssetId, i.AssetNumber, i.AssetName, i.LocationName,
                 i.TaskCode, i.TaskName, Schedule = PmCalendar.Describe(i.S), i.S.NextDueDate, i.S.NextDueReading, i.MeterUnit, i.MeterReading, i.S.LastGeneratedAt,
-                i.S.LastWorkOrderId, i.LastWorkOrderNumber, i.OpenWorkOrders, IsOverdue = i.S.IsActive && i.S.NextDueDate < today, MultipleTasks = i.S.ExtraTasks.Count,
+                i.S.LastWorkOrderId, i.LastWorkOrderNumber, i.OpenWorkOrders, IsOverdue = i.S.IsActive && i.S.NextDueDate < today, MultipleTasks = i.S.ExtraTasks.Count, i.AssetCount,
             }).ToList(), paged.Total, paged.Page, paged.PageSize);
         }).RequirePermission(Permissions.PmView);
 
         g.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
-            var s = await db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Asset).Include(x => x.Meter).Include(x => x.PmTask).FirstOrDefaultAsync(x => x.Id == id, ct);
+            var s = await db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Asset).Include(x => x.Meter).Include(x => x.PmTask)
+                .Include(x => x.Assets).ThenInclude(a => a.Asset).AsSplitQuery().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (s is null) return Results.NotFound();
             var recent = await db.WorkOrders.AsNoTracking().Where(w => w.PmScheduleId == id).OrderByDescending(w => w.CreatedAt).Take(10)
                 .Select(w => new { w.Id, w.Number, w.Title, w.Status, w.PmDueDate, w.CompletedAt }).ToListAsync(ct);
             return Results.Ok(new
             {
                 s.Id, s.Code, s.Name, s.Description, s.SiteId, s.LocationId, s.AssetId, Asset = s.Asset is null ? null : new { s.Asset.Id, s.Asset.AssetNumber, s.Asset.Name },
+                Assets = s.Assets.Where(a => a.Asset is not null).OrderBy(a => a.Sequence).Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name }),
                 s.TradeId, s.Priority, s.AssigneeIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, s.PmTask.Name },
                 ExtraTasks = s.ExtraTasks.Select(e => new { e.PmTaskId, e.EveryNth }), s.Type, s.Basis, s.Frequency, s.Unit, s.WeekOfMonth, s.DayOfWeek, s.DayOfMonth,
                 s.WorkPeriodDays, s.WholeMonth, s.LeadDays, s.StartDate, s.NextDueDate, s.LastDueDate, s.LastGeneratedAt, s.GenerationCount,
@@ -156,7 +158,7 @@ public static class PmEndpoints
 
         g.MapPut("/{id:guid}", async (Guid id, ScheduleInput input, CmmsDbContext db, CancellationToken ct) =>
         {
-            var s = await db.PmSchedules.Include(x => x.ExtraTasks).FirstOrDefaultAsync(x => x.Id == id, ct);
+            var s = await db.PmSchedules.Include(x => x.ExtraTasks).Include(x => x.Assets).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (s is null) return Results.NotFound();
             var v = await ValidateScheduleAsync(input, id, db, ct);
             if (input.Basis != s.Basis && s.GenerationCount > 0) v.Add("basis", "The generation basis cannot change after work orders were generated (as in 4CSQL). Create a new schedule instead.");
@@ -302,7 +304,16 @@ public static class PmEndpoints
             .When(id is null && i.Type != PmScheduleType.Meter && i.StartDate < Today.AddDays(-366), "startDate", "Start date is more than a year in the past.");
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.PmSchedules.AnyAsync(x => x.Code == i.Code.Trim() && x.Id != id, ct)) v.Add("code", "Another schedule uses this number.");
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
-        if (i.AssetId is null && i.LocationId is null) v.Add("assetId", "Choose the asset or location to maintain.");
+        var round = i.AssetIds ?? [];
+        if (i.AssetId is null && i.LocationId is null && round.Count == 0) v.Add("assetId", "Choose the asset or location to maintain.");
+        if (round.Count > 100) v.Add("assetIds", "List at most 100 assets.");
+        else if (round.Count > 0)
+        {
+            if (round.Distinct().Count() != round.Count) v.Add("assetIds", "An asset is listed twice.");
+            else if (await db.Assets.CountAsync(a => round.Contains(a.Id) && a.SiteId == i.SiteId, ct) != round.Count) v.Add("assetIds", "Assets must belong to the selected site.");
+            if (i.Type == PmScheduleType.Meter) v.Add("assetIds", "Meter schedules cannot cover several assets.");
+            if (i.AssetId is not null) v.Add("assetId", "Choose either one asset or several assets.");
+        }
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct)) v.Add("locationId", "Location must belong to the selected site.");
         if (i.AssetId is not null && !await db.Assets.AnyAsync(a => a.Id == i.AssetId && a.SiteId == i.SiteId, ct)) v.Add("assetId", "Asset must belong to the selected site.");
         var taskIds = new[] { (Guid?)i.PmTaskId, i.LowerTaskId, i.UpperTaskId }.OfType<Guid>().Concat((i.ExtraTasks ?? []).Select(e => e.PmTaskId)).Distinct().ToList();
@@ -332,6 +343,14 @@ public static class PmEndpoints
         s.MeterInterval = i.MeterInterval; s.LowerLimit = i.LowerLimit; s.UpperLimit = i.UpperLimit; s.LowerTaskId = i.LowerTaskId; s.UpperTaskId = i.UpperTaskId;
         s.TimeBased = i.Type == PmScheduleType.Meter && i.TimeBased;
         if (i.NextDueReading is not null) s.NextDueReading = i.NextDueReading;
+        var listed = (i.AssetIds ?? []).Distinct().ToList();
+        s.Assets.RemoveAll(a => !listed.Contains(a.AssetId));
+        for (var n = 0; n < listed.Count; n++)
+        {
+            var existing = s.Assets.FirstOrDefault(a => a.AssetId == listed[n]);
+            if (existing is null) s.Assets.Add(new PmScheduleAsset { PmScheduleId = s.Id, AssetId = listed[n], Sequence = n + 1 });
+            else existing.Sequence = n + 1;
+        }
         var want = (i.ExtraTasks ?? []).GroupBy(e => e.PmTaskId).Select(e => e.First()).Where(e => e.PmTaskId != i.PmTaskId).ToList();
         s.ExtraTasks.RemoveAll(e => want.All(w => w.PmTaskId != e.PmTaskId));
         foreach (var w in want)
