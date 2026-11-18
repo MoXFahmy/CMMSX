@@ -96,6 +96,8 @@ public static class WorkOrderEndpoints
                     .OrderBy(l => l.Depth).Select(l => new { l.Id, l.Name }));
             }
             var tasks = await db.WorkOrderTasks.AsNoTracking().Where(t => t.WorkOrderId == id).OrderBy(t => t.Sequence).ToListAsync(ct);
+            var roundAssets = await db.WorkOrderAssets.AsNoTracking().Where(a => a.WorkOrderId == id && a.Asset != null).OrderBy(a => a.Sequence)
+                .Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name }).ToListAsync(ct);
             var labor = await db.WorkOrderLabor.AsNoTracking().Where(l => l.WorkOrderId == id).OrderByDescending(l => l.WorkDate).ThenByDescending(l => l.CreatedAt)
                 .Select(l => new { l.Id, l.EmployeeId, EmployeeName = l.Employee!.FullName, l.WorkDate, l.CreatedAt, l.Hours, l.OvertimeHours, l.Rate, l.OvertimeRate, l.Notes,
                     Cost = l.Hours * l.Rate + l.OvertimeHours * l.OvertimeRate }).ToListAsync(ct);
@@ -122,7 +124,8 @@ public static class WorkOrderEndpoints
                 Assignees = w.Assignees.Select(a => new { a.EmployeeId, a.Employee!.FullName, a.Employee.Code }),
                 w.PlannedStart, w.DueDate, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 LocationNotesToTechnician = locationNotes, Request = request, Pm = pm, w.PmDueDate,
-                Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy }),
+                Assets = roundAssets,
+                Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId }),
                 Labor = labor, Costs = costs, Parts = parts,
                 Totals = new
                 {

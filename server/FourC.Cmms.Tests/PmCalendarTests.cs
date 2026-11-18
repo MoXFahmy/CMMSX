@@ -64,4 +64,38 @@ public class PmCalendarTests
         sched.Basis = PmBasis.Actual;
         Assert.Single(PmCalendar.Forecast(sched, D(2026, 12, 31)));
     }
+    // ---- PM rounds (multi-asset schedules) ----
+    private static readonly Guid Site = Guid.NewGuid(), Other = Guid.NewGuid();
+    private static RoundAsset R(Guid id, int seq, string? path = null, bool available = true, Guid? site = null) =>
+        new(id, seq, site ?? Site, path, path is null ? null : Guid.Parse(path.TrimEnd('/').Split('/')[^1]), available);
+    private static string P(params Guid[] ids) => "/" + string.Concat(ids.Select(i => i.ToString("N") + "/"));
+
+    [Fact]
+    public void Round_covers_available_assets_of_the_site_in_list_order()
+    {
+        Guid a = Guid.NewGuid(), b = Guid.NewGuid(), c = Guid.NewGuid(), gone = Guid.NewGuid(), moved = Guid.NewGuid();
+        var covered = PmRound.Covered([R(c, 3), R(gone, 4, available: false), R(a, 1), R(moved, 5, site: Other), R(b, 2)], Site);
+        Assert.Equal([a, b, c], covered.Select(x => x.Id));
+    }
+
+    [Fact]
+    public void Round_steps_repeat_per_asset_with_continuous_sequence()
+    {
+        Guid a = Guid.NewGuid(), b = Guid.NewGuid();
+        var steps = PmRound.Steps([R(a, 1), R(b, 2)], ["Look", "Listen"]);
+        Assert.Equal([1, 2, 3, 4], steps.Select(s => s.Sequence));
+        Assert.Equal([a, a, b, b], steps.Select(s => s.AssetId));
+        Assert.Equal(["Look", "Listen", "Look", "Listen"], steps.Select(s => s.Description));
+    }
+
+    [Fact]
+    public void Round_common_location_is_the_deepest_shared_path()
+    {
+        Guid x = Guid.NewGuid(), y = Guid.NewGuid(), la = Guid.NewGuid(), lb = Guid.NewGuid(), z = Guid.NewGuid();
+        Assert.Equal(y, PmRound.CommonLocationId([R(Guid.NewGuid(), 1, P(x, y, la)), R(Guid.NewGuid(), 2, P(x, y, lb))]));
+        Assert.Equal(la, PmRound.CommonLocationId([R(Guid.NewGuid(), 1, P(x, y, la)), R(Guid.NewGuid(), 2, P(x, y, la))]));
+        Assert.Null(PmRound.CommonLocationId([R(Guid.NewGuid(), 1, P(x)), R(Guid.NewGuid(), 2, P(z))]));
+        Assert.Null(PmRound.CommonLocationId([R(Guid.NewGuid(), 1, P(x, y)), R(Guid.NewGuid(), 2)]));
+        Assert.Null(PmRound.CommonLocationId([]));
+    }
 }

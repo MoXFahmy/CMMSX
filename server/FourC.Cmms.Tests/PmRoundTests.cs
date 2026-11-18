@@ -92,4 +92,63 @@ public class PmRoundTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Empty(detail.GetProperty("assets").EnumerateArray());
         Assert.Equal(x.A, detail.GetProperty("assetId").GetGuid());
     }
+    private static async Task<JsonElement> Generate(Ctx x, DateOnly until) =>
+        await Ok(await x.Http.PostAsJsonAsync("/api/pm/generate", new { until = Iso(until) }));
+
+    private static JsonElement ResultFor(JsonElement gen, Guid scheduleId) =>
+        gen.GetProperty("results").EnumerateArray().First(r => r.GetProperty("scheduleId").GetGuid() == scheduleId);
+
+    [SkippableFact]
+    public async Task Round_generates_one_work_order_with_steps_per_asset()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var x = await SetupAsync();
+        await Ok(await x.Http.PostAsJsonAsync("/api/pm-schedules", Round(x, [x.A, x.B], Today)));
+
+        var gen = await Generate(x, Today);
+        Assert.Equal(1, gen.GetProperty("created").GetInt32());
+        var wo = await Ok(await x.Http.GetAsync($"/api/work-orders/{gen.GetProperty("results")[0].GetProperty("workOrderId").GetGuid()}"));
+        Assert.Equal(JsonValueKind.Null, wo.GetProperty("assetId").ValueKind);
+        Assert.Equal([x.A, x.B], Ids(wo.GetProperty("assets")));
+        var tasks = wo.GetProperty("tasks").EnumerateArray().ToList();
+        Assert.Equal([x.A, x.A, x.B, x.B], tasks.Select(t => t.GetProperty("assetId").GetGuid()));
+        Assert.Equal(["Look", "Listen", "Look", "Listen"], tasks.Select(t => t.GetProperty("description").GetString()));
+    }
+
+    [SkippableFact]
+    public async Task Round_leaves_out_unavailable_and_moved_assets()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var x = await SetupAsync();
+        await Ok(await x.Http.PostAsJsonAsync("/api/pm-schedules", Round(x, [x.A, x.B, x.C], Today)));
+        await Ok(await x.Http.PostAsJsonAsync("/api/assets/bulk", new { ids = new[] { x.B }, status = "Disposed" }));
+        await Ok(await x.Http.PostAsJsonAsync($"/api/assets/{x.C}/transfer", new { siteId = x.OtherSite, reason = "moved" }));
+        var d = await AssetAsync(x.Http, "Feeder D", x.Site);
+        var lonely = (await Ok(await x.Http.PostAsJsonAsync("/api/pm-schedules", Round(x, [d], Today)))).GetProperty("id").GetGuid();
+        Assert.True((await x.Http.DeleteAsync($"/api/assets/{d}")).IsSuccessStatusCode);
+
+        var gen = await Generate(x, Today);
+        Assert.Equal(1, gen.GetProperty("created").GetInt32());
+        var made = gen.GetProperty("results").EnumerateArray().Single(r => r.GetProperty("workOrderId").ValueKind == JsonValueKind.String);
+        var wo = await Ok(await x.Http.GetAsync($"/api/work-orders/{made.GetProperty("workOrderId").GetGuid()}"));
+        Assert.Equal([x.A], Ids(wo.GetProperty("assets")));
+        var skipped = ResultFor(gen, lonely);
+        Assert.Equal("No active assets in the list", skipped.GetProperty("skipped").GetString());
+        Assert.Equal(JsonValueKind.Null, skipped.GetProperty("workOrderId").ValueKind);
+    }
+
+    [SkippableFact]
+    public async Task Round_rotates_the_heavier_task_like_single_asset_schedules()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var x = await SetupAsync();
+        await Ok(await x.Http.PostAsJsonAsync("/api/pm-schedules", Round(x, [x.A, x.B], Today.AddDays(-7), extra: [new { pmTaskId = x.Monthly, everyNth = 2 }])));
+
+        var gen = await Generate(x, Today);
+        Assert.Equal(2, gen.GetProperty("created").GetInt32());
+        var second = await Ok(await x.Http.GetAsync($"/api/work-orders/{gen.GetProperty("results")[1].GetProperty("workOrderId").GetGuid()}"));
+        var tasks = second.GetProperty("tasks").EnumerateArray().ToList();
+        Assert.Equal(["Grease", "Grease"], tasks.Select(t => t.GetProperty("description").GetString()));
+        Assert.Equal([x.A, x.B], tasks.Select(t => t.GetProperty("assetId").GetGuid()));
+    }
 }

@@ -33,7 +33,7 @@ public static class PmGenerator
         {
             try
             {
-                var query = db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Asset).Where(s => s.Id == id);
+                var query = db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Asset).Include(s => s.Assets).Where(s => s.Id == id);
                 var s = dryRun ? await query.AsNoTracking().FirstAsync(ct) : await query.FirstAsync(ct);
                 results.AddRange(await GenerateForAsync(db, ctx, s, until ?? today.AddDays(Math.Max(0, s.LeadDays)), dryRun, ct));
             }
@@ -60,6 +60,9 @@ public static class PmGenerator
         if (s.NextDueDate is not { } first || first > limit) return results;
         if (s.Basis == PmBasis.Actual && await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && Active.Contains(w.Status), ct))
             return [new Result(s.Id, s.Code, s.Name, first, null, s.Asset?.AssetNumber, null, null, "Previous PM work order is still open")];
+        IReadOnlyList<RoundAsset>? round = null;
+        if (s.Assets.Count > 0 && (round = await RoundAssetsAsync(db, s, ct)).Count == 0)
+            return [new Result(s.Id, s.Code, s.Name, first, null, null, null, null, NoActiveAssets)];
         var taskIds = s.ExtraTasks.Select(x => x.PmTaskId).Append(s.PmTaskId).Distinct().ToList();
         var tasks = await db.PmTasks.AsNoTracking().Include(t => t.Steps).Where(t => taskIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
         for (var guard = 0; guard < 120 && s.NextDueDate is { } due && due <= limit; guard++)
@@ -68,7 +71,7 @@ public static class PmGenerator
             var task = tasks.GetValueOrDefault(PmCalendar.TaskFor(s, count)) ?? tasks.GetValueOrDefault(s.PmTaskId);
             WorkOrder? wo = null;
             var exists = await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && w.PmDueDate == due, ct);
-            if (!exists && !dryRun && task is not null) wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct);
+            if (!exists && !dryRun && task is not null) wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct, round);
             results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, wo?.Id, wo?.Number,
                 task is null ? "PM task not found" : exists ? "Already generated" : null));
             s.GenerationCount = count; s.LastDueDate = due; s.LastGeneratedAt = DateTimeOffset.UtcNow; s.LastWorkOrderId = wo?.Id ?? s.LastWorkOrderId;
@@ -81,17 +84,42 @@ public static class PmGenerator
         return results;
     }
 
-    public static async Task<WorkOrder> CreateWorkOrderAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, PmTask task, DateOnly? due, string? trigger, CancellationToken ct)
+    public const string NoActiveAssets = "No active assets in the list";
+
+    /// <param name="round">For a round schedule, its covered assets if already loaded; loaded here otherwise.</param>
+    public static async Task<WorkOrder> CreateWorkOrderAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, PmTask task, DateOnly? due, string? trigger, CancellationToken ct,
+        IReadOnlyList<RoundAsset>? round = null)
     {
+        if (s.Assets.Count > 0) round ??= await RoundAssetsAsync(db, s, ct);
+        else round = null;
         var assignees = s.AssigneeIds.Count == 0 ? [] : await db.Employees.Where(e => s.AssigneeIds.Contains(e.Id) && e.IsActive).Select(e => e.Id).ToListAsync(ct);
         var description = string.Join("\n\n", new[] { task.Description ?? s.Description, task.SafetyNotes is { Length: > 0 } sn ? $"Safety: {sn}" : null, trigger }.Where(x => !string.IsNullOrWhiteSpace(x)));
         var title = task.Id == s.PmTaskId ? s.Name : $"{s.Name} — {task.Name}";
         var start = due ?? Today;
+        var steps = task.Steps.OrderBy(x => x.Sequence).Select(x => x.Description).ToList();
+        // A round's work order has no single asset: it lists the covered assets and repeats the steps for each of them.
         var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description.Length == 0 ? null : description, WorkType.Preventive, s.Priority,
-            s.SiteId, s.LocationId, s.AssetId, s.TradeId ?? task.TradeId, assignees, start, PmCalendar.DueDate(s, start), task.EstimatedHours,
-            task.Steps.OrderBy(x => x.Sequence).Select(x => x.Description).ToList());
-        return await WorkOrderEndpoints.CreateAsync(db, ctx, input, null, ct,
-            w => { w.PmScheduleId = s.Id; w.PmTaskId = task.Id; w.PmDueDate = due; }, $"Generated from PM {s.Code}");
+            s.SiteId, round is null ? s.LocationId : s.LocationId ?? PmRound.CommonLocationId(round), round is null ? s.AssetId : null, s.TradeId ?? task.TradeId, assignees,
+            start, PmCalendar.DueDate(s, start), task.EstimatedHours, round is null ? steps : null);
+        return await WorkOrderEndpoints.CreateAsync(db, ctx, input, null, ct, w =>
+        {
+            w.PmScheduleId = s.Id; w.PmTaskId = task.Id; w.PmDueDate = due;
+            if (round is null) return;
+            for (var n = 0; n < round.Count; n++) w.Assets.Add(new WorkOrderAsset { WorkOrderId = w.Id, AssetId = round[n].Id, Sequence = n + 1 });
+            foreach (var st in PmRound.Steps(round, steps))
+                db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = st.Sequence, AssetId = st.AssetId, Description = st.Description.Length > 1000 ? st.Description[..1000] : st.Description });
+        }, $"Generated from PM {s.Code}");
+    }
+
+    /// <summary>The assets a round's next work order covers (deleted assets drop out through the query filter).</summary>
+    private static async Task<IReadOnlyList<RoundAsset>> RoundAssetsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct)
+    {
+        var sequence = s.Assets.ToDictionary(a => a.AssetId, a => a.Sequence);
+        var ids = sequence.Keys.ToList();
+        var rows = await db.Assets.AsNoTracking().Where(a => ids.Contains(a.Id))
+            .Select(a => new { a.Id, a.SiteId, a.Status, a.LocationId, Path = a.Location != null ? a.Location.Path : null }).ToListAsync(ct);
+        return PmRound.Covered(rows.Select(a => new RoundAsset(a.Id, sequence[a.Id], a.SiteId, a.Path, a.LocationId,
+            a.Status is not (Core.Assets.AssetStatus.Disposed or Core.Assets.AssetStatus.Inactive))), s.SiteId);
     }
 
     /// <summary>"Actual" schedules restart from the completion (or cancellation) of their latest work order.</summary>
