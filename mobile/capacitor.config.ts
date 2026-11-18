@@ -17,6 +17,10 @@ const config: CapacitorConfig = {
     // Shown instead of a browser error when the cloud app can't be reached.
     errorPath: 'offline.html',
   },
+  plugins: {
+    // Android 15+ draws apps edge to edge; 'native' keeps the cloud app's header clear of the status bar.
+    SystemBars: { insetsHandling: 'native' },
+  },
   android: {
     // Lets the web app show "Android app x.y.z" and the server's logs tell app traffic apart.
     appendUserAgent: `4CCMMS-Android/${version}`,

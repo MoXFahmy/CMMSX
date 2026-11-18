@@ -4,4 +4,10 @@
     <string name="title_activity_main">4C CMMS</string>
     <string name="package_name">com.fourcsystems.cmms</string>
     <string name="custom_url_scheme">com.fourcsystems.cmms</string>
+    <string name="add_file">Add a photo or file</string>
+    <string name="downloading">Downloading %1$s</string>
+    <string name="could_not_download">Could not download %1$s</string>
+    <string name="saved_to_downloads">Saved to Downloads: %1$s</string>
+    <string name="saved_to_app_folder">Saved: %1$s (Files › Android › data › com.fourcsystems.cmms)</string>
+    <string name="could_not_save">Could not save %1$s</string>
 </resources>

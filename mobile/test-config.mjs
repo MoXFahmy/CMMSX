@@ -14,6 +14,10 @@ const checks = [
   ['opens the cloud app', () => assert.equal(cfg.server?.url, 'https://dxvjhwlc6echh.cloudfront.net')],
   ['offline page', () => assert.equal(cfg.server?.errorPath, 'offline.html')],
   ['version in the user agent', () => assert.equal(cfg.android?.appendUserAgent, `4CCMMS-Android/${version}`)],
+  // Android 15+ draws apps edge to edge; 'native' keeps the cloud app's header clear of the status bar.
+  ['status bar handled by Capacitor', () => assert.equal(cfg.plugins?.SystemBars?.insetsHandling, 'native')],
+  // Other sites must open in the phone's browser, not inside the app.
+  ['no other sites allowed in the app', () => assert.ok(!cfg.server?.allowNavigation?.length)],
 ];
 let failed = 0;
 for (const [name, check] of checks) {
