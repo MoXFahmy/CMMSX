@@ -151,4 +151,49 @@ public class PmRoundTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(["Grease", "Grease"], tasks.Select(t => t.GetProperty("description").GetString()));
         Assert.Equal([x.A, x.B], tasks.Select(t => t.GetProperty("assetId").GetGuid()));
     }
+    private async Task<(JsonElement Wo, Guid Id)> RoundWorkOrderAsync(Ctx x, Guid[] assets)
+    {
+        await Ok(await x.Http.PostAsJsonAsync("/api/pm-schedules", Round(x, assets, Today)));
+        var id = (await Generate(x, Today)).GetProperty("results")[0].GetProperty("workOrderId").GetGuid();
+        return (await Ok(await x.Http.GetAsync($"/api/work-orders/{id}")), id);
+    }
+
+    [SkippableFact]
+    public async Task Round_work_order_shows_in_each_assets_history_and_open_work()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var x = await SetupAsync();
+        var (_, round) = await RoundWorkOrderAsync(x, [x.A, x.B]);
+        var single = (await Ok(await x.Http.PostAsJsonAsync("/api/work-orders", new { title = "Fix feeder A", type = "Corrective", priority = "High", siteId = x.Site, assetId = x.A }))).GetProperty("id").GetGuid();
+
+        List<Guid> ListFor(JsonElement page) => page.GetProperty("items").EnumerateArray().Select(w => w.GetProperty("id").GetGuid()).ToList();
+        Assert.Equal([round], ListFor(await Ok(await x.Http.GetAsync($"/api/work-orders?assetId={x.B}"))));
+        var forA = ListFor(await Ok(await x.Http.GetAsync($"/api/work-orders?assetId={x.A}")));
+        Assert.Equal(2, forA.Count);
+        Assert.Contains(round, forA);
+        Assert.Contains(single, forA);
+
+        var open = await Ok(await x.Http.GetAsync($"/api/assets/{x.B}/open-work"));
+        Assert.Contains(round, open.GetProperty("openWorkOrders").EnumerateArray().Select(w => w.GetProperty("id").GetGuid()));
+    }
+
+    [SkippableFact]
+    public async Task Steps_record_readings_and_remarks()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var x = await SetupAsync();
+        var (wo, id) = await RoundWorkOrderAsync(x, [x.A, x.B]);
+        var task = wo.GetProperty("tasks")[2].GetProperty("id").GetGuid();
+
+        await Ok(await x.Http.PutAsJsonAsync($"/api/work-orders/{id}/tasks/{task}", new { reading = "72 °C", remarks = "تسريب بسيط" }));
+        var step = (await Ok(await x.Http.GetAsync($"/api/work-orders/{id}"))).GetProperty("tasks")[2];
+        Assert.Equal("72 °C", step.GetProperty("reading").GetString());
+        Assert.Equal("تسريب بسيط", step.GetProperty("remarks").GetString());
+        Assert.False(step.GetProperty("isDone").GetBoolean());
+
+        await Invalid(await x.Http.PutAsJsonAsync($"/api/work-orders/{id}/tasks/{task}", new { reading = new string('9', 101) }), "reading");
+        await Invalid(await x.Http.PutAsJsonAsync($"/api/work-orders/{id}/tasks/{task}", new { remarks = new string('ت', 2001) }), "remarks");
+        await Ok(await x.Http.PutAsJsonAsync($"/api/work-orders/{id}/tasks/{task}", new { reading = "" }));
+        Assert.Equal(JsonValueKind.Null, (await Ok(await x.Http.GetAsync($"/api/work-orders/{id}"))).GetProperty("tasks")[2].GetProperty("reading").ValueKind);
+    }
 }

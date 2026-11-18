@@ -17,7 +17,7 @@ public static class WorkOrderEndpoints
         string? RequestedBy = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null);
-    public sealed record TaskInput(string? Description, bool? IsDone);
+    public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null);
     public sealed record LaborInput(Guid EmployeeId, DateOnly WorkDate, decimal Hours, decimal OvertimeHours, string? Notes);
     public sealed record CostInput(string Description, decimal Quantity, decimal UnitCost, string? Vendor, string? Reference = null);
     public sealed record CommentInput(string Body);
@@ -125,7 +125,7 @@ public static class WorkOrderEndpoints
                 w.PlannedStart, w.DueDate, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 LocationNotesToTechnician = locationNotes, Request = request, Pm = pm, w.PmDueDate,
                 Assets = roundAssets,
-                Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId }),
+                Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks }),
                 Labor = labor, Costs = costs, Parts = parts,
                 Totals = new
                 {
@@ -228,7 +228,7 @@ public static class WorkOrderEndpoints
         {
             var a = await db.Assets.AsNoTracking().Where(x => x.Id == assetId).Select(x => new { x.Id, x.Status, x.WarrantyType, x.WarrantyExpiresOn }).FirstOrDefaultAsync(ct);
             if (a is null) return Results.NotFound();
-            var orders = await db.WorkOrders.AsNoTracking().Where(w => w.AssetId == assetId && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold))
+            var orders = await db.WorkOrders.AsNoTracking().Where(w => (w.AssetId == assetId || w.Assets.Any(a => a.AssetId == assetId)) && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold))
                 .OrderByDescending(w => w.CreatedAt).Take(10).Select(w => new { w.Id, w.Number, w.Title, w.Status, w.Priority }).ToListAsync(ct);
             var requests = await db.WorkRequests.AsNoTracking().Where(r => r.AssetId == assetId && r.Status == WorkRequestStatus.New)
                 .OrderByDescending(r => r.CreatedAt).Take(10).Select(r => new { r.Id, r.Number, r.Title }).ToListAsync(ct);
@@ -257,7 +257,12 @@ public static class WorkOrderEndpoints
             await RequireOpenAsync(db, id, ct);
             var t = await db.WorkOrderTasks.FirstOrDefaultAsync(x => x.Id == taskId && x.WorkOrderId == id, ct);
             if (t is null) return Results.NotFound();
+            var v = new Validator().When(input.Reading is { Length: > 100 }, "reading", "Reading can be at most 100 characters.")
+                .When(input.Remarks is { Length: > 2000 }, "remarks", "Remarks can be at most 2000 characters.");
+            if (!v.IsValid) return v.Problem();
             if (input.Description.Clean() is { } d) t.Description = d.Length > 1000 ? d[..1000] : d;
+            if (input.Reading is not null) t.Reading = input.Reading.Clean(); // an empty string clears it
+            if (input.Remarks is not null) t.Remarks = input.Remarks.Clean();
             if (input.IsDone is { } done && done != t.IsDone)
             {
                 t.IsDone = done; t.DoneAt = done ? DateTimeOffset.UtcNow : null; t.DoneBy = done ? ctx.UserName : null;
@@ -368,7 +373,7 @@ public static class WorkOrderEndpoints
             var path = await db.Locations.Where(l => l.Id == f.LocationId).Select(l => l.Path).FirstOrDefaultAsync(ct) ?? "/none/";
             q = q.Where(w => w.LocationId != null && db.Locations.Any(l => l.Id == w.LocationId && l.Path.StartsWith(path)));
         }
-        if (f.AssetId is not null) q = q.Where(w => w.AssetId == f.AssetId || (w.Asset != null && w.Asset.ParentAssetId == f.AssetId));
+        if (f.AssetId is not null) q = q.Where(w => w.AssetId == f.AssetId || (w.Asset != null && w.Asset.ParentAssetId == f.AssetId) || w.Assets.Any(a => a.AssetId == f.AssetId));
         if (f.TradeId is not null) q = q.Where(w => w.TradeId == f.TradeId);
         if (f.AssigneeId is not null) q = q.Where(w => w.Assignees.Any(a => a.EmployeeId == f.AssigneeId));
         if (f.Mine == true)
