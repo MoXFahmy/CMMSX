@@ -1,4 +1,5 @@
 using FourC.Cmms.Core.Assets;
+using FourC.Cmms.Core.Auditing;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Locations;
 using FourC.Cmms.Core.People;
@@ -120,6 +121,18 @@ static class WorkImport
             return (site, locId, assetId);
         }
 
+        // A MEG-sized database (290,000 work orders, a million child rows) must not sit in the change tracker:
+        // save in batches and stop tracking what has been saved (and the audit entries saving produced).
+        var saved = new List<object>();
+        async Task FlushAsync(bool force = false)
+        {
+            if (!force && saved.Count < 5000) return;
+            await db.SaveChangesAsync();
+            foreach (var x in saved) db.Entry(x).State = EntityState.Detached;
+            foreach (var a in db.ChangeTracker.Entries<AuditEntry>().ToList()) a.State = EntityState.Detached;
+            saved.Clear();
+        }
+
         // ---------- Work orders ----------
         var existing = await db.WorkOrders.IgnoreQueryFilters().Where(x => x.TenantId == tenantId && !x.IsDeleted).ToDictionaryAsync(x => x.Number, ci);
         var woByNo = new Dictionary<string, WorkOrder>(existing, ci);
@@ -148,16 +161,18 @@ static class WorkImport
             wo.PreventionNotes = Trunc(r.PreventionTaken?.Trim(), 8000) is { Length: > 0 } pt ? pt : null;
             wo.AssetWasDown = r.DownTime is > 0; wo.DowntimeHours = r.DownTime is > 0 and < 100000 ? Dec(r.DownTime) : null;
             wo.RequestedBy = Trunc((r.requestby?.Trim() is { Length: > 0 } rb ? rb : null) ?? EmpName(r.RequestorNo) ?? EmpName(r.EmployeeNo), 200);
-            if (++n % 1000 == 0) { await db.SaveChangesAsync(); Console.WriteLine($"  … {n} work orders"); }
+            saved.Add(wo);
+            if (++n % 10000 == 0) Console.WriteLine($"  … {n} work orders");
+            await FlushAsync();
         }
-        await db.SaveChangesAsync();
+        await FlushAsync(force: true);
 
         // Children are only added for work orders created in this run (re-runs refresh headers without duplicating history).
         WorkOrder? NewWo(string? no) => !string.IsNullOrWhiteSpace(no) && woByNo.TryGetValue(K(no), out var x) && created.Contains(x.Id) ? x : null;
         var assigned = new HashSet<(Guid, Guid)>();
         foreach (var a in w.Assignments)
             if (NewWo(a.WorkorderNo) is { } wo && empByNo.TryGetValue(K(a.EmployeeNo), out var e) && assigned.Add((wo.Id, e.Id)))
-            { db.WorkOrderAssignees.Add(new WorkOrderAssignee { WorkOrderId = wo.Id, EmployeeId = e.Id }); report.Created("Assignee"); }
+            { var x = new WorkOrderAssignee { WorkOrderId = wo.Id, EmployeeId = e.Id }; db.WorkOrderAssignees.Add(x); saved.Add(x); report.Created("Assignee"); await FlushAsync(); }
         foreach (var l in w.Labor)
         {
             if (NewWo(l.WorkorderNo) is not { } wo || !empByNo.TryGetValue(K(l.EmployeeNo), out var e)) continue;
@@ -165,24 +180,28 @@ static class WorkImport
             var normal = l.SalaryHours is > 0 ? Dec(l.SalaryHours) : Math.Max(Dec(l.TotHour) - overtime, 0);
             var total = normal + overtime;
             var rate = total > 0 ? Math.Round(Dec(l.TotCost) / total, 2) : 0; // preserves the legacy labour cost
-            db.WorkOrderLabor.Add(new WorkOrderLabor
+            var labor = new WorkOrderLabor
             {
                 TenantId = tenantId, WorkOrderId = wo.Id, EmployeeId = e.Id, WorkDate = Day(l.StartDate) ?? Day(l.LogDate) ?? DateOnly.FromDateTime(DateTime.UtcNow),
                 Hours = normal, OvertimeHours = overtime, Rate = rate, OvertimeRate = rate, Notes = Trunc(l.Comment?.Trim(), 2000) is { Length: > 0 } c ? c : null,
                 CreatedAt = Utc(l.LogDate) ?? Utc(l.StartDate) ?? DateTimeOffset.UtcNow, LegacyRef = $"labor:{l.WorkorderLaborID}",
-            });
+            };
+            db.WorkOrderLabor.Add(labor); saved.Add(labor);
             report.Created("Labour entry");
+            await FlushAsync();
         }
         foreach (var d in w.Direct)
         {
             if (NewWo(d.WONo) is not { } wo) continue;
-            db.WorkOrderCosts.Add(new WorkOrderCost
+            var cost = new WorkOrderCost
             {
                 TenantId = tenantId, WorkOrderId = wo.Id, Description = Trunc(string.IsNullOrWhiteSpace(d.StockDesc) ? "Direct issue" : d.StockDesc.Trim(), 500)!,
                 Quantity = d.Qty is > 0 ? (decimal)d.Qty.Value : 1, UnitCost = Math.Max(Dec(d.Price), 0), Vendor = Trunc(d.supplier?.Trim(), 200),
                 Reference = Trunc(new[] { d.PRNo, d.invoicenumber }.FirstOrDefault(x => !string.IsNullOrWhiteSpace(x))?.Trim(), 100), CreatedAt = Utc(d.Date) ?? DateTimeOffset.UtcNow,
-            });
+            };
+            db.WorkOrderCosts.Add(cost); saved.Add(cost);
             report.Created("Direct cost");
+            await FlushAsync();
         }
         foreach (var g in w.Tasks.GroupBy(t => K(t.WoNo), ci))
         {
@@ -190,14 +209,20 @@ static class WorkImport
             var seq = 0;
             foreach (var t in g.OrderBy(t => t.SeqId).ThenBy(t => t.AutoId).Where(t => !string.IsNullOrWhiteSpace(t.Details)))
             {
-                db.WorkOrderTasks.Add(new WorkOrderTask { TenantId = tenantId, WorkOrderId = wo.Id, Sequence = ++seq, Description = Trunc(t.Details!.Trim(), 1000)!,
-                    IsDone = wo.Status is WorkOrderStatus.Completed or WorkOrderStatus.Closed });
+                var task = new WorkOrderTask { TenantId = tenantId, WorkOrderId = wo.Id, Sequence = ++seq, Description = Trunc(t.Details!.Trim(), 1000)!,
+                    IsDone = wo.Status is WorkOrderStatus.Completed or WorkOrderStatus.Closed };
+                db.WorkOrderTasks.Add(task); saved.Add(task);
                 report.Created("Task");
+                await FlushAsync();
             }
         }
         foreach (var r in w.WorkOrders)
             if (NewWo(r.WorkorderNo) is { } wo && !string.IsNullOrWhiteSpace(r.Notes))
-                db.WorkOrderComments.Add(new WorkOrderComment { TenantId = tenantId, WorkOrderId = wo.Id, Body = r.Notes.Trim(), UserName = "4CSQL notes", CreatedAt = wo.CreatedAt });
+            {
+                var c = new WorkOrderComment { TenantId = tenantId, WorkOrderId = wo.Id, Body = r.Notes.Trim(), UserName = "4CSQL notes", CreatedAt = wo.CreatedAt };
+                db.WorkOrderComments.Add(c); saved.Add(c);
+                await FlushAsync();
+            }
         foreach (var g in w.StatusAudit.GroupBy(s => K(s.WONo), ci))
         {
             if (NewWo(g.Key) is not { } wo) continue;
@@ -206,12 +231,14 @@ static class WorkImport
             {
                 var (st, hr) = MapStatus(s.WOStatus);
                 if (prev == st) continue;
-                db.WorkOrderStatusChanges.Add(new WorkOrderStatusChange { TenantId = tenantId, WorkOrderId = wo.Id, FromStatus = prev, ToStatus = st, HoldReason = hr,
-                    ChangedAt = Utc(s.DT) ?? wo.CreatedAt, ChangedByName = EmpName(s.EmpNo), LegacyRef = $"status:{s.ID}" });
+                var change = new WorkOrderStatusChange { TenantId = tenantId, WorkOrderId = wo.Id, FromStatus = prev, ToStatus = st, HoldReason = hr,
+                    ChangedAt = Utc(s.DT) ?? wo.CreatedAt, ChangedByName = EmpName(s.EmpNo), LegacyRef = $"status:{s.ID}" };
+                db.WorkOrderStatusChanges.Add(change); saved.Add(change);
                 prev = st; report.Created("Status change");
+                await FlushAsync();
             }
         }
-        await db.SaveChangesAsync();
+        await FlushAsync(force: true);
 
         // ---------- Work requests ----------
         var requests = await db.WorkRequests.IgnoreQueryFilters().Where(x => x.TenantId == tenantId && !x.IsDeleted).ToDictionaryAsync(x => x.Number, ci);
@@ -230,8 +257,14 @@ static class WorkImport
             wr.WorkOrderId = linked?.Id; wr.RequiredBy = Day(r.RequiredDate); wr.CreatedAt = Utc(r.ReceivedDate) ?? wr.CreatedAt;
             wr.RequesterName = Trunc((r.requestby?.Trim() is { Length: > 0 } rb ? rb : null) ?? EmpName(r.EmployeeNo), 200);
             wr.RequesterPhone = Trunc(r.telno?.Trim() is { Length: > 0 } tel ? tel : null, 50);
-            if (linked is not null && linked.WorkRequestId is null) linked.WorkRequestId = wr.Id;
+            if (linked is not null && linked.WorkRequestId is null)
+            {
+                if (db.Entry(linked).State == EntityState.Detached) db.Attach(linked); // saved and released above
+                linked.WorkRequestId = wr.Id; saved.Add(linked);
+            }
+            saved.Add(wr);
+            await FlushAsync();
         }
-        await db.SaveChangesAsync();
+        await FlushAsync(force: true);
     }
 }

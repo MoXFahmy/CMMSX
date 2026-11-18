@@ -54,6 +54,13 @@ public sealed class LAsset
 }
 public sealed class LIdName { public int Id { get; set; } public string? Name { get; set; } }
 public sealed class LIdText { public string? Id { get; set; } public string? Text { get; set; } }
+public sealed class LPmScheduleAsset { public string? PMNo { get; set; } public int? SeqNo { get; set; } public string? AssetNo { get; set; } }
+/// <summary>A PM checklist step recorded on a work order (legacy workorderelements), per asset on multi-asset PMs.</summary>
+public sealed class LStep
+{
+    public long Woelementid { get; set; } public long? SeqNo { get; set; } public string? TaskDesc { get; set; } public string? WorkorderNo { get; set; } public string? Remarks { get; set; }
+    public string? assetno { get; set; } public string? readings { get; set; } public string? findings { get; set; } public int? AssetSeqNo { get; set; }
+}
 public sealed class LFailure { public string FailureCauseCode { get; set; } public string? FailureCauseDescription { get; set; } public bool? IsActive { get; set; } }
 public sealed class LEmployee
 {
@@ -126,6 +133,9 @@ public sealed class LegacyWork
     public List<LPmSchedule> PmSchedules = [];
     /// <summary>PM No → Section (legacy department) for section PMs (TypePM 3); empty on 4CSQL versions without the column.</summary>
     public Dictionary<string, string> PmSections = new(StringComparer.OrdinalIgnoreCase);
+    /// <summary>Multi-asset PMs ("rounds", IsMultipleAsset = 1) and their asset lists; empty on 4CSQL versions without them.</summary>
+    public HashSet<string> MultiAssetPmNos = new(StringComparer.OrdinalIgnoreCase);
+    public List<LPmScheduleAsset> PmScheduleAssets = [];
     public List<LMultiplePm> MultiplePm = [];
     public List<LPmMeter> Meters = [];
     public List<LReading> Readings = [];
@@ -253,6 +263,9 @@ public static class Legacy
             PmSections = ((await Try(() => c.QueryAsync<LIdText>("SELECT PMNo AS Id, SectionNo AS Text FROM pmschedule WHERE LTRIM(ISNULL(SectionNo, '')) <> ''"))) ?? [])
                 .Where(x => !string.IsNullOrWhiteSpace(x.Id)).GroupBy(x => x.Id!.Trim(), StringComparer.OrdinalIgnoreCase)
                 .ToDictionary(g => g.Key, g => g.First().Text!.Trim(), StringComparer.OrdinalIgnoreCase),
+            MultiAssetPmNos = ((await Try(() => c.QueryAsync<string>("SELECT PMNo FROM pmschedule WHERE IsMultipleAsset = 1"))) ?? [])
+                .Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => x.Trim()).ToHashSet(StringComparer.OrdinalIgnoreCase),
+            PmScheduleAssets = (await Try(() => c.QueryAsync<LPmScheduleAsset>("SELECT PMNo, SeqNo, AssetNo FROM PMScheduleAssets")) ?? []).ToList(),
             MultiplePm = (await Try(() => c.QueryAsync<LMultiplePm>("SELECT MPMNo, MTaskNo, MTaskSeq FROM multiplepm")) ?? []).ToList(),
             Meters = (await Try(() => c.QueryAsync<LPmMeter>("SELECT MeterNo, CAST(MeterDescription AS nvarchar(max)) AS MeterDescription, AssetNo, MeterType, Lowerlimit, UpperLimit, LastPMreading, PMLowTaskNo, PMUppTaskNo, PMIncTaskNo, Units, IncFreq, IncPMDue, FreqUnits, Frequency, NextDate, PMCounter, PMActive, PMWOTrade, TimeBased, PMType, SiteCode, max_daily_reading FROM pmmeters")) ?? []).ToList(),
             Readings = (await Try(() => c.QueryAsync<LReading>("SELECT ReadingID, Date, MeterNo, Reading FROM readings", commandTimeout: 600)) ?? []).ToList(),
@@ -282,6 +295,15 @@ public static class Legacy
             Currencies = await Map("SELECT CAST(currency_id AS int) AS Id, CAST(currency_name AS nvarchar(200)) AS Name FROM currency_rate"),
         };
     }
+
+    /// <summary>Streams PM step rows ordered by work order (MEG has 3.7 million), so they never sit in memory at once.</summary>
+    public static async Task<bool> HasStepsAsync(SqlConnection c) =>
+        await c.ExecuteScalarAsync<int>("SELECT CASE WHEN OBJECT_ID('workorderelements') IS NULL OR COL_LENGTH('workorderelements', 'assetno') IS NULL THEN 0 ELSE 1 END") == 1;
+
+    public static IAsyncEnumerable<LStep> StreamStepsAsync(SqlConnection c) =>
+        c.QueryUnbufferedAsync<LStep>("SELECT Woelementid, SeqNo, CAST(TaskDesc AS nvarchar(max)) AS TaskDesc, WorkorderNo, CAST(Remarks AS nvarchar(max)) AS Remarks, " +
+            "assetno, CAST(readings AS nvarchar(max)) AS readings, CAST(findings AS nvarchar(max)) AS findings, AssetSeqNo FROM workorderelements ORDER BY WorkorderNo, AssetSeqNo, SeqNo, Woelementid",
+            commandTimeout: 3600);
 
     private static async Task<T?> Try<T>(Func<Task<T>> f)
     {

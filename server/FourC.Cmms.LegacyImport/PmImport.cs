@@ -96,9 +96,11 @@ static class PmImport
         await db.SaveChangesAsync();
 
         // ---------- PM schedules ----------
-        var schedules = await db.PmSchedules.IgnoreQueryFilters().Include(s => s.ExtraTasks).Where(s => s.TenantId == tenantId && !s.IsDeleted).ToListAsync();
+        var schedules = await db.PmSchedules.IgnoreQueryFilters().Include(s => s.ExtraTasks).Include(s => s.Assets).Where(s => s.TenantId == tenantId && !s.IsDeleted).ToListAsync();
         var schedByCode = new Dictionary<string, PmSchedule>(ci);
         foreach (var s in schedules) schedByCode.TryAdd(s.Code, s);
+        var siteCodeById = await db.Sites.IgnoreQueryFilters().Where(x => x.TenantId == tenantId).ToDictionaryAsync(x => x.Id, x => x.Code);
+        var roundsByPmNo = new Dictionary<string, List<PmSchedule>>(ci); // a round spanning sites is split into one schedule per site
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         (Site site, Guid? loc, Guid? asset)? Place(string? siteCode, string? assetNo, string? locNo, string? sectionNo = null)
         {
@@ -116,15 +118,10 @@ static class PmImport
             s.LegacyRef = legacyRef;
             return s;
         }
-        foreach (var p in w.PmSchedules.Where(p => !string.IsNullOrWhiteSpace(p.PMNo)))
+        // Timing, task, multiple-PM rules: the same for single-target schedules and rounds.
+        void Apply(PmSchedule s, LPmSchedule p, PmTask task)
         {
-            // TypePM 1 = asset, 2 = location, 3 = section (a legacy department, imported as an Area location); a location, when given, is more specific.
-            var sectionNo = w.PmSections.GetValueOrDefault(K(p.PMNo));
-            var place = Place(p.SiteCode, K(p.TypePM) is "2" or "3" ? null : p.AssetNo, p.PhyLocationNo, sectionNo);
-            if (place is null) { report.Warn($"PM {p.PMNo}: neither asset '{p.AssetNo}', location '{p.PhyLocationNo}' nor section '{sectionNo}' was found, skipped."); continue; }
-            if (string.IsNullOrWhiteSpace(p.ChecklistNo) || !taskByCode.TryGetValue(K(p.ChecklistNo), out var task)) { report.Warn($"PM {p.PMNo}: PM task '{p.ChecklistNo}' not found, skipped."); continue; }
-            var s = Upsert(Trunc(K(p.PMNo), 50)!, $"pm:{K(p.PMNo)}");
-            s.Name = Split(p.PMName, s.Code).Title; s.SiteId = place.Value.site.Id; s.LocationId = place.Value.loc; s.AssetId = place.Value.asset;
+            s.Name = Split(p.PMName, s.Code).Title;
             s.PmTaskId = task.Id; s.TradeId = Trade(p.PMWOTrade); s.Priority = Priority(p.workpriority);
             s.WorkPeriodDays = Math.Clamp(p.PeriodDays ?? 1, 1, 366); s.GenerationCount = Math.Max(0, p.PMCounter ?? 0); s.IsActive = Active(p.PMActive);
             s.StartDate = Day(p.StartDate) ?? Day(p.TargetStartDate) ?? Day(p.NextDate) ?? today;
@@ -153,6 +150,48 @@ static class PmImport
                 if (existing is null) { s.ExtraTasks.Add(new PmScheduleTask { PmScheduleId = s.Id, PmTaskId = mt!.Id, EveryNth = nth }); report.Created("Multiple-PM rule"); }
                 else existing.EveryNth = nth;
             }
+        }
+        foreach (var p in w.PmSchedules.Where(p => !string.IsNullOrWhiteSpace(p.PMNo)))
+        {
+            if (string.IsNullOrWhiteSpace(p.ChecklistNo) || !taskByCode.TryGetValue(K(p.ChecklistNo), out var task)) { report.Warn($"PM {p.PMNo}: PM task '{p.ChecklistNo}' not found, skipped."); continue; }
+            if (w.MultiAssetPmNos.Contains(K(p.PMNo)))
+            {
+                // A round (multi-asset PM): one work order per cycle covering the listed assets, in order.
+                var listed = w.PmScheduleAssets.Where(a => ci.Equals(K(a.PMNo), K(p.PMNo))).OrderBy(a => a.SeqNo ?? 0).Select(a => K(a.AssetNo)).Where(a => a.Length > 0).Distinct(ci).ToList();
+                var known = listed.Where(a => assetByNumber.ContainsKey(a)).ToList();
+                if (known.Count < listed.Count) report.Warn($"PM {p.PMNo}: {listed.Count - known.Count} of its {listed.Count} assets were not found and are left out.");
+                if (known.Count == 0) { report.Warn($"PM {p.PMNo}: none of its assets were found, skipped."); continue; }
+                var splits = RoundImport.SplitBySite(Trunc(K(p.PMNo), 50)!, known.Select(a => (a, siteCodeById.GetValueOrDefault(assetByNumber[a].SiteId) ?? "")).ToList());
+                if (splits.Count > 1) report.Warn($"PM {p.PMNo}: its assets are in {splits.Count} sites; imported as {string.Join(", ", splits.Select(x => x.Code))}.");
+                var parts = new List<PmSchedule>();
+                var anyNew = false;
+                foreach (var part in splits)
+                {
+                    anyNew |= !schedByCode.ContainsKey(part.Code);
+                    var rs = Upsert(part.Code, splits.Count == 1 ? $"pm:{K(p.PMNo)}" : $"pm:{K(p.PMNo)}@{part.SiteCode}");
+                    rs.SiteId = assetByNumber[part.AssetNos[0]].SiteId; rs.LocationId = null; rs.AssetId = null;
+                    var ids = part.AssetNos.Select(a => assetByNumber[a].Id).ToList();
+                    rs.Assets.RemoveAll(x => !ids.Contains(x.AssetId));
+                    for (var i = 0; i < ids.Count; i++)
+                    {
+                        var have = rs.Assets.FirstOrDefault(x => x.AssetId == ids[i]);
+                        if (have is null) rs.Assets.Add(new PmScheduleAsset { PmScheduleId = rs.Id, AssetId = ids[i], Sequence = i + 1 });
+                        else have.Sequence = i + 1;
+                    }
+                    Apply(rs, p, task);
+                    parts.Add(rs);
+                }
+                roundsByPmNo[K(p.PMNo)] = parts;
+                if (anyNew) report.Created("PM round"); else report.Updated("PM round"); // once per legacy multi-asset PM
+                continue;
+            }
+            // TypePM 1 = asset, 2 = location, 3 = section (a legacy department, imported as an Area location); a location, when given, is more specific.
+            var sectionNo = w.PmSections.GetValueOrDefault(K(p.PMNo));
+            var place = Place(p.SiteCode, K(p.TypePM) is "2" or "3" ? null : p.AssetNo, p.PhyLocationNo, sectionNo);
+            if (place is null) { report.Warn($"PM {p.PMNo}: neither asset '{p.AssetNo}', location '{p.PhyLocationNo}' nor section '{sectionNo}' was found, skipped."); continue; }
+            var s = Upsert(Trunc(K(p.PMNo), 50)!, $"pm:{K(p.PMNo)}");
+            s.SiteId = place.Value.site.Id; s.LocationId = place.Value.loc; s.AssetId = place.Value.asset;
+            Apply(s, p, task);
         }
         foreach (var lm in w.Meters.Where(m => !string.IsNullOrWhiteSpace(m.MeterNo)))
         {
@@ -184,7 +223,10 @@ static class PmImport
             .Select(x => new { S = x.PmScheduleId!.Value, D = x.PmDueDate!.Value }).ToListAsync().ContinueWith(t => t.Result.Select(x => (x.S, x.D))));
         foreach (var lw in w.WorkOrders.Where(x => !string.IsNullOrWhiteSpace(x.PMNo)))
         {
-            if (!byNumber.TryGetValue(K(lw.WorkorderNo), out var wo) || !schedByCode.TryGetValue(K(lw.PMNo), out var s)) continue;
+            if (!byNumber.TryGetValue(K(lw.WorkorderNo), out var wo)) continue;
+            // A split round links each work order to the part for its own site.
+            var s = roundsByPmNo.TryGetValue(K(lw.PMNo), out var parts) ? parts.FirstOrDefault(x => x.SiteId == wo.SiteId) ?? parts[0] : schedByCode.GetValueOrDefault(K(lw.PMNo));
+            if (s is null) continue;
             wo.PmScheduleId = s.Id;
             wo.PmTaskId = !string.IsNullOrWhiteSpace(lw.TaskNo) && taskByCode.TryGetValue(K(lw.TaskNo), out var t) ? t.Id : s.PmTaskId;
             if (Day(lw.PMTarStartDate) is { } due && usedDue.Add((s.Id, due))) wo.PmDueDate = due;

@@ -266,6 +266,8 @@ Console.WriteLine($"Legacy work: {work.Employees.Count} employees, {work.Request
 await WorkImport.RunAsync(db, tenantId, work, report, SiteFor, locByCode, assetByNumber);
 Console.WriteLine($"Legacy PM: {work.Checklists.Count} tasks, {work.PmSchedules.Count} schedules, {work.Meters.Count} meters, {work.Readings.Count} readings");
 await PmImport.RunAsync(db, tenantId, work, report, SiteFor, locByCode, assetByNumber, Dept);
+Console.WriteLine("PM steps and round work orders…");
+await StepImport.RunAsync(db, tenantId, legacy, report, assetByNumber);
 var materials = await Legacy.LoadMaterialsAsync(legacy);
 Console.WriteLine($"Legacy materials: {materials.Parts.Count} parts, {materials.Stores.Count} stores, {materials.Suppliers.Count} suppliers, {materials.Orders.Count} purchase orders, " +
     $"{materials.Receipts.Count + materials.Issues.Count + materials.Returns.Count + materials.Adjustments.Count} stock transactions");

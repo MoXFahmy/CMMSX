@@ -24,5 +24,9 @@
     <ProjectReference Include="..\FourC.Cmms.Api\FourC.Cmms.Api.csproj" />
     <ProjectReference Include="..\FourC.Cmms.Core\FourC.Cmms.Core.csproj" />
   </ItemGroup>
+  <ItemGroup>
+    <!-- Pure 4CSQL mapping rules; linked rather than referenced because the importer is an executable with its own Program. -->
+    <Compile Include="..\FourC.Cmms.LegacyImport\RoundImport.cs" Link="Legacy\RoundImport.cs" />
+  </ItemGroup>
 
 </Project>
