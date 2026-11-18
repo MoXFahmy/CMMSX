@@ -4,6 +4,16 @@ All notable changes to 4C CMMS — the cloud app and the Android app share one v
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.0.1] - 2026-11-19
+
+### Security
+- **Attachments can no longer run script in the app.** An uploaded SVG (or other file a browser treats as a page)
+  opened from an attachment ran its script as the signed-in user, in the web app and in the Android app. Only photos
+  (PNG, JPEG, GIF, WebP, BMP, AVIF) and PDFs now open in place; every other file, SVG included, is downloaded. All
+  attachment responses forbid script (`Content-Security-Policy`), and everything except PDFs shown in place is also
+  sandboxed. Files uploaded before this fix are covered too.
+- The stored type of an uploaded file now follows its file extension instead of what the browser reported.
+
 ## [0.0.0] - 2026-11-19
 
 The first numbered release: everything built so far.

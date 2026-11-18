@@ -5,6 +5,7 @@ using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
+using Microsoft.AspNetCore.StaticFiles;
 using Microsoft.EntityFrameworkCore;
 
 namespace FourC.Cmms.Api.Features;
@@ -159,6 +160,32 @@ public static class AttachmentEndpoints
         ["PurchaseOrder"] = (Permissions.PurchasingView, Permissions.PurchasingCreate),
     };
 
+    // Files are served from the app's own origin, so a file the browser runs as a page (SVG, HTML, any XML) would run
+    // its script as the signed-in user. Only these types open in place; everything else is downloaded.
+    private static readonly HashSet<string> ShownInPlace = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "image/png", "image/jpeg", "image/gif", "image/webp", "image/bmp", "image/avif", "application/pdf",
+    };
+    // No script and nothing loaded from anywhere (inline styles only), plus a sandbox. Chrome shows an error page
+    // instead of a sandboxed PDF, so PDFs shown in place go without the sandbox: with nosniff the browser only ever
+    // reads them as a PDF.
+    private const string NoScript = "default-src 'none'; style-src 'unsafe-inline'";
+    private const string NoScriptSandboxed = NoScript + "; sandbox";
+    private static readonly FileExtensionContentTypeProvider TypesByExtension = new();
+
+    private static string MediaType(string? contentType) =>
+        Microsoft.Net.Http.Headers.MediaTypeHeaderValue.TryParse(contentType, out var t) && t.MediaType.HasValue
+            ? t.MediaType.Value!.ToLowerInvariant() : "application/octet-stream";
+
+    /// <summary>The stored type comes from the file's extension, not from the browser; failing that, the browser's
+    /// type is kept only when it is safe to show in place.</summary>
+    private static string ContentTypeOf(string fileName, string? claimed)
+    {
+        if (TypesByExtension.TryGetContentType(fileName, out var type)) return type;
+        var media = MediaType(claimed);
+        return ShownInPlace.Contains(media) ? media : "application/octet-stream";
+    }
+
     public static void MapAttachmentEndpoints(this RouteGroupBuilder api)
     {
         var g = api.MapGroup("/attachments").WithTags("Attachments").RequireAuthorization();
@@ -198,9 +225,10 @@ public static class AttachmentEndpoints
             {
                 if (file.Length == 0) continue;
                 if (file.Length > MaxSize) throw new DomainException($"{file.FileName} is larger than 25 MB.");
+                var fileName = Path.GetFileName(file.FileName);
                 var att = new Attachment
                 {
-                    EntityType = entityType, EntityId = entityId, FileName = Path.GetFileName(file.FileName), ContentType = string.IsNullOrEmpty(file.ContentType) ? "application/octet-stream" : file.ContentType,
+                    EntityType = entityType, EntityId = entityId, FileName = fileName, ContentType = ContentTypeOf(fileName, file.ContentType),
                     Size = file.Length, StorageKey = "",
                 };
                 att.StorageKey = $"{db.CurrentTenantId:N}/{entityType.ToLowerInvariant()}/{entityId:N}/{att.Id:N}";
@@ -219,9 +247,12 @@ public static class AttachmentEndpoints
             if (!await AllowedAsync(http, perms, a.EntityType, edit: false)) return Results.Forbid();
             var stream = await storage.OpenReadAsync(a.StorageKey, ct);
             if (stream is null) return Results.NotFound();
-            var inline = download != true && (a.ContentType.StartsWith("image/") || a.ContentType == "application/pdf");
+            // Decided from the stored type at every request, so files uploaded before types were checked are covered too.
+            var type = MediaType(a.ContentType);
+            var inline = download != true && ShownInPlace.Contains(type);
             http.Response.Headers.CacheControl = "private, max-age=3600";
             http.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            http.Response.Headers.ContentSecurityPolicy = inline && type == "application/pdf" ? NoScript : NoScriptSandboxed;
             if (inline)
             {
                 // Shown in the browser, but saved under its own name (the Android app downloads PDFs it cannot show).

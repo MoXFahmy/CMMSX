@@ -202,6 +202,61 @@ public class HostingTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var downloaded = (await c.GetAsync($"/api/attachments/{pdfId}/content?download=true")).Content.Headers.ContentDisposition;
         Assert.Equal(("attachment", "Pump manual 2.pdf"), (downloaded?.DispositionType, downloaded?.FileNameStar));
     }
+
+    /// <summary>Files are served from the app's own origin, so one that runs script would run it as the signed-in user.</summary>
+    [SkippableFact]
+    public async Task Attachments_cannot_run_script_in_the_app()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = fx.Client();
+        await Ok(await c.PostAsJsonAsync("/api/auth/register", Org("Script Co")));
+        var group = Id(await Ok(await c.PostAsJsonAsync("/api/part-groups", new { code = "G", name = "Group" })));
+        var part = Id(await Ok(await c.PostAsJsonAsync("/api/parts", new
+        {
+            partNumber = "P-1", name = "Bearing", groupId = group, unitOfMeasure = "EA", standardPrice = 10, isCritical = false, isShelfItem = false, allowNegativeStock = false,
+            levels = Array.Empty<object>(),
+        })));
+        async Task<Guid> Upload(string fileName, string contentType, byte[] bytes)
+        {
+            using var form = new MultipartFormDataContent { { new StringContent("Part"), "entityType" }, { new StringContent(part.ToString()), "entityId" } };
+            var file = new ByteArrayContent(bytes);
+            file.Headers.ContentType = new MediaTypeHeaderValue(contentType);
+            form.Add(file, "files", fileName);
+            return Id((await Ok(await c.PostAsync("/api/attachments", form)))[0]);
+        }
+        async Task<HttpResponseMessage> Open(Guid id) => await c.GetAsync($"/api/attachments/{id}/content");
+        static string Csp(HttpResponseMessage r) => r.Headers.TryGetValues("Content-Security-Policy", out var v) ? string.Join(", ", v) : "(none)";
+        async Task<string?> StoredType(Guid id) =>
+            (await Ok(await c.GetAsync($"/api/attachments?entityType=Part&entityId={part}"))).EnumerateArray().Single(a => Id(a) == id).GetProperty("contentType").GetString();
+
+        // An SVG can carry script, so it is only ever downloaded, whatever type the browser claimed for it.
+        var svg = "<svg xmlns=\"http://www.w3.org/2000/svg\"><script>alert(document.cookie)</script></svg>"u8.ToArray();
+        foreach (var claimed in new[] { "image/svg+xml", "image/png" })
+        {
+            var id = await Upload("drawing.svg", claimed, svg);
+            Assert.Equal("image/svg+xml", await StoredType(id)); // the type follows the file name
+            var r = await Open(id);
+            Assert.Equal(("attachment", "drawing.svg"), (r.Content.Headers.ContentDisposition?.DispositionType, r.Content.Headers.ContentDisposition?.FileNameStar));
+            Assert.Equal("default-src 'none'; style-src 'unsafe-inline'; sandbox", Csp(r));
+        }
+
+        // Photos open in place, in a sandbox where no script runs.
+        var photo = await Open(await Upload("Pump 1.png", "image/png", [0x89, 0x50, 0x4E, 0x47]));
+        Assert.Equal(("inline", "Pump 1.png"), (photo.Content.Headers.ContentDisposition?.DispositionType, photo.Content.Headers.ContentDisposition?.FileNameStar));
+        Assert.Equal("default-src 'none'; style-src 'unsafe-inline'; sandbox", Csp(photo));
+
+        // PDFs open in place with no script allowed, but without the sandbox: Chrome shows an error page for a sandboxed PDF.
+        var pdf = await Open(await Upload("manual.pdf", "application/pdf", "%PDF-1.4"u8.ToArray()));
+        Assert.Equal("inline", pdf.Content.Headers.ContentDisposition?.DispositionType);
+        Assert.Equal("default-src 'none'; style-src 'unsafe-inline'", Csp(pdf));
+
+        // A name without a known extension keeps the browser's type only when that type is safe to show.
+        Assert.Equal("image/jpeg", await StoredType(await Upload("camera photo", "image/jpeg", [0xFF, 0xD8, 0xFF])));
+        var page = await Upload("page", "text/html", "<script>alert(1)</script>"u8.ToArray());
+        Assert.Equal("application/octet-stream", await StoredType(page));
+        Assert.Equal("attachment", (await Open(page)).Content.Headers.ContentDisposition?.DispositionType);
+    }
+
     [SkippableFact]
     public async Task Health_reports_the_release_version()
     {
