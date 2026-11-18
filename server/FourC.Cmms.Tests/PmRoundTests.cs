@@ -42,9 +42,9 @@ public class PmRoundTests(ApiFixture fx) : IClassFixture<ApiFixture>
             await AssetAsync(c, "Pump elsewhere", other), task, monthly);
     }
 
-    private static object Round(Ctx x, IEnumerable<Guid> assetIds, DateOnly start, string type = "FixedInterval", Guid? assetId = null, object[]? extra = null) => new
+    private static object Round(Ctx x, IEnumerable<Guid> assetIds, DateOnly start, string type = "FixedInterval", Guid? assetId = null, object[]? extra = null, string? rowVersion = null) => new
     {
-        name = "Feeder round", siteId = x.Site, assetId, assetIds, priority = "Medium", pmTaskId = x.Task, type, basis = "Scheduled", frequency = 1, unit = "Week",
+        rowVersion, name = "Feeder round", siteId = x.Site, assetId, assetIds, priority = "Medium", pmTaskId = x.Task, type, basis = "Scheduled", frequency = 1, unit = "Week",
         workPeriodDays = 1, wholeMonth = false, leadDays = 0, startDate = Iso(start), timeBased = false, extraTasks = extra ?? [],
         meterTrigger = type == "Meter" ? "Incremental" : null, meterInterval = type == "Meter" ? 50 : (int?)null,
     };
@@ -203,5 +203,51 @@ public class PmRoundTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var x = await SetupAsync();
         var found = (await Ok(await x.Http.GetAsync($"/api/assets/lookup?siteId={x.OtherSite}"))).EnumerateArray().Select(a => a.GetProperty("id").GetGuid()).ToList();
         Assert.Equal([x.Elsewhere], found);
+    }
+    [SkippableFact]
+    public async Task Saving_without_assetIds_keeps_the_round()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var x = await SetupAsync();
+        var id = (await Ok(await x.Http.PostAsJsonAsync("/api/pm-schedules", Round(x, [x.A, x.B], Today)))).GetProperty("id").GetGuid();
+        // A client that predates rounds sends no assetIds at all: the list must be left as it is.
+        var old = new
+        {
+            name = "Feeder round renamed", siteId = x.Site, priority = "Medium", pmTaskId = x.Task, type = "FixedInterval", basis = "Scheduled", frequency = 1, unit = "Week",
+            workPeriodDays = 1, wholeMonth = false, leadDays = 0, startDate = Iso(Today), timeBased = false, extraTasks = Array.Empty<object>(),
+        };
+        await Ok(await x.Http.PutAsJsonAsync($"/api/pm-schedules/{id}", old));
+        var detail = await Ok(await x.Http.GetAsync($"/api/pm-schedules/{id}"));
+        Assert.Equal([x.A, x.B], Ids(detail.GetProperty("assets")));
+        Assert.Equal("Feeder round renamed", detail.GetProperty("name").GetString());
+    }
+
+    [SkippableFact]
+    public async Task Reordering_a_round_is_concurrency_checked_and_audited()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var x = await SetupAsync();
+        var id = (await Ok(await x.Http.PostAsJsonAsync("/api/pm-schedules", Round(x, [x.A, x.B], Today)))).GetProperty("id").GetGuid();
+        var rv = (await Ok(await x.Http.GetAsync($"/api/pm-schedules/{id}"))).GetProperty("rowVersion").GetString();
+
+        await Ok(await x.Http.PutAsJsonAsync($"/api/pm-schedules/{id}", Round(x, [x.B, x.A], Today, rowVersion: rv)));
+        Assert.Equal(HttpStatusCode.Conflict, (await x.Http.PutAsJsonAsync($"/api/pm-schedules/{id}", Round(x, [x.A, x.B], Today, rowVersion: rv))).StatusCode);
+
+        var audit = await Ok(await x.Http.GetAsync($"/api/audit?entityType=PmSchedule&entityId={id}"));
+        Assert.Contains(audit.EnumerateArray(), e => e.GetProperty("action").GetString() == "Updated" && (e.GetProperty("changes").GetString() ?? "").Contains("assets", StringComparison.OrdinalIgnoreCase));
+    }
+
+    [SkippableFact]
+    public async Task Saving_a_round_with_a_moved_asset_names_that_asset()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var x = await SetupAsync();
+        var id = (await Ok(await x.Http.PostAsJsonAsync("/api/pm-schedules", Round(x, [x.A, x.B], Today)))).GetProperty("id").GetGuid();
+        await Ok(await x.Http.PostAsJsonAsync($"/api/assets/{x.B}/transfer", new { siteId = x.OtherSite, reason = "moved" }));
+        var number = (await Ok(await x.Http.GetAsync($"/api/assets/{x.B}"))).GetProperty("assetNumber").GetString()!;
+
+        var r = await x.Http.PutAsJsonAsync($"/api/pm-schedules/{id}", Round(x, [x.A, x.B], Today));
+        await Invalid(r, "assetIds");
+        Assert.Contains(number, await r.Content.ReadAsStringAsync());
     }
 }

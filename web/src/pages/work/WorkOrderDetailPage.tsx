@@ -8,7 +8,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { IconAlertTriangle, IconCheck, IconDots, IconEdit, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp } from '@tabler/icons-react';
-import { del, get, post, put } from '@/api/client';
+import { ApiError, del, get, post, put } from '@/api/client';
 import { HOLD_REASONS, type ActivityItem, type Lookup, type WorkOrderDetail, type WorkOrderStatus } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
@@ -233,7 +233,8 @@ function TaskRow({ w, x, canExec, done, onToggle, onChange }: { w: WorkOrderDeta
   const { t } = useTranslation();
   const save = async (field: 'reading' | 'remarks', value: string) => {
     if ((x[field] ?? '') === value.trim()) return;
-    try { await put(`/work-orders/${w.id}/tasks/${x.id}`, { [field]: value }); await onChange(); } catch (e) { notifyError(e); }
+    try { await put(`/work-orders/${w.id}/tasks/${x.id}`, { [field]: value }); await onChange(); }
+    catch (e) { notifyError(e instanceof ApiError && e.fieldErrors[field] ? new Error(e.fieldErrors[field]) : e); } // e.g. "Reading can be at most 100 characters."
   };
   return (
     <Stack gap={4} p={6} style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>
@@ -247,9 +248,9 @@ function TaskRow({ w, x, canExec, done, onToggle, onChange }: { w: WorkOrderDeta
       </Group>
       {canExec ? (
         <Group gap="xs" pl={30} wrap="wrap">
-          <TextInput key={`r:${x.reading ?? ''}`} size="xs" w={{ base: '100%', xs: 140 }} maxLength={100} placeholder={t('wo.reading')} aria-label={t('wo.reading')}
+          <TextInput key={`r:${x.reading ?? ''}`} size="xs" w={{ base: '100%', xs: 140 }} placeholder={t('wo.reading')} aria-label={t('wo.reading')}
             defaultValue={x.reading ?? ''} onBlur={(e) => void save('reading', e.currentTarget.value)} />
-          <TextInput key={`m:${x.remarks ?? ''}`} size="xs" style={{ flex: 1, minWidth: 180 }} maxLength={2000} placeholder={t('wo.remarks')} aria-label={t('wo.remarks')}
+          <TextInput key={`m:${x.remarks ?? ''}`} size="xs" style={{ flex: 1, minWidth: 180 }} placeholder={t('wo.remarks')} aria-label={t('wo.remarks')}
             defaultValue={x.remarks ?? ''} onBlur={(e) => void save('remarks', e.currentTarget.value)} />
         </Group>
       ) : (x.reading || x.remarks) && <Text fz="xs" c="dimmed" pl={30}>{[x.reading, x.remarks].filter(Boolean).join(' · ')}</Text>}

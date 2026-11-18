@@ -1,3 +1,5 @@
+using System.Text.Json;
+using FourC.Cmms.Core.Auditing;
 using System.Linq.Expressions;
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Common;
@@ -156,10 +158,18 @@ public static class PmEndpoints
             return Results.Created($"/api/pm-schedules/{s.Id}", new { s.Id, s.Code });
         }).RequirePermission(Permissions.PmManage);
 
-        g.MapPut("/{id:guid}", async (Guid id, ScheduleInput input, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPut("/{id:guid}", async (Guid id, ScheduleInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             var s = await db.PmSchedules.Include(x => x.ExtraTasks).Include(x => x.Assets).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (s is null) return Results.NotFound();
+            var before = s.Assets.OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList();
+            // A client that sends no asset list (e.g. one that predates rounds) leaves a round's list as it is, unless it makes
+            // the schedule a single-asset one. Assets deleted since drop out.
+            if (input.AssetIds is null && input.AssetId is null && before.Count > 0)
+            {
+                var live = (await db.Assets.Where(a => before.Contains(a.Id)).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
+                input = input with { AssetIds = before.Where(live.Contains).ToList() };
+            }
             var v = await ValidateScheduleAsync(input, id, db, ct);
             if (input.Basis != s.Basis && s.GenerationCount > 0) v.Add("basis", "The generation basis cannot change after work orders were generated (as in 4CSQL). Create a new schedule instead.");
             if (!v.IsValid) return v.Problem();
@@ -168,6 +178,21 @@ public static class PmEndpoints
             if (input.Code.Clean() is { } c) s.Code = c;
             var wasActive = s.IsActive;
             ApplySchedule(s, input);
+            var after = s.Assets.OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList();
+            if (!before.SequenceEqual(after))
+            {
+                // The list lives in its own table, so a list-only change would leave the schedule row untouched: touch it so
+                // its RowVersion is checked (stale edits get 409), and record the change in the audit trail.
+                db.Entry(s).Property(x => x.Name).IsModified = true;
+                var all = before.Concat(after).Distinct().ToList();
+                var numbers = await db.Assets.IgnoreQueryFilters().Where(a => all.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.AssetNumber, ct);
+                db.AuditEntries.Add(new AuditEntry
+                {
+                    EntityType = nameof(PmSchedule), EntityId = s.Id, Action = "Updated", UserId = ctx.UserId, UserName = ctx.UserName, Timestamp = DateTimeOffset.UtcNow,
+                    Changes = JsonSerializer.Serialize(new Dictionary<string, object> { ["Assets"] = new { from = before.Select(numbers.GetValueOrDefault), to = after.Select(numbers.GetValueOrDefault) } },
+                        JsonSerializerOptions.Web),
+                });
+            }
             if (PmCalendar.UsesCalendar(s))
                 s.NextDueDate = input.NextDueDate ?? (!wasActive && s.IsActive ? PmCalendar.FirstOnOrAfter(s, Today) : s.NextDueDate ?? (s.GenerationCount == 0 ? PmCalendar.FirstOnOrAfter(s, input.StartDate) : null));
             else s.NextDueDate = null;
@@ -310,7 +335,12 @@ public static class PmEndpoints
         else if (round.Count > 0)
         {
             if (round.Distinct().Count() != round.Count) v.Add("assetIds", "An asset is listed twice.");
-            else if (await db.Assets.CountAsync(a => round.Contains(a.Id) && a.SiteId == i.SiteId, ct) != round.Count) v.Add("assetIds", "Assets must belong to the selected site.");
+            else
+            {
+                var elsewhere = await db.Assets.Where(a => round.Contains(a.Id) && a.SiteId != i.SiteId).OrderBy(a => a.AssetNumber).Select(a => a.AssetNumber).ToListAsync(ct);
+                if (elsewhere.Count > 0) v.Add("assetIds", $"Assets must belong to the selected site: {string.Join(", ", elsewhere)}.");
+                else if (await db.Assets.CountAsync(a => round.Contains(a.Id), ct) != round.Count) v.Add("assetIds", "Some listed assets no longer exist. Remove them from the list.");
+            }
             if (i.Type == PmScheduleType.Meter) v.Add("assetIds", "Meter schedules cannot cover several assets.");
             if (i.AssetId is not null) v.Add("assetId", "Choose either one asset or several assets.");
         }
