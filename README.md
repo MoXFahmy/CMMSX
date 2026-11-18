@@ -62,12 +62,18 @@ SA_PASSWORD='Local_Test_2026!' SQL_PORT=14333 docker compose up --build
 
 The first start downloads and builds everything (5–10 minutes). When the log shows `Now listening on`, open
 **http://localhost:8080**, choose **Create an organization**, then **Load sample data**. Stop with `Ctrl+C`;
-`docker compose up` starts it again with your data, and `docker compose down -v` deletes everything.
+the same command starts it again with your data, and `docker compose down -v` deletes everything.
+
+Every `docker compose` command needs `SA_PASSWORD`. To avoid typing it each time, create a file named `.env` in the
+CMMSX folder (it is git-ignored) with one setting per line, e.g. `SA_PASSWORD=Local_Test_2026!` and `SQL_PORT=14333`;
+plain `docker compose up`, `logs` and `down` then work in any terminal.
 
 - `SA_PASSWORD` is the password of the local test database: at least 8 characters, with upper and lower case letters and a digit or symbol.
 - `SQL_PORT=14333` keeps the test database off port 1433 in case SQL Server (e.g. for 4CSQL) is already installed.
   If port 8080 is taken, add `APP_PORT=8090` (PowerShell: `$env:APP_PORT = "8090"`) and open http://localhost:8090.
 - On Apple-silicon Macs, turn on *Use Rosetta for x86/amd64 emulation* in Docker Desktop's settings (SQL Server needs it).
+  The setting has no effect until Rosetta itself is installed: if `arch -x86_64 /usr/bin/true` reports *Bad CPU type*,
+  run `sudo softwareupdate --install-rosetta --agree-to-license`, then *Apply & restart* Docker Desktop.
 
 ## Develop
 

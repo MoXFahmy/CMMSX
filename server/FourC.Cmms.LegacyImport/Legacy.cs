@@ -53,6 +53,7 @@ public sealed class LAsset
     public string? Nameplate(int n) => (string?)NameplateProps[n - 1].GetValue(this);
 }
 public sealed class LIdName { public int Id { get; set; } public string? Name { get; set; } }
+public sealed class LIdText { public string? Id { get; set; } public string? Text { get; set; } }
 public sealed class LFailure { public string FailureCauseCode { get; set; } public string? FailureCauseDescription { get; set; } public bool? IsActive { get; set; } }
 public sealed class LEmployee
 {
@@ -123,6 +124,8 @@ public sealed class LegacyWork
     public List<LChecklist> Checklists = [];
     public List<LChecklistStep> ChecklistSteps = [];
     public List<LPmSchedule> PmSchedules = [];
+    /// <summary>PM No → Section (legacy department) for section PMs (TypePM 3); empty on 4CSQL versions without the column.</summary>
+    public Dictionary<string, string> PmSections = new(StringComparer.OrdinalIgnoreCase);
     public List<LMultiplePm> MultiplePm = [];
     public List<LPmMeter> Meters = [];
     public List<LReading> Readings = [];
@@ -246,6 +249,10 @@ public static class Legacy
             Checklists = (await Try(() => c.QueryAsync<LChecklist>("SELECT ChecklistNo, CAST(CheckListName AS nvarchar(max)) AS CheckListName, EstimatedLaborHours, CAST(Tasks AS nvarchar(max)) AS Tasks, CAST(Active AS int) AS Active FROM pmchecklist")) ?? []).ToList(),
             ChecklistSteps = (await Try(() => c.QueryAsync<LChecklistStep>("SELECT ElementId, ChecklistNo, SeqNo, TaskDesc FROM checklistelements")) ?? []).ToList(),
             PmSchedules = (await Try(() => c.QueryAsync<LPmSchedule>("SELECT PMNo, CAST(PMName AS nvarchar(max)) AS PMName, AssetNo, PhyLocationNo, ChecklistNo, PeriodDays, FreqUnits, Frequency, StartDate, TargetStartDate, NextDate, CAST(TypePMgen AS nvarchar(10)) AS TypePMgen, CAST(TypePM AS nvarchar(10)) AS TypePM, PMCounter, PMActive, PMWOTrade, WeekofMonth, DayofWeek, SiteCode, workpriority FROM pmschedule")) ?? []).ToList(),
+            // Read separately so that a 4CSQL version without SectionNo still loads its PM schedules.
+            PmSections = ((await Try(() => c.QueryAsync<LIdText>("SELECT PMNo AS Id, SectionNo AS Text FROM pmschedule WHERE LTRIM(ISNULL(SectionNo, '')) <> ''"))) ?? [])
+                .Where(x => !string.IsNullOrWhiteSpace(x.Id)).GroupBy(x => x.Id!.Trim(), StringComparer.OrdinalIgnoreCase)
+                .ToDictionary(g => g.Key, g => g.First().Text!.Trim(), StringComparer.OrdinalIgnoreCase),
             MultiplePm = (await Try(() => c.QueryAsync<LMultiplePm>("SELECT MPMNo, MTaskNo, MTaskSeq FROM multiplepm")) ?? []).ToList(),
             Meters = (await Try(() => c.QueryAsync<LPmMeter>("SELECT MeterNo, CAST(MeterDescription AS nvarchar(max)) AS MeterDescription, AssetNo, MeterType, Lowerlimit, UpperLimit, LastPMreading, PMLowTaskNo, PMUppTaskNo, PMIncTaskNo, Units, IncFreq, IncPMDue, FreqUnits, Frequency, NextDate, PMCounter, PMActive, PMWOTrade, TimeBased, PMType, SiteCode, max_daily_reading FROM pmmeters")) ?? []).ToList(),
             Readings = (await Try(() => c.QueryAsync<LReading>("SELECT ReadingID, Date, MeterNo, Reading FROM readings", commandTimeout: 600)) ?? []).ToList(),
@@ -279,6 +286,11 @@ public static class Legacy
     private static async Task<T?> Try<T>(Func<Task<T>> f)
     {
         try { return await f(); }
-        catch (SqlException) { return default; }
+        catch (SqlException ex)
+        {
+            // Optional tables and columns differ between 4CSQL versions, but a timeout or other failure must not pass silently.
+            Console.WriteLine($"  ! Legacy query skipped, treated as empty: {ex.Message.Split('\n')[0].Trim()}");
+            return default;
+        }
     }
 }

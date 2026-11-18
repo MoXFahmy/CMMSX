@@ -9,7 +9,8 @@ using Microsoft.EntityFrameworkCore;
 static class PmImport
 {
     public static async Task RunAsync(CmmsDbContext db, Guid tenantId, LegacyWork w, Report report,
-        Func<string?, Site> siteFor, IReadOnlyDictionary<string, Location> locByCode, IReadOnlyDictionary<string, Asset> assetByNumber)
+        Func<string?, Site> siteFor, IReadOnlyDictionary<string, Location> locByCode, IReadOnlyDictionary<string, Asset> assetByNumber,
+        Func<string?, string?, Location?> section)
     {
         var ci = StringComparer.OrdinalIgnoreCase;
         static string K(string? s) => (s ?? "").Trim();
@@ -99,10 +100,10 @@ static class PmImport
         var schedByCode = new Dictionary<string, PmSchedule>(ci);
         foreach (var s in schedules) schedByCode.TryAdd(s.Code, s);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
-        (Site site, Guid? loc, Guid? asset)? Place(string? siteCode, string? assetNo, string? locNo)
+        (Site site, Guid? loc, Guid? asset)? Place(string? siteCode, string? assetNo, string? locNo, string? sectionNo = null)
         {
             var asset = !string.IsNullOrWhiteSpace(assetNo) && assetByNumber.TryGetValue(K(assetNo), out var a) ? a : null;
-            var loc = !string.IsNullOrWhiteSpace(locNo) && locByCode.TryGetValue(K(locNo), out var l) ? l : null;
+            var loc = (!string.IsNullOrWhiteSpace(locNo) && locByCode.TryGetValue(K(locNo), out var l) ? l : null) ?? section(siteCode, sectionNo);
             if (asset is null && loc is null) return null;
             var site = asset is not null ? siteFor(null) : siteFor(siteCode);
             Guid siteId = asset?.SiteId ?? loc!.SiteId;
@@ -117,8 +118,10 @@ static class PmImport
         }
         foreach (var p in w.PmSchedules.Where(p => !string.IsNullOrWhiteSpace(p.PMNo)))
         {
-            var place = Place(p.SiteCode, K(p.TypePM) == "2" ? null : p.AssetNo, p.PhyLocationNo);
-            if (place is null) { report.Warn($"PM {p.PMNo}: neither asset '{p.AssetNo}' nor location '{p.PhyLocationNo}' was found, skipped."); continue; }
+            // TypePM 1 = asset, 2 = location, 3 = section (a legacy department, imported as an Area location); a location, when given, is more specific.
+            var sectionNo = w.PmSections.GetValueOrDefault(K(p.PMNo));
+            var place = Place(p.SiteCode, K(p.TypePM) is "2" or "3" ? null : p.AssetNo, p.PhyLocationNo, sectionNo);
+            if (place is null) { report.Warn($"PM {p.PMNo}: neither asset '{p.AssetNo}', location '{p.PhyLocationNo}' nor section '{sectionNo}' was found, skipped."); continue; }
             if (string.IsNullOrWhiteSpace(p.ChecklistNo) || !taskByCode.TryGetValue(K(p.ChecklistNo), out var task)) { report.Warn($"PM {p.PMNo}: PM task '{p.ChecklistNo}' not found, skipped."); continue; }
             var s = Upsert(Trunc(K(p.PMNo), 50)!, $"pm:{K(p.PMNo)}");
             s.Name = Split(p.PMName, s.Code).Title; s.SiteId = place.Value.site.Id; s.LocationId = place.Value.loc; s.AssetId = place.Value.asset;

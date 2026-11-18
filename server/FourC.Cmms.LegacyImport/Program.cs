@@ -113,11 +113,20 @@ Location UpsertLocation(string key, Site site, Location? parent, string code, st
     apply?.Invoke(l);
     return l;
 }
+// Departments and locations share one code space per site in the cloud edition (4CSQL allows a section and a location
+// to have the same code), so a clashing code gets a numeric suffix. Deterministic, so re-runs give the same codes.
+var usedCodes = new HashSet<string>(ci);
+string UniqueCode(Site site, string code, string what)
+{
+    if (usedCodes.Add($"{site.Id}|{code}")) return code;
+    for (var n = 2; ; n++)
+        if (usedCodes.Add($"{site.Id}|{code}-{n}")) { report.Warn($"{what} {code}: code already used in site {site.Code}; imported as {code}-{n}."); return $"{code}-{n}"; }
+}
 var deptByCode = new Dictionary<string, Location>(ci);
 foreach (var d in data.Departments)
 {
     var site = SiteFor(d.SiteCode);
-    var node = UpsertLocation($"dept:{K(d.SiteCode)}|{K(d.DepartmentNo)}", site, null, K(d.DepartmentNo), d.DepartmentDescription ?? "", LocationType.Area,
+    var node = UpsertLocation($"dept:{K(d.SiteCode)}|{K(d.DepartmentNo)}", site, null, UniqueCode(site, K(d.DepartmentNo), "Department"), d.DepartmentDescription ?? "", LocationType.Area,
         l => { l.IsActive = d.Active ?? true; l.Latitude = ParseDouble(d.Latitude); l.Longitude = ParseDouble(d.Longitude); });
     deptByCode.TryAdd($"{K(d.SiteCode)}|{K(d.DepartmentNo)}", node);
     deptByCode.TryAdd(K(d.DepartmentNo), node);
@@ -126,14 +135,12 @@ Location? Dept(string? site, string? dept) =>
     string.IsNullOrWhiteSpace(dept) ? null : deptByCode.GetValueOrDefault($"{K(site)}|{K(dept)}") ?? deptByCode.GetValueOrDefault(K(dept));
 
 var locByCode = new Dictionary<string, Location>(ci);
-var usedCodes = new HashSet<string>(ci);
 foreach (var l in data.Locations)
 {
     var dept = Dept(l.SiteCode, l.DeptNo);
     var site = string.IsNullOrWhiteSpace(l.SiteCode) && dept is not null ? sites.Concat(siteByRef.Values).First(s => s.Id == dept.SiteId) : SiteFor(l.SiteCode);
     if (dept is not null && dept.SiteId != site.Id) { report.Warn($"Location {l.LocationNo}: department {l.DeptNo} belongs to another site; placed at site root."); dept = null; }
-    var code = K(l.LocationNo);
-    if (!usedCodes.Add($"{site.Id}|{code}")) { report.Warn($"Duplicate location code {code} in site {site.Code}; suffixed."); code += "-2"; }
+    var code = UniqueCode(site, K(l.LocationNo), "Location");
     locByCode[K(l.LocationNo)] = UpsertLocation($"loc:{K(l.LocationNo)}", site, dept, code, l.LocationDescription ?? "", LocationType.Space, x =>
     {
         x.NotesToTechnician = Trunc(l.NotetoTech, 4000);
@@ -227,6 +234,8 @@ await db.SaveChangesAsync();
 
 // ---------- Transfer history ----------
 var existingTransfers = (await db.AssetTransfers.IgnoreQueryFilters().Where(t => t.TenantId == tenantId && t.LegacyRef != null).Select(t => t.LegacyRef!).ToListAsync()).ToHashSet(ci);
+var orphanTransfers = data.Transfers.Count(t => !assetByNumber.ContainsKey(K(t.AssetNo)));
+if (orphanTransfers > 0) report.Warn($"{orphanTransfers} transfer(s) belong to assets that no longer exist in 4CSQL; skipped.");
 foreach (var group in data.Transfers.GroupBy(t => K(t.AssetNo), ci))
 {
     if (!assetByNumber.TryGetValue(group.Key, out var asset)) continue;
@@ -256,7 +265,7 @@ var work = await Legacy.LoadWorkAsync(legacy);
 Console.WriteLine($"Legacy work: {work.Employees.Count} employees, {work.Requests.Count} requests, {work.WorkOrders.Count} work orders, {work.Labor.Count} labour, {work.StatusAudit.Count} status changes");
 await WorkImport.RunAsync(db, tenantId, work, report, SiteFor, locByCode, assetByNumber);
 Console.WriteLine($"Legacy PM: {work.Checklists.Count} tasks, {work.PmSchedules.Count} schedules, {work.Meters.Count} meters, {work.Readings.Count} readings");
-await PmImport.RunAsync(db, tenantId, work, report, SiteFor, locByCode, assetByNumber);
+await PmImport.RunAsync(db, tenantId, work, report, SiteFor, locByCode, assetByNumber, Dept);
 var materials = await Legacy.LoadMaterialsAsync(legacy);
 Console.WriteLine($"Legacy materials: {materials.Parts.Count} parts, {materials.Stores.Count} stores, {materials.Suppliers.Count} suppliers, {materials.Orders.Count} purchase orders, " +
     $"{materials.Receipts.Count + materials.Issues.Count + materials.Returns.Count + materials.Adjustments.Count} stock transactions");
