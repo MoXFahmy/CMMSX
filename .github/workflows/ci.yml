@@ -53,4 +53,6 @@ jobs:
       - name: Check the setup scripts
         run: |
           bash -n deploy/azure/setup.sh && bash -n deploy/aws/setup.sh
-          shellcheck deploy/azure/setup.sh deploy/aws/setup.sh
+          shellcheck -x deploy/azure/setup.sh deploy/aws/setup.sh scripts/*.sh
+      - name: Test the release script
+        run: bash scripts/test-release.sh
