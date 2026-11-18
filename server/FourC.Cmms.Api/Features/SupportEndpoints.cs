@@ -222,6 +222,13 @@ public static class AttachmentEndpoints
             var inline = download != true && (a.ContentType.StartsWith("image/") || a.ContentType == "application/pdf");
             http.Response.Headers.CacheControl = "private, max-age=3600";
             http.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            if (inline)
+            {
+                // Shown in the browser, but saved under its own name (the Android app downloads PDFs it cannot show).
+                var disposition = new Microsoft.Net.Http.Headers.ContentDispositionHeaderValue("inline");
+                disposition.SetHttpFileName(a.FileName);
+                http.Response.Headers.ContentDisposition = disposition.ToString();
+            }
             return Results.File(stream, a.ContentType, inline ? null : a.FileName, enableRangeProcessing: true);
         });
 

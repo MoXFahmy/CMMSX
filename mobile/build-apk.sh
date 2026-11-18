@@ -49,8 +49,10 @@ docker run "${args[@]}" -e MODE="$MODE" -e OUT_NAME="$OUT_NAME" "$IMAGE" bash -e
     printf "storeFile=/signing/release.jks\nstorePassword=%s\nkeyAlias=%s\nkeyPassword=%s\n" \
       "$CMMS_KEYSTORE_PASSWORD" "$CMMS_KEY_ALIAS" "$CMMS_KEY_PASSWORD" > keystore.properties
   fi
-  task=assembleDebug; [ "$MODE" = release ] && task=assembleRelease
-  ./gradlew --no-daemon --no-watch-fs -q "$task"
+  variant=Debug; [ "$MODE" = release ] && variant=Release
+  # The app'"'"'s unit tests (app/src/test) run before every build: no APK is made while one fails.
+  ./gradlew --no-daemon --no-watch-fs -q "test${variant}UnitTest" "assemble${variant}"
+  echo "Unit tests passed: $(cat app/build/test-results/test${variant}UnitTest/*.xml | grep -c "<testcase ")"
   cp "app/build/outputs/apk/$MODE/app-$MODE.apk" "/out/$OUT_NAME"
 '
 echo "Built mobile/out/$OUT_NAME"

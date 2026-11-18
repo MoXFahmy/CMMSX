@@ -6,12 +6,20 @@ import assert from 'node:assert/strict';
 
 const source = readFileSync(new URL('./android/app/src/main/assets/cmms-shell.js', import.meta.url), 'utf8');
 
-function page() {
+function page({ fetch = async (url) => ({ blob: async () => new Blob(['Part,Qty\n1202678,102\n'], { type: 'text/csv' }) }) } = {}) {
   const calls = [];
-  class HTMLAnchorElement { constructor(href, download) { this.href = href; this.download = download; } click() { calls.push(['nativeClick', this.href]); } }
-  const window = { CmmsAndroid: { print: (t) => calls.push(['print', t]), saveFile: (n, m, b) => calls.push(['saveFile', n, m, b]) } };
-  const context = vm.createContext({ window, HTMLAnchorElement, document: { title: 'PO-00042' }, btoa, Blob,
-    fetch: async (url) => ({ blob: async () => new Blob(['Part,Qty\n1202678,102\n'], { type: 'text/csv' }) }) });
+  // download: the attribute's value, or null when the link has no download attribute.
+  class HTMLAnchorElement {
+    constructor(href, download) { this.href = href; this.attr = download; this.download = download ?? ''; }
+    hasAttribute(name) { return name === 'download' && this.attr !== null && this.attr !== undefined; }
+    click() { calls.push(['nativeClick', this.href]); }
+  }
+  const window = { CmmsAndroid: {
+    print: (t) => calls.push(['print', t]),
+    saveFile: (n, m, b) => calls.push(['saveFile', n, m, b]),
+    couldNotSave: (n) => calls.push(['couldNotSave', n]),
+  } };
+  const context = vm.createContext({ window, HTMLAnchorElement, document: { title: 'PO-00042' }, btoa, Blob, fetch });
   window.print = () => calls.push(['browserPrint']);
   context.window = window;
   vm.runInContext(source, context);
@@ -36,8 +44,21 @@ const tests = {
   },
   'ordinary links keep their normal click': async () => {
     const p = page();
-    new p.HTMLAnchorElement('https://dxvjhwlc6echh.cloudfront.net/work-orders', '').click();
-    assert.deepEqual(p.calls, [['nativeClick', 'https://dxvjhwlc6echh.cloudfront.net/work-orders']]);
+    new p.HTMLAnchorElement('https://dxvjhwlc6echh.cloudfront.net/work-orders', null).click();
+    new p.HTMLAnchorElement('blob:https://x/9', null).click();
+    assert.deepEqual(p.calls, [['nativeClick', 'https://dxvjhwlc6echh.cloudfront.net/work-orders'], ['nativeClick', 'blob:https://x/9']]);
+  },
+  'a blob download with an empty name is still saved (the app names it)': async () => {
+    const p = page();
+    new p.HTMLAnchorElement('blob:https://x/3', '').click();
+    await tick();
+    assert.deepEqual(p.calls.map((c) => c.slice(0, 2)), [['saveFile', '']]);
+  },
+  'a save that fails says so instead of doing nothing': async () => {
+    const p = page({ fetch: async () => { throw new TypeError('Failed to fetch'); } });
+    new p.HTMLAnchorElement('blob:https://x/4', 'stock-take.csv').click();
+    await tick();
+    assert.deepEqual(p.calls, [['couldNotSave', 'stock-take.csv']]);
   },
   'injecting twice wraps only once': async () => {
     const p = page();

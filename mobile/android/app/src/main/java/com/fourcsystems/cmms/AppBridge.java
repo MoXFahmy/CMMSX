@@ -45,7 +45,7 @@ final class AppBridge {
     /** Saves a file built in the browser (base64) to Downloads and says so. */
     @JavascriptInterface
     public void saveFile(String fileName, String mimeType, String base64) {
-        String name = safeName(fileName);
+        String name = FileNames.safe(fileName, "4C-CMMS-file");
         String mime = mimeType == null || mimeType.trim().isEmpty() ? "application/octet-stream" : mimeType;
         try {
             byte[] data = Base64.decode(base64, Base64.DEFAULT);
@@ -78,12 +78,13 @@ final class AppBridge {
         }
     }
 
-    private void toast(String message) {
-        activity.runOnUiThread(() -> Toast.makeText(activity, message, Toast.LENGTH_LONG).show());
+    /** A file built in the page could not be read (assets/cmms-shell.js): say so rather than do nothing. */
+    @JavascriptInterface
+    public void couldNotSave(String fileName) {
+        toast(activity.getString(R.string.could_not_save, FileNames.safe(fileName, "4C-CMMS-file")));
     }
 
-    private static String safeName(String fileName) {
-        String name = fileName == null ? "" : fileName.replaceAll("[\\\\/:*?\"<>|]", "_").trim();
-        return name.isEmpty() ? "4C-CMMS-file" : name;
+    private void toast(String message) {
+        activity.runOnUiThread(() -> Toast.makeText(activity, message, Toast.LENGTH_LONG).show());
     }
 }

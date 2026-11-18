@@ -12,12 +12,13 @@
     app.print(document.title || '4C CMMS');
   };
 
+  // A link with a download attribute (even an empty one: the app then picks a name) to a file built in the page.
   function isBlobDownload(a) {
-    return !!a && !!a.download && /^blob:/.test(a.href || '');
+    return !!a && !!a.hasAttribute && a.hasAttribute('download') && /^blob:/.test(a.href || '');
   }
 
   function saveBlobLink(a) {
-    var name = a.download;
+    var name = a.download || '';
     fetch(a.href)
       .then(function (r) { return r.blob(); })
       .then(function (blob) {
@@ -26,7 +27,8 @@
           for (var i = 0; i < bytes.length; i += chunk) binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunk));
           app.saveFile(name, blob.type || 'application/octet-stream', btoa(binary));
         });
-      });
+      })
+      .catch(function () { app.couldNotSave(name); }); // never silently nothing
   }
 
   // Files built in the browser are downloaded with a programmatic click on a link the page never shows...

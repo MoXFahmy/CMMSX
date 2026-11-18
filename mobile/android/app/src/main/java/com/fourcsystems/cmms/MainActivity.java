@@ -12,6 +12,10 @@ import android.provider.MediaStore;
 import android.webkit.CookieManager;
 import android.webkit.URLUtil;
 import android.webkit.ValueCallback;
+import android.webkit.WebBackForwardList;
+import android.webkit.WebResourceError;
+import android.webkit.WebResourceRequest;
+import android.webkit.WebResourceResponse;
 import android.webkit.WebView;
 import android.widget.Toast;
 import androidx.activity.OnBackPressedCallback;
@@ -21,23 +25,28 @@ import androidx.activity.result.contract.ActivityResultContracts;
 import androidx.core.content.FileProvider;
 import com.getcapacitor.BridgeActivity;
 import com.getcapacitor.BridgeWebChromeClient;
+import com.getcapacitor.BridgeWebViewClient;
 import com.getcapacitor.WebViewListener;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.List;
 
 /**
  * The 4C CMMS Android app: Capacitor shows the live cloud app (capacitor.config.ts); this adds what a web view lacks.
  * Downloads go to Android's download manager with the user's sign-in, files built in the page and printing go through
- * {@link AppBridge}, file inputs offer the camera, Back goes back in the app, and the sign-in survives closing the app.
+ * {@link AppBridge}, file inputs offer the camera, Back goes back in the app (see {@link OfflineHistory} for the offline
+ * page), and the sign-in survives closing the app.
  */
 public class MainActivity extends BridgeActivity {
 
     private ValueCallback<Uri[]> pendingFileCallback;
     private Uri pendingPhotoUri;
     private String shellScript;
+    private OfflineHistory offlineHistory;
 
     private final ActivityResultLauncher<Intent> fileChooser =
         registerForActivityResult(new ActivityResultContracts.StartActivityForResult(), this::onFileChosen);
@@ -46,12 +55,29 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         WebView webView = bridge.getWebView();
+        offlineHistory = new OfflineHistory(bridge.getErrorUrl());
+
+        // Capacitor's client shows the offline page when the main page fails; this also notes which address failed.
+        bridge.setWebViewClient(new BridgeWebViewClient(bridge) {
+            @Override
+            public void onReceivedError(WebView view, WebResourceRequest request, WebResourceError error) {
+                if (request.isForMainFrame()) offlineHistory.mainFrameFailed(request.getUrl().toString());
+                super.onReceivedError(view, request, error);
+            }
+
+            @Override
+            public void onReceivedHttpError(WebView view, WebResourceRequest request, WebResourceResponse response) {
+                if (request.isForMainFrame()) offlineHistory.mainFrameFailed(request.getUrl().toString());
+                super.onReceivedHttpError(view, request, response);
+            }
+        });
 
         // Added before the first page finishes loading, so window.CmmsAndroid is there from the start.
         webView.addJavascriptInterface(new AppBridge(this, webView), "CmmsAndroid");
         bridge.addWebViewListener(new WebViewListener() {
             @Override
             public void onPageLoaded(WebView view) {
+                if (offlineHistory.pageFinished(view.getUrl())) view.clearHistory(); // "Try again" reached the app
                 view.evaluateJavascript(shellScript(), null);
             }
         });
@@ -71,8 +97,15 @@ public class MainActivity extends BridgeActivity {
             @Override
             public void handleOnBackPressed() {
                 WebView view = bridge.getWebView();
-                if (view.canGoBack()) {
-                    view.goBack();
+                int steps = view.canGoBack() ? -1 : 0;
+                if (offlineHistory.isOfflinePage(view.getUrl())) {
+                    WebBackForwardList list = view.copyBackForwardList();
+                    List<String> urls = new ArrayList<>();
+                    for (int i = 0; i < list.getSize(); i++) urls.add(list.getItemAtIndex(i).getUrl());
+                    steps = offlineHistory.stepsBack(urls, list.getCurrentIndex());
+                }
+                if (steps < 0) {
+                    view.goBackOrForward(steps);
                 } else {
                     // Nothing to go back to in the app: let Android close it as usual.
                     setEnabled(false);
@@ -93,8 +126,14 @@ public class MainActivity extends BridgeActivity {
     // ---- Downloads (attachments and other files served by the cloud app) ----
 
     private void download(String url, String userAgent, String contentDisposition, String mimeType, long contentLength) {
-        if (url.startsWith("blob:") || url.startsWith("data:")) return; // saved by assets/cmms-shell.js
-        String name = URLUtil.guessFileName(url, contentDisposition, mimeType);
+        String name = FileNames.fromContentDisposition(contentDisposition);
+        if (name == null) name = URLUtil.guessFileName(url, null, mimeType);
+        name = FileNames.safe(name, "4C-CMMS-file");
+        if (url.startsWith("blob:") || url.startsWith("data:")) {
+            // Files built in the page are saved by assets/cmms-shell.js; one that got past it is not lost silently.
+            Toast.makeText(this, getString(R.string.could_not_download, name), Toast.LENGTH_LONG).show();
+            return;
+        }
         try {
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
             String cookies = CookieManager.getInstance().getCookie(url);

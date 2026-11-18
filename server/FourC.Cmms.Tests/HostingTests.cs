@@ -186,6 +186,21 @@ public class HostingTests(ApiFixture fx) : IClassFixture<ApiFixture>
             Assert.Equal(HttpStatusCode.NoContent, (await c.DeleteAsync($"/api/attachments/{attachment}")).StatusCode);
             Assert.Equal(HttpStatusCode.NotFound, (await c.GetAsync($"/api/attachments/{attachment}/content")).StatusCode);
         }
+
+        // A PDF opened in place still carries its name: the Android app cannot show PDFs and saves them to Downloads.
+        using var pdfForm = new MultipartFormDataContent
+        {
+            { new StringContent("Part"), "entityType" },
+            { new StringContent(part.ToString()), "entityId" },
+        };
+        var pdf = new ByteArrayContent("%PDF-1.4"u8.ToArray());
+        pdf.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        pdfForm.Add(pdf, "files", "Pump manual 2.pdf");
+        var pdfId = (await Ok(await c.PostAsync("/api/attachments", pdfForm)))[0].GetProperty("id").GetGuid();
+        var shown = (await c.GetAsync($"/api/attachments/{pdfId}/content")).Content.Headers.ContentDisposition;
+        Assert.Equal(("inline", "Pump manual 2.pdf"), (shown?.DispositionType, shown?.FileNameStar));
+        var downloaded = (await c.GetAsync($"/api/attachments/{pdfId}/content?download=true")).Content.Headers.ContentDisposition;
+        Assert.Equal(("attachment", "Pump manual 2.pdf"), (downloaded?.DispositionType, downloaded?.FileNameStar));
     }
     [SkippableFact]
     public async Task Health_reports_the_release_version()
