@@ -87,6 +87,16 @@ public class WorkOrder : TenantEntity
     public decimal? DowntimeHours { get; set; }
 
     public List<WorkOrderAssignee> Assignees { get; set; } = [];
+    /// <summary>Assets a PM round work order covers, in round order. Empty for all other work orders (they use <see cref="AssetId"/>).</summary>
+    public List<WorkOrderAsset> Assets { get; set; } = [];
+}
+
+public class WorkOrderAsset
+{
+    public Guid WorkOrderId { get; set; }
+    public Guid AssetId { get; set; }
+    public Asset? Asset { get; set; }
+    public int Sequence { get; set; }
 }
 
 public class WorkOrderAssignee
@@ -105,6 +115,11 @@ public class WorkOrderTask : Entity, ITenantOwned
     public bool IsDone { get; set; }
     public DateTimeOffset? DoneAt { get; set; }
     public string? DoneBy { get; set; }
+    /// <summary>The asset this step is for, on PM round work orders.</summary>
+    public Guid? AssetId { get; set; }
+    public string? Reading { get; set; }
+    public string? Remarks { get; set; }
+    public string? LegacyRef { get; set; }
 }
 
 public class WorkOrderLabor : Entity, ITenantOwned, IAuditable

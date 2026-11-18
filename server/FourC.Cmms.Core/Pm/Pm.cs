@@ -50,6 +50,8 @@ public class PmSchedule : TenantEntity
     public Guid PmTaskId { get; set; }
     public PmTask? PmTask { get; set; }
     public List<PmScheduleTask> ExtraTasks { get; set; } = [];
+    /// <summary>A "round" (legacy multi-asset PM): one work order per cycle covering these assets, in order. Empty for single-asset/location schedules.</summary>
+    public List<PmScheduleAsset> Assets { get; set; } = [];
 
     public PmScheduleType Type { get; set; } = PmScheduleType.FixedInterval;
     public PmBasis Basis { get; set; } = PmBasis.Scheduled;
@@ -96,6 +98,15 @@ public class PmScheduleTask
     public Guid PmScheduleId { get; set; }
     public Guid PmTaskId { get; set; }
     public int EveryNth { get; set; }
+}
+
+/// <summary>An asset covered by a round schedule, in round order.</summary>
+public class PmScheduleAsset
+{
+    public Guid PmScheduleId { get; set; }
+    public Guid AssetId { get; set; }
+    public Asset? Asset { get; set; }
+    public int Sequence { get; set; }
 }
 
 public class Meter : TenantEntity

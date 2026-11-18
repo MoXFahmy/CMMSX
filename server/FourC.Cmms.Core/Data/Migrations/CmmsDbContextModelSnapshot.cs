@@ -1700,6 +1700,24 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.ToTable("PmSchedules");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmScheduleAsset", b =>
+                {
+                    b.Property<Guid>("PmScheduleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int");
+
+                    b.HasKey("PmScheduleId", "AssetId");
+
+                    b.HasIndex("AssetId");
+
+                    b.ToTable("PmScheduleAssets");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Pm.PmScheduleTask", b =>
                 {
                     b.Property<Guid>("PmScheduleId")
@@ -2382,6 +2400,24 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.ToTable("WorkOrders");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderAsset", b =>
+                {
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Sequence")
+                        .HasColumnType("int");
+
+                    b.HasKey("WorkOrderId", "AssetId");
+
+                    b.HasIndex("AssetId", "WorkOrderId");
+
+                    b.ToTable("WorkOrderAssets");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderAssignee", b =>
                 {
                     b.Property<Guid>("WorkOrderId")
@@ -2596,6 +2632,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("AssetId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Description")
                         .IsRequired()
                         .HasMaxLength(1000)
@@ -2611,6 +2650,18 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<bool>("IsDone")
                         .HasColumnType("bit");
 
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Reading")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Remarks")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
                     b.Property<int>("Sequence")
                         .HasColumnType("int");
 
@@ -2621,6 +2672,11 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
 
                     b.HasIndex("TenantId", "WorkOrderId");
 
@@ -3002,6 +3058,23 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Navigation("Site");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmScheduleAsset", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Assets.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.Pm.PmSchedule", null)
+                        .WithMany("Assets")
+                        .HasForeignKey("PmScheduleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Pm.PmScheduleTask", b =>
                 {
                     b.HasOne("FourC.Cmms.Core.Pm.PmSchedule", null)
@@ -3094,6 +3167,23 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Navigation("Trade");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderAsset", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Assets.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.Work.WorkOrder", null)
+                        .WithMany("Assets")
+                        .HasForeignKey("WorkOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderAssignee", b =>
                 {
                     b.HasOne("FourC.Cmms.Core.People.Employee", "Employee")
@@ -3120,6 +3210,14 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Employee");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderTask", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Assets.Asset", null)
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict);
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Work.WorkRequest", b =>
@@ -3181,6 +3279,8 @@ namespace FourC.Cmms.Core.Data.Migrations
 
             modelBuilder.Entity("FourC.Cmms.Core.Pm.PmSchedule", b =>
                 {
+                    b.Navigation("Assets");
+
                     b.Navigation("ExtraTasks");
                 });
 
@@ -3196,6 +3296,8 @@ namespace FourC.Cmms.Core.Data.Migrations
 
             modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrder", b =>
                 {
+                    b.Navigation("Assets");
+
                     b.Navigation("Assignees");
                 });
 #pragma warning restore 612, 618

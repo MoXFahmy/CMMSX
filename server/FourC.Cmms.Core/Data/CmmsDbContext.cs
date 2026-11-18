@@ -56,6 +56,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<PmTaskStep> PmTaskSteps => Set<PmTaskStep>();
     public DbSet<PmSchedule> PmSchedules => Set<PmSchedule>();
     public DbSet<PmScheduleTask> PmScheduleTasks => Set<PmScheduleTask>();
+    public DbSet<PmScheduleAsset> PmScheduleAssets => Set<PmScheduleAsset>();
+    public DbSet<WorkOrderAsset> WorkOrderAssets => Set<WorkOrderAsset>();
     public DbSet<Meter> Meters => Set<Meter>();
     public DbSet<MeterReading> MeterReadings => Set<MeterReading>();
     public DbSet<Store> Stores => Set<Store>();
@@ -244,6 +246,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasOne(x => x.Trade).WithMany().HasForeignKey(x => x.TradeId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.FailureCode).WithMany().HasForeignKey(x => x.FailureCodeId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.Assignees).WithOne().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Assets).WithOne().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasFilter("[IsDeleted] = 0");
             e.HasIndex(x => new { x.TenantId, x.Status, x.DueDate });
             e.HasIndex(x => new { x.TenantId, x.AssetId });
@@ -253,7 +256,19 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasKey(x => new { x.WorkOrderId, x.EmployeeId });
             e.HasOne(x => x.Employee).WithMany().HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
         });
-        b.Entity<WorkOrderTask>(e => { e.Property(x => x.Description).HasMaxLength(1000); e.Property(x => x.DoneBy).HasMaxLength(200); e.HasIndex(x => new { x.TenantId, x.WorkOrderId }); });
+        b.Entity<WorkOrderTask>(e =>
+        {
+            e.Property(x => x.Description).HasMaxLength(1000); e.Property(x => x.DoneBy).HasMaxLength(200); e.HasIndex(x => new { x.TenantId, x.WorkOrderId });
+            e.Property(x => x.Reading).HasMaxLength(100); e.Property(x => x.Remarks).HasMaxLength(2000); e.Property(x => x.LegacyRef).HasMaxLength(200);
+            e.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.LegacyRef }).HasFilter("[LegacyRef] IS NOT NULL");
+        });
+        b.Entity<WorkOrderAsset>(e =>
+        {
+            e.HasKey(x => new { x.WorkOrderId, x.AssetId });
+            e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.AssetId, x.WorkOrderId });
+        });
         b.Entity<WorkOrderLabor>(e =>
         {
             e.Property(x => x.Hours).HasPrecision(9, 2); e.Property(x => x.OvertimeHours).HasPrecision(9, 2);
@@ -294,11 +309,18 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasOne(x => x.PmTask).WithMany().HasForeignKey(x => x.PmTaskId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Meter).WithMany().HasForeignKey(x => x.MeterId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.ExtraTasks).WithOne().HasForeignKey(x => x.PmScheduleId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Assets).WithOne().HasForeignKey(x => x.PmScheduleId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
             e.HasIndex(x => new { x.TenantId, x.IsActive, x.NextDueDate });
             e.HasIndex(x => new { x.TenantId, x.AssetId });
         });
         b.Entity<PmScheduleTask>(e => e.HasKey(x => new { x.PmScheduleId, x.PmTaskId }));
+        b.Entity<PmScheduleAsset>(e =>
+        {
+            e.HasKey(x => new { x.PmScheduleId, x.AssetId });
+            e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.AssetId);
+        });
         b.Entity<Meter>(e =>
         {
             ConfigureTenantEntity(e);
