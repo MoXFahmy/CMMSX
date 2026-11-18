@@ -187,4 +187,19 @@ public class HostingTests(ApiFixture fx) : IClassFixture<ApiFixture>
             Assert.Equal(HttpStatusCode.NotFound, (await c.GetAsync($"/api/attachments/{attachment}/content")).StatusCode);
         }
     }
+    [SkippableFact]
+    public async Task Health_reports_the_release_version()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        // The repository's VERSION file is the single source of the release number.
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "VERSION"))) dir = dir.Parent;
+        Assert.NotNull(dir);
+        var expected = File.ReadAllText(Path.Combine(dir!.FullName, "VERSION")).Trim();
+
+        var health = await Ok(await fx.Client().GetAsync("/api/health"));
+        var release = health.GetProperty("release").GetString();
+        Assert.Equal(expected, release);
+        Assert.Matches(@"^\d+\.\d+\.\d+$", release);
+    }
 }

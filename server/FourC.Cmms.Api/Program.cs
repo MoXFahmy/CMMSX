@@ -96,7 +96,10 @@ app.MapScalarApiReference("/api/docs");
 
 var api = app.MapGroup("/api");
 var version = app.Configuration["App:Version"] is { Length: > 0 } v ? v : "dev";
-api.MapGet("/health", () => Results.Ok(new { status = "ok", version })).AllowAnonymous();
+// The release number (VERSION file, stamped into the assembly at build time); "version" stays the commit for deploy checks.
+var release = (typeof(Program).Assembly.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false)
+    .OfType<System.Reflection.AssemblyInformationalVersionAttribute>().FirstOrDefault()?.InformationalVersion ?? "0.0.0-dev").Split('+')[0];
+api.MapGet("/health", () => Results.Ok(new { status = "ok", version, release })).AllowAnonymous();
 api.MapAuthEndpoints();
 api.MapSiteEndpoints();
 api.MapLocationEndpoints();

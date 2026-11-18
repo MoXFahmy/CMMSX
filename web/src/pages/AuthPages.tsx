@@ -5,7 +5,7 @@ import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { useState } from 'react';
 import { get, post } from '@/api/client';
-import { handleFormError, notifyError } from '@/components/utils';
+import { appVersionLabel, handleFormError, notifyError } from '@/components/utils';
 
 function AuthFrame({ title, subtitle, children }: { title: string; subtitle: string; children: React.ReactNode }) {
   const { t } = useTranslation();
@@ -17,6 +17,7 @@ function AuthFrame({ title, subtitle, children }: { title: string; subtitle: str
           <Stack gap={4} mb="lg"><Title order={3}>{title}</Title><Text c="dimmed" fz="sm">{subtitle}</Text></Stack>
           {children}
         </Paper>
+        <Text c="dimmed" fz="xs" ta="center">{appVersionLabel(t)}</Text>
       </Stack>
     </Center>
   );

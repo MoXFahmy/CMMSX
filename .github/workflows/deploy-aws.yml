@@ -123,5 +123,5 @@ jobs:
             echo ""
             echo "**${{ steps.deploy.outputs.url }}**"
             echo ""
-            echo "Commit \`$COMMIT\` · region \`$AWS_REGION\` · stack \`$STACK\` · database \`$DB_INSTANCE_CLASS\` · sign-up open: \`$ALLOW_REGISTRATION\`"
+            echo "Version \`$(cat VERSION 2>/dev/null || echo unknown)\` · commit \`$COMMIT\` · region \`$AWS_REGION\` · stack \`$STACK\` · database \`$DB_INSTANCE_CLASS\` · sign-up open: \`$ALLOW_REGISTRATION\`"
           } >> "$GITHUB_STEP_SUMMARY"

@@ -2,6 +2,8 @@
 # ---- Web (React) ----
 FROM node:22-alpine AS web
 WORKDIR /web
+# The release number (repository VERSION file) is read by vite.config.ts as ../VERSION.
+COPY VERSION /VERSION
 COPY web/package.json web/package-lock.json ./
 RUN npm ci --no-audit --no-fund
 COPY web/ ./
@@ -10,6 +12,8 @@ RUN npm run build
 # ---- API (.NET) ----
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS api
 WORKDIR /src
+# server/Directory.Build.props stamps the release number from ../VERSION.
+COPY VERSION /VERSION
 COPY server/ ./
 RUN dotnet publish FourC.Cmms.Api/FourC.Cmms.Api.csproj -c Release -o /app --no-self-contained
 

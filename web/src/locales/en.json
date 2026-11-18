@@ -70,7 +70,9 @@
     "required": "Required",
     "showInactive": "Show inactive",
     "apply": "Apply",
-    "selected": "{{count}} selected"
+    "selected": "{{count}} selected",
+    "version": "Version {{v}}",
+    "androidApp": "Android app {{v}}"
   },
   "auth": {
     "signIn": "Sign in",

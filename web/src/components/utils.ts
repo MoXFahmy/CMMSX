@@ -3,6 +3,7 @@ import relativeTime from 'dayjs/plugin/relativeTime';
 import { notifications } from '@mantine/notifications';
 import type { UseFormReturnType } from '@mantine/form';
 import { ApiError } from '@/api/client';
+import type { TFunction } from 'i18next';
 
 dayjs.extend(relativeTime);
 
@@ -35,4 +36,11 @@ export function handleFormError<T>(form: UseFormReturnType<T>, err: unknown) {
     const unknown = Object.keys(err.fieldErrors).filter((k) => !(k in (form.getValues() as object)) && !k.includes('.'));
     if (unknown.length) notifyError(new Error(unknown.map((k) => err.fieldErrors[k]).join(' ')));
   } else notifyError(err);
+}
+
+/** "Version 0.0.0", plus "· Android app 0.0.0" when running inside the Android app (it adds 4CCMMS-Android/x.y.z to its user agent). */
+export function appVersionLabel(t: TFunction): string {
+  const android = /4CCMMS-Android\/(\d+\.\d+\.\d+)/.exec(typeof navigator === 'undefined' ? '' : navigator.userAgent)?.[1];
+  const web = t('common.version', { v: __APP_VERSION__ });
+  return android ? `${web} · ${t('common.androidApp', { v: android })}` : web;
 }

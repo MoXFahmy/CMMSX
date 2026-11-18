@@ -1,9 +1,15 @@
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { fileURLToPath, URL } from 'node:url';
+import { existsSync, readFileSync } from 'node:fs';
+
+// The release number lives in the repository's VERSION file (see docs/VERSIONING.md).
+const versionFile = fileURLToPath(new URL('../VERSION', import.meta.url));
+const appVersion = existsSync(versionFile) ? readFileSync(versionFile, 'utf8').trim() : '0.0.0-dev';
 
 export default defineConfig({
   plugins: [react()],
+  define: { __APP_VERSION__: JSON.stringify(appVersion) },
   resolve: { alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) } },
   server: {
     port: 5173,

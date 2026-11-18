@@ -1,0 +1,8 @@
+<Project>
+  <!-- The release number lives in one place: the VERSION file at the repository root (see docs/VERSIONING.md). -->
+  <PropertyGroup>
+    <CmmsVersionFile>$(MSBuildThisFileDirectory)../VERSION</CmmsVersionFile>
+    <Version Condition="Exists('$(CmmsVersionFile)')">$([System.IO.File]::ReadAllText('$(CmmsVersionFile)').Trim())</Version>
+    <Version Condition="!Exists('$(CmmsVersionFile)')">0.0.0-dev</Version>
+  </PropertyGroup>
+</Project>
