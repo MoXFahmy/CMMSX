@@ -4,6 +4,29 @@ All notable changes to 4C CMMS — the cloud app and the Android app share one v
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.0.2] - 2026-11-19
+
+Quick wins from the DimoMaint comparison. New rules are **off** until an administrator switches them on in
+Settings › Organization, so nothing changes for existing organizations on its own.
+
+### Added
+- **PM generation rules:** don't generate PM work for assets that are under repair, inactive or in storage (you
+  choose which); move PM work that falls on a non-working day to the next working day while the schedule keeps its
+  dates; don't generate new PM work while the previous work order is still open. Skipped occurrences are listed with
+  the reason in the PM preview.
+- **Completion rules:** require labour, every checklist step ticked, or a failure code on breakdown work before a work
+  order can be completed.
+- **Work starts automatically:** logging labour or ticking a checklist step on an Open work order moves it to In
+  progress, with the reason in its history.
+- **Job card:** print any work order as a job card with its checklist, blank rows for labour and parts, completion
+  lines and signature lines.
+- **Duplicate a work order** with its checklist, assignees and asset (dates, status and bookings are not copied).
+- **More work order filters:** location (with sub-locations), asset, assignee, created and due date ranges, and
+  source (from PM, from a request, raised directly).
+- **Alert bell** in the header: overdue work orders (and how many are yours), requests waiting for triage and parts at
+  or below re-order level, each opening the filtered list.
+- **Generate now:** create the next PM work order straight from the forecast or the schedule page.
+
 ## [0.0.1] - 2026-11-19
 
 ### Security
