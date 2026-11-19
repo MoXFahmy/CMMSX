@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
 import { IconEdit, IconKey, IconPlus, IconTrash } from '@tabler/icons-react';
 import { del, get, post, put } from '@/api/client';
-import { ASSET_STATUSES, DAYS_OF_WEEK, FIELD_TYPES, type Category, type CustomField, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
+import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { LookupTable } from '@/components/LookupTable';
@@ -46,7 +46,7 @@ export function SettingsPage() {
 }
 
 function OrganizationSettings() {
-  const { t, i18n } = useTranslation();
+  const { t } = useTranslation();
   const { can, refresh } = useAuth();
   const qc = useQueryClient();
   const editable = can(P.settingsManage);
@@ -111,7 +111,7 @@ function OrganizationSettings() {
           <MultiSelect label={t('settings.pmSkipAssetStatuses')} disabled={!editable} clearable
             data={ASSET_STATUSES.filter((x) => x !== 'Active').map((x) => ({ value: x, label: t(`status.${x}`) }))} {...form.getInputProps('settings.pmSkipAssetStatuses')} />
           <MultiSelect label={t('settings.pmNonWorkingDays')} disabled={!editable} clearable
-            data={DAYS_OF_WEEK.map((d, i) => ({ value: d, label: new Intl.DateTimeFormat(i18n.language, { weekday: 'long' }).format(new Date(2026, 10, 15 + i)) }))}
+            data={DAY_NAMES.map((d) => ({ value: d, label: t(`pm.days.${d}`) }))}
             {...form.getInputProps('settings.pmNonWorkingDays')} />
           <Switch label={t('settings.pmNoStacking')} disabled={!editable} {...form.getInputProps('settings.pmNoStacking', { type: 'checkbox' })} />
         </Stack></Card>

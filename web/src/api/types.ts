@@ -17,10 +17,8 @@ export type TenantSettings = {
   workOrderNumberPrefix: string; workRequestNumberPrefix: string; requireCompletionNotes: boolean; autoGeneratePm: boolean;
   purchaseOrderNumberPrefix: string; defaultTaxPercent: number; currency: string; dateFormat: string; timeZone: string;
   requireLaborToComplete: boolean; requireAllTasksDone: boolean; requireFailureCodeForBreakdowns: boolean; autoStartWork: boolean;
-  pmSkipAssetStatuses: AssetStatus[]; pmNonWorkingDays: DayOfWeekName[]; pmNoStacking: boolean;
+  pmSkipAssetStatuses: AssetStatus[]; pmNonWorkingDays: DayName[]; pmNoStacking: boolean;
 };
-export type DayOfWeekName = 'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';
-export const DAYS_OF_WEEK: DayOfWeekName[] = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
 export type Me = {
   user: { id: string; fullName: string; email: string; jobTitle?: string };
   tenant: { id: string; name: string; slug: string; settings: TenantSettings };
