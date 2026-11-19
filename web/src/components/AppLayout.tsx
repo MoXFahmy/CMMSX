@@ -5,6 +5,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { appVersionLabel } from '@/components/utils';
+import { AlertBell } from '@/components/AlertBell';
 import {
   IconLayoutDashboard, IconMapPin, IconBox, IconClipboardText, IconTool, IconCalendarRepeat, IconPackage, IconShoppingCart,
   IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers,
@@ -70,6 +71,7 @@ export function AppLayout() {
             <Text c="dimmed" fz="sm" visibleFrom="md" lineClamp={1}>{me?.tenant.name}</Text>
           </Group>
           <Group gap="xs" wrap="nowrap">
+            <AlertBell />
             <UnstyledButton onClick={() => toggleColorScheme()} aria-label="Toggle color scheme" p={6}>
               {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
             </UnstyledButton>

@@ -117,6 +117,7 @@ api.MapInventoryEndpoints();
 api.MapPurchasingEndpoints();
 api.MapReportEndpoints();
 api.MapDashboardEndpoints();
+api.MapAlertEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();

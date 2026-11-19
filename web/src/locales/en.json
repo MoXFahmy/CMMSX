@@ -965,5 +965,15 @@
     },
     "noData": "No data for the selected filters",
     "generated": "Generated {{date}}"
+  },
+  "alerts": {
+    "title": "Needs attention",
+    "overdue_one": "{{count}} overdue work order ({{mine}} assigned to you)",
+    "overdue_other": "{{count}} overdue work orders ({{mine}} assigned to you)",
+    "triage_one": "{{count}} request waiting for triage",
+    "triage_other": "{{count}} requests waiting for triage",
+    "lowStock_one": "{{count}} part at or below re-order level",
+    "lowStock_other": "{{count}} parts at or below re-order level",
+    "none": "Nothing needs attention"
   }
 }
