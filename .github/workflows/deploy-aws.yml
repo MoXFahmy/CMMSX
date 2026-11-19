@@ -1,6 +1,7 @@
 name: Deploy to AWS
 
-# Deploys every green build of main to AWS (ECS Fargate + RDS + S3 + CloudFront), or on demand from the Actions tab.
+# Deploys every green build of main to AWS (ECS Fargate + RDS + S3 + CloudFront), or on demand from the Actions tab,
+# then tags the deployed commit vX.Y.Z from its VERSION file (docs/VERSIONING.md).
 # It stays switched off (skipped) until the repository variables from docs/DEPLOY_AWS.md are set.
 on:
   workflow_run:
@@ -125,3 +126,26 @@ jobs:
             echo ""
             echo "Version \`$(cat VERSION 2>/dev/null || echo unknown)\` · commit \`$COMMIT\` · region \`$AWS_REGION\` · stack \`$STACK\` · database \`$DB_INSTANCE_CLASS\` · sign-up open: \`$ALLOW_REGISTRATION\`"
           } >> "$GITHUB_STEP_SUMMARY"
+
+  tag:
+    name: Tag the release
+    # The release tag is made here, after the deploy, because GitHub Desktop does not push tags made on the command
+    # line. Only for main: a manual deploy of another branch is not a release.
+    needs: deploy
+    if: github.event_name == 'workflow_run' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write # push the tag
+    env:
+      COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ env.COMMIT }}
+
+      - name: Tag vX.Y.Z (from VERSION) on the deployed commit
+        env:
+          GIT_COMMITTER_NAME: github-actions[bot]
+          GIT_COMMITTER_EMAIL: 41898282+github-actions[bot]@users.noreply.github.com
+        run: scripts/tag-release.sh "$COMMIT"

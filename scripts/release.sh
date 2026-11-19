@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
 # Release 4C CMMS: one version number for the cloud app and the Android app. See docs/VERSIONING.md.
 #
-#   scripts/release.sh 0.1.0            new version: writes VERSION, builds the signed APK, commits, tags v0.1.0
+#   scripts/release.sh 0.1.0            new version: writes VERSION, builds the signed APK, commits "Release v0.1.0"
 #   scripts/release.sh 0.0.0 --no-bump  release the version already in VERSION (first release)
 #
 # Before running: add a "## [X.Y.Z] - YYYY-MM-DD" section to CHANGELOG.md and commit your work.
-# Afterwards: push main and the tag from GitHub Desktop; the cloud app deploys itself, and the APK and release notes
-# are in the Drive folder under Releases/vX.Y.Z/.
+# Afterwards: push main from GitHub Desktop; the cloud app deploys itself and GitHub then tags the commit vX.Y.Z
+# (scripts/tag-release.sh). The APK and release notes are in the Drive folder under Releases/vX.Y.Z/.
 #
 # Settings (environment): RELEASE_DRIVE_DIR (Drive folder, found automatically otherwise),
 # RELEASE_SIGNING_DIR (default: <Drive folder>/_private/android-signing, holding signing.env and the key file).
@@ -32,6 +32,12 @@ else
   version_gt "$NEW" "$CURRENT" || die "$NEW must be higher than the current version $CURRENT."
 fi
 if git rev-parse -q --verify "refs/tags/v$NEW" >/dev/null; then die "tag v$NEW already exists."; fi
+# GitHub makes the tags, so a released version may be tagged there and not yet here.
+if github_tags=$(GIT_TERMINAL_PROMPT=0 git ls-remote --tags origin "refs/tags/v$NEW" 2>/dev/null); then
+  [ -z "$github_tags" ] || die "v$NEW is already released (tagged on GitHub)."
+else
+  echo "release: could not reach GitHub to check for a v$NEW tag; continuing." >&2
+fi
 changelog_has CHANGELOG.md "$NEW" || die "add a '## [$NEW] - $(date +%Y-%m-%d)' section to CHANGELOG.md first."
 
 DRIVE=$(find_drive_dir) || die "Drive folder not found; set RELEASE_DRIVE_DIR to the '1000 CMX' folder."
@@ -47,7 +53,7 @@ case "${CMMS_KEYSTORE:-}" in /*) ;; "") die "signing.env has no CMMS_KEYSTORE." 
 export CMMS_KEYSTORE
 [ -f "$CMMS_KEYSTORE" ] || die "signing key not found: $CMMS_KEYSTORE"
 
-# Build first, so a failed build leaves no commit or tag behind.
+# Build first, so a failed build leaves no commit behind.
 if [ "$MODE" != "--no-bump" ]; then
   printf '%s\n' "$NEW" > VERSION
   trap 'echo "release: failed; undo the version change with: git checkout VERSION" >&2' ERR
@@ -64,7 +70,6 @@ if [ "$MODE" != "--no-bump" ]; then
   git add VERSION
   git commit -q -m "Release v$NEW"
 fi
-git tag -a "v$NEW" -m "4C CMMS $NEW"
 
 OUT="$DRIVE/Releases/v$NEW"
 mkdir -p "$OUT"
@@ -87,4 +92,4 @@ cp "$APK" "$OUT/"
 echo
 echo "Released 4C CMMS $NEW"
 echo "  APK and notes: Drive > 01 CMMS > 1000 CMX > Releases > v$NEW"
-echo "  Next: push main and the tag v$NEW from GitHub Desktop; the cloud app deploys itself."
+echo "  Next: push main from GitHub Desktop. The cloud app deploys itself, then GitHub tags the commit v$NEW."

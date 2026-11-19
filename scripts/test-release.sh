@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Tests for scripts/release-lib.sh. Run: bash scripts/test-release.sh
+# Tests for scripts/release-lib.sh and scripts/tag-release.sh. Run: bash scripts/test-release.sh
 set -u
 cd "$(dirname "$0")" || exit 1
 # shellcheck source=scripts/release-lib.sh
@@ -58,4 +58,38 @@ check "missing RELEASE_DRIVE_DIR fails" 1 env RELEASE_DRIVE_DIR="$tmp/nope" bash
 equals "version code 0.0.0" "1" "$(version_code 0.0.0)"
 equals "version code 1.2.3" "1002004" "$(version_code 1.2.3)"
 
-if [ "$failures" -eq 0 ]; then echo "All release-lib tests passed."; else echo "$failures failing"; exit 1; fi
+# ---- scripts/tag-release.sh: after a deploy, CI tags the commit; here a throwaway bare repo stands in for GitHub ----
+export GIT_CONFIG_GLOBAL=/dev/null GIT_CONFIG_NOSYSTEM=1
+export GIT_AUTHOR_NAME=test GIT_AUTHOR_EMAIL=test@example.invalid GIT_COMMITTER_NAME=test GIT_COMMITTER_EMAIL=test@example.invalid
+tag_script="$PWD/tag-release.sh"
+work="$tmp/work"
+git init -q --bare "$tmp/origin.git"
+git init -q -b main "$work"
+git -C "$work" remote add origin "$tmp/origin.git"
+commit_version() { # commit_version <version>: commits VERSION=<version> and prints the commit
+  printf '%s\n' "$1" > "$work/VERSION"
+  git -C "$work" add VERSION && git -C "$work" commit -q --allow-empty -m "VERSION $1" && git -C "$work" rev-parse HEAD
+}
+tag_release() { (cd "$work" && bash "$tag_script" "$@"); }
+github_tag() { git -C "$work" ls-remote origin "refs/tags/$1" | cut -f1; }           # the tag object on "GitHub"
+github_tag_commit() { git -C "$work" ls-remote origin "refs/tags/$1^{}" | cut -f1; } # the commit it marks
+
+c1=$(commit_version 0.0.1)
+check "a deployed new version is tagged" 0 tag_release "$c1"
+equals "v0.0.1 marks the deployed commit on GitHub" "$c1" "$(github_tag_commit v0.0.1)"
+first_tag=$(github_tag v0.0.1)
+equals "v0.0.1 is an annotated tag" "tag" "$(git -C "$work" cat-file -t "$first_tag" 2>/dev/null)"
+check "deploying the same commit again succeeds" 0 tag_release "$c1"
+equals "deploying it again leaves the tag alone" "$first_tag" "$(github_tag v0.0.1)"
+
+c2=$(commit_version 0.0.1)
+check "a later commit with an unchanged VERSION still deploys" 0 tag_release "$c2"
+equals "it does not move v0.0.1" "$c1" "$(github_tag_commit v0.0.1)"
+check "it warns that the deploy is not a release" 0 bash -c "cd '$work' && bash '$tag_script' '$c2' | grep -q '::warning::.*not a release'"
+
+c3=$(commit_version 1.0)
+check "a malformed VERSION fails" 1 tag_release "$c3"
+equals "no tag is made for it" "" "$(git -C "$work" ls-remote --tags origin | grep -v 'v0\.0\.1')"
+check "no commit given fails" 1 tag_release
+
+if [ "$failures" -eq 0 ]; then echo "All release tests passed."; else echo "$failures failing"; exit 1; fi
