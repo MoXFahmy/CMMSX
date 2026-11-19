@@ -317,7 +317,16 @@
     "woPrefix": "Work order prefix",
     "wrPrefix": "Work request prefix",
     "requireCompletionNotes": "Require \"work done\" notes to complete a work order",
+    "requireLaborToComplete": "Require labour before a work order can be completed",
+    "requireAllTasksDone": "Require every checklist step ticked before completing",
+    "requireFailureCodeForBreakdowns": "Require a failure code on breakdown work",
+    "autoStartWork": "Start work automatically when labour is logged or a checklist step is ticked",
     "autoGeneratePm": "Generate PM work orders automatically (within each schedule's lead time)",
+    "pmRules": "Preventive maintenance",
+    "pmRulesHint": "Rules for generating PM work. Leave them empty or off to keep generating every occurrence.",
+    "pmSkipAssetStatuses": "Don't generate PM work for assets that are",
+    "pmNonWorkingDays": "Non-working days (PM work moves to the next working day)",
+    "pmNoStacking": "Don't generate new PM work while the previous work order is still open",
     "email": "Email",
     "purchasing": "Purchasing",
     "poPrefix": "Purchase order prefix",
@@ -495,7 +504,20 @@
     "reading": "Reading",
     "remarks": "Remarks",
     "assets": "Assets",
-    "assetProgress": "{{done}}/{{total}}"
+    "assetProgress": "{{done}}/{{total}}",
+    "moreFilters": "More filters",
+    "pickSiteFirst": "Choose a site first",
+    "filterAssignee": "Assigned to",
+    "createdBetween": "Created between",
+    "dueBetween": "Due between",
+    "source": "Source",
+    "sourcePm": "From PM",
+    "sourceRequest": "From a request",
+    "sourceDirect": "Raised directly",
+    "clearFilters": "Clear these filters",
+    "duplicate": "Duplicate",
+    "duplicateTitle": "New work order (copy of {{number}})",
+    "printJobCard": "Print job card"
   },
   "wr": {
     "title": "Work requests",
@@ -654,7 +676,12 @@
     "round": "Round",
     "noAssets": "Add at least one asset.",
     "moveUp": "Move up",
-    "moveDown": "Move down"
+    "moveDown": "Move down",
+    "generateNow": "Generate now",
+    "generateNextNow": "Generate next now",
+    "generateNowTitle": "Generate this PM work now?",
+    "generateNowBody": "Creates the work order for {{date}} now instead of waiting for its lead time.",
+    "nothingGenerated": "No work order was created."
   },
   "txType": {
     "Receipt": "Receipt",
@@ -946,5 +973,28 @@
     },
     "noData": "No data for the selected filters",
     "generated": "Generated {{date}}"
+  },
+  "alerts": {
+    "title": "Needs attention",
+    "overdue_one": "{{count}} overdue work order ({{mine}} assigned to you)",
+    "overdue_other": "{{count}} overdue work orders ({{mine}} assigned to you)",
+    "triage_one": "{{count}} request waiting for triage",
+    "triage_other": "{{count}} requests waiting for triage",
+    "lowStock_one": "{{count}} part at or below re-order level",
+    "lowStock_other": "{{count}} parts at or below re-order level",
+    "none": "Nothing needs attention"
+  },
+  "jobCard": {
+    "title": "Job card",
+    "printed": "Printed {{date}}",
+    "serial": "Serial number",
+    "assetCount_one": "{{count}} asset",
+    "assetCount_other": "{{count}} assets",
+    "step": "Step",
+    "part": "Part",
+    "completion": "Completion",
+    "technician": "Technician",
+    "supervisor": "Supervisor / customer",
+    "signDate": "Date"
   }
 }

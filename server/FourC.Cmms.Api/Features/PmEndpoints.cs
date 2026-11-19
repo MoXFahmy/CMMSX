@@ -232,6 +232,8 @@ public static class PmEndpoints
                 Date = d, i.S.Id, i.S.Code, i.S.Name, i.AssetNumber, i.SiteName, i.S.Type,
                 TaskName = taskNames.GetValueOrDefault(PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + k)) ?? i.TaskName,
                 Overdue = d < Today,
+                // The schedule's next occurrence: generating it creates no other work order.
+                IsNext = k == 0,
             })).Where(x => x.Date >= from || x.Overdue).OrderBy(x => x.Date).Take(5000);
         }).RequirePermission(Permissions.PmView);
 

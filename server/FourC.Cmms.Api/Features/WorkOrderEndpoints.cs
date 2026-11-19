@@ -36,6 +36,12 @@ public static class WorkOrderEndpoints
         public bool? Mine { get; set; }
         public bool? Overdue { get; set; }
         public bool? ActiveOnly { get; set; }
+        public DateOnly? CreatedFrom { get; set; }
+        public DateOnly? CreatedTo { get; set; }
+        public DateOnly? DueFrom { get; set; }
+        public DateOnly? DueTo { get; set; }
+        /// <summary>"pm", "request" or "direct" (raised without a PM or request); anything else is ignored.</summary>
+        public string? Source { get; set; }
         public string? Sort { get; set; }
         public string? Dir { get; set; }
         public int? Page { get; set; }
@@ -117,7 +123,7 @@ public static class WorkOrderEndpoints
             {
                 w.Id, w.Number, w.Title, w.Description, w.Type, w.Priority, w.Status, w.HoldReason,
                 w.SiteId, Site = new { w.Site!.Id, w.Site.Name }, w.LocationId, LocationTrail = trail,
-                w.AssetId, Asset = w.Asset is null ? null : new { w.Asset.Id, w.Asset.AssetNumber, w.Asset.Name, w.Asset.Status, w.Asset.Criticality, w.Asset.NotesToTechnician,
+                w.AssetId, Asset = w.Asset is null ? null : new { w.Asset.Id, w.Asset.AssetNumber, w.Asset.Name, w.Asset.SerialNumber, w.Asset.Status, w.Asset.Criticality, w.Asset.NotesToTechnician,
                     w.Asset.WarrantyType, w.Asset.WarrantyExpiresOn, UnderWarranty = w.Asset.WarrantyType != FourC.Cmms.Core.Assets.WarrantyType.None && w.Asset.WarrantyExpiresOn >= Today },
                 w.RequestedBy, w.PreventionNotes,
                 w.TradeId, TradeName = w.Trade?.Name, w.FailureCodeId, FailureCode = w.FailureCode is null ? null : new { w.FailureCode.Code, w.FailureCode.Name },
@@ -185,6 +191,12 @@ public static class WorkOrderEndpoints
             {
                 var notes = input.CompletionNotes.Clean() ?? w.CompletionNotes;
                 if (settings.RequireCompletionNotes && notes is null) v.Add("completionNotes", "Describe the work that was done.");
+                if (settings.RequireLaborToComplete && !await db.WorkOrderLabor.AnyAsync(l => l.WorkOrderId == id, ct))
+                    v.Add("labor", "Log the labour before completing the work.");
+                if (settings.RequireAllTasksDone && await db.WorkOrderTasks.AnyAsync(t => t.WorkOrderId == id && !t.IsDone, ct))
+                    v.Add("tasks", "Tick every checklist step before completing the work.");
+                if (settings.RequireFailureCodeForBreakdowns && w.Type == WorkType.Breakdown && (input.FailureCodeId ?? w.FailureCodeId) is null)
+                    v.Add("failureCodeId", "Choose a failure code for breakdown work.");
                 if (input.FailureCodeId is { } fc && !await db.FailureCodes.AnyAsync(f => f.Id == fc, ct)) v.Add("failureCodeId", "Unknown failure code.");
                 if (input.ActualStart is { } st && input.ActualEnd is { } en && en < st) v.Add("actualEnd", "Actual end cannot be before the actual start.");
                 if (input.ActualEnd > DateTimeOffset.UtcNow.AddHours(1)) v.Add("actualEnd", "Actual end cannot be in the future.");
@@ -266,6 +278,7 @@ public static class WorkOrderEndpoints
             if (input.IsDone is { } done && done != t.IsDone)
             {
                 t.IsDone = done; t.DoneAt = done ? DateTimeOffset.UtcNow : null; t.DoneBy = done ? ctx.UserName : null;
+                if (done) await AutoStartAsync(db, ctx, id, "Started automatically: checklist step done", ct);
             }
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { t.Id, t.IsDone });
@@ -279,7 +292,7 @@ public static class WorkOrderEndpoints
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
         // ---- Labour ----
-        g.MapPost("/{id:guid}/labor", async (Guid id, LaborInput input, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/labor", async (Guid id, LaborInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             await RequireOpenAsync(db, id, ct);
             var (v, emp) = await ValidateLaborAsync(input, db, ct);
@@ -287,6 +300,7 @@ public static class WorkOrderEndpoints
             var l = new WorkOrderLabor { WorkOrderId = id, EmployeeId = emp!.Id, WorkDate = input.WorkDate, Hours = input.Hours, OvertimeHours = input.OvertimeHours,
                 Rate = emp.HourlyRate ?? 0, OvertimeRate = emp.OvertimeRate ?? emp.HourlyRate ?? 0, Notes = input.Notes.Clean() };
             db.WorkOrderLabor.Add(l);
+            await AutoStartAsync(db, ctx, id, "Started automatically: labour logged", ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { l.Id });
         }).RequirePermission(Permissions.WorkOrdersExecute);
@@ -375,6 +389,17 @@ public static class WorkOrderEndpoints
         }
         if (f.AssetId is not null) q = q.Where(w => w.AssetId == f.AssetId || (w.Asset != null && w.Asset.ParentAssetId == f.AssetId) || w.Assets.Any(a => a.AssetId == f.AssetId));
         if (f.TradeId is not null) q = q.Where(w => w.TradeId == f.TradeId);
+        if (f.CreatedFrom is { } cf) { var from = new DateTimeOffset(cf.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt >= from); }
+        if (f.CreatedTo is { } ctd) { var before = new DateTimeOffset(ctd.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt < before); }
+        if (f.DueFrom is { } df) q = q.Where(w => w.DueDate >= df);
+        if (f.DueTo is { } dt) q = q.Where(w => w.DueDate <= dt);
+        q = f.Source?.ToLowerInvariant() switch
+        {
+            "pm" => q.Where(w => w.PmScheduleId != null),
+            "request" => q.Where(w => w.WorkRequestId != null),
+            "direct" => q.Where(w => w.PmScheduleId == null && w.WorkRequestId == null),
+            _ => q,
+        };
         if (f.AssigneeId is not null) q = q.Where(w => w.Assignees.Any(a => a.EmployeeId == f.AssigneeId));
         if (f.Mine == true)
         {
@@ -387,6 +412,22 @@ public static class WorkOrderEndpoints
             q = q.Where(w => w.DueDate < today && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold));
         }
         return q;
+    }
+
+    /// <summary>"Start work automatically" setting: an Open work order moves to In progress when work is first recorded on it.</summary>
+    private static async Task AutoStartAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, string reason, CancellationToken ct)
+    {
+        var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+        if (!settings.AutoStartWork) return;
+        var w = await db.WorkOrders.FirstOrDefaultAsync(x => x.Id == workOrderId, ct);
+        if (w is null || w.Status != WorkOrderStatus.Open) return;
+        var now = DateTimeOffset.UtcNow;
+        db.WorkOrderStatusChanges.Add(new WorkOrderStatusChange
+        {
+            WorkOrderId = w.Id, FromStatus = w.Status, ToStatus = WorkOrderStatus.InProgress, Note = reason, ChangedAt = now, ChangedById = ctx.UserId, ChangedByName = ctx.UserName,
+        });
+        w.Status = WorkOrderStatus.InProgress;
+        w.StartedAt ??= now;
     }
 
     public static async Task<Validator> ValidateAsync(WorkOrderInput i, CmmsDbContext db, CancellationToken ct)

@@ -78,4 +78,116 @@ public class WorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var activity = await Ok(await admin.GetAsync($"/api/work-orders/{wo}/activity"));
         Assert.Equal(4, activity.EnumerateArray().Count(a => a.GetProperty("kind").GetString() == "status")); // created, started, completed, closed
     }
+
+    [SkippableFact]
+    public async Task Completion_rules_block_completion_until_met()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, site) = await SetupAsync();
+        await TestSettings.SetSettingsAsync(admin, s =>
+        {
+            s["requireLaborToComplete"] = true; s["requireAllTasksDone"] = true; s["requireFailureCodeForBreakdowns"] = true;
+        });
+        var emp = (await Ok(await admin.PostAsJsonAsync("/api/employees", new { code = "E1", fullName = "Tech", hourlyRate = 20, isContractor = false }))).GetProperty("id").GetGuid();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var wo = (await Ok(await admin.PostAsJsonAsync("/api/work-orders", new { title = "Motor tripped", type = "Breakdown", priority = "High", siteId = site, tasks = new[] { "Isolate", "Repair" } }))).GetProperty("id").GetGuid();
+
+        var refused = await admin.PostAsJsonAsync($"/api/work-orders/{wo}/status", new { status = "Completed", completionNotes = "Reset the overload" });
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        var errors = JsonDocument.Parse(await refused.Content.ReadAsStringAsync()).RootElement.GetProperty("errors");
+        Assert.True(errors.TryGetProperty("labor", out _));
+        Assert.True(errors.TryGetProperty("tasks", out _));
+        Assert.True(errors.TryGetProperty("failureCodeId", out _));
+
+        await Ok(await admin.PostAsJsonAsync($"/api/work-orders/{wo}/labor", new { employeeId = emp, workDate = today, hours = 1, overtimeHours = 0 }));
+        foreach (var task in (await Ok(await admin.GetAsync($"/api/work-orders/{wo}"))).GetProperty("tasks").EnumerateArray())
+            await Ok(await admin.PutAsJsonAsync($"/api/work-orders/{wo}/tasks/{task.GetProperty("id").GetGuid()}", new { isDone = true }));
+        var fc = (await Ok(await admin.PostAsJsonAsync("/api/failure-codes", new { code = "OVL", name = "Overload", isActive = true }))).GetProperty("id").GetGuid();
+        await Ok(await admin.PostAsJsonAsync($"/api/work-orders/{wo}/status", new { status = "Completed", completionNotes = "Reset the overload", failureCodeId = fc }));
+
+        // No checklist and not a breakdown: labour is the only rule that applies.
+        var simple = (await Ok(await admin.PostAsJsonAsync("/api/work-orders", new { title = "Adjust door", type = "Corrective", priority = "Low", siteId = site }))).GetProperty("id").GetGuid();
+        await Ok(await admin.PostAsJsonAsync($"/api/work-orders/{simple}/labor", new { employeeId = emp, workDate = today, hours = 0.5, overtimeHours = 0 }));
+        await Ok(await admin.PostAsJsonAsync($"/api/work-orders/{simple}/status", new { status = "Completed", completionNotes = "Adjusted" }));
+    }
+
+    [SkippableFact]
+    public async Task Auto_start_moves_open_work_to_in_progress_on_labour_or_step()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, site) = await SetupAsync();
+        var emp = (await Ok(await admin.PostAsJsonAsync("/api/employees", new { code = "E1", fullName = "Tech", hourlyRate = 20, isContractor = false }))).GetProperty("id").GetGuid();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        async Task<Guid> NewWo(params string[] tasks) =>
+            (await Ok(await admin.PostAsJsonAsync("/api/work-orders", new { title = "Job", type = "Corrective", priority = "Medium", siteId = site, tasks }))).GetProperty("id").GetGuid();
+        async Task<string> Status(Guid wo) => (await Ok(await admin.GetAsync($"/api/work-orders/{wo}"))).GetProperty("status").GetString()!;
+        Task Labour(Guid wo) => Ok(admin.PostAsJsonAsync($"/api/work-orders/{wo}/labor", new { employeeId = emp, workDate = today, hours = 1, overtimeHours = 0 }).Result);
+
+        var off = await NewWo();
+        await Labour(off);
+        Assert.Equal("Open", await Status(off)); // setting off: nothing changes
+
+        await TestSettings.SetSettingsAsync(admin, s => s["autoStartWork"] = true);
+        var a = await NewWo();
+        await Labour(a);
+        var detail = await Ok(await admin.GetAsync($"/api/work-orders/{a}"));
+        Assert.Equal("InProgress", detail.GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.String, detail.GetProperty("startedAt").ValueKind);
+        var activity = await Ok(await admin.GetAsync($"/api/work-orders/{a}/activity"));
+        Assert.Contains(activity.EnumerateArray(), x => x.GetProperty("kind").GetString() == "status" && x.GetProperty("body").GetString() == "Started automatically: labour logged");
+
+        var b = await NewWo("Check belts");
+        var step = (await Ok(await admin.GetAsync($"/api/work-orders/{b}"))).GetProperty("tasks")[0].GetProperty("id").GetGuid();
+        await Ok(await admin.PutAsJsonAsync($"/api/work-orders/{b}/tasks/{step}", new { reading = "12" }));
+        Assert.Equal("Open", await Status(b)); // a reading alone doesn't start the work
+        await Ok(await admin.PutAsJsonAsync($"/api/work-orders/{b}/tasks/{step}", new { isDone = true }));
+        Assert.Equal("InProgress", await Status(b));
+        var bActivity = await Ok(await admin.GetAsync($"/api/work-orders/{b}/activity"));
+        Assert.Contains(bActivity.EnumerateArray(), x => x.GetProperty("body").GetString() == "Started automatically: checklist step done");
+
+        var c = await NewWo();
+        await Ok(await admin.PostAsJsonAsync($"/api/work-orders/{c}/status", new { status = "OnHold", holdReason = "WaitingForParts" }));
+        await Labour(c);
+        Assert.Equal("OnHold", await Status(c)); // on hold is left alone
+    }
+
+    [SkippableFact]
+    public async Task List_filters_by_dates_and_source()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, site) = await SetupAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        string Iso(DateOnly d) => d.ToString("yyyy-MM-dd");
+
+        await Ok(await admin.PostAsJsonAsync("/api/work-orders", new { title = "Direct job", type = "Corrective", priority = "Low", siteId = site, dueDate = Iso(today.AddDays(3)) }));
+        var req = await Ok(await admin.PostAsJsonAsync("/api/work-requests", new { title = "Leak", siteId = site, priority = "High", type = "Corrective" }));
+        await Ok(await admin.PostAsJsonAsync($"/api/work-requests/{req.GetProperty("id").GetGuid()}/approve", new { }));
+        var asset = (await Ok(await admin.PostAsJsonAsync("/api/assets", new { name = "Fan", siteId = site, status = "Active", criticality = "Low", warrantyType = "None" }))).GetProperty("id").GetGuid();
+        var task = (await Ok(await admin.PostAsJsonAsync("/api/pm-tasks", new { code = "F1", name = "Fan check", steps = new[] { "Look" } }))).GetProperty("id").GetGuid();
+        await Ok(await admin.PostAsJsonAsync("/api/pm-schedules", new
+        {
+            name = "Fan PM", siteId = site, assetId = asset, priority = "Low", pmTaskId = task, type = "FixedInterval", basis = "Scheduled", frequency = 1, unit = "Week",
+            workPeriodDays = 1, wholeMonth = false, leadDays = 0, startDate = Iso(today), timeBased = false, extraTasks = Array.Empty<object>(),
+        }));
+        Assert.Equal(1, (await Ok(await admin.PostAsJsonAsync("/api/pm/generate", new { until = Iso(today) }))).GetProperty("created").GetInt32());
+
+        async Task<int> Total(string query) => (await Ok(await admin.GetAsync($"/api/work-orders?{query}"))).GetProperty("total").GetInt32();
+        Assert.Equal(1, await Total("source=pm"));
+        Assert.Equal(1, await Total("source=request"));
+        Assert.Equal(1, await Total("source=direct"));
+        Assert.Equal(1, await Total($"dueFrom={Iso(today.AddDays(2))}&dueTo={Iso(today.AddDays(4))}"));
+        Assert.Equal(3, await Total($"createdFrom={Iso(today)}&createdTo={Iso(today)}")); // a single day includes everything created today
+        Assert.Equal(0, await Total($"createdTo={Iso(today.AddDays(-1))}"));
+    }
+
+    [SkippableFact]
+    public async Task Work_order_detail_includes_the_asset_serial_number()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, site) = await SetupAsync();
+        var asset = (await Ok(await admin.PostAsJsonAsync("/api/assets", new { name = "Press", siteId = site, status = "Active", criticality = "High", warrantyType = "None", serialNumber = "SN-4471" }))).GetProperty("id").GetGuid();
+        var wo = (await Ok(await admin.PostAsJsonAsync("/api/work-orders", new { title = "Check press", type = "Inspection", priority = "Medium", siteId = site, assetId = asset }))).GetProperty("id").GetGuid();
+        var detail = await Ok(await admin.GetAsync($"/api/work-orders/{wo}"));
+        Assert.Equal("SN-4471", detail.GetProperty("asset").GetProperty("serialNumber").GetString()); // printed on the job card
+    }
 }

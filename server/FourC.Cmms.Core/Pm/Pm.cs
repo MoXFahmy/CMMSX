@@ -159,6 +159,14 @@ public static class PmCalendar
         return first.AddDays(((int)day - (int)first.DayOfWeek + 7) % 7 + 7 * (Math.Clamp(week, 1, 4) - 1));
     }
 
+    /// <summary>The first day on or after <paramref name="d"/> that is not a non-working weekday; <paramref name="d"/> itself when every weekday is listed.</summary>
+    public static DateOnly NextWorkingDay(DateOnly d, IReadOnlyCollection<DayOfWeek> nonWorking)
+    {
+        for (var i = 0; i < 7; i++)
+            if (!nonWorking.Contains(d.AddDays(i).DayOfWeek)) return d.AddDays(i);
+        return d;
+    }
+
     public static DateOnly ClampedDay(int year, int month, int day) => new(year, month, Math.Min(Math.Max(day, 1), DateTime.DaysInMonth(year, month)));
 
     /// <summary>First occurrence on or after <paramref name="start"/>.</summary>

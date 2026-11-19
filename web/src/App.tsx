@@ -23,6 +23,7 @@ import { PartFormPage } from './pages/inventory/PartFormPage';
 import { PurchasingPage } from './pages/purchasing/PurchasingPage';
 import { PoFormPage } from './pages/purchasing/PoFormPage';
 import { PoDetailPage, PoPrintPage } from './pages/purchasing/PoDetailPage';
+import { WorkOrderPrintPage } from './pages/work/WorkOrderPrintPage';
 import { ReportsPage, ReportViewPage } from './pages/reports/ReportsPage';
 
 export function App() {
@@ -41,6 +42,7 @@ export function App() {
   return (
     <Routes>
       <Route path="purchasing/orders/:id/print" element={<PoPrintPage />} />
+      <Route path="work-orders/:id/print" element={<WorkOrderPrintPage />} />
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path="locations" element={<LocationsPage />} />

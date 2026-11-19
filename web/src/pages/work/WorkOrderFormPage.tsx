@@ -31,6 +31,8 @@ export function WorkOrderFormPage() {
   const qc = useQueryClient();
   const editing = !!id;
   const { data: wo, isLoading } = useQuery({ queryKey: ['work-order', id], queryFn: () => get<WorkOrderDetail>(`/work-orders/${id}`), enabled: editing });
+  const copyFrom = params.get('copyFrom');
+  const { data: source } = useQuery({ queryKey: ['work-order', copyFrom], queryFn: () => get<WorkOrderDetail>(`/work-orders/${copyFrom}`), enabled: !!copyFrom && !editing });
   const assetParam = params.get('assetId');
   const { data: asset } = useQuery({ queryKey: ['asset', assetParam], queryFn: () => get<AssetDetail>(`/assets/${assetParam}`), enabled: !!assetParam && !editing });
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
@@ -44,13 +46,21 @@ export function WorkOrderFormPage() {
         dueDate: d(wo.dueDate), estimatedHours: wo.estimatedHours ?? '', tasks: [], requestedBy: wo.requestedBy ?? '',
       });
       form.resetDirty();
+    } else if (source) {
+      // Duplicate: what the job is and who does it; not its dates, status, bookings or history.
+      form.setValues({
+        ...empty, title: source.title, description: source.description ?? '', type: source.type, priority: source.priority, siteId: source.siteId,
+        locationId: source.locationId ?? null, assetId: source.assetId ?? null, tradeId: source.tradeId ?? null,
+        assigneeIds: source.assignees.map((a) => a.employeeId), estimatedHours: source.estimatedHours ?? '',
+        tasks: [...source.tasks].sort((a, b) => a.sequence - b.sequence).map((x) => x.description),
+      });
     } else if (asset) {
       form.setValues({ ...empty, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id, priority: asset.criticality === 'Critical' ? 'High' : 'Medium' });
     } else if (!editing && params.get('siteId')) {
       form.setValues({ ...empty, siteId: params.get('siteId'), locationId: params.get('locationId') });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wo, asset]);
+  }, [wo, asset, source]);
 
   const submit = form.onSubmit(async (v) => {
     const body = {
@@ -71,7 +81,7 @@ export function WorkOrderFormPage() {
   const err = (k: string) => form.errors[k];
   return (
     <form onSubmit={submit}>
-      <PageHeader title={editing ? `${t('wo.edit')} · ${wo?.number}` : t('wo.new')}
+      <PageHeader title={editing ? `${t('wo.edit')} · ${wo?.number}` : source ? t('wo.duplicateTitle', { number: source.number }) : t('wo.new')}
         crumbs={[{ label: t('wo.title'), to: '/work-orders' }, ...(editing ? [{ label: wo?.number ?? '', to: `/work-orders/${id}` }] : [])]}
         actions={<><Button variant="default" onClick={() => navigate(-1)}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{editing ? t('common.saveChanges') : t('common.create')}</Button></>} />
       <Grid gutter="lg">
@@ -91,7 +101,7 @@ export function WorkOrderFormPage() {
               <LocationPicker siteId={form.values.siteId} locationId={form.values.locationId} siteError={err('siteId')} locationError={err('locationId')}
                 onChange={(s, l) => form.setValues({ siteId: s, locationId: l, assetId: s === form.values.siteId ? form.values.assetId : null })} />
               <AssetPicker label={t('wo.asset')} value={form.values.assetId} error={err('assetId')} onChange={(v) => form.setFieldValue('assetId', v)}
-                initial={wo?.asset ?? (asset ? { id: asset.id, assetNumber: asset.assetNumber, name: asset.name } : null)} />
+                initial={wo?.asset ?? source?.asset ?? (asset ? { id: asset.id, assetNumber: asset.assetNumber, name: asset.name } : null)} />
               <AssetCheck assetId={form.values.assetId} excludeWorkOrderId={id} />
             </Stack></Card>
             {!editing && (

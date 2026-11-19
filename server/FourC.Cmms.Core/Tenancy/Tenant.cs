@@ -1,3 +1,4 @@
+using FourC.Cmms.Core.Assets;
 using FourC.Cmms.Core.Common;
 
 namespace FourC.Cmms.Core.Tenancy;
@@ -23,6 +24,14 @@ public class TenantSettings
     public string WorkRequestNumberPrefix { get; set; } = "WR-";
     /// <summary>Require "action taken" notes before a work order can be completed.</summary>
     public bool RequireCompletionNotes { get; set; } = true;
+    /// <summary>Completing a work order needs at least one labour entry.</summary>
+    public bool RequireLaborToComplete { get; set; }
+    /// <summary>Completing a work order needs every checklist step ticked (none to tick passes).</summary>
+    public bool RequireAllTasksDone { get; set; }
+    /// <summary>Completing breakdown work needs a failure code.</summary>
+    public bool RequireFailureCodeForBreakdowns { get; set; }
+    /// <summary>Logging labour or ticking a checklist step on an Open work order moves it to In progress.</summary>
+    public bool AutoStartWork { get; set; }
     /// <summary>Generate PM work orders automatically when they come within each schedule's lead time.</summary>
     public bool AutoGeneratePm { get; set; } = true;
     public string PurchaseOrderNumberPrefix { get; set; } = "PO-";
@@ -31,6 +40,13 @@ public class TenantSettings
     public string Currency { get; set; } = "USD";
     public string DateFormat { get; set; } = "yyyy-MM-dd";
     public string TimeZone { get; set; } = "UTC";
+
+    /// <summary>PM generation skips occurrences of single-asset schedules (and drops round assets) whose asset has one of these statuses.</summary>
+    public List<AssetStatus> PmSkipAssetStatuses { get; set; } = [];
+    /// <summary>PM work landing on these weekdays starts on the next working day; the schedule keeps its own dates.</summary>
+    public List<DayOfWeek> PmNonWorkingDays { get; set; } = [];
+    /// <summary>Scheduled-basis PM occurrences are skipped while an earlier work order of the same schedule is still open.</summary>
+    public bool PmNoStacking { get; set; }
 }
 
 /// <summary>Customers rename hierarchy levels (e.g. legacy "Department" shown as "Site").</summary>

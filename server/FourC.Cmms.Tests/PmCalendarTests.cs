@@ -8,6 +8,15 @@ public class PmCalendarTests
     private static DateOnly D(int y, int m, int d) => new(y, m, d);
 
     [Fact]
+    public void NextWorkingDay_skips_listed_weekdays()
+    {
+        var weekend = new[] { DayOfWeek.Saturday, DayOfWeek.Sunday };
+        Assert.Equal(D(2026, 11, 23), PmCalendar.NextWorkingDay(D(2026, 11, 21), weekend)); // Saturday → Monday
+        Assert.Equal(D(2026, 11, 24), PmCalendar.NextWorkingDay(D(2026, 11, 24), weekend)); // Tuesday stays
+        Assert.Equal(D(2026, 11, 21), PmCalendar.NextWorkingDay(D(2026, 11, 21), Enum.GetValues<DayOfWeek>())); // no working day: unchanged
+    }
+
+    [Fact]
     public void Fixed_interval_adds_calendar_units()
     {
         var weekly = S(s => { s.Unit = FrequencyUnit.Week; s.Frequency = 2; });

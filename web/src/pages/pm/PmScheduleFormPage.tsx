@@ -17,6 +17,7 @@ import { AssetListEditor, type AssetRef } from '@/components/AssetListEditor';
 import { EmployeePicker } from '@/components/EmployeePicker';
 import { WoStatusBadge } from '@/components/WorkBadges';
 import { confirmDelete } from '@/components/confirm';
+import { generateNow } from './generateNow';
 import { fmtDate, fmtDateTime, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 
 type V = {
@@ -57,6 +58,7 @@ export function PmScheduleFormPage() {
   const editing = !!id;
   const editable = can(P.pmManage);
   const { data: s, isLoading } = useQuery({ queryKey: ['pm-schedule', id], queryFn: () => get<PmScheduleDetail>(`/pm-schedules/${id}`), enabled: editing });
+  const canGenerateNext = editing && can(P.pmGenerate) && !!s?.isActive && !!s?.nextDueDate;
   const assetParam = params.get('assetId');
   const { data: asset } = useQuery({ queryKey: ['asset', assetParam], queryFn: () => get<AssetDetail>(`/assets/${assetParam}`), enabled: !!assetParam && !editing });
   const { data: tasks } = useQuery({ queryKey: ['pm-tasks'], queryFn: () => get<PmTaskListItem[]>('/pm-tasks') });
@@ -107,9 +109,12 @@ export function PmScheduleFormPage() {
       <PageHeader title={editing ? `${s?.code} · ${s?.name}` : t('pm.newSchedule')} crumbs={[{ label: t('pm.title'), to: '/pm/schedules' }, { label: editing ? s?.code ?? '' : t('pm.newSchedule') }]}
         badge={editing && <Badge color={s?.isActive ? 'teal' : 'gray'}>{s?.isActive ? t('common.active') : t('common.inactive')}</Badge>}
         subtitle={editing && s ? `${s.schedule} · ${t('pm.generatedCount', { count: s.generationCount })}` : undefined}
-        actions={editable && <>
-          {editing && <Button variant="subtle" color="red" onClick={() => confirmDelete(s!.code, async () => { try { await del(`/pm-schedules/${id}`); await qc.invalidateQueries({ queryKey: ['pm-schedules'] }); navigate('/pm/schedules'); } catch (e) { notifyError(e); } })}>{t('common.delete')}</Button>}
-          <Button variant="default" onClick={() => navigate(-1)}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{editing ? t('common.saveChanges') : t('common.create')}</Button>
+        actions={(editable || canGenerateNext) && <>
+          {canGenerateNext && <Button variant="light" onClick={() => generateNow(s!.id, s!.nextDueDate!, () => Promise.all([
+            qc.invalidateQueries({ queryKey: ['pm-schedule', id] }), qc.invalidateQueries({ queryKey: ['pm-forecast'] }), qc.invalidateQueries({ queryKey: ['work-orders'] })]))}>
+            {t('pm.generateNextNow')}</Button>}
+          {editable && editing && <Button variant="subtle" color="red" onClick={() => confirmDelete(s!.code, async () => { try { await del(`/pm-schedules/${id}`); await qc.invalidateQueries({ queryKey: ['pm-schedules'] }); navigate('/pm/schedules'); } catch (e) { notifyError(e); } })}>{t('common.delete')}</Button>}
+          {editable && <><Button variant="default" onClick={() => navigate(-1)}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{editing ? t('common.saveChanges') : t('common.create')}</Button></>}
         </>} />
       <Grid gutter="lg">
         <Grid.Col span={{ base: 12, lg: 8 }}>

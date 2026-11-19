@@ -8,7 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
 import { IconEdit, IconKey, IconPlus, IconTrash } from '@tabler/icons-react';
 import { del, get, post, put } from '@/api/client';
-import { FIELD_TYPES, type Category, type CustomField, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
+import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { LookupTable } from '@/components/LookupTable';
@@ -100,7 +100,20 @@ function OrganizationSettings() {
             <TextInput label={t('settings.wrPrefix')} disabled={!editable} {...form.getInputProps('settings.workRequestNumberPrefix')} />
           </SimpleGrid>
           <Switch label={t('settings.requireCompletionNotes')} disabled={!editable} {...form.getInputProps('settings.requireCompletionNotes', { type: 'checkbox' })} />
+          <Switch label={t('settings.requireLaborToComplete')} disabled={!editable} {...form.getInputProps('settings.requireLaborToComplete', { type: 'checkbox' })} />
+          <Switch label={t('settings.requireAllTasksDone')} disabled={!editable} {...form.getInputProps('settings.requireAllTasksDone', { type: 'checkbox' })} />
+          <Switch label={t('settings.requireFailureCodeForBreakdowns')} disabled={!editable} {...form.getInputProps('settings.requireFailureCodeForBreakdowns', { type: 'checkbox' })} />
+          <Switch label={t('settings.autoStartWork')} disabled={!editable} {...form.getInputProps('settings.autoStartWork', { type: 'checkbox' })} />
           <Switch label={t('settings.autoGeneratePm')} disabled={!editable} {...form.getInputProps('settings.autoGeneratePm', { type: 'checkbox' })} />
+        </Stack></Card>
+        <Card><Stack>
+          <div><Title order={5}>{t('settings.pmRules')}</Title><Text c="dimmed" fz="sm">{t('settings.pmRulesHint')}</Text></div>
+          <MultiSelect label={t('settings.pmSkipAssetStatuses')} disabled={!editable} clearable
+            data={ASSET_STATUSES.filter((x) => x !== 'Active').map((x) => ({ value: x, label: t(`status.${x}`) }))} {...form.getInputProps('settings.pmSkipAssetStatuses')} />
+          <MultiSelect label={t('settings.pmNonWorkingDays')} disabled={!editable} clearable
+            data={DAY_NAMES.map((d) => ({ value: d, label: t(`pm.days.${d}`) }))}
+            {...form.getInputProps('settings.pmNonWorkingDays')} />
+          <Switch label={t('settings.pmNoStacking')} disabled={!editable} {...form.getInputProps('settings.pmNoStacking', { type: 'checkbox' })} />
         </Stack></Card>
         <Card><Stack>
           <Title order={5}>{t('settings.purchasing')}</Title>

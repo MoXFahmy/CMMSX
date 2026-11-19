@@ -16,6 +16,8 @@ export type TenantSettings = {
   terminology: Terminology; assetNumberPrefix: string; assetNumberPadding: number; autoNumberAssets: boolean;
   workOrderNumberPrefix: string; workRequestNumberPrefix: string; requireCompletionNotes: boolean; autoGeneratePm: boolean;
   purchaseOrderNumberPrefix: string; defaultTaxPercent: number; currency: string; dateFormat: string; timeZone: string;
+  requireLaborToComplete: boolean; requireAllTasksDone: boolean; requireFailureCodeForBreakdowns: boolean; autoStartWork: boolean;
+  pmSkipAssetStatuses: AssetStatus[]; pmNonWorkingDays: DayName[]; pmNoStacking: boolean;
 };
 export type Me = {
   user: { id: string; fullName: string; email: string; jobTitle?: string };
@@ -108,7 +110,7 @@ export type WorkOrderListItem = {
 export type WorkOrderDetail = {
   id: string; number: string; title: string; description?: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
   siteId: string; site: { id: string; name: string }; locationId?: string; locationTrail: { id: string; name: string }[];
-  assetId?: string; asset?: { id: string; assetNumber: string; name: string; status: AssetStatus; criticality: Criticality; notesToTechnician?: string; warrantyType: WarrantyType; warrantyExpiresOn?: string; underWarranty: boolean };
+  assetId?: string; asset?: { id: string; assetNumber: string; name: string; serialNumber?: string; status: AssetStatus; criticality: Criticality; notesToTechnician?: string; warrantyType: WarrantyType; warrantyExpiresOn?: string; underWarranty: boolean };
   requestedBy?: string; preventionNotes?: string;
   tradeId?: string; tradeName?: string; failureCodeId?: string; failureCode?: { code: string; name: string };
   assignees: { employeeId: string; fullName: string; code: string }[]; plannedStart?: string; dueDate?: string; estimatedHours?: number;
@@ -180,7 +182,9 @@ export type PmScheduleDetail = {
   legacyRef?: string; rowVersion: string;
 };
 export type PmRunResult = { scheduleId: string; code: string; name: string; dueDate?: string; taskName?: string; assetNumber?: string; workOrderId?: string; workOrderNumber?: string; skipped?: string };
-export type ForecastItem = { date: string; id: string; code: string; name: string; assetNumber?: string; siteName: string; type: PmScheduleType; taskName: string; overdue: boolean };
+export type ForecastItem = { date: string; id: string; code: string; name: string; assetNumber?: string; siteName: string; type: PmScheduleType; taskName: string; overdue: boolean;
+  /** The schedule's next occurrence: generating it creates no other work order. */
+  isNext: boolean };
 export type MeterItem = { id: string; code: string; name: string; assetId: string; assetNumber: string; assetName: string; unit: string; currentReading?: number; lastReadAt?: string; maxDailyIncrement?: number; isActive: boolean; schedules: number };
 export type MeterReadingItem = { id: string; value: number; readAt: string; note?: string; source: string; byName?: string; workOrderId?: string };
 

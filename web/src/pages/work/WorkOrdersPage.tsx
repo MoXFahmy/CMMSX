@@ -1,18 +1,26 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Anchor, Badge, Button, Card, Group, MultiSelect, SegmentedControl, Select, Stack, Tabs, Text, TextInput, ActionIcon, Tooltip } from '@mantine/core';
-import { useDebouncedValue } from '@mantine/hooks';
+import { Anchor, Badge, Button, Card, Collapse, Group, MultiSelect, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, TextInput, ActionIcon, Tooltip } from '@mantine/core';
+import { DatePickerInput } from '@mantine/dates';
+import { useDebouncedValue, useDisclosure } from '@mantine/hooks';
+import dayjs from 'dayjs';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DataTable, type DataTableSortStatus } from 'mantine-datatable';
-import { IconFilterOff, IconPlus, IconSearch } from '@tabler/icons-react';
+import { IconAdjustmentsHorizontal, IconFilterOff, IconPlus, IconSearch } from '@tabler/icons-react';
 import { get } from '@/api/client';
 import { WORK_PRIORITIES, WORK_TYPES, type Lookup, type Paged, type WorkOrderListItem, type WorkOrderStatus } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
-import { useHierarchy } from '@/components/LocationPicker';
+import { locationOptions, useHierarchy } from '@/components/LocationPicker';
+import { AssetPicker } from '@/components/AssetPicker';
+import { useEmployees } from '@/components/EmployeePicker';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDate } from '@/components/utils';
+
+/** Filters behind "More filters"; they live in the URL like the others. */
+const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source'] as const;
+const isoDay = (d: string | Date | null) => (d ? dayjs(d).format('YYYY-MM-DD') : null);
 
 const TABS: { key: string; statuses: WorkOrderStatus[] | null }[] = [
   { key: 'active', statuses: ['Open', 'InProgress', 'OnHold'] }, { key: 'Open', statuses: ['Open'] }, { key: 'InProgress', statuses: ['InProgress'] },
@@ -43,6 +51,8 @@ export function WorkOrdersPage() {
   const base = {
     search: p('search'), siteId: p('siteId'), priority: p('priority'), type: p('type'), tradeId: p('tradeId'), assetId: p('assetId'),
     mine: view === 'mine' ? 'true' : '', overdue: view === 'overdue' ? 'true' : '',
+    locationId: p('locationId'), assigneeId: p('assigneeId'), createdFrom: p('createdFrom'), createdTo: p('createdTo'),
+    dueFrom: p('dueFrom'), dueTo: p('dueTo'), source: p('source'),
   };
   const { data, isFetching } = useQuery({
     queryKey: ['work-orders', base, tab, page, pageSize, sort],
@@ -53,8 +63,13 @@ export function WorkOrdersPage() {
   const { data: h } = useHierarchy();
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
   const count = (s: WorkOrderStatus[] | null) => (summary?.byStatus ?? []).filter((x) => !s || s.includes(x.status)).reduce((a, b) => a + b.count, 0);
-  const filtersActive = ['search', 'siteId', 'priority', 'type', 'tradeId', 'assetId'].some((k) => p(k));
+  const filtersActive = ['search', 'siteId', 'priority', 'type', 'tradeId', ...EXTRA_FILTERS].some((k) => p(k));
   const tradeOpts = useMemo(() => (trades ?? []).map((x) => ({ value: x.id, label: x.name })), [trades]);
+  const extraCount = [p('locationId'), p('assetId'), p('assigneeId'), p('createdFrom') || p('createdTo'), p('dueFrom') || p('dueTo'), p('source')].filter(Boolean).length;
+  const [moreOpen, more] = useDisclosure(extraCount > 0);
+  const locOpts = useMemo(() => locationOptions(h?.locations ?? [], p('siteId') || null), [h, params]); // eslint-disable-line react-hooks/exhaustive-deps
+  const { data: employees } = useEmployees(p('siteId') || null);
+  const empOpts = useMemo(() => (employees ?? []).map((e) => ({ value: e.id, label: e.fullName })), [employees]);
 
   return (
     <>
@@ -67,15 +82,32 @@ export function WorkOrdersPage() {
             { value: 'overdue', label: `${t('wo.overdue')}${summary?.overdue ? ` (${summary.overdue})` : ''}` },
           ]} />
           <TextInput placeholder={t('wo.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={search} onChange={(e) => setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 240 }} />
-          <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v })} clearable searchable w={{ base: '100%', xs: 180 }} />
+          <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v, locationId: null })} clearable searchable w={{ base: '100%', xs: 180 }} />
           <MultiSelect placeholder={p('priority') ? undefined : t('priority.label')} data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))}
             value={p('priority') ? p('priority').split(',') : []} onChange={(v) => set({ priority: v.join(',') || null })} clearable w={{ base: '100%', xs: 170 }} />
           <MultiSelect placeholder={p('type') ? undefined : t('workType.label')} data={WORK_TYPES.map((x) => ({ value: x, label: t(`workType.${x}`) }))}
             value={p('type') ? p('type').split(',') : []} onChange={(v) => set({ type: v.join(',') || null })} clearable w={{ base: '100%', xs: 170 }} />
           <Select placeholder={t('wo.trade')} data={tradeOpts} value={p('tradeId') || null} onChange={(v) => set({ tradeId: v })} clearable w={{ base: '100%', xs: 160 }} />
+          <Button variant={moreOpen ? 'light' : 'default'} leftSection={<IconAdjustmentsHorizontal size={16} />} onClick={more.toggle} aria-expanded={moreOpen}
+            rightSection={extraCount ? <Badge size="xs" circle>{extraCount}</Badge> : null}>{t('wo.moreFilters')}</Button>
           {filtersActive && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')}
             onClick={() => { setSearch(''); setParams(tab !== 'active' ? { tab } : {}, { replace: true }); }}><IconFilterOff size={16} /></ActionIcon></Tooltip>}
         </Group>
+        <Collapse in={moreOpen}>
+          <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mt="sm" spacing="xs">
+            <Select label={terms.location} placeholder={p('siteId') ? t('common.all') : t('wo.pickSiteFirst')} disabled={!p('siteId')} data={locOpts}
+              value={p('locationId') || null} onChange={(v) => set({ locationId: v })} clearable searchable comboboxProps={{ width: 'max-content', position: 'bottom-start' }} />
+            <AssetPicker label={terms.asset} siteId={p('siteId') || null} value={p('assetId') || null} onChange={(v) => set({ assetId: v })} />
+            <Select label={t('wo.filterAssignee')} placeholder={t('common.all')} data={empOpts} value={p('assigneeId') || null} onChange={(v) => set({ assigneeId: v })} clearable searchable />
+            <Select label={t('wo.source')} placeholder={t('common.all')} value={p('source') || null} onChange={(v) => set({ source: v })} clearable
+              data={[{ value: 'pm', label: t('wo.sourcePm') }, { value: 'request', label: t('wo.sourceRequest') }, { value: 'direct', label: t('wo.sourceDirect') }]} />
+            <DatePickerInput type="range" label={t('wo.createdBetween')} placeholder={t('common.all')} clearable valueFormat="DD MMM YYYY" allowSingleDateInRange
+              value={[p('createdFrom') || null, p('createdTo') || null]} onChange={([a, b]) => set({ createdFrom: isoDay(a), createdTo: isoDay(b) })} />
+            <DatePickerInput type="range" label={t('wo.dueBetween')} placeholder={t('common.all')} clearable valueFormat="DD MMM YYYY" allowSingleDateInRange
+              value={[p('dueFrom') || null, p('dueTo') || null]} onChange={([a, b]) => set({ dueFrom: isoDay(a), dueTo: isoDay(b) })} />
+          </SimpleGrid>
+          {extraCount > 0 && <Group justify="flex-end" mt="xs"><Button variant="subtle" size="xs" onClick={() => set(Object.fromEntries(EXTRA_FILTERS.map((k) => [k, null])))}>{t('wo.clearFilters')}</Button></Group>}
+        </Collapse>
         {p('assetId') && <Text fz="xs" c="dimmed" mt={6}>{t('wo.asset')}: {data?.items[0]?.assetNumber ?? '…'} ({t('assets.components').toLowerCase()} included)</Text>}
       </Card>
       <Tabs value={tab} onChange={(v) => set({ tab: v === 'active' ? null : v })} mb="sm">
