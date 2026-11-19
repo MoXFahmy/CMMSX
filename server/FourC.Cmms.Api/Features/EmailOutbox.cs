@@ -3,6 +3,7 @@ using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Notifications;
+using FourC.Cmms.Core.Purchasing;
 using FourC.Cmms.Core.Work;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Options;
@@ -80,6 +81,68 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
                 org => EmailTemplates.RequestRejected(org, facts, r.DecisionNote ?? "", link), "WorkRequest", r.Id, ct);
     }
 
+    // ---------------- Purchasing ----------------
+
+    /// <summary>Submitted for approval: approvers whose limit covers the order (or who have none) hear.</summary>
+    public async Task PoSubmittedAsync(CmmsDbContext db, ITenantContext ctx, PurchaseOrder po, CancellationToken ct)
+    {
+        if (!Available) return;
+        var total = PurchaseOrderMath.TotalInBase(po);
+        var ids = await UserIdsWithPermissionAsync(db, Permissions.PurchasingApprove, ct);
+        var approvers = await db.Users.AsNoTracking()
+            .Where(u => ids.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId && (u.PurchaseApprovalLimit == null || u.PurchaseApprovalLimit >= total))
+            .Select(u => new EmailRecipient(u.Email, u.FullName, u.Id)).ToListAsync(ct);
+        var facts = await FactsAsync(db, po, ct);
+        await QueueAsync(db, ctx, EmailEvents.PoSubmitted, approvers, org => EmailTemplates.PoSubmitted(org, facts, Link($"/purchasing/orders/{po.Id}")),
+            "PurchaseOrder", po.Id, ct);
+    }
+
+    /// <summary>Approved or returned: whoever created the order hears.</summary>
+    public async Task PoDecidedAsync(CmmsDbContext db, ITenantContext ctx, PurchaseOrder po, bool approved, string? reason, CancellationToken ct)
+    {
+        if (!Available || po.CreatedById is not { } creator) return;
+        var facts = await FactsAsync(db, po, ct);
+        var link = Link($"/purchasing/orders/{po.Id}");
+        await QueueAsync(db, ctx, approved ? EmailEvents.PoApproved : EmailEvents.PoRejected, await UsersAsync(db, [creator], ct),
+            org => approved ? EmailTemplates.PoApproved(org, facts, link) : EmailTemplates.PoRejected(org, facts, reason ?? "", link), "PurchaseOrder", po.Id, ct);
+    }
+
+    /// <summary>Lines charged to work orders were received: each work order's assignees hear about their lines.</summary>
+    public async Task PartsReceivedAsync(CmmsDbContext db, ITenantContext ctx, PurchaseOrder po, IReadOnlyCollection<(Guid WorkOrderId, string Line)> received,
+        CancellationToken ct)
+    {
+        if (!Available) return;
+        foreach (var group in received.GroupBy(r => r.WorkOrderId))
+        {
+            var w = await db.WorkOrders.AsNoTracking().Include(x => x.Assignees).FirstOrDefaultAsync(x => x.Id == group.Key, ct);
+            if (w is null || w.Assignees.Count == 0) continue;
+            var facts = await FactsAsync(db, w, ct);
+            var lines = group.Select(g => g.Line).ToList();
+            await QueueAsync(db, ctx, EmailEvents.PartsReceived, await EmployeesAsync(db, w.Assignees.Select(a => a.EmployeeId).ToList(), ct),
+                org => EmailTemplates.PartsReceived(org, facts, po.Number, lines, Link($"/work-orders/{w.Id}")), "WorkOrder", w.Id, ct);
+        }
+    }
+
+    /// <summary>"Send to supplier": queues the order to the supplier. Returns why it can't, or null when queued.</summary>
+    public async Task<string?> PoToSupplierAsync(CmmsDbContext db, ITenantContext ctx, PurchaseOrder po, CancellationToken ct)
+    {
+        if (!Available) return "E-mail isn't set up on this server.";
+        var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+        if (!settings.EmailEnabled) return "E-mail is switched off for this organization. Switch it on in Settings › Notifications.";
+        var supplier = po.Supplier ?? await db.Suppliers.AsNoTracking().FirstAsync(x => x.Id == po.SupplierId, ct);
+        if (string.IsNullOrWhiteSpace(supplier.Email)) return "The supplier has no e-mail address.";
+        string Money(decimal v) => $"{v:N2} {po.Currency}";
+        var doc = new PoDocument(po.Number, po.OrderDate.ToString("d MMM yyyy"), po.ExpectedDate?.ToString("d MMM yyyy"), po.DeliverTo, po.PaymentTerms, po.SupplierQuoteRef,
+            po.RequestedBy,
+            [.. po.Lines.OrderBy(l => l.LineNumber).Select(l => new PoDocumentLine(l.LineNumber, l.Description,
+                $"{l.Quantity:0.###} {l.UnitOfMeasure}".Trim(), Money(l.NetUnitPrice), Money(l.LineTotal)))],
+            [("Subtotal", Money(PurchaseOrderMath.Subtotal(po))), ($"Tax ({po.TaxPercent:0.##}%)", Money(PurchaseOrderMath.Tax(po))),
+             ("Shipping", Money(po.ShippingCost)), ("Total", Money(PurchaseOrderMath.Total(po)))]);
+        await QueueAsync(db, ctx, EmailEvents.PoSent, [new EmailRecipient(supplier.Email, supplier.ContactName ?? supplier.Name, null)],
+            org => EmailTemplates.PurchaseOrder(org, doc), "PurchaseOrder", po.Id, ct, ignoreToggles: true);
+        return null;
+    }
+
     // ---------------- Core ----------------
 
     /// <summary>Adds one row per remaining recipient to <paramref name="db"/> (the caller saves). <paramref name="ignoreToggles"/>
@@ -130,12 +193,20 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             .Select(u => new EmailRecipient(u.Email, u.FullName, u.Id)).ToListAsync(ct);
 
     /// <summary>Active users holding <paramref name="permission"/> through any of their roles.</summary>
-    internal static async Task<List<EmailRecipient>> UsersWithPermissionAsync(CmmsDbContext db, string permission, CancellationToken ct)
+    internal static async Task<List<EmailRecipient>> UsersWithPermissionAsync(CmmsDbContext db, string permission, CancellationToken ct) =>
+        await UsersAsync(db, await UserIdsWithPermissionAsync(db, permission, ct), ct);
+
+    private static async Task<List<Guid>> UserIdsWithPermissionAsync(CmmsDbContext db, string permission, CancellationToken ct)
     {
         var roleIds = (await db.Roles.AsNoTracking().Select(r => new { r.Id, r.Permissions }).ToListAsync(ct))
             .Where(r => r.Permissions.Contains(permission)).Select(r => r.Id).ToList();
-        var userIds = await db.UserRoles.Where(ur => roleIds.Contains(ur.RoleId)).Select(ur => ur.UserId).Distinct().ToListAsync(ct);
-        return await UsersAsync(db, userIds, ct);
+        return await db.UserRoles.Where(ur => roleIds.Contains(ur.RoleId)).Select(ur => ur.UserId).Distinct().ToListAsync(ct);
+    }
+
+    private static async Task<PoFacts> FactsAsync(CmmsDbContext db, PurchaseOrder po, CancellationToken ct)
+    {
+        var supplier = po.Supplier?.Name ?? await db.Suppliers.AsNoTracking().Where(s => s.Id == po.SupplierId).Select(s => s.Name).FirstOrDefaultAsync(ct);
+        return new PoFacts(po.Number, supplier, $"{PurchaseOrderMath.Total(po):N2} {po.Currency}", po.RequestedBy);
     }
 
     /// <summary>The request's contact address; it counts as the creating user (for opt-outs) when it's that user's address.</summary>

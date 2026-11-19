@@ -42,11 +42,11 @@ public class EmailTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Id(await Ok(await c.PostAsJsonAsync("/api/employees", new { code, fullName = name, email, userId, isContractor = false })));
 
     /// <summary>A signed-in user with one of the organization's default roles.</summary>
-    private async Task<(HttpClient client, Guid id)> UserAsync(HttpClient admin, string role, string email)
+    private async Task<(HttpClient client, Guid id)> UserAsync(HttpClient admin, string role, string email, decimal? approvalLimit = null)
     {
         var roles = await Ok(await admin.GetAsync("/api/roles"));
         var roleId = roles.EnumerateArray().First(r => r.GetProperty("name").GetString() == role).GetProperty("id").GetGuid();
-        await Ok(await admin.PostAsJsonAsync("/api/users", new { fullName = role, email, isActive = true, roleIds = new[] { roleId }, password = "Passw0rd!u" }));
+        await Ok(await admin.PostAsJsonAsync("/api/users", new { fullName = role, email, isActive = true, roleIds = new[] { roleId }, password = "Passw0rd!u", purchaseApprovalLimit = approvalLimit }));
         var c = fx.Client();
         await Ok(await c.PostAsJsonAsync("/api/auth/login", new { email, password = "Passw0rd!u", rememberMe = false }));
         return (c, (await Ok(await c.GetAsync("/api/auth/me"))).GetProperty("user").GetProperty("id").GetGuid());
@@ -54,6 +54,17 @@ public class EmailTests(ApiFixture fx) : IClassFixture<ApiFixture>
 
     private static async Task<JsonElement> NewWorkOrderAsync(HttpClient c, Guid site, Guid[] assignees, string title = "Replace seal") =>
         await Ok(await c.PostAsJsonAsync("/api/work-orders", new { title, type = "Corrective", priority = "High", siteId = site, assigneeIds = assignees, dueDate = Iso(Today.AddDays(2)) }));
+
+    private static async Task<Guid> SupplierAsync(HttpClient c, string? email) =>
+        Id(await Ok(await c.PostAsJsonAsync("/api/suppliers", new { code = $"S{Guid.NewGuid():N}"[..10], name = "Filters Ltd", email, isContractor = false })));
+
+    /// <summary>A draft PO with one service line (quantity × price), optionally charged to a work order.</summary>
+    private static async Task<Guid> PurchaseOrderAsync(HttpClient c, Guid site, Guid supplier, string description, decimal quantity, decimal price, Guid? workOrder = null) =>
+        Id(await Ok(await c.PostAsJsonAsync("/api/purchase-orders", new
+        {
+            siteId = site, supplierId = supplier,
+            lines = new[] { new { description, quantity, unitPrice = price, discountPercent = 0, workOrderId = workOrder } },
+        })));
 
     private async Task QueueRawAsync(Guid tenant, IEnumerable<string> to)
     {
@@ -215,6 +226,82 @@ public class EmailTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var m = Assert.Single(fx.Emails.To(x));
         Assert.DoesNotContain('\r', m.Subject);
         Assert.DoesNotContain('\n', m.Subject);
+    }
+
+    [SkippableFact]
+    public async Task Approvers_hear_about_orders_within_their_limit()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _, _, _, site) = await OrgAsync();
+        var a = Addr("approver-a"); var b = Addr("approver-b");
+        await UserAsync(admin, "Maintenance Manager", a, approvalLimit: 1000);
+        await UserAsync(admin, "Maintenance Manager", b, approvalLimit: 100);
+        var po = await PurchaseOrderAsync(admin, site, await SupplierAsync(admin, null), "Filter element", 5, 100); // 500
+        await Ok(await admin.PostAsync($"/api/purchase-orders/{po}/submit", null));
+        await Sender.RunOnceAsync();
+        Assert.Single(fx.Emails.To(a));
+        Assert.Empty(fx.Emails.To(b)); // above B's limit: B can't approve it
+    }
+
+    [SkippableFact]
+    public async Task Buyer_hears_approval_and_rejection()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _, _, _, site) = await OrgAsync();
+        var buyerEmail = Addr("buyer");
+        var (buyer, _) = await UserAsync(admin, "Maintenance Manager", buyerEmail, approvalLimit: 100);
+        var supplier = await SupplierAsync(admin, null);
+        var first = await PurchaseOrderAsync(buyer, site, supplier, "Filter element", 5, 100);
+        await Ok(await buyer.PostAsync($"/api/purchase-orders/{first}/submit", null));
+        await Ok(await admin.PostAsync($"/api/purchase-orders/{first}/approve", null));
+        var second = await PurchaseOrderAsync(buyer, site, supplier, "Pump", 1, 900);
+        await Ok(await buyer.PostAsync($"/api/purchase-orders/{second}/submit", null));
+        await Ok(await admin.PostAsJsonAsync($"/api/purchase-orders/{second}/reject", new { reason = "Too dear" }));
+        await Sender.RunOnceAsync();
+        var mails = fx.Emails.To(buyerEmail);
+        Assert.Equal(2, mails.Count);
+        Assert.Contains("approved", mails[0].Subject, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("Too dear", mails[1].Html);
+    }
+
+    [SkippableFact]
+    public async Task Supplier_gets_the_order_when_sent()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _, _, _, site) = await OrgAsync();
+        var s = Addr("supplier");
+        var po = await PurchaseOrderAsync(admin, site, await SupplierAsync(admin, s), "Filter element", 2, 25);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsync($"/api/purchase-orders/{po}/send", null)).StatusCode); // still a draft
+        await Ok(await admin.PostAsync($"/api/purchase-orders/{po}/approve", null));
+        var sent = await Ok(await admin.PostAsync($"/api/purchase-orders/{po}/send", null));
+        Assert.Equal(s, sent.GetProperty("to").GetString());
+        await Sender.RunOnceAsync();
+        var m = Assert.Single(fx.Emails.To(s));
+        Assert.Contains("Filter element", m.Html);
+        Assert.Contains("50.00", m.Html);
+
+        var noAddress = await PurchaseOrderAsync(admin, site, await SupplierAsync(admin, null), "Belt", 1, 10);
+        await Ok(await admin.PostAsync($"/api/purchase-orders/{noAddress}/approve", null));
+        var refused = await admin.PostAsync($"/api/purchase-orders/{noAddress}/send", null);
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.Contains("The supplier has no e-mail address.", await refused.Content.ReadAsStringAsync());
+    }
+
+    [SkippableFact]
+    public async Task Technicians_hear_when_parts_for_their_job_arrive()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _, _, _, site) = await OrgAsync();
+        var x = Addr("tech");
+        var wo = Id(await NewWorkOrderAsync(admin, site, [await EmployeeAsync(admin, "EX", "Tech X", x)]));
+        var po = await PurchaseOrderAsync(admin, site, await SupplierAsync(admin, null), "Gasket set", 1, 30, wo);
+        await Ok(await admin.PostAsync($"/api/purchase-orders/{po}/approve", null));
+        var line = (await Ok(await admin.GetAsync($"/api/purchase-orders/{po}"))).GetProperty("lines")[0].GetProperty("id").GetGuid();
+        await Ok(await admin.PostAsJsonAsync($"/api/purchase-orders/{po}/receive", new { lines = new[] { new { lineId = line, quantity = 1 } } }));
+        await Sender.RunOnceAsync();
+        var mails = fx.Emails.To(x);
+        Assert.Equal(2, mails.Count); // assigned, then parts received
+        Assert.Contains("Gasket set", mails[1].Html);
     }
 
     [SkippableFact]

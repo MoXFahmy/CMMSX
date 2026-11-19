@@ -9,6 +9,15 @@ public sealed record EmailContent(string Subject, string Html, string Text);
 /// <summary>Facts about a work order that e-mails mention.</summary>
 public sealed record WorkOrderFacts(string Number, string Title, string Priority, DateOnly? DueDate, string? Place, string? Description, string? CompletionNotes);
 
+/// <summary>Facts about a purchase order for internal e-mails.</summary>
+public sealed record PoFacts(string Number, string? Supplier, string Total, string? RequestedBy);
+
+/// <summary>A purchase order as the supplier sees it.</summary>
+public sealed record PoDocument(string Number, string OrderDate, string? ExpectedDate, string? DeliverTo, string? PaymentTerms, string? QuoteRef, string? Contact,
+    IReadOnlyList<PoDocumentLine> Lines, IReadOnlyList<(string Label, string Value)> Totals);
+
+public sealed record PoDocumentLine(int Number, string Description, string Quantity, string UnitPrice, string Total);
+
 /// <summary>Facts about a work request that e-mails mention.</summary>
 public sealed record RequestFacts(string Number, string Title, string Priority, string? Place);
 
@@ -44,6 +53,48 @@ public static class EmailTemplates
         $"Done: your request {r.Number}", "The work you asked for has been done",
         [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place)],
         notes is { } n ? $"Work done: {n}" : null, link, "View your request");
+
+    public static EmailContent PoSubmitted(string org, PoFacts po, string? link) => Layout(org,
+        $"Approve purchase order {po.Number} ({po.Total})", "A purchase order is waiting for your approval",
+        [("Order", po.Number), ("Supplier", po.Supplier), ("Total", po.Total), ("Requested by", po.RequestedBy)], null, link, "Review the order");
+
+    public static EmailContent PoApproved(string org, PoFacts po, string? link) => Layout(org,
+        $"Purchase order {po.Number} approved", "Your purchase order was approved",
+        [("Order", po.Number), ("Supplier", po.Supplier), ("Total", po.Total)], "You can now send it to the supplier.", link, "Open the order");
+
+    public static EmailContent PoRejected(string org, PoFacts po, string reason, string? link) => Layout(org,
+        $"Purchase order {po.Number} returned", "Your purchase order was returned for changes",
+        [("Order", po.Number), ("Supplier", po.Supplier), ("Total", po.Total)], $"Reason: {reason}", link, "Open the order");
+
+    public static EmailContent PartsReceived(string org, WorkOrderFacts w, string poNumber, IReadOnlyList<string> lines, string? link) => Layout(org,
+        $"Parts arrived for {w.Number} {w.Title}", "Parts ordered for your job have arrived",
+        [.. WorkOrderLines(w), ("Order", poNumber)], string.Join("\n", lines), link, "Open the work order");
+
+    /// <summary>The order itself, for a supplier with no account: every line and the totals in the e-mail, no link.</summary>
+    public static EmailContent PurchaseOrder(string org, PoDocument po)
+    {
+        var table = new StringBuilder("<table role=\"presentation\" style=\"width:100%;border-collapse:collapse;margin:8px 0 16px;font-size:14px\">");
+        table.Append("<tr style=\"background:#e9edf1\"><th align=\"left\" style=\"padding:6px\">#</th><th align=\"left\" style=\"padding:6px\">Item</th>"
+            + "<th align=\"right\" style=\"padding:6px\">Qty</th><th align=\"right\" style=\"padding:6px\">Unit price</th><th align=\"right\" style=\"padding:6px\">Total</th></tr>");
+        var text = new StringBuilder();
+        foreach (var l in po.Lines)
+        {
+            table.Append($"<tr><td style=\"padding:6px;border-top:1px solid #d3dae1\">{l.Number}</td><td style=\"padding:6px;border-top:1px solid #d3dae1\">{EmailText.Html(l.Description)}</td>"
+                + $"<td align=\"right\" style=\"padding:6px;border-top:1px solid #d3dae1\">{EmailText.Html(l.Quantity)}</td><td align=\"right\" style=\"padding:6px;border-top:1px solid #d3dae1\">{EmailText.Html(l.UnitPrice)}</td>"
+                + $"<td align=\"right\" style=\"padding:6px;border-top:1px solid #d3dae1\">{EmailText.Html(l.Total)}</td></tr>");
+            text.AppendLine($"{l.Number}. {l.Description} — {l.Quantity} × {l.UnitPrice} = {l.Total}");
+        }
+        foreach (var (label, value) in po.Totals)
+        {
+            table.Append($"<tr><td colspan=\"4\" align=\"right\" style=\"padding:6px\">{EmailText.Html(label)}</td><td align=\"right\" style=\"padding:6px\">{EmailText.Html(value)}</td></tr>");
+            text.AppendLine($"{label}: {value}");
+        }
+        table.Append("</table>");
+        return Layout(org, $"Purchase order {po.Number} from {org}", $"Purchase order {po.Number}",
+            [("Order date", po.OrderDate), ("Deliver by", po.ExpectedDate), ("Deliver to", po.DeliverTo), ("Payment terms", po.PaymentTerms),
+             ("Your quote", po.QuoteRef), ("Contact", po.Contact)],
+            "Please confirm the order and delivery date by replying to this e-mail.", null, "", table.ToString(), text.ToString());
+    }
 
     private static (string, string?)[] WorkOrderLines(WorkOrderFacts w) =>
         [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority), ("Due", w.DueDate?.ToString("d MMM yyyy")), ("Where", w.Place)];
