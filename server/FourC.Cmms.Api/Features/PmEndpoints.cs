@@ -214,10 +214,10 @@ public static class PmEndpoints
         var pm = api.MapGroup("/pm").WithTags("PM generation");
         pm.MapGet("/preview", async (DateOnly until, Guid? siteId, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
             await PmGenerator.RunAsync(db, ctx, until, siteId, null, dryRun: true, ct)).RequirePermission(Permissions.PmView);
-        pm.MapPost("/generate", async (GenerateInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        pm.MapPost("/generate", async (GenerateInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             if (input.Until > Today.AddYears(1)) throw new DomainException("Generate at most one year ahead.");
-            var results = await PmGenerator.RunAsync(db, ctx, input.Until, input.SiteId, input.ScheduleIds, dryRun: false, ct);
+            var results = await PmGenerator.RunAsync(db, ctx, input.Until, input.SiteId, input.ScheduleIds, dryRun: false, ct, mail);
             return Results.Ok(new { created = results.Count(r => r.WorkOrderId is not null), results });
         }).RequirePermission(Permissions.PmGenerate);
         pm.MapGet("/forecast", async (DateOnly from, DateOnly to, Guid? siteId, CmmsDbContext db, CancellationToken ct) =>
@@ -278,7 +278,7 @@ public static class PmEndpoints
         m.MapGet("/{id:guid}/readings", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
             await db.MeterReadings.AsNoTracking().Where(r => r.MeterId == id).OrderByDescending(r => r.ReadAt).Take(200)
                 .Select(r => new { r.Id, r.Value, r.ReadAt, r.Note, r.Source, r.ByName, r.WorkOrderId }).ToListAsync(ct)).RequirePermission(Permissions.PmView);
-        m.MapPost("/{id:guid}/readings", async (Guid id, ReadingInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        m.MapPost("/{id:guid}/readings", async (Guid id, ReadingInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             var meter = await db.Meters.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (meter is null) return Results.NotFound();
@@ -296,7 +296,7 @@ public static class PmEndpoints
             db.MeterReadings.Add(new MeterReading { MeterId = id, Value = input.Value, ReadAt = at, Note = input.Note.Clean(), ByName = ctx.UserName });
             if (meter.LastReadAt is null || at >= meter.LastReadAt) { meter.CurrentReading = input.Value; meter.LastReadAt = at; }
             await db.SaveChangesAsync(ct);
-            var generated = meter.IsActive ? await PmGenerator.OnReadingAsync(db, ctx, meter, input.Value, ct) : [];
+            var generated = meter.IsActive ? await PmGenerator.OnReadingAsync(db, ctx, meter, input.Value, ct, mail) : [];
             return Results.Ok(new { ok = true, generated });
         }).RequirePermission(Permissions.MetersRecord);
     }

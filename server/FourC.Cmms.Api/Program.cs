@@ -78,6 +78,7 @@ if (emailOptions.Available)
     if (string.Equals(emailOptions.Provider, "ses", StringComparison.OrdinalIgnoreCase)) services.AddSingleton<IEmailSender, SesEmailSender>();
     else services.AddSingleton<IEmailSender, SmtpEmailSender>();
 }
+services.AddSingleton<EmailOutbox>();
 services.AddSingleton<EmailSenderService>();
 services.AddHostedService(sp => sp.GetRequiredService<EmailSenderService>());
 services.AddExceptionHandler<ApiExceptionHandler>();
