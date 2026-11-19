@@ -36,6 +36,12 @@ Parameters:
     Type: String
     Default: ""
     Description: Address notifications are sent from, on MailDomain, e.g. notifications@example.com. Leave empty to keep e-mail off.
+  MailAllowedOrganizations:
+    Type: String
+    Default: ""
+    Description: >-
+      Organizations (short names, comma-separated, or * for all) allowed to send e-mail. While sign-up is open, only
+      these can; empty with sign-up closed means every organization.
 
 Conditions:
   HasMailDomain: !Not [!Equals [!Ref MailDomain, ""]]
@@ -353,6 +359,7 @@ Resources:
             - !If [HasMailFrom, { Name: Email__Provider, Value: Ses }, !Ref AWS::NoValue]
             - !If [HasMailFrom, { Name: Email__From, Value: !Ref MailFromAddress }, !Ref AWS::NoValue]
             - !If [HasMailFrom, { Name: Email__Region, Value: !Ref AWS::Region }, !Ref AWS::NoValue]
+            - !If [HasMailFrom, { Name: Email__AllowedOrganizations, Value: !Ref MailAllowedOrganizations }, !Ref AWS::NoValue]
           Secrets:
             - { Name: Database__User, ValueFrom: !Sub "${DatabaseSecret}:username::" }
             - { Name: Database__Password, ValueFrom: !Sub "${DatabaseSecret}:password::" }

@@ -8,12 +8,14 @@ public sealed class RecordingEmailSender : IEmailSender
 {
     public ConcurrentQueue<EmailMessage> Sent { get; } = new();
 
-    public Task SendAsync(EmailMessage m, CancellationToken ct)
+    public async Task SendAsync(EmailMessage m, CancellationToken ct)
     {
         if (!m.To.Contains('@') || m.To.Contains("fail", StringComparison.OrdinalIgnoreCase))
             throw new InvalidOperationException($"mailbox rejected: {m.To}");
+        if (m.To.Contains("timeout", StringComparison.OrdinalIgnoreCase))
+            throw new TaskCanceledException("The mail server did not answer in time."); // what an HTTP/SMTP timeout looks like
+        if (m.To.Contains("slow", StringComparison.OrdinalIgnoreCase)) await Task.Delay(100, ct);
         Sent.Enqueue(m);
-        return Task.CompletedTask;
     }
 
     /// <summary>Messages sent to one of <paramref name="addresses"/> (tests use unique addresses, so other tests' mail is ignored).</summary>

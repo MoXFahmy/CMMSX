@@ -20,7 +20,7 @@ export type TenantSettings = {
   emailEnabled: boolean; disabledEmails: string[];
   pmSkipAssetStatuses: AssetStatus[]; pmNonWorkingDays: DayName[]; pmNoStacking: boolean;
 };
-export type EmailStatusInfo = { available: boolean; from?: string; enabled: boolean; events: string[] };
+export type EmailStatusInfo = { available: boolean; allowed: boolean; slug: string; from?: string; enabled: boolean; events: string[] };
 export type EmailLogItem = {
   id: string; createdAt: string; sentAt?: string; eventKey: string; toAddress: string; subject: string; status: 'Pending' | 'Sent' | 'Failed'; attempts: number; lastError?: string;
 };

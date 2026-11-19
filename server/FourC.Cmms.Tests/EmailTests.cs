@@ -6,6 +6,8 @@ using FourC.Cmms.Api.Features;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Notifications;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.AspNetCore.TestHost;
+using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.DependencyInjection;
 
 namespace FourC.Cmms.Tests;
@@ -344,6 +346,68 @@ public class EmailTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await NewWorkOrderAsync(admin, site, [await EmployeeAsync(admin, "ET", "Tech", null, techId)]);
         await Sender.RunOnceAsync();
         Assert.Empty(fx.Emails.To(techEmail));
+    }
+
+    [SkippableFact]
+    public async Task Open_sign_up_needs_the_operator_to_allow_each_organization()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        await using var strict = fx.Factory!.WithWebHostBuilder(b => b.UseSetting("Email:AllowedOrganizations", ""));
+        var c = strict.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { HandleCookies = true });
+        var adminEmail = Addr("stranger");
+        await Ok(await c.PostAsJsonAsync("/api/auth/register", new { organizationName = "Stranger Ltd", fullName = "Admin", email = adminEmail, password = "Passw0rd!x" }));
+        var site = Id(await Ok(await c.PostAsJsonAsync("/api/sites", new { code = "S1", name = "Site", isActive = true })));
+        await TestSettings.SetSettingsAsync(c, s => s["emailEnabled"] = true);
+
+        var status = await Ok(await c.GetAsync("/api/email/status"));
+        Assert.False(status.GetProperty("allowed").GetBoolean());
+        var slug = status.GetProperty("slug").GetString()!;
+        var refused = await c.PostAsync("/api/email/test", null);
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.Contains(slug, await refused.Content.ReadAsStringAsync());
+        var x = Addr("victim");
+        await NewWorkOrderAsync(c, site, [await EmployeeAsync(c, "EX", "Anyone", x)]);
+        Assert.Empty(await RowsAsync(x));
+
+        // The operator allows this organization by its short name.
+        await using var allowing = fx.Factory.WithWebHostBuilder(b => b.UseSetting("Email:AllowedOrganizations", $"other, {slug}"));
+        var c2 = allowing.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { HandleCookies = true });
+        await Ok(await c2.PostAsJsonAsync("/api/auth/login", new { email = adminEmail, password = "Passw0rd!x", rememberMe = false }));
+        Assert.True((await Ok(await c2.GetAsync("/api/email/status"))).GetProperty("allowed").GetBoolean());
+        await Ok(await c2.PostAsync("/api/email/test", null));
+        Assert.Single(await RowsAsync(adminEmail));
+    }
+
+    [SkippableFact]
+    public async Task A_timeout_counts_as_a_failed_attempt()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (_, tenant, _, _, _) = await OrgAsync();
+        var to = Addr("timeout");
+        await QueueRawAsync(tenant, [to]);
+        await Sender.RunOnceAsync(); // must not throw: a timeout is not the app shutting down
+        var row = (await RowsAsync(to)).Single();
+        Assert.Equal(EmailStatus.Pending, row.Status);
+        Assert.Equal(1, row.Attempts);
+        Assert.NotNull(row.LastError);
+    }
+
+    [SkippableFact]
+    public async Task Batches_stop_before_their_claim_runs_out()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        await using var quick = fx.Factory!.WithWebHostBuilder(b => b.UseSetting("Email:BatchTimeLimitSeconds", "0.25"));
+        var svc = quick.Services.GetRequiredService<EmailSenderService>();
+        var (_, tenant, _, _, _) = await OrgAsync();
+        var to = Enumerable.Range(0, 8).Select(_ => Addr("slow")).ToArray(); // 100 ms each
+        await QueueRawAsync(tenant, to);
+
+        var first = await svc.RunOnceAsync();
+        Assert.InRange(first, 1, 7);
+        Assert.All((await RowsAsync(to)).Where(r => r.Status == EmailStatus.Pending), r => { Assert.Null(r.LockedUntil); Assert.Equal(0, r.Attempts); });
+        for (var i = 0; i < 10 && fx.Emails.To(to).Count < 8; i++) await svc.RunOnceAsync();
+        Assert.Equal(8, fx.Emails.To(to).Select(m => m.To).Distinct().Count());
+        Assert.Equal(8, fx.Emails.To(to).Count);
     }
 
     [SkippableFact]

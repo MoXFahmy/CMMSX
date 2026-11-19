@@ -39,6 +39,7 @@ jobs:
       # E-mail (optional): the sending domain and address. Empty keeps e-mail off. See docs/DEPLOY_AWS.md.
       MAIL_DOMAIN: ${{ vars.CMMS_MAIL_DOMAIN }}
       MAIL_FROM_ADDRESS: ${{ vars.CMMS_MAIL_FROM_ADDRESS }}
+      MAIL_ALLOWED_ORGS: ${{ vars.CMMS_MAIL_ALLOWED_ORGS }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -96,7 +97,8 @@ jobs:
               AllowRegistration="$ALLOW_REGISTRATION" \
               DbInstanceClass="$DB_INSTANCE_CLASS" \
               MailDomain="$MAIL_DOMAIN" \
-              MailFromAddress="$MAIL_FROM_ADDRESS"
+              MailFromAddress="$MAIL_FROM_ADDRESS" \
+              MailAllowedOrganizations="$MAIL_ALLOWED_ORGS"
 
           url=$(aws cloudformation describe-stacks --stack-name "$STACK" \
             --query "Stacks[0].Outputs[?OutputKey=='Url'].OutputValue" --output text)

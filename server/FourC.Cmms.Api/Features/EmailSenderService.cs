@@ -27,7 +27,7 @@ public sealed class EmailSenderService(IServiceScopeFactory scopes, IOptions<Ema
         while (!stop.IsCancellationRequested)
         {
             try { while (await RunOnceAsync(ct: stop) == BatchSize) { } } // keep going while there's a backlog
-            catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "E-mail sender run failed"); }
+            catch (Exception ex) when (!stop.IsCancellationRequested) { log.LogError(ex, "E-mail sender run failed"); } // only shutdown ends the loop
             try { await Task.Delay(interval, stop); } catch (OperationCanceledException) { return; }
         }
     }
@@ -53,23 +53,34 @@ public sealed class EmailSenderService(IServiceScopeFactory scopes, IOptions<Ema
                 .ExecuteUpdateAsync(s => s.SetProperty(e => e.LockedUntil, claim), ct);
             // In the order they were queued, so e-mails about the same record never arrive swapped.
             var rows = await all.Where(e => ids.Contains(e.Id) && e.LockedUntil == claim).OrderBy(e => e.NextAttemptAt).ThenBy(e => e.CreatedAt).ToListAsync(ct);
+            var budget = System.Diagnostics.Stopwatch.StartNew();
             var tenantIds = rows.Select(r => r.TenantId).Distinct().ToList();
             var orgNames = await db.Tenants.Where(t => tenantIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.Name, ct);
             var o = options.Value;
             foreach (var row in rows)
             {
+                // A slow mail service must not outlast the claim, or another instance could claim and send these too:
+                // stop well before it expires and hand the rest back.
+                if (budget.Elapsed.TotalSeconds > o.BatchTimeLimitSeconds)
+                {
+                    foreach (var rest in rows.Where(r => r.LockedUntil == claim)) rest.LockedUntil = null; // not started yet
+                    await db.SaveChangesAsync(ct);
+                    break;
+                }
                 row.Attempts++;
                 row.LockedUntil = null;
                 try
                 {
                     var fromName = EmailText.OneLine($"{orgNames.GetValueOrDefault(row.TenantId) ?? "4C CMMS"} via {o.FromName}");
-                    await sender.SendAsync(new EmailMessage(row.ToAddress, row.ToName, o.From!, fromName, row.ReplyTo, row.Subject, row.HtmlBody, row.TextBody), ct);
+                    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, o.SendTimeoutSeconds)));
+                    await sender.SendAsync(new EmailMessage(row.ToAddress, row.ToName, o.From!, fromName, row.ReplyTo, row.Subject, row.HtmlBody, row.TextBody), timeout.Token);
                     row.Status = EmailStatus.Sent;
                     row.SentAt = DateTimeOffset.UtcNow;
                     row.LastError = null;
                     sent++;
                 }
-                catch (Exception ex) when (ex is not OperationCanceledException)
+                catch (Exception ex) when (!ct.IsCancellationRequested) // a timeout is a failed attempt; only shutdown stops the batch
                 {
                     row.LastError = ex.Message.Length > 1000 ? ex.Message[..1000] : ex.Message;
                     if (row.Attempts >= MaxAttempts) row.Status = EmailStatus.Failed;

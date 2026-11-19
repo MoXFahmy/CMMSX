@@ -27,6 +27,8 @@ Settings › Notifications, and the server needs a sending address first (see *S
   e-mail is retried up to five times and never holds up anyone's work.
 - **Amazon SES** on AWS (the deployment creates the sending identity for your domain and shows its DNS records), or any
   SMTP server. Local Docker runs include a test mailbox at http://localhost:8025.
+- While public sign-up is open, only organizations the server's operator lists may send e-mail, so a stranger can't
+  send mail from your domain.
 
 ## [0.0.2] - 2026-11-19
 

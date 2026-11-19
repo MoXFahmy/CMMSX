@@ -37,15 +37,17 @@ export function NotificationSettings() {
 
   return (
     <Stack maw={900}>
-      {status.available
-        ? <Alert color="teal" icon={<IconMail size={18} />}>{t('email.sendingFrom', { from: status.from })}</Alert>
-        : <Alert color="yellow" icon={<IconMail size={18} />} title={t('email.notSetUpTitle')}>{t('email.notSetUpBody')}</Alert>}
+      {!status.available
+        ? <Alert color="yellow" icon={<IconMail size={18} />} title={t('email.notSetUpTitle')}>{t('email.notSetUpBody')}</Alert>
+        : !status.allowed
+          ? <Alert color="yellow" icon={<IconMail size={18} />} title={t('email.notAllowedTitle')}>{t('email.notAllowedBody', { slug: status.slug })}</Alert>
+          : <Alert color="teal" icon={<IconMail size={18} />}>{t('email.sendingFrom', { from: status.from })}</Alert>}
       <Card><Stack>
         <Group justify="space-between" align="flex-start">
           <div><Title order={5}>{t('email.title')}</Title><Text c="dimmed" fz="sm">{t('email.hint')}</Text></div>
-          <Button variant="light" leftSection={<IconSend size={16} />} onClick={sendTest} disabled={!status.available}>{t('email.sendTest')}</Button>
+          <Button variant="light" leftSection={<IconSend size={16} />} onClick={sendTest} disabled={!status.allowed}>{t('email.sendTest')}</Button>
         </Group>
-        <Switch label={t('email.enabled')} description={t('email.enabledHint')} checked={s.emailEnabled} disabled={!status.available}
+        <Switch label={t('email.enabled')} description={t('email.enabledHint')} checked={s.emailEnabled} disabled={!status.allowed}
           onChange={(e) => void save({ emailEnabled: e.currentTarget.checked })} />
       </Stack></Card>
       <Card><Stack gap="sm">

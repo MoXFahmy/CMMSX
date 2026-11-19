@@ -32,7 +32,7 @@ export function EmailPreferences({ opened, onClose }: { opened: boolean; onClose
     <Modal opened={opened} onClose={onClose} title={t('email.myTitle')} size="lg">
       <Stack>
         <Text fz="sm" c="dimmed">{t('email.myHint')}</Text>
-        {status && (!status.available || !status.enabled) && <Alert color="yellow">{t('email.orgOff')}</Alert>}
+        {status && (!status.allowed || !status.enabled) && <Alert color="yellow">{t('email.orgOff')}</Alert>}
         {events.map((key) => (
           <Switch key={key} label={t(`email.events.${eventKey(key)}.label`)} description={t(`email.events.${eventKey(key)}.description`)}
             checked={!optOuts.includes(key)} onChange={(e) => {

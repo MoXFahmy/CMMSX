@@ -29,6 +29,24 @@ public sealed class EmailOptions
     /// <summary>Run the background sender (tests switch it off and send the queue themselves).</summary>
     public bool AutoSend { get; set; } = true;
     public SmtpOptions Smtp { get; set; } = new();
+    /// <summary>Organizations (short names) allowed to send; "*" = all. Empty = all only while public sign-up is closed.</summary>
+    public string? AllowedOrganizations { get; set; }
+
+    /// <summary>Seconds a sender may spend on one claimed batch; it stops and releases the rest well before the claim expires.</summary>
+    public double BatchTimeLimitSeconds { get; set; } = 240;
+    /// <summary>Longest wait for the mail service on one message; longer counts as a failed attempt.</summary>
+    public int SendTimeoutSeconds { get; set; } = 60;
+
+    /// <summary>
+    /// While anyone can sign up, a stranger's organization must not be able to send mail from the operator's domain:
+    /// only organizations listed in <see cref="AllowedOrganizations"/> may ("*" = all). With sign-up closed, all may.
+    /// </summary>
+    public bool AllowsOrganization(string slug, bool openSignUp)
+    {
+        var list = (AllowedOrganizations ?? "").Split([',', ';', ' '], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (list.Contains("*")) return true;
+        return list.Length > 0 ? list.Contains(slug, StringComparer.OrdinalIgnoreCase) : !openSignUp;
+    }
 
     public bool Available => Provider?.ToLowerInvariant() is "ses" or "smtp" && !string.IsNullOrWhiteSpace(From);
 
@@ -72,6 +90,10 @@ public sealed class SesEmailSender : IEmailSender, IDisposable
 /// <summary>Any SMTP server: a local test mailbox (Mailpit), Microsoft 365, an SMTP relay...</summary>
 public sealed class SmtpEmailSender(IOptions<EmailOptions> options) : IEmailSender
 {
+    /// <summary>With TLS on, never fall back to plain text (that would send the SMTP password in clear): STARTTLS, or TLS from the start on port 465.</summary>
+    public static SecureSocketOptions Security(EmailOptions.SmtpOptions o) =>
+        !o.UseTls ? SecureSocketOptions.None : o.Port == 465 ? SecureSocketOptions.SslOnConnect : SecureSocketOptions.StartTls;
+
     public async Task SendAsync(EmailMessage m, CancellationToken ct)
     {
         var o = options.Value.Smtp;
@@ -82,7 +104,7 @@ public sealed class SmtpEmailSender(IOptions<EmailOptions> options) : IEmailSend
         msg.Subject = m.Subject;
         msg.Body = new BodyBuilder { HtmlBody = m.Html, TextBody = m.Text }.ToMessageBody();
         using var client = new SmtpClient();
-        await client.ConnectAsync(o.Host ?? "localhost", o.Port, o.UseTls ? SecureSocketOptions.StartTlsWhenAvailable : SecureSocketOptions.None, ct);
+        await client.ConnectAsync(o.Host ?? "localhost", o.Port, Security(o), ct);
         if (!string.IsNullOrEmpty(o.User)) await client.AuthenticateAsync(o.User, o.Password ?? "", ct);
         await client.SendAsync(msg, ct);
         await client.DisconnectAsync(true, ct);

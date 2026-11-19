@@ -16,8 +16,12 @@ public static class EmailEndpoints
 
         g.MapGet("/status", async (CmmsDbContext db, EmailOutbox mail, Microsoft.Extensions.Options.IOptions<EmailOptions> options, CancellationToken ct) =>
         {
-            var enabled = await db.Tenants.AsNoTracking().Where(t => t.Id == db.CurrentTenantId).Select(t => t.Settings).FirstAsync(ct);
-            return Results.Ok(new { Available = mail.Available, From = mail.Available ? options.Value.From : null, Enabled = enabled.EmailEnabled, Events = EmailEvents.All });
+            var tenant = await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct);
+            return Results.Ok(new
+            {
+                Available = mail.Available, Allowed = mail.AllowedFor(tenant), tenant.Slug, From = mail.Available ? options.Value.From : null,
+                Enabled = tenant.Settings.EmailEnabled, Events = EmailEvents.All,
+            });
         }).RequireAuthorization();
 
         g.MapPost("/test", async (CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>

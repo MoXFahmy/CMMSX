@@ -1080,6 +1080,8 @@
         "label": "Parts arrived",
         "description": "To the technicians of a work order when parts ordered for it are received."
       }
-    }
+    },
+    "notAllowedTitle": "E-mail isn't available for this organization yet",
+    "notAllowedBody": "Anyone can sign up on this server, so e-mail is only sent for organizations its operator allows. Ask them to allow \"{{slug}}\"."
   }
 }

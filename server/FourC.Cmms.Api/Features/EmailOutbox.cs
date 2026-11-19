@@ -22,6 +22,9 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
 {
     public bool Available => options.Value.Available;
 
+    /// <summary>E-mail set up on the server and this organization allowed to send (see <see cref="EmailOptions.AllowedOrganizations"/>).</summary>
+    public bool AllowedFor(FourC.Cmms.Core.Tenancy.Tenant tenant) => Available && options.Value.AllowsOrganization(tenant.Slug, config.GetValue("Auth:AllowRegistration", true));
+
     private string? Link(string path) => config["App:PublicUrl"] is { Length: > 0 } url ? url.TrimEnd('/') + path : null;
 
     // ---------------- Work orders ----------------
@@ -127,6 +130,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     public async Task<string?> PoToSupplierAsync(CmmsDbContext db, ITenantContext ctx, PurchaseOrder po, CancellationToken ct)
     {
         if (!Available) return "E-mail isn't set up on this server.";
+        if (await NotAllowedAsync(db, ct) is { } notAllowed) return notAllowed;
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         if (!settings.EmailEnabled) return "E-mail is switched off for this organization. Switch it on in Settings › Notifications.";
         var supplier = po.Supplier ?? await db.Suppliers.AsNoTracking().FirstAsync(x => x.Id == po.SupplierId, ct);
@@ -147,6 +151,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     public async Task<string?> TestAsync(CmmsDbContext db, ITenantContext ctx, CancellationToken ct)
     {
         if (!Available) return "E-mail isn't set up on this server.";
+        if (await NotAllowedAsync(db, ct) is { } notAllowed) return notAllowed;
         var me = await db.Users.AsNoTracking().Where(u => u.Id == ctx.UserId).Select(u => new EmailRecipient(u.Email, u.FullName, u.Id)).FirstOrDefaultAsync(ct);
         if (string.IsNullOrWhiteSpace(me?.Email)) return "Your account has no e-mail address.";
         await QueueAsync(db, ctx, EmailEvents.Test, [me], org => EmailTemplates.Layout(org, "Test e-mail from 4C CMMS", "E-mail is working",
@@ -154,6 +159,13 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
                 Link("/settings/notifications"), "Open notification settings"),
             null, null, ct, ignoreToggles: true, ignoreEnabled: true, keepActor: true);
         return null;
+    }
+
+    private async Task<string?> NotAllowedAsync(CmmsDbContext db, CancellationToken ct)
+    {
+        var tenant = await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct);
+        return AllowedFor(tenant) ? null
+            : $"E-mail isn't available for this organization on this server yet. Ask the server's operator to allow organization \"{tenant.Slug}\".";
     }
 
     // ---------------- Core ----------------
@@ -166,7 +178,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         if (!Available) return;
         var tenantId = db.CurrentTenantId ?? ctx.TenantId;
         var tenant = await db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantId, ct);
-        if (tenant is null || (!tenant.Settings.EmailEnabled && !ignoreEnabled)) return;
+        if (tenant is null || !AllowedFor(tenant) || (!tenant.Settings.EmailEnabled && !ignoreEnabled)) return;
         if (!ignoreToggles && (tenant.Settings.DisabledEmails ?? []).Contains(eventKey)) return;
 
         var actorEmail = ctx.UserId is { } uid ? await db.Users.Where(u => u.Id == uid).Select(u => u.Email).FirstOrDefaultAsync(ct) : null;
