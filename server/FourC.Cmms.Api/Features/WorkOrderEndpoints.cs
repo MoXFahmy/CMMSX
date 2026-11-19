@@ -36,6 +36,12 @@ public static class WorkOrderEndpoints
         public bool? Mine { get; set; }
         public bool? Overdue { get; set; }
         public bool? ActiveOnly { get; set; }
+        public DateOnly? CreatedFrom { get; set; }
+        public DateOnly? CreatedTo { get; set; }
+        public DateOnly? DueFrom { get; set; }
+        public DateOnly? DueTo { get; set; }
+        /// <summary>"pm", "request" or "direct" (raised without a PM or request); anything else is ignored.</summary>
+        public string? Source { get; set; }
         public string? Sort { get; set; }
         public string? Dir { get; set; }
         public int? Page { get; set; }
@@ -383,6 +389,17 @@ public static class WorkOrderEndpoints
         }
         if (f.AssetId is not null) q = q.Where(w => w.AssetId == f.AssetId || (w.Asset != null && w.Asset.ParentAssetId == f.AssetId) || w.Assets.Any(a => a.AssetId == f.AssetId));
         if (f.TradeId is not null) q = q.Where(w => w.TradeId == f.TradeId);
+        if (f.CreatedFrom is { } cf) { var from = new DateTimeOffset(cf.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt >= from); }
+        if (f.CreatedTo is { } ctd) { var before = new DateTimeOffset(ctd.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt < before); }
+        if (f.DueFrom is { } df) q = q.Where(w => w.DueDate >= df);
+        if (f.DueTo is { } dt) q = q.Where(w => w.DueDate <= dt);
+        q = f.Source?.ToLowerInvariant() switch
+        {
+            "pm" => q.Where(w => w.PmScheduleId != null),
+            "request" => q.Where(w => w.WorkRequestId != null),
+            "direct" => q.Where(w => w.PmScheduleId == null && w.WorkRequestId == null),
+            _ => q,
+        };
         if (f.AssigneeId is not null) q = q.Where(w => w.Assignees.Any(a => a.EmployeeId == f.AssigneeId));
         if (f.Mine == true)
         {

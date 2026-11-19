@@ -504,7 +504,17 @@
     "reading": "Reading",
     "remarks": "Remarks",
     "assets": "Assets",
-    "assetProgress": "{{done}}/{{total}}"
+    "assetProgress": "{{done}}/{{total}}",
+    "moreFilters": "More filters",
+    "pickSiteFirst": "Choose a site first",
+    "filterAssignee": "Assigned to",
+    "createdBetween": "Created between",
+    "dueBetween": "Due between",
+    "source": "Source",
+    "sourcePm": "From PM",
+    "sourceRequest": "From a request",
+    "sourceDirect": "Raised directly",
+    "clearFilters": "Clear these filters"
   },
   "wr": {
     "title": "Work requests",

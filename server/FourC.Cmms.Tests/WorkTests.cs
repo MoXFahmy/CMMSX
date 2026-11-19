@@ -150,4 +150,33 @@ public class WorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Labour(c);
         Assert.Equal("OnHold", await Status(c)); // on hold is left alone
     }
+
+    [SkippableFact]
+    public async Task List_filters_by_dates_and_source()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, site) = await SetupAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        string Iso(DateOnly d) => d.ToString("yyyy-MM-dd");
+
+        await Ok(await admin.PostAsJsonAsync("/api/work-orders", new { title = "Direct job", type = "Corrective", priority = "Low", siteId = site, dueDate = Iso(today.AddDays(3)) }));
+        var req = await Ok(await admin.PostAsJsonAsync("/api/work-requests", new { title = "Leak", siteId = site, priority = "High", type = "Corrective" }));
+        await Ok(await admin.PostAsJsonAsync($"/api/work-requests/{req.GetProperty("id").GetGuid()}/approve", new { }));
+        var asset = (await Ok(await admin.PostAsJsonAsync("/api/assets", new { name = "Fan", siteId = site, status = "Active", criticality = "Low", warrantyType = "None" }))).GetProperty("id").GetGuid();
+        var task = (await Ok(await admin.PostAsJsonAsync("/api/pm-tasks", new { code = "F1", name = "Fan check", steps = new[] { "Look" } }))).GetProperty("id").GetGuid();
+        await Ok(await admin.PostAsJsonAsync("/api/pm-schedules", new
+        {
+            name = "Fan PM", siteId = site, assetId = asset, priority = "Low", pmTaskId = task, type = "FixedInterval", basis = "Scheduled", frequency = 1, unit = "Week",
+            workPeriodDays = 1, wholeMonth = false, leadDays = 0, startDate = Iso(today), timeBased = false, extraTasks = Array.Empty<object>(),
+        }));
+        Assert.Equal(1, (await Ok(await admin.PostAsJsonAsync("/api/pm/generate", new { until = Iso(today) }))).GetProperty("created").GetInt32());
+
+        async Task<int> Total(string query) => (await Ok(await admin.GetAsync($"/api/work-orders?{query}"))).GetProperty("total").GetInt32();
+        Assert.Equal(1, await Total("source=pm"));
+        Assert.Equal(1, await Total("source=request"));
+        Assert.Equal(1, await Total("source=direct"));
+        Assert.Equal(1, await Total($"dueFrom={Iso(today.AddDays(2))}&dueTo={Iso(today.AddDays(4))}"));
+        Assert.Equal(3, await Total($"createdFrom={Iso(today)}&createdTo={Iso(today)}")); // a single day includes everything created today
+        Assert.Equal(0, await Total($"createdTo={Iso(today.AddDays(-1))}"));
+    }
 }
