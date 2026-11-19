@@ -346,6 +346,25 @@ public class EmailTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Emails_go_out_in_the_order_they_were_queued()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (_, tenant, _, _, _) = await OrgAsync();
+        var to = Addr("order");
+        using (var scope = fx.Factory!.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CmmsDbContext>();
+            var at = DateTimeOffset.UtcNow;
+            for (var i = 1; i <= 15; i++) // queued in one save, as the e-mails of one action are
+                db.OutboundEmails.Add(new OutboundEmail { TenantId = tenant, EventKey = EmailEvents.Test, ToAddress = to, Subject = $"Message {i}", HtmlBody = "x", TextBody = "x",
+                    NextAttemptAt = at, CreatedAt = at.AddMilliseconds(i) });
+            await db.SaveChangesAsync();
+        }
+        await Sender.RunOnceAsync();
+        Assert.Equal(Enumerable.Range(1, 15).Select(i => $"Message {i}"), fx.Emails.To(to).Select(m => m.Subject));
+    }
+
+    [SkippableFact]
     public async Task Concurrent_runs_send_each_email_once()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

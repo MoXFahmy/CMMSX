@@ -43,7 +43,7 @@ public sealed class EmailSenderService(IServiceScopeFactory scopes, IOptions<Ema
         var all = db.OutboundEmails.IgnoreQueryFilters();
 
         var ids = await all.Where(e => e.Status == EmailStatus.Pending && e.NextAttemptAt <= at && (e.LockedUntil == null || e.LockedUntil < at))
-            .OrderBy(e => e.NextAttemptAt).Select(e => e.Id).Take(BatchSize).ToListAsync(ct);
+            .OrderBy(e => e.NextAttemptAt).ThenBy(e => e.CreatedAt).Select(e => e.Id).Take(BatchSize).ToListAsync(ct);
         var sent = 0;
         if (ids.Count > 0)
         {
@@ -51,7 +51,8 @@ public sealed class EmailSenderService(IServiceScopeFactory scopes, IOptions<Ema
             var claim = at + ClaimFor + TimeSpan.FromTicks(Random.Shared.Next(1, 10_000_000));
             await all.Where(e => ids.Contains(e.Id) && e.Status == EmailStatus.Pending && (e.LockedUntil == null || e.LockedUntil < at))
                 .ExecuteUpdateAsync(s => s.SetProperty(e => e.LockedUntil, claim), ct);
-            var rows = await all.Where(e => ids.Contains(e.Id) && e.LockedUntil == claim).ToListAsync(ct);
+            // In the order they were queued, so e-mails about the same record never arrive swapped.
+            var rows = await all.Where(e => ids.Contains(e.Id) && e.LockedUntil == claim).OrderBy(e => e.NextAttemptAt).ThenBy(e => e.CreatedAt).ToListAsync(ct);
             var tenantIds = rows.Select(r => r.TenantId).Distinct().ToList();
             var orgNames = await db.Tenants.Where(t => tenantIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.Name, ct);
             var o = options.Value;
