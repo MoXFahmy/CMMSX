@@ -204,17 +204,18 @@ public static class PurchasingEndpoints
             return Results.NoContent();
         }).RequirePermission(Permissions.PurchasingCreate);
 
-        g.MapPost("/{id:guid}/submit", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/submit", async (Guid id, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             var o = await LoadAsync(db, id, ct);
             Require(o, PurchaseOrderStatus.Draft);
             await RequireReadyAsync(db, o, ct);
             o.Status = PurchaseOrderStatus.Submitted; o.SubmittedAt = DateTimeOffset.UtcNow;
+            await mail.PoSubmittedAsync(db, ctx, o, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { o.Id, o.Status });
         }).RequirePermission(Permissions.PurchasingCreate);
 
-        g.MapPost("/{id:guid}/approve", async (Guid id, HttpContext http, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/approve", async (Guid id, HttpContext http, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             var o = await LoadAsync(db, id, ct);
             Require(o, PurchaseOrderStatus.Draft, PurchaseOrderStatus.Submitted);
@@ -224,17 +225,19 @@ public static class PurchasingEndpoints
             if (limit is not null && total > limit) throw new DomainException($"This order ({total:N2}) is above your approval limit of {limit:N2}.");
             o.Status = PurchaseOrderStatus.Approved; o.SubmittedAt ??= DateTimeOffset.UtcNow;
             o.ApprovedAt = DateTimeOffset.UtcNow; o.ApprovedById = ctx.UserId; o.ApprovedByName = ctx.UserName;
+            await mail.PoDecidedAsync(db, ctx, o, approved: true, null, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { o.Id, o.Status });
         }).RequirePermission(Permissions.PurchasingApprove);
 
-        g.MapPost("/{id:guid}/reject", async (Guid id, ReasonInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/reject", async (Guid id, ReasonInput i, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             var o = await LoadAsync(db, id, ct);
             Require(o, PurchaseOrderStatus.Submitted);
             if (i.Reason.Clean() is not { } reason) return new Validator().Required("reason", i.Reason, "Reason").Problem();
             o.Status = PurchaseOrderStatus.Draft; o.SubmittedAt = null;
             o.Notes = $"{o.Notes}{(o.Notes is null ? "" : "\n")}Returned by {ctx.UserName} on {Today:yyyy-MM-dd}: {reason}";
+            await mail.PoDecidedAsync(db, ctx, o, approved: false, reason, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { o.Id, o.Status });
         }).RequirePermission(Permissions.PurchasingApprove);
@@ -261,8 +264,19 @@ public static class PurchasingEndpoints
             return Results.Ok(new { o.Id, o.Status });
         }).RequirePermission(Permissions.PurchasingApprove);
 
+        // "Send to supplier": e-mails an approved order, with every line, to the supplier's address.
+        g.MapPost("/{id:guid}/send", async (Guid id, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
+        {
+            var o = await LoadAsync(db, id, ct);
+            if (o.Status is not (PurchaseOrderStatus.Approved or PurchaseOrderStatus.PartiallyReceived or PurchaseOrderStatus.Received or PurchaseOrderStatus.Closed))
+                throw new DomainException("Only approved orders can be sent.");
+            if (await mail.PoToSupplierAsync(db, ctx, o, ct) is { } error) throw new DomainException(error);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { queued = true, to = o.Supplier?.Email });
+        }).RequirePermission(Permissions.PurchasingCreate);
+
         // Goods receipt: stock lines post to the ledger at the net price in base currency; work-order lines become direct costs.
-        g.MapPost("/{id:guid}/receive", async (Guid id, ReceiveInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/receive", async (Guid id, ReceiveInput i, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             var date = i.Date ?? Today;
             if (date > Today) throw new DomainException("The receipt date cannot be in the future.");
@@ -271,6 +285,7 @@ public static class PurchasingEndpoints
                 var o = await LoadAsync(db, id, tk);
                 Require(o, Receivable);
                 var count = 0;
+                var forWork = new List<(Guid WorkOrderId, string Line)>();
                 foreach (var r in i.Lines.Where(x => x.Quantity != 0))
                 {
                     var line = o.Lines.FirstOrDefault(l => l.Id == r.LineId) ?? throw new DomainException("Unknown order line.");
@@ -294,10 +309,12 @@ public static class PurchasingEndpoints
                         db.WorkOrderCosts.Add(new WorkOrderCost { TenantId = o.TenantId, WorkOrderId = wo, Description = line.Description, Quantity = r.Quantity, UnitCost = unitCost,
                             Vendor = o.Supplier?.Name, Reference = o.Number });
                     line.QuantityReceived += r.Quantity;
+                    if (line.WorkOrderId is { } forWo) forWork.Add((forWo, $"{line.Description}: {r.Quantity:0.###} {line.UnitOfMeasure}".Trim()));
                     count++;
                 }
                 if (count == 0) throw new DomainException("Enter the quantity received on at least one line.");
                 o.Status = o.Lines.All(l => l.QuantityReceived >= l.Quantity) ? PurchaseOrderStatus.Received : PurchaseOrderStatus.PartiallyReceived;
+                await mail.PartsReceivedAsync(db, ctx, o, forWork, tk);
                 await db.SaveChangesAsync(tk);
                 return count;
             }, ct);

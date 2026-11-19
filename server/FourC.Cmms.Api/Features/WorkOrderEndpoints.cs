@@ -143,15 +143,15 @@ public static class WorkOrderEndpoints
             });
         }).RequirePermission(Permissions.WorkOrdersView);
 
-        g.MapPost("/", async (WorkOrderInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        g.MapPost("/", async (WorkOrderInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             var v = await ValidateAsync(input, db, ct);
             if (!v.IsValid) return v.Problem();
-            var w = await CreateAsync(db, ctx, input, requestId: null, ct);
+            var w = await CreateAsync(db, ctx, input, requestId: null, ct, mail: mail);
             return Results.Created($"/api/work-orders/{w.Id}", new { w.Id, w.Number });
         }).RequirePermission(Permissions.WorkOrdersCreate);
 
-        g.MapPut("/{id:guid}", async (Guid id, WorkOrderInput input, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPut("/{id:guid}", async (Guid id, WorkOrderInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             var w = await db.WorkOrders.Include(x => x.Assignees).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (w is null) return Results.NotFound();
@@ -160,7 +160,9 @@ public static class WorkOrderEndpoints
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(w).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
             Apply(w, input);
+            var before = w.Assignees.Select(a => a.EmployeeId).ToHashSet();
             SyncAssignees(w, input.AssigneeIds);
+            await mail.AssigneesAddedAsync(db, ctx, w, w.Assignees.Select(a => a.EmployeeId).Where(e => !before.Contains(e)).ToList(), ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { w.Id });
         }).RequirePermission(Permissions.WorkOrdersEdit);
@@ -176,7 +178,8 @@ public static class WorkOrderEndpoints
             return Results.NoContent();
         }).RequirePermission(Permissions.WorkOrdersDelete);
 
-        g.MapPost("/{id:guid}/status", async (Guid id, StatusInput input, CmmsDbContext db, ITenantContext ctx, HttpContext http, PermissionService perms, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/status", async (Guid id, StatusInput input, CmmsDbContext db, ITenantContext ctx, HttpContext http, PermissionService perms, EmailOutbox mail,
+            CancellationToken ct) =>
         {
             var w = await db.WorkOrders.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (w is null) return Results.NotFound();
@@ -229,6 +232,7 @@ public static class WorkOrderEndpoints
                 case WorkOrderStatus.Closed: w.ClosedAt = now; w.CompletedAt ??= now; break;
                 case WorkOrderStatus.Open: w.CompletedAt = null; w.ClosedAt = null; break;
             }
+            if (input.Status == WorkOrderStatus.Completed) await mail.WorkOrderCompletedAsync(db, ctx, w, ct);
             if (w.PmScheduleId is not null && input.Status is WorkOrderStatus.Completed or WorkOrderStatus.Cancelled)
                 await PmGenerator.OnWorkOrderFinishedAsync(db, w, ct);
             await db.SaveChangesAsync(ct);
@@ -446,7 +450,7 @@ public static class WorkOrderEndpoints
     }
 
     public static async Task<WorkOrder> CreateAsync(CmmsDbContext db, ITenantContext ctx, WorkOrderInput input, Guid? requestId, CancellationToken ct,
-        Action<WorkOrder>? configure = null, string? note = null)
+        Action<WorkOrder>? configure = null, string? note = null, EmailOutbox? mail = null)
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var number = await Numbering.NextAsync(db, "WorkOrder", settings.WorkOrderNumberPrefix, 5,
@@ -459,6 +463,7 @@ public static class WorkOrderEndpoints
         SyncAssignees(w, input.AssigneeIds);
         configure?.Invoke(w);
         db.WorkOrders.Add(w);
+        if (mail is not null) await mail.WorkOrderCreatedAsync(db, ctx, w, ct);
         var seq = 0;
         foreach (var t in (input.Tasks ?? []).Select(x => x.Clean()).OfType<string>())
             db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = ++seq, Description = t.Length > 1000 ? t[..1000] : t });

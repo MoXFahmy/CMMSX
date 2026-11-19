@@ -104,6 +104,36 @@ Repository variables read by the deployment workflow:
 | `AWS_REGION`, `AWS_DEPLOY_ROLE_ARN` | — | From step 1. The workflow is skipped while these are missing. |
 | `CMMS_ALLOW_REGISTRATION` | `true` | Let visitors create new organizations |
 | `CMMS_DB_INSTANCE_CLASS` | `db.t3.micro` | Database size, e.g. `db.t3.small` for more memory. Changing it restarts the database (a few minutes); data is kept. |
+| `CMMS_MAIL_DOMAIN` | empty | Domain notification e-mails are sent from, e.g. `example.com` (see *Sending e-mail* below) |
+| `CMMS_MAIL_FROM_ADDRESS` | empty | Address they are sent from, on that domain, e.g. `notifications@example.com` |
+| `CMMS_MAIL_ALLOWED_ORGS` | empty | Organizations allowed to send e-mail while sign-up is open: short names, comma-separated (`*` = all) |
+
+## Sending e-mail
+
+4C CMMS e-mails requesters, technicians, approvers and suppliers through **Amazon SES**. The app's role is allowed to
+send, so no password is stored. Mail comes from your own domain; AWS has to know the domain is yours, and new AWS
+accounts may only send to addresses verified one by one (the SES *sandbox*) until you ask for normal sending.
+
+1. In GitHub → **Settings → Secrets and variables → Actions → Variables**, add `CMMS_MAIL_DOMAIN` (e.g. `example.com`)
+   and `CMMS_MAIL_FROM_ADDRESS` (e.g. `notifications@example.com`).
+2. Deploy: push `main`, or re-run **Deploy to AWS** from the Actions tab.
+3. CloudFormation → stack **`cmms-app`** → **Outputs**: `MailDkimRecord1`, `MailDkimRecord2` and `MailDkimRecord3`
+   each read `<name> CNAME <value>`. Add the three CNAME records at your DNS host.
+4. Wait until **SES → Identities** shows the domain as *Verified* (usually minutes, up to 72 hours).
+5. **SES → Account dashboard → Request production access**: mail type *Transactional*, your web address, and a line such
+   as "maintenance notifications to our own staff and suppliers; no marketing". AWS usually answers within a day. Until
+   then, verify a few test addresses under **SES → Identities → Create identity → Email address** and send only to
+   those.
+6. **Decide which organizations may send.** While sign-up is open (`CMMS_ALLOW_REGISTRATION` is `true`), anyone could
+   create an organization and send mail from your domain, so e-mail works only for organizations listed in
+   `CMMS_MAIL_ALLOWED_ORGS` (their short names, shown on **Settings → Notifications** when not yet allowed), then
+   deploy again. With sign-up closed, every organization may send and the variable can stay empty. `*` allows every
+   organization; use it only with sign-up closed.
+7. In 4C CMMS, each organization's administrator opens **Settings → Notifications**, sends a test e-mail and switches
+   e-mail on. Every organization starts with e-mail **off**.
+
+The **E-mail log** on that page shows each message and, for failures, the reason (SES's message, e.g. an address not
+verified while in the sandbox). Failed messages are retried after 1, 5, 30 and 120 minutes.
 
 ## Day-to-day operations
 

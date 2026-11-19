@@ -68,6 +68,19 @@ switch (builder.Configuration["Storage:Provider"]?.ToLowerInvariant())
 if (builder.Configuration["ForwardedHeaders:ProtoHeaderName"] is { Length: > 0 } protoHeader)
     services.Configure<ForwardedHeadersOptions>(o => o.ForwardedProtoHeaderName = protoHeader);
 services.AddHostedService<PmSchedulerService>();
+
+// E-mail: queued in the database (outbox) and sent by a background job through SES or SMTP. Without a provider and a
+// From address, e-mail is unavailable: nothing is queued and Settings says so.
+services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
+var emailOptions = builder.Configuration.GetSection("Email").Get<EmailOptions>() ?? new();
+if (emailOptions.Available)
+{
+    if (string.Equals(emailOptions.Provider, "ses", StringComparison.OrdinalIgnoreCase)) services.AddSingleton<IEmailSender, SesEmailSender>();
+    else services.AddSingleton<IEmailSender, SmtpEmailSender>();
+}
+services.AddSingleton<EmailOutbox>();
+services.AddSingleton<EmailSenderService>();
+services.AddHostedService(sp => sp.GetRequiredService<EmailSenderService>());
 services.AddExceptionHandler<ApiExceptionHandler>();
 services.AddProblemDetails();
 services.ConfigureHttpJsonOptions(o =>
@@ -118,6 +131,7 @@ api.MapPurchasingEndpoints();
 api.MapReportEndpoints();
 api.MapDashboardEndpoints();
 api.MapAlertEndpoints();
+api.MapEmailEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();

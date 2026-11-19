@@ -21,7 +21,7 @@ public static class PmGenerator
     /// when <paramref name="until"/> is null each schedule's own lead time is used (automatic generation).
     /// </summary>
     public static async Task<List<Result>> RunAsync(CmmsDbContext db, ITenantContext ctx, DateOnly? until, Guid? siteId, IReadOnlyCollection<Guid>? ids,
-        bool dryRun, CancellationToken ct)
+        bool dryRun, CancellationToken ct, EmailOutbox? mail = null)
     {
         var today = Today;
         var horizon = until ?? today.AddDays(366);
@@ -37,7 +37,7 @@ public static class PmGenerator
             {
                 var query = db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Asset).Include(s => s.Assets).Where(s => s.Id == id);
                 var s = dryRun ? await query.AsNoTracking().FirstAsync(ct) : await query.FirstAsync(ct);
-                results.AddRange(await GenerateForAsync(db, ctx, s, until ?? today.AddDays(Math.Max(0, s.LeadDays)), dryRun, settings, ct));
+                results.AddRange(await GenerateForAsync(db, ctx, s, until ?? today.AddDays(Math.Max(0, s.LeadDays)), dryRun, settings, ct, mail));
             }
             catch (Exception ex) when (ex is DbUpdateException or DbUpdateConcurrencyException)
             {
@@ -57,7 +57,7 @@ public static class PmGenerator
     }
 
     private static async Task<List<Result>> GenerateForAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, DateOnly limit, bool dryRun, TenantSettings settings,
-        CancellationToken ct)
+        CancellationToken ct, EmailOutbox? mail)
     {
         var results = new List<Result>();
         if (s.NextDueDate is not { } first || first > limit) return results;
@@ -96,7 +96,7 @@ public static class PmGenerator
                 if (s.Basis == PmBasis.Actual) break;
                 continue;
             }
-            if (!exists && !dryRun && task is not null) wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct, round, settings.PmNonWorkingDays);
+            if (!exists && !dryRun && task is not null) wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct, round, settings.PmNonWorkingDays, mail);
             results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, wo?.Id, wo?.Number,
                 task is null ? "PM task not found" : exists ? "Already generated" : null));
             s.GenerationCount = count; s.LastDueDate = due; s.LastGeneratedAt = DateTimeOffset.UtcNow; s.LastWorkOrderId = wo?.Id ?? s.LastWorkOrderId;
@@ -131,7 +131,7 @@ public static class PmGenerator
     /// <param name="round">For a round schedule, its covered assets if already loaded; loaded here otherwise.</param>
     /// <param name="nonWorkingDays">The work starts on the first other day; <paramref name="due"/> stays the occurrence's key.</param>
     public static async Task<WorkOrder> CreateWorkOrderAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, PmTask task, DateOnly? due, string? trigger, CancellationToken ct,
-        IReadOnlyList<RoundAsset>? round = null, IReadOnlyCollection<DayOfWeek>? nonWorkingDays = null)
+        IReadOnlyList<RoundAsset>? round = null, IReadOnlyCollection<DayOfWeek>? nonWorkingDays = null, EmailOutbox? mail = null)
     {
         if (s.Assets.Count > 0) round ??= await RoundAssetsAsync(db, s, ct);
         else round = null;
@@ -151,7 +151,7 @@ public static class PmGenerator
             for (var n = 0; n < round.Count; n++) w.Assets.Add(new WorkOrderAsset { WorkOrderId = w.Id, AssetId = round[n].Id, Sequence = n + 1 });
             foreach (var st in PmRound.Steps(round, steps))
                 db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = st.Sequence, AssetId = st.AssetId, Description = st.Description.Length > 1000 ? st.Description[..1000] : st.Description });
-        }, $"Generated from PM {s.Code}");
+        }, $"Generated from PM {s.Code}", mail);
     }
 
     /// <summary>The assets a round's next work order covers (deleted assets drop out through the query filter).</summary>
@@ -178,7 +178,7 @@ public static class PmGenerator
     }
 
     /// <summary>Evaluates meter-based schedules after a reading; returns the work orders it created.</summary>
-    public static async Task<List<Result>> OnReadingAsync(CmmsDbContext db, ITenantContext ctx, Meter meter, decimal value, CancellationToken ct)
+    public static async Task<List<Result>> OnReadingAsync(CmmsDbContext db, ITenantContext ctx, Meter meter, decimal value, CancellationToken ct, EmailOutbox? mail = null)
     {
         var results = new List<Result>();
         var schedules = await db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Asset)
@@ -205,7 +205,7 @@ public static class PmGenerator
             }
             var task = await db.PmTasks.AsNoTracking().Include(t => t.Steps).FirstOrDefaultAsync(t => t.Id == taskId, ct);
             if (task is null) continue;
-            var wo = await CreateWorkOrderAsync(db, ctx, s, task, null, why, ct);
+            var wo = await CreateWorkOrderAsync(db, ctx, s, task, null, why, ct, mail: mail);
             s.GenerationCount++; s.LastGeneratedAt = DateTimeOffset.UtcNow; s.LastWorkOrderId = wo.Id;
             if (s.MeterTrigger == MeterTrigger.Incremental)
                 s.NextDueReading = s.Basis == PmBasis.Scheduled && s.MeterInterval is { } iv ? value + iv : null;
@@ -244,7 +244,8 @@ public sealed class PmSchedulerService(IServiceScopeFactory scopes, IConfigurati
         foreach (var tenantId in tenantIds)
         {
             await using var db = new CmmsDbContext(options, new FixedTenantContext(tenantId, null, "PM scheduler"));
-            var created = (await PmGenerator.RunAsync(db, new FixedTenantContext(tenantId, null, "PM scheduler"), null, null, null, false, ct)).Count(r => r.WorkOrderId is not null);
+            var created = (await PmGenerator.RunAsync(db, new FixedTenantContext(tenantId, null, "PM scheduler"), null, null, null, false, ct,
+                scope.ServiceProvider.GetService<EmailOutbox>())).Count(r => r.WorkOrderId is not null);
             if (created > 0) log.LogInformation("PM scheduler created {Count} work orders for tenant {Tenant}", created, tenantId);
         }
     }

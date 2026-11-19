@@ -10,7 +10,7 @@ public class TenantSettingsTests
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
 
     [Fact]
-    public void Settings_saved_before_0_0_2_read_as_off()
+    public void Settings_saved_before_0_1_0_read_as_off()
     {
         var s = JsonSerializer.Deserialize<TenantSettings>("""{"currency":"EUR"}""", Json)!;
         Assert.Equal("EUR", s.Currency);
@@ -21,5 +21,7 @@ public class TenantSettingsTests
         Assert.False(s.RequireAllTasksDone);
         Assert.False(s.RequireFailureCodeForBreakdowns);
         Assert.False(s.AutoStartWork);
+        Assert.False(s.EmailEnabled);
+        Assert.Empty(s.DisabledEmails);
     }
 }

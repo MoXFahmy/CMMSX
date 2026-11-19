@@ -6,6 +6,7 @@ using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Locations;
+using FourC.Cmms.Core.Notifications;
 using FourC.Cmms.Core.People;
 using FourC.Cmms.Core.Pm;
 using FourC.Cmms.Core.Inventory;
@@ -30,6 +31,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public Guid? CurrentTenantId => tenant.TenantId;
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
+    public DbSet<OutboundEmail> OutboundEmails => Set<OutboundEmail>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<Site> Sites => Set<Site>();
@@ -92,6 +94,20 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.LegacyRef).HasMaxLength(200);
             e.HasIndex(x => x.TenantId);
             e.HasMany(x => x.Roles).WithOne().HasForeignKey(x => x.UserId);
+            e.Property(x => x.EmailOptOuts).HasDefaultValueSql("'[]'");
+        });
+
+        b.Entity<OutboundEmail>(e =>
+        {
+            e.Property(x => x.EventKey).HasMaxLength(40);
+            e.Property(x => x.ToAddress).HasMaxLength(320);
+            e.Property(x => x.ToName).HasMaxLength(200);
+            e.Property(x => x.ReplyTo).HasMaxLength(320);
+            e.Property(x => x.Subject).HasMaxLength(300);
+            e.Property(x => x.EntityType).HasMaxLength(40);
+            e.Property(x => x.LastError).HasMaxLength(1000);
+            e.HasIndex(x => new { x.Status, x.NextAttemptAt });
+            e.HasIndex(x => new { x.TenantId, x.CreatedAt });
         });
 
         b.Entity<Role>(e =>

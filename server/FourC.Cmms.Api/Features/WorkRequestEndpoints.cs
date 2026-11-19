@@ -65,7 +65,7 @@ public static class WorkRequestEndpoints
             });
         }).RequireAuthorization();
 
-        g.MapPost("/", async (RequestInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        g.MapPost("/", async (RequestInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             var v = await ValidateAsync(input, db, ct);
             if (!v.IsValid) return v.Problem();
@@ -81,11 +81,12 @@ public static class WorkRequestEndpoints
             };
             if (r.AssetId is not null && r.LocationId is null) r.LocationId = await db.Assets.Where(a => a.Id == r.AssetId).Select(a => a.LocationId).FirstOrDefaultAsync(ct);
             db.WorkRequests.Add(r);
+            await mail.RequestSubmittedAsync(db, ctx, r, ct);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/work-requests/{r.Id}", new { r.Id, r.Number });
         }).RequirePermission(Permissions.RequestsCreate);
 
-        g.MapPost("/{id:guid}/approve", async (Guid id, ApproveInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/approve", async (Guid id, ApproveInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             var r = await db.WorkRequests.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) return Results.NotFound();
@@ -96,15 +97,16 @@ public static class WorkRequestEndpoints
             if (!v.IsValid) return v.Problem();
             var wo = await db.InTransactionAsync(async token =>
             {
-                var created = await WorkOrderEndpoints.CreateAsync(db, ctx, woInput, r.Id, token);
+                var created = await WorkOrderEndpoints.CreateAsync(db, ctx, woInput, r.Id, token, mail: mail);
                 r.Status = WorkRequestStatus.Approved; r.WorkOrderId = created.Id; r.DecisionNote = input.Note.Clean(); r.DecidedAt = DateTimeOffset.UtcNow; r.DecidedById = ctx.UserId;
+                await mail.RequestDecidedAsync(db, ctx, r, created.Number, token);
                 await db.SaveChangesAsync(token);
                 return created;
             }, ct);
             return Results.Ok(new { workOrderId = wo.Id, wo.Number });
         }).RequirePermission(Permissions.RequestsManage);
 
-        g.MapPost("/{id:guid}/reject", async (Guid id, DecisionInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/reject", async (Guid id, DecisionInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             var r = await db.WorkRequests.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) return Results.NotFound();
@@ -112,6 +114,7 @@ public static class WorkRequestEndpoints
             var v = new Validator().Required("note", input.Note, "Reason", 2000);
             if (!v.IsValid) return v.Problem();
             r.Status = WorkRequestStatus.Rejected; r.DecisionNote = input.Note!.Trim(); r.DecidedAt = DateTimeOffset.UtcNow; r.DecidedById = ctx.UserId;
+            await mail.RequestDecidedAsync(db, ctx, r, null, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { r.Id });
         }).RequirePermission(Permissions.RequestsManage);

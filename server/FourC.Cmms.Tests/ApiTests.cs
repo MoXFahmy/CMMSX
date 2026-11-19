@@ -3,7 +3,10 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Mvc.Testing;
+using Microsoft.AspNetCore.TestHost;
 using Microsoft.Data.SqlClient;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.DependencyInjection.Extensions;
 
 namespace FourC.Cmms.Tests;
 
@@ -14,6 +17,8 @@ public sealed class ApiFixture : IAsyncLifetime
     private string? _db;
     private string? _server;
     public bool Enabled => Factory is not null;
+    /// <summary>Every e-mail the app sends in this fixture (the app's mail service is replaced by a recorder).</summary>
+    public RecordingEmailSender Emails { get; } = new();
 
     public Task InitializeAsync()
     {
@@ -25,6 +30,13 @@ public sealed class ApiFixture : IAsyncLifetime
         {
             b.UseSetting("ConnectionStrings:Cmms", cs);
             b.UseSetting("Storage:Path", Path.Combine(Path.GetTempPath(), _db));
+            // E-mail is "set up" (so it gets queued); tests send the queue themselves with EmailSenderService.RunOnceAsync.
+            b.UseSetting("Email:Provider", "Smtp");
+            b.UseSetting("Email:From", "noreply@cmms.test");
+            b.UseSetting("Email:AutoSend", "false");
+            b.UseSetting("Email:AllowedOrganizations", "*"); // sign-up is open in tests; the operator allows every organization
+            b.UseSetting("App:PublicUrl", "https://cmms.test");
+            b.ConfigureTestServices(s => { s.RemoveAll<FourC.Cmms.Api.Infrastructure.IEmailSender>(); s.AddSingleton<FourC.Cmms.Api.Infrastructure.IEmailSender>(Emails); });
         });
         return Task.CompletedTask;
     }

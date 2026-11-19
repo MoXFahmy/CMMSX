@@ -4,10 +4,11 @@ import { DateInput } from '@mantine/dates';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { IconAlertTriangle, IconCheck, IconDots, IconEdit, IconLock, IconPackageImport, IconPrinter, IconSend, IconTrash, IconArrowBackUp, IconX } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconDots, IconEdit, IconMailForward, IconLock, IconPackageImport, IconPrinter, IconSend, IconTrash, IconArrowBackUp, IconX } from '@tabler/icons-react';
 import { del, get, post } from '@/api/client';
 import type { PoDetail } from '@/api/types';
-import { useAuth } from '@/auth/AuthContext';
+import { P, useAuth } from '@/auth/AuthContext';
+import { modals } from '@mantine/modals';
 import { PageHeader } from '@/components/PageHeader';
 import { PoStatusBadge } from '@/components/InventoryBadges';
 import { useStores } from '@/components/PartPicker';
@@ -23,7 +24,7 @@ function Field({ label, children }: { label: string; children: React.ReactNode }
 export function PoDetailPage() {
   const { t } = useTranslation();
   const { id = '' } = useParams();
-  const { me } = useAuth();
+  const { me, can } = useAuth();
   const base = me?.tenant.settings.currency ?? 'USD';
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -62,6 +63,16 @@ export function PoDetailPage() {
           {a.submit && <Button leftSection={<IconSend size={16} />} variant={a.approve ? 'default' : 'filled'} onClick={() => act('submit', t('po.submitted'))}>{t('po.submit')}</Button>}
           {a.approve && <Button leftSection={<IconCheck size={16} />} color="teal" onClick={() => act('approve', t('po.approved'))}>{t('po.approve')}</Button>}
           {a.receive && <Button leftSection={<IconPackageImport size={16} />} onClick={() => setReceiveOpen(true)}>{t('po.receive')}</Button>}
+          {can(P.purchasingCreate) && ['Approved', 'PartiallyReceived', 'Received', 'Closed'].includes(o.status) && (
+            <Button variant="default" leftSection={<IconMailForward size={16} />} onClick={() => {
+              if (!o.supplier.email) { notifyError(new Error(t('po.noSupplierEmail'))); return; }
+              modals.openConfirmModal({
+                title: t('po.sendTitle'), children: <Text size="sm">{t('po.sendBody', { number: o.number, email: o.supplier.email })}</Text>,
+                labels: { confirm: t('po.send'), cancel: t('common.cancel') },
+                onConfirm: async () => { try { await post(`/purchase-orders/${o.id}/send`); notifySuccess(t('po.sentTo', { email: o.supplier.email })); } catch (e) { notifyError(e); } },
+              });
+            }}>{t('po.sendToSupplier')}</Button>
+          )}
           <Button variant="default" leftSection={<IconPrinter size={16} />} component={Link} to={`/purchasing/orders/${o.id}/print`} target="_blank">{t('po.print')}</Button>
           {(a.edit || a.reject || a.close || a.cancel || a.delete) && (
             <Menu position="bottom-end">
