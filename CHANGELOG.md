@@ -4,6 +4,30 @@ All notable changes to 4C CMMS — the cloud app and the Android app share one v
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.1.0] - 2026-11-19
+
+E-mail notifications. They are **off** for every organization until an administrator switches them on in
+Settings › Notifications, and the server needs a sending address first (see *Sending e-mail* in
+[docs/DEPLOY_AWS.md](docs/DEPLOY_AWS.md)).
+
+### Added
+- **E-mail notifications** for the moments that matter:
+  - new work requests to the people who review them;
+  - the requester when a request is approved (with the work order number), not approved (with the reason) or done;
+  - technicians when work or PM work is assigned to them, and when parts ordered for their job arrive;
+  - whoever created a work order when it is completed;
+  - approvers when an order within their approval limit is submitted, and the buyer when it is approved or returned.
+  Nobody gets an e-mail about something they did themselves, and nobody gets the same e-mail twice. Replies go to the
+  person who acted.
+- **Send to supplier** on approved purchase orders: e-mails the whole order, with every line and the totals.
+- **Settings › Notifications**: switch e-mail on, choose which e-mails go out, send yourself a test e-mail and read the
+  e-mail log (sent, waiting or failed, with the reason).
+- **Your own e-mail settings** in the user menu: each person can switch off the e-mails they don't want.
+- E-mails are queued with the change that causes them and sent in the background within about a minute; a failed
+  e-mail is retried up to five times and never holds up anyone's work.
+- **Amazon SES** on AWS (the deployment creates the sending identity for your domain and shows its DNS records), or any
+  SMTP server. Local Docker runs include a test mailbox at http://localhost:8025.
+
 ## [0.0.2] - 2026-11-19
 
 Quick wins from the DimoMaint comparison. New rules are **off** until an administrator switches them on in

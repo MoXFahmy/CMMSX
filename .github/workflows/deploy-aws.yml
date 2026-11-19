@@ -36,6 +36,9 @@ jobs:
       COMMIT: ${{ github.event.workflow_run.head_sha || github.sha }}
       ALLOW_REGISTRATION: ${{ vars.CMMS_ALLOW_REGISTRATION || 'true' }}
       DB_INSTANCE_CLASS: ${{ vars.CMMS_DB_INSTANCE_CLASS || 'db.t3.micro' }}
+      # E-mail (optional): the sending domain and address. Empty keeps e-mail off. See docs/DEPLOY_AWS.md.
+      MAIL_DOMAIN: ${{ vars.CMMS_MAIL_DOMAIN }}
+      MAIL_FROM_ADDRESS: ${{ vars.CMMS_MAIL_FROM_ADDRESS }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -91,7 +94,9 @@ jobs:
               ImageUri="$IMAGE" \
               OriginPrefixListId="$prefix_list" \
               AllowRegistration="$ALLOW_REGISTRATION" \
-              DbInstanceClass="$DB_INSTANCE_CLASS"
+              DbInstanceClass="$DB_INSTANCE_CLASS" \
+              MailDomain="$MAIL_DOMAIN" \
+              MailFromAddress="$MAIL_FROM_ADDRESS"
 
           url=$(aws cloudformation describe-stacks --stack-name "$STACK" \
             --query "Stacks[0].Outputs[?OutputKey=='Url'].OutputValue" --output text)

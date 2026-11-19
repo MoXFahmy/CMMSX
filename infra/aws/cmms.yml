@@ -26,6 +26,20 @@ Parameters:
     Type: String
     Default: 10.60.0.0/16
     Description: Address range of the new VPC created for the app (it is not connected to your other VPCs).
+  MailDomain:
+    Type: String
+    Default: ""
+    Description: >-
+      Domain notification e-mails are sent from, e.g. example.com. When set, an Amazon SES identity with DKIM is created;
+      add the three DKIM records from the stack outputs at your DNS host. Leave empty for no e-mail.
+  MailFromAddress:
+    Type: String
+    Default: ""
+    Description: Address notifications are sent from, on MailDomain, e.g. notifications@example.com. Leave empty to keep e-mail off.
+
+Conditions:
+  HasMailDomain: !Not [!Equals [!Ref MailDomain, ""]]
+  HasMailFrom: !Not [!Equals [!Ref MailFromAddress, ""]]
 
 Resources:
   # ---------------------------------------------------------------- Network
@@ -284,6 +298,26 @@ Resources:
               - Effect: Allow
                 Action: s3:ListBucket # lets a missing file read as "not found" rather than "access denied"
                 Resource: !GetAtt FilesBucket.Arn
+        # E-mail through Amazon SES. While the account is in the SES sandbox, SES also checks permission on each
+        # (verified) recipient address, so the grant covers this account's identities in this region.
+        - !If
+          - HasMailDomain
+          - PolicyName: email
+            PolicyDocument:
+              Version: "2012-10-17"
+              Statement:
+                - Effect: Allow
+                  Action: [ses:SendEmail, ses:SendRawEmail]
+                  Resource: !Sub "arn:${AWS::Partition}:ses:${AWS::Region}:${AWS::AccountId}:identity/*"
+          - !Ref AWS::NoValue
+
+  # The sending domain in Amazon SES, signed with DKIM (Easy DKIM: three CNAME records, listed in the outputs).
+  MailIdentity:
+    Type: AWS::SES::EmailIdentity
+    Condition: HasMailDomain
+    Properties:
+      EmailIdentity: !Ref MailDomain
+      DkimAttributes: { SigningEnabled: true }
 
   TaskDefinition:
     Type: AWS::ECS::TaskDefinition
@@ -314,6 +348,11 @@ Resources:
             - { Name: Storage__Bucket, Value: !Ref FilesBucket }
             - { Name: Storage__Region, Value: !Ref AWS::Region }
             - { Name: Auth__AllowRegistration, Value: !Ref AllowRegistration }
+            # Links in e-mails point here.
+            - { Name: App__PublicUrl, Value: !Sub "https://${Distribution.DomainName}" }
+            - !If [HasMailFrom, { Name: Email__Provider, Value: Ses }, !Ref AWS::NoValue]
+            - !If [HasMailFrom, { Name: Email__From, Value: !Ref MailFromAddress }, !Ref AWS::NoValue]
+            - !If [HasMailFrom, { Name: Email__Region, Value: !Ref AWS::Region }, !Ref AWS::NoValue]
           Secrets:
             - { Name: Database__User, ValueFrom: !Sub "${DatabaseSecret}:username::" }
             - { Name: Database__Password, ValueFrom: !Sub "${DatabaseSecret}:password::" }
@@ -449,3 +488,15 @@ Outputs:
   DatabaseSecretArn:
     Description: Secrets Manager secret holding the database login
     Value: !Ref DatabaseSecret
+  MailDkimRecord1:
+    Condition: HasMailDomain
+    Description: DKIM record for the sending domain; add it at your DNS host as a CNAME
+    Value: !Sub "${MailIdentity.DkimDNSTokenName1} CNAME ${MailIdentity.DkimDNSTokenValue1}"
+  MailDkimRecord2:
+    Condition: HasMailDomain
+    Description: DKIM record for the sending domain; add it at your DNS host as a CNAME
+    Value: !Sub "${MailIdentity.DkimDNSTokenName2} CNAME ${MailIdentity.DkimDNSTokenValue2}"
+  MailDkimRecord3:
+    Condition: HasMailDomain
+    Description: DKIM record for the sending domain; add it at your DNS host as a CNAME
+    Value: !Sub "${MailIdentity.DkimDNSTokenName3} CNAME ${MailIdentity.DkimDNSTokenValue3}"

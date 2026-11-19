@@ -1,4 +1,5 @@
 # Local full-stack run:  SA_PASSWORD='YourStr0ng!Pass' docker compose up --build   →  http://localhost:8080
+# E-mails the app sends land in a test mailbox (Mailpit) at http://localhost:8025; nothing leaves the machine.
 # Optional: SQL_PORT (default 1433; use e.g. 14333 if SQL Server is already installed), APP_PORT (default 8080) and
 # SQL_MEMORY_MB (default 3072). SQL Server otherwise takes ~80% of Docker's memory and is the process the kernel kills
 # when something else (e.g. a large 4CSQL import) needs memory.
@@ -22,8 +23,17 @@ services:
       sql: { condition: service_healthy }
     environment:
       ConnectionStrings__Cmms: "Server=sql,1433;Database=Cmms;User Id=sa;Password=${SA_PASSWORD};TrustServerCertificate=True"
+      App__PublicUrl: "http://localhost:${APP_PORT:-8080}"
+      Email__Provider: Smtp
+      Email__From: noreply@cmms.local
+      Email__Smtp__Host: mailpit
+      Email__Smtp__Port: "1025"
+      Email__Smtp__UseTls: "false"
     ports: ["${APP_PORT:-8080}:8080"]
     volumes: [files:/data]
+  mailpit:
+    image: axllent/mailpit:v1.21
+    ports: ["${MAIL_UI_PORT:-8025}:8025"]
 volumes:
   sqldata:
   files:
