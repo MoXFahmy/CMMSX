@@ -110,4 +110,44 @@ public class WorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Ok(await admin.PostAsJsonAsync($"/api/work-orders/{simple}/labor", new { employeeId = emp, workDate = today, hours = 0.5, overtimeHours = 0 }));
         await Ok(await admin.PostAsJsonAsync($"/api/work-orders/{simple}/status", new { status = "Completed", completionNotes = "Adjusted" }));
     }
+
+    [SkippableFact]
+    public async Task Auto_start_moves_open_work_to_in_progress_on_labour_or_step()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, site) = await SetupAsync();
+        var emp = (await Ok(await admin.PostAsJsonAsync("/api/employees", new { code = "E1", fullName = "Tech", hourlyRate = 20, isContractor = false }))).GetProperty("id").GetGuid();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        async Task<Guid> NewWo(params string[] tasks) =>
+            (await Ok(await admin.PostAsJsonAsync("/api/work-orders", new { title = "Job", type = "Corrective", priority = "Medium", siteId = site, tasks }))).GetProperty("id").GetGuid();
+        async Task<string> Status(Guid wo) => (await Ok(await admin.GetAsync($"/api/work-orders/{wo}"))).GetProperty("status").GetString()!;
+        Task Labour(Guid wo) => Ok(admin.PostAsJsonAsync($"/api/work-orders/{wo}/labor", new { employeeId = emp, workDate = today, hours = 1, overtimeHours = 0 }).Result);
+
+        var off = await NewWo();
+        await Labour(off);
+        Assert.Equal("Open", await Status(off)); // setting off: nothing changes
+
+        await TestSettings.SetSettingsAsync(admin, s => s["autoStartWork"] = true);
+        var a = await NewWo();
+        await Labour(a);
+        var detail = await Ok(await admin.GetAsync($"/api/work-orders/{a}"));
+        Assert.Equal("InProgress", detail.GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.String, detail.GetProperty("startedAt").ValueKind);
+        var activity = await Ok(await admin.GetAsync($"/api/work-orders/{a}/activity"));
+        Assert.Contains(activity.EnumerateArray(), x => x.GetProperty("kind").GetString() == "status" && x.GetProperty("body").GetString() == "Started automatically: labour logged");
+
+        var b = await NewWo("Check belts");
+        var step = (await Ok(await admin.GetAsync($"/api/work-orders/{b}"))).GetProperty("tasks")[0].GetProperty("id").GetGuid();
+        await Ok(await admin.PutAsJsonAsync($"/api/work-orders/{b}/tasks/{step}", new { reading = "12" }));
+        Assert.Equal("Open", await Status(b)); // a reading alone doesn't start the work
+        await Ok(await admin.PutAsJsonAsync($"/api/work-orders/{b}/tasks/{step}", new { isDone = true }));
+        Assert.Equal("InProgress", await Status(b));
+        var bActivity = await Ok(await admin.GetAsync($"/api/work-orders/{b}/activity"));
+        Assert.Contains(bActivity.EnumerateArray(), x => x.GetProperty("body").GetString() == "Started automatically: checklist step done");
+
+        var c = await NewWo();
+        await Ok(await admin.PostAsJsonAsync($"/api/work-orders/{c}/status", new { status = "OnHold", holdReason = "WaitingForParts" }));
+        await Labour(c);
+        Assert.Equal("OnHold", await Status(c)); // on hold is left alone
+    }
 }

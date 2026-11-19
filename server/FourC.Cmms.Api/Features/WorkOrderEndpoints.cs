@@ -272,6 +272,7 @@ public static class WorkOrderEndpoints
             if (input.IsDone is { } done && done != t.IsDone)
             {
                 t.IsDone = done; t.DoneAt = done ? DateTimeOffset.UtcNow : null; t.DoneBy = done ? ctx.UserName : null;
+                if (done) await AutoStartAsync(db, ctx, id, "Started automatically: checklist step done", ct);
             }
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { t.Id, t.IsDone });
@@ -285,7 +286,7 @@ public static class WorkOrderEndpoints
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
         // ---- Labour ----
-        g.MapPost("/{id:guid}/labor", async (Guid id, LaborInput input, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/labor", async (Guid id, LaborInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             await RequireOpenAsync(db, id, ct);
             var (v, emp) = await ValidateLaborAsync(input, db, ct);
@@ -293,6 +294,7 @@ public static class WorkOrderEndpoints
             var l = new WorkOrderLabor { WorkOrderId = id, EmployeeId = emp!.Id, WorkDate = input.WorkDate, Hours = input.Hours, OvertimeHours = input.OvertimeHours,
                 Rate = emp.HourlyRate ?? 0, OvertimeRate = emp.OvertimeRate ?? emp.HourlyRate ?? 0, Notes = input.Notes.Clean() };
             db.WorkOrderLabor.Add(l);
+            await AutoStartAsync(db, ctx, id, "Started automatically: labour logged", ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { l.Id });
         }).RequirePermission(Permissions.WorkOrdersExecute);
@@ -393,6 +395,22 @@ public static class WorkOrderEndpoints
             q = q.Where(w => w.DueDate < today && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold));
         }
         return q;
+    }
+
+    /// <summary>"Start work automatically" setting: an Open work order moves to In progress when work is first recorded on it.</summary>
+    private static async Task AutoStartAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, string reason, CancellationToken ct)
+    {
+        var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+        if (!settings.AutoStartWork) return;
+        var w = await db.WorkOrders.FirstOrDefaultAsync(x => x.Id == workOrderId, ct);
+        if (w is null || w.Status != WorkOrderStatus.Open) return;
+        var now = DateTimeOffset.UtcNow;
+        db.WorkOrderStatusChanges.Add(new WorkOrderStatusChange
+        {
+            WorkOrderId = w.Id, FromStatus = w.Status, ToStatus = WorkOrderStatus.InProgress, Note = reason, ChangedAt = now, ChangedById = ctx.UserId, ChangedByName = ctx.UserName,
+        });
+        w.Status = WorkOrderStatus.InProgress;
+        w.StartedAt ??= now;
     }
 
     public static async Task<Validator> ValidateAsync(WorkOrderInput i, CmmsDbContext db, CancellationToken ct)

@@ -20,5 +20,6 @@ public class TenantSettingsTests
         Assert.False(s.RequireLaborToComplete);
         Assert.False(s.RequireAllTasksDone);
         Assert.False(s.RequireFailureCodeForBreakdowns);
+        Assert.False(s.AutoStartWork);
     }
 }

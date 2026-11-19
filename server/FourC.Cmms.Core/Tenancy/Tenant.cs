@@ -30,6 +30,8 @@ public class TenantSettings
     public bool RequireAllTasksDone { get; set; }
     /// <summary>Completing breakdown work needs a failure code.</summary>
     public bool RequireFailureCodeForBreakdowns { get; set; }
+    /// <summary>Logging labour or ticking a checklist step on an Open work order moves it to In progress.</summary>
+    public bool AutoStartWork { get; set; }
     /// <summary>Generate PM work orders automatically when they come within each schedule's lead time.</summary>
     public bool AutoGeneratePm { get; set; } = true;
     public string PurchaseOrderNumberPrefix { get; set; } = "PO-";

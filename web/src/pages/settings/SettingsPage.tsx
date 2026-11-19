@@ -103,6 +103,7 @@ function OrganizationSettings() {
           <Switch label={t('settings.requireLaborToComplete')} disabled={!editable} {...form.getInputProps('settings.requireLaborToComplete', { type: 'checkbox' })} />
           <Switch label={t('settings.requireAllTasksDone')} disabled={!editable} {...form.getInputProps('settings.requireAllTasksDone', { type: 'checkbox' })} />
           <Switch label={t('settings.requireFailureCodeForBreakdowns')} disabled={!editable} {...form.getInputProps('settings.requireFailureCodeForBreakdowns', { type: 'checkbox' })} />
+          <Switch label={t('settings.autoStartWork')} disabled={!editable} {...form.getInputProps('settings.autoStartWork', { type: 'checkbox' })} />
           <Switch label={t('settings.autoGeneratePm')} disabled={!editable} {...form.getInputProps('settings.autoGeneratePm', { type: 'checkbox' })} />
         </Stack></Card>
         <Card><Stack>
