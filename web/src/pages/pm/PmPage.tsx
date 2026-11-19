@@ -16,6 +16,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { AssetPicker } from '@/components/AssetPicker';
 import { useHierarchy } from '@/components/LocationPicker';
 import { confirmDelete } from '@/components/confirm';
+import { generateNow } from './generateNow';
 import { fmtDate, fmtDateTime, fmtNumber, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 
 const TABS = ['schedules', 'tasks', 'generate', 'forecast', 'meters'] as const;
@@ -206,7 +207,8 @@ function GenerateTab() {
 
 function ForecastTab() {
   const { t } = useTranslation();
-  const { terms } = useAuth();
+  const { terms, can } = useAuth();
+  const qc = useQueryClient();
   const [from, setFrom] = useState<Date | null>(new Date());
   const [to, setTo] = useState<Date | null>(dayjs().add(3, 'month').toDate());
   const [siteId, setSiteId] = useState<string | null>(null);
@@ -220,6 +222,13 @@ function ForecastTab() {
     for (const x of data ?? []) { const k = x.overdue ? 'overdue' : dayjs(x.date).startOf('week').add(1, 'day').format('YYYY-MM-DD'); groups.set(k, [...(groups.get(k) ?? []), x]); }
     return [...groups.entries()];
   }, [data]);
+  /** Each schedule's earliest listed occurrence: the one "Generate now" creates without generating others. */
+  const next = useMemo(() => {
+    const m = new Map<string, string>();
+    for (const x of data ?? []) { const d = m.get(x.id); if (!d || x.date < d) m.set(x.id, x.date); }
+    return m;
+  }, [data]);
+  const canGenerate = can(P.pmGenerate);
   return (
     <Stack>
       <Card><Group align="flex-end" wrap="wrap">
@@ -243,6 +252,10 @@ function ForecastTab() {
                 <Table.Td><Text fz="sm" lineClamp={1}>{x.name}</Text></Table.Td>
                 <Table.Td visibleFrom="sm"><Text fz="sm" c="dimmed" lineClamp={1}>{x.taskName}</Text></Table.Td>
                 <Table.Td visibleFrom="md"><Text fz="sm" c="dimmed">{x.assetNumber ?? x.siteName}</Text></Table.Td>
+                {canGenerate && <Table.Td w={130} ta="right">{next.get(x.id) === x.date && (
+                  <Button size="compact-xs" variant="light" onClick={() => generateNow(x.id, x.date, () => Promise.all([
+                    qc.invalidateQueries({ queryKey: ['pm-forecast'] }), qc.invalidateQueries({ queryKey: ['work-orders'] })]))}>{t('pm.generateNow')}</Button>
+                )}</Table.Td>}
               </Table.Tr>
             ))}
           </Table.Tbody></Table>

@@ -673,7 +673,12 @@
     "round": "Round",
     "noAssets": "Add at least one asset.",
     "moveUp": "Move up",
-    "moveDown": "Move down"
+    "moveDown": "Move down",
+    "generateNow": "Generate now",
+    "generateNextNow": "Generate next now",
+    "generateNowTitle": "Generate this PM work now?",
+    "generateNowBody": "Creates the work order for {{date}} now instead of waiting for its lead time.",
+    "nothingGenerated": "No work order was created."
   },
   "txType": {
     "Receipt": "Receipt",
