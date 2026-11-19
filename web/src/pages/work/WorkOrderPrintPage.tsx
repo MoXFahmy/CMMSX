@@ -25,9 +25,10 @@ export function WorkOrderPrintPage() {
 
   const location = w.locationTrail.map((l) => l.name).join(' › ');
   const tasks = [...w.tasks].sort((a, b) => a.sequence - b.sequence);
-  // PM rounds list their assets in order; every other work order has one group.
+  // PM rounds list their assets in order, then any step not tied to one of them (as on the work order page); other work orders have one group.
   const groups = w.assets.length > 0
-    ? w.assets.map((a) => ({ key: a.id, title: `${a.assetNumber} · ${a.name}`, tasks: tasks.filter((x) => x.assetId === a.id) }))
+    ? [...w.assets.map((a) => ({ key: a.id, title: `${a.assetNumber} · ${a.name}` as string | null, tasks: tasks.filter((x) => x.assetId === a.id) })),
+      { key: 'other', title: null as string | null, tasks: tasks.filter((x) => !w.assets.some((a) => a.id === x.assetId)) }].filter((g) => g.title || g.tasks.length > 0)
     : [{ key: 'all', title: null as string | null, tasks }];
   // Net quantity per part, as on the work order's parts tab (returns subtract).
   const parts = Object.values(w.parts.reduce<Record<string, { id: string; label: string; unit: string; qty: number }>>((a, p) => {

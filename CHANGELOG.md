@@ -12,8 +12,9 @@ Settings › Organization, so nothing changes for existing organizations on its 
 ### Added
 - **PM generation rules:** don't generate PM work for assets that are under repair, inactive or in storage (you
   choose which); move PM work that falls on a non-working day to the next working day while the schedule keeps its
-  dates; don't generate new PM work while the previous work order is still open. Skipped occurrences are listed with
-  the reason in the PM preview.
+  dates; don't generate new PM work while the previous work order is still open. An occurrence is only skipped once it
+  falls due: work generated ahead (lead time, Generate now) waits until then. Skipped and waiting occurrences are listed
+  with the reason in the PM preview.
 - **Completion rules:** require labour, every checklist step ticked, or a failure code on breakdown work before a work
   order can be completed.
 - **Work starts automatically:** logging labour or ticking a checklist step on an Open work order moves it to In

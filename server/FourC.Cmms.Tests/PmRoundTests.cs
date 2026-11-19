@@ -250,4 +250,21 @@ public class PmRoundTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Invalid(r, "assetIds");
         Assert.Contains(number, await r.Content.ReadAsStringAsync());
     }
+
+    [SkippableFact]
+    public async Task Round_with_every_asset_skipped_is_skipped_not_piled_up()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var x = await SetupAsync();
+        await TestSettings.SetSettingsAsync(x.Http, s => s["pmSkipAssetStatuses"] = new System.Text.Json.Nodes.JsonArray("UnderRepair"));
+        await Ok(await x.Http.PostAsJsonAsync("/api/assets/bulk", new { ids = new[] { x.A, x.B }, status = "UnderRepair" }));
+        var id = (await Ok(await x.Http.PostAsJsonAsync("/api/pm-schedules", Round(x, [x.A, x.B], Today.AddDays(-7))))).GetProperty("id").GetGuid();
+
+        var gen = await Ok(await x.Http.PostAsJsonAsync("/api/pm/generate", new { until = Iso(Today) }));
+        Assert.Equal(0, gen.GetProperty("created").GetInt32());
+        var results = gen.GetProperty("results").EnumerateArray().ToList();
+        Assert.Equal(2, results.Count);
+        Assert.All(results, r => Assert.Equal("Skipped: every asset on the round has a status that skips PM work", r.GetProperty("skipped").GetString()));
+        Assert.Equal(Iso(Today.AddDays(7)), (await Ok(await x.Http.GetAsync($"/api/pm-schedules/{id}"))).GetProperty("nextDueDate").GetString());
+    }
 }

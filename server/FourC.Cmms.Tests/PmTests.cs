@@ -149,6 +149,82 @@ public class PmTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task No_stacking_waits_for_future_occurrences_instead_of_skipping()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (c, site, asset, weekly, _) = await SetupAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await TestSettings.SetSettingsAsync(c, s => s["pmNoStacking"] = true);
+        var sched = (await Ok(await c.PostAsJsonAsync("/api/pm-schedules", Schedule(site, asset, weekly, today.AddDays(-7))))).GetProperty("id").GetGuid();
+
+        // Generating ahead (lead time): the occurrence still to come waits instead of being skipped for good.
+        var gen = await Ok(await c.PostAsJsonAsync("/api/pm/generate", new { until = Iso(today.AddDays(7)) }));
+        var results = gen.GetProperty("results").EnumerateArray().ToList();
+        Assert.Equal(1, gen.GetProperty("created").GetInt32());
+        Assert.Equal("Skipped: the previous work order is still open", Skipped(results[1])); // due today: skipped
+        Assert.Equal("Waiting: the previous work order is still open", Skipped(results[2])); // due next week: waits
+        Assert.Equal(Iso(today.AddDays(7)), (await Ok(await c.GetAsync($"/api/pm-schedules/{sched}"))).GetProperty("nextDueDate").GetString());
+
+        var first = results[0].GetProperty("workOrderId").GetGuid();
+        await Ok(await c.PostAsJsonAsync($"/api/work-orders/{first}/status", new { status = "Completed", completionNotes = "Done" }));
+        Assert.Equal(1, (await Ok(await c.PostAsJsonAsync("/api/pm/generate", new { until = Iso(today.AddDays(7)) }))).GetProperty("created").GetInt32());
+        Assert.Equal(Iso(today.AddDays(14)), (await Ok(await c.GetAsync($"/api/pm-schedules/{sched}"))).GetProperty("nextDueDate").GetString());
+    }
+
+    [SkippableFact]
+    public async Task Skip_rule_waits_while_the_asset_is_down_before_the_due_date()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (c, site, _, weekly, _) = await SetupAsync();
+        var down = (await Ok(await c.PostAsJsonAsync("/api/assets", new { name = "Broken pump", siteId = site, status = "UnderRepair", criticality = "High", warrantyType = "None" }))).GetProperty("id").GetGuid();
+        var due = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(3);
+        await TestSettings.SetSettingsAsync(c, s => s["pmSkipAssetStatuses"] = new JsonArray("UnderRepair"));
+        var sched = (await Ok(await c.PostAsJsonAsync("/api/pm-schedules", Schedule(site, down, weekly, due)))).GetProperty("id").GetGuid();
+
+        var gen = await Ok(await c.PostAsJsonAsync("/api/pm/generate", new { until = Iso(due) }));
+        Assert.Equal(0, gen.GetProperty("created").GetInt32());
+        Assert.Equal("Waiting: the asset is Under repair", Skipped(gen.GetProperty("results")[0]));
+        Assert.Equal(Iso(due), (await Ok(await c.GetAsync($"/api/pm-schedules/{sched}"))).GetProperty("nextDueDate").GetString());
+
+        await Ok(await c.PostAsJsonAsync("/api/assets/bulk", new { ids = new[] { down }, status = "Active" })); // repaired before the due date
+        Assert.Equal(1, (await Ok(await c.PostAsJsonAsync("/api/pm/generate", new { until = Iso(due) }))).GetProperty("created").GetInt32());
+    }
+
+    [SkippableFact]
+    public async Task Forecast_marks_only_the_schedules_next_occurrence()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (c, site, asset, weekly, _) = await SetupAsync();
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await Ok(await c.PostAsJsonAsync("/api/pm-schedules", Schedule(site, asset, weekly, today)));
+
+        var all = (await Ok(await c.GetAsync($"/api/pm/forecast?from={Iso(today)}&to={Iso(today.AddDays(21))}"))).EnumerateArray().ToList();
+        Assert.Equal(4, all.Count);
+        Assert.True(all[0].GetProperty("isNext").GetBoolean());
+        Assert.All(all.Skip(1), x => Assert.False(x.GetProperty("isNext").GetBoolean()));
+
+        // Starting the forecast after the next occurrence hides it; nothing listed is the next one.
+        var later = (await Ok(await c.GetAsync($"/api/pm/forecast?from={Iso(today.AddDays(8))}&to={Iso(today.AddDays(21))}"))).EnumerateArray().ToList();
+        Assert.Equal(2, later.Count);
+        Assert.All(later, x => Assert.False(x.GetProperty("isNext").GetBoolean()));
+    }
+
+    [SkippableFact]
+    public async Task Settings_treat_missing_lists_as_empty()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (c, site, asset, weekly, _) = await SetupAsync();
+        var r = await TestSettings.TrySetSettingsAsync(c, s => { s["pmNonWorkingDays"] = null; s["pmSkipAssetStatuses"] = null; });
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var saved = (await Ok(await c.GetAsync("/api/settings"))).GetProperty("settings");
+        Assert.Equal(0, saved.GetProperty("pmNonWorkingDays").GetArrayLength());
+        Assert.Equal(0, saved.GetProperty("pmSkipAssetStatuses").GetArrayLength());
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        await Ok(await c.PostAsJsonAsync("/api/pm-schedules", Schedule(site, asset, weekly, today)));
+        Assert.Equal(1, (await Ok(await c.PostAsJsonAsync("/api/pm/generate", new { until = Iso(today) }))).GetProperty("created").GetInt32());
+    }
+
+    [SkippableFact]
     public async Task Settings_reject_a_week_with_no_working_day()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

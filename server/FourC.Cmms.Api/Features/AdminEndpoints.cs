@@ -132,6 +132,9 @@ public static class AdminEndpoints
             .RequireAuthorization();
         settings.MapPut("/", async (SettingsInput input, CmmsDbContext db, CancellationToken ct) =>
         {
+            // A list sent as null means "none"; never store null where generation expects a list.
+            input.Settings.PmNonWorkingDays ??= [];
+            input.Settings.PmSkipAssetStatuses ??= [];
             var v = new Validator().Required("name", input.Name, "Organization name", 200)
                 .MaxLength("settings.assetNumberPrefix", input.Settings.AssetNumberPrefix, "Asset number prefix", 20)
                 .When(input.Settings.AssetNumberPadding is < 1 or > 12, "settings.assetNumberPadding", "Padding must be between 1 and 12.")

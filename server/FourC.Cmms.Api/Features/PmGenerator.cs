@@ -64,8 +64,13 @@ public static class PmGenerator
         if (s.Basis == PmBasis.Actual && await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && Active.Contains(w.Status), ct))
             return [new Result(s.Id, s.Code, s.Name, first, null, s.Asset?.AssetNumber, null, null, "Previous PM work order is still open")];
         IReadOnlyList<RoundAsset>? round = null;
+        string? roundSkip = null;
         if (s.Assets.Count > 0 && (round = await RoundAssetsAsync(db, s, ct, settings.PmSkipAssetStatuses)).Count == 0)
-            return [new Result(s.Id, s.Code, s.Name, first, null, null, null, null, NoActiveAssets)];
+        {
+            // Every available asset is in a skip status (e.g. all under repair): skip like a single asset would, instead of piling up work.
+            if ((await RoundAssetsAsync(db, s, ct)).Count == 0) return [new Result(s.Id, s.Code, s.Name, first, null, null, null, null, NoActiveAssets)];
+            roundSkip = "every asset on the round has a status that skips PM work";
+        }
         var taskIds = s.ExtraTasks.Select(x => x.PmTaskId).Append(s.PmTaskId).Distinct().ToList();
         var tasks = await db.PmTasks.AsNoTracking().Include(t => t.Steps).Where(t => taskIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
         for (var guard = 0; guard < 120 && s.NextDueDate is { } due && due <= limit; guard++)
@@ -74,11 +79,17 @@ public static class PmGenerator
             var task = tasks.GetValueOrDefault(PmCalendar.TaskFor(s, count)) ?? tasks.GetValueOrDefault(s.PmTaskId);
             WorkOrder? wo = null;
             var exists = await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && w.PmDueDate == due, ct);
-            var skip = exists || task is null ? null : await SkipReasonAsync(db, s, settings, ct);
+            var skip = exists || task is null ? null : roundSkip ?? await SkipReasonAsync(db, s, settings, ct);
+            if (skip is not null && due > Today)
+            {
+                // Generated ahead (lead time, "Generate now"): the rule may no longer apply by the due date, so wait instead of skipping for good.
+                results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, null, null, $"Waiting: {skip}"));
+                break;
+            }
             if (skip is not null)
             {
                 // A skipped occurrence moves the schedule on but is not a generation, so "every Nth" tasks are not lost.
-                results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, null, null, skip));
+                results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, null, null, $"Skipped: {skip}"));
                 s.LastDueDate = due;
                 s.NextDueDate = PmCalendar.Next(s, due);
                 if (!dryRun) await db.SaveChangesAsync(ct);
@@ -100,13 +111,13 @@ public static class PmGenerator
 
     public const string NoActiveAssets = "No active assets in the list";
 
-    /// <summary>Why the organization's PM rules skip this occurrence, or null to generate it.</summary>
+    /// <summary>Why the organization's PM rules hold back this occurrence, or null to generate it.</summary>
     private static async Task<string?> SkipReasonAsync(CmmsDbContext db, PmSchedule s, TenantSettings settings, CancellationToken ct)
     {
         if (s.Assets.Count == 0 && s.Asset is { } a && settings.PmSkipAssetStatuses.Contains(a.Status))
-            return $"Skipped: the asset is {StatusLabel(a.Status)}";
+            return $"the asset is {StatusLabel(a.Status)}";
         if (settings.PmNoStacking && s.Basis == PmBasis.Scheduled && await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && Active.Contains(w.Status), ct))
-            return "Skipped: the previous work order is still open";
+            return "the previous work order is still open";
         return null;
     }
 
