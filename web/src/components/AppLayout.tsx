@@ -6,9 +6,10 @@ import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { appVersionLabel } from '@/components/utils';
 import { AlertBell } from '@/components/AlertBell';
+import { EmailPreferences } from '@/components/EmailPreferences';
 import {
   IconLayoutDashboard, IconMapPin, IconBox, IconClipboardText, IconTool, IconCalendarRepeat, IconPackage, IconShoppingCart,
-  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers,
+  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail,
 } from '@tabler/icons-react';
 import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -21,6 +22,7 @@ export function AppLayout() {
   const { me, can, terms } = useAuth();
   const [opened, { toggle, close }] = useDisclosure();
   const [pwOpen, pw] = useDisclosure();
+  const [mailOpen, mailPrefs] = useDisclosure();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -88,6 +90,7 @@ export function AppLayout() {
               <Menu.Dropdown>
                 <Menu.Label>{me?.user.email}</Menu.Label>
                 <Menu.Item leftSection={<IconKey size={16} />} onClick={pw.open}>{t('common.changePassword')}</Menu.Item>
+                <Menu.Item leftSection={<IconMail size={16} />} onClick={mailPrefs.open}>{t('email.myTitle')}</Menu.Item>
                 <Menu.Divider />
                 <Menu.Item color="red" leftSection={<IconLogout size={16} />} onClick={logout}>{t('common.logout')}</Menu.Item>
                 <Menu.Divider />
@@ -119,6 +122,7 @@ export function AppLayout() {
         <Outlet />
       </AppShell.Main>
       <ChangePasswordModal opened={pwOpen} onClose={pw.close} />
+      <EmailPreferences opened={mailOpen} onClose={mailPrefs.close} />
     </AppShell>
   );
 }

@@ -72,7 +72,8 @@
     "apply": "Apply",
     "selected": "{{count}} selected",
     "version": "Version {{v}}",
-    "androidApp": "Android app {{v}}"
+    "androidApp": "Android app {{v}}",
+    "refresh": "Refresh"
   },
   "auth": {
     "signIn": "Sign in",
@@ -332,7 +333,8 @@
     "poPrefix": "Purchase order prefix",
     "defaultTax": "Default tax",
     "approvalLimit": "Purchase approval limit",
-    "approvalLimitHint": "Largest order this user may approve, in base currency. Leave empty for no limit."
+    "approvalLimitHint": "Largest order this user may approve, in base currency. Leave empty for no limit.",
+    "notifications": "Notifications"
   },
   "audit": {
     "Created": "created this record",
@@ -942,7 +944,13 @@
     "printTitle": "PURCHASE ORDER",
     "notApproved": "not approved",
     "approvedBy": "Authorised by",
-    "supplierAcceptance": "Supplier acceptance"
+    "supplierAcceptance": "Supplier acceptance",
+    "sendToSupplier": "Send to supplier",
+    "send": "Send",
+    "sendTitle": "E-mail this order to the supplier?",
+    "sendBody": "Send {{number}} to {{email}}? Replies come back to you.",
+    "sentTo": "Order e-mailed to {{email}}",
+    "noSupplierEmail": "This supplier has no e-mail address. Add one on the supplier first."
   },
   "rep": {
     "title": "Reports",
@@ -996,5 +1004,82 @@
     "technician": "Technician",
     "supervisor": "Supervisor / customer",
     "signDate": "Date"
+  },
+  "email": {
+    "title": "E-mail notifications",
+    "hint": "4C CMMS e-mails people when work and orders need them. Nobody gets an e-mail about something they did themselves.",
+    "enabled": "Send e-mail notifications for this organization",
+    "enabledHint": "Off until you switch it on. Turning it off stops every notification e-mail.",
+    "which": "Which e-mails go out",
+    "sendTest": "Send me a test e-mail",
+    "testQueued": "Test e-mail on its way. It shows in the log below when sent.",
+    "sendingFrom": "E-mail is set up. Messages are sent from {{from}}.",
+    "notSetUpTitle": "E-mail isn't set up on this server",
+    "notSetUpBody": "A sending address has to be configured for the server first (see the deployment guide). Until then nothing is sent.",
+    "log": "E-mail log",
+    "logEmpty": "No e-mails yet.",
+    "when": "When",
+    "to": "To",
+    "subject": "Subject",
+    "status": {
+      "Pending": "Waiting",
+      "Sent": "Sent",
+      "Failed": "Failed"
+    },
+    "attempts_one": "{{count}} attempt",
+    "attempts_other": "{{count}} attempts",
+    "myTitle": "E-mail notifications",
+    "myHint": "Choose the e-mails you want. Switching one off here only affects you.",
+    "orgOff": "Your organization hasn't switched e-mail on yet, so nothing is sent for now. Your choices are kept for when it does.",
+    "events": {
+      "request_submitted": {
+        "label": "New work requests",
+        "description": "To the people who review requests, when someone submits one."
+      },
+      "request_approved": {
+        "label": "Request approved",
+        "description": "To the requester, with the work order number."
+      },
+      "request_rejected": {
+        "label": "Request not approved",
+        "description": "To the requester, with the reason."
+      },
+      "request_completed": {
+        "label": "Requested work done",
+        "description": "To the requester, when the work order is completed."
+      },
+      "workorder_assigned": {
+        "label": "Work assigned",
+        "description": "To technicians, when they are added to a work order."
+      },
+      "pm_assigned": {
+        "label": "PM work assigned",
+        "description": "To technicians, when preventive maintenance is created for them."
+      },
+      "workorder_completed": {
+        "label": "Work completed",
+        "description": "To whoever created the work order."
+      },
+      "po_submitted": {
+        "label": "Order waiting for approval",
+        "description": "To approvers whose approval limit covers the order."
+      },
+      "po_approved": {
+        "label": "Order approved",
+        "description": "To whoever created the purchase order."
+      },
+      "po_rejected": {
+        "label": "Order returned",
+        "description": "To whoever created the purchase order, with the reason."
+      },
+      "po_sent": {
+        "label": "Order sent to supplier",
+        "description": "The \"Send to supplier\" button on a purchase order."
+      },
+      "parts_received": {
+        "label": "Parts arrived",
+        "description": "To the technicians of a work order when parts ordered for it are received."
+      }
+    }
   }
 }

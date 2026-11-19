@@ -305,6 +305,48 @@ public class EmailTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Test_email_reaches_the_admin_even_before_email_is_switched_on()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _, _, adminEmail, _) = await OrgAsync(enable: false);
+        var status = await Ok(await admin.GetAsync("/api/email/status"));
+        Assert.True(status.GetProperty("available").GetBoolean());
+        Assert.False(status.GetProperty("enabled").GetBoolean());
+        await Ok(await admin.PostAsync("/api/email/test", null));
+        await Sender.RunOnceAsync();
+        Assert.Single(fx.Emails.To(adminEmail));
+    }
+
+    [SkippableFact]
+    public async Task Email_log_is_per_organization()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (p, _, _, pEmail, _) = await OrgAsync();
+        var (q, _, _, qEmail, _) = await OrgAsync();
+        await Ok(await p.PostAsync("/api/email/test", null));
+        await Ok(await q.PostAsync("/api/email/test", null));
+        await Sender.RunOnceAsync();
+        var log = (await Ok(await p.GetAsync("/api/email/log"))).EnumerateArray().ToList();
+        Assert.Contains(log, e => e.GetProperty("toAddress").GetString() == pEmail && e.GetProperty("status").GetString() == "Sent");
+        Assert.DoesNotContain(log, e => e.GetProperty("toAddress").GetString() == qEmail);
+    }
+
+    [SkippableFact]
+    public async Task Users_choose_their_own_email_opt_outs()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _, _, _, site) = await OrgAsync();
+        var techEmail = Addr("tech");
+        var (tech, techId) = await UserAsync(admin, "Technician", techEmail);
+        await Ok(await tech.PutAsJsonAsync("/api/auth/me/email-opt-outs", new[] { "workorder.assigned", "nonsense" }));
+        var mine = (await Ok(await tech.GetAsync("/api/auth/me/email-opt-outs"))).EnumerateArray().Select(x => x.GetString()).ToList();
+        Assert.Equal(["workorder.assigned"], mine);
+        await NewWorkOrderAsync(admin, site, [await EmployeeAsync(admin, "ET", "Tech", null, techId)]);
+        await Sender.RunOnceAsync();
+        Assert.Empty(fx.Emails.To(techEmail));
+    }
+
+    [SkippableFact]
     public async Task Sender_sends_due_emails_and_marks_them_sent()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

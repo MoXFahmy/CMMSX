@@ -143,12 +143,25 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         return null;
     }
 
+    /// <summary>"Send me a test e-mail": works before the organization switches e-mail on, to check the setup.</summary>
+    public async Task<string?> TestAsync(CmmsDbContext db, ITenantContext ctx, CancellationToken ct)
+    {
+        if (!Available) return "E-mail isn't set up on this server.";
+        var me = await db.Users.AsNoTracking().Where(u => u.Id == ctx.UserId).Select(u => new EmailRecipient(u.Email, u.FullName, u.Id)).FirstOrDefaultAsync(ct);
+        if (string.IsNullOrWhiteSpace(me?.Email)) return "Your account has no e-mail address.";
+        await QueueAsync(db, ctx, EmailEvents.Test, [me], org => EmailTemplates.Layout(org, "Test e-mail from 4C CMMS", "E-mail is working",
+                [("Organization", org), ("Sent to", me.Email)], "If you can read this, 4C CMMS can send e-mail to you.",
+                Link("/settings/notifications"), "Open notification settings"),
+            null, null, ct, ignoreToggles: true, ignoreEnabled: true, keepActor: true);
+        return null;
+    }
+
     // ---------------- Core ----------------
 
     /// <summary>Adds one row per remaining recipient to <paramref name="db"/> (the caller saves). <paramref name="ignoreToggles"/>
     /// is for e-mails a user asks for explicitly (send a PO, a test): they skip the event switch and opt-outs.</summary>
     internal async Task QueueAsync(CmmsDbContext db, ITenantContext ctx, string eventKey, IEnumerable<EmailRecipient> to, Func<string, EmailContent> build,
-        string? entityType, Guid? entityId, CancellationToken ct, bool ignoreToggles = false, bool ignoreEnabled = false)
+        string? entityType, Guid? entityId, CancellationToken ct, bool ignoreToggles = false, bool ignoreEnabled = false, bool keepActor = false)
     {
         if (!Available) return;
         var tenantId = db.CurrentTenantId ?? ctx.TenantId;
@@ -159,7 +172,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         var actorEmail = ctx.UserId is { } uid ? await db.Users.Where(u => u.Id == uid).Select(u => u.Email).FirstOrDefaultAsync(ct) : null;
         var list = to.Where(r => !string.IsNullOrWhiteSpace(r.Email))
             .Select(r => r with { Email = r.Email!.Trim() })
-            .Where(r => (r.UserId is null || r.UserId != ctx.UserId) && !string.Equals(r.Email, actorEmail, StringComparison.OrdinalIgnoreCase))
+            .Where(r => keepActor || ((r.UserId is null || r.UserId != ctx.UserId) && !string.Equals(r.Email, actorEmail, StringComparison.OrdinalIgnoreCase)))
             .DistinctBy(r => r.Email!.ToLowerInvariant()).ToList();
         if (!ignoreToggles && list.Any(r => r.UserId is not null))
         {

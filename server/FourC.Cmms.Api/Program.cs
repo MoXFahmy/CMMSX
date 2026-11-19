@@ -131,6 +131,7 @@ api.MapPurchasingEndpoints();
 api.MapReportEndpoints();
 api.MapDashboardEndpoints();
 api.MapAlertEndpoints();
+api.MapEmailEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();
