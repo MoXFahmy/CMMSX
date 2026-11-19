@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
-import { IconAlertTriangle, IconCheck, IconDots, IconEdit, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconCopy, IconDots, IconEdit, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp } from '@tabler/icons-react';
 import { ApiError, del, get, post, put } from '@/api/client';
 import { HOLD_REASONS, type ActivityItem, type Lookup, type WorkOrderDetail, type WorkOrderStatus } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -72,11 +72,13 @@ export function WorkOrderDetailPage() {
           {primary.map((s) => { const Icon = transitionIcon[s] ?? IconCheck; return (
             <Button key={s} leftSection={<Icon size={16} />} variant={s === 'Completed' || (s === 'InProgress' && w.status !== 'Completed') ? 'filled' : 'default'}
               color={s === 'Completed' ? 'teal' : undefined} onClick={() => move(s)}>{label(s)}</Button>); })}
-          {(can(P.woEdit) || can(P.woDelete) || secondary.length > 0) && (
+          {(can(P.woEdit) || can(P.woDelete) || can(P.woCreate) || secondary.length > 0) && (
             <Menu position="bottom-end">
               <Menu.Target><ActionIcon variant="default" size="lg" aria-label={t('common.actions')}><IconDots size={16} /></ActionIcon></Menu.Target>
               <Menu.Dropdown>
                 {can(P.woEdit) && !locked && <Menu.Item leftSection={<IconEdit size={16} />} component={Link} to={`/work-orders/${w.id}/edit`}>{t('common.edit')}</Menu.Item>}
+                {/* A PM round's asset list can't be set from the form, so rounds aren't duplicated. */}
+                {can(P.woCreate) && w.assets.length === 0 && <Menu.Item leftSection={<IconCopy size={16} />} component={Link} to={`/work-orders/new?copyFrom=${w.id}`}>{t('wo.duplicate')}</Menu.Item>}
                 {secondary.map((s) => <Menu.Item key={s} color={s === 'Cancelled' ? 'red' : undefined} leftSection={s === 'Cancelled' ? <IconX size={16} /> : <IconRefresh size={16} />} onClick={() => move(s)}>{label(s)}</Menu.Item>)}
                 {can(P.woDelete) && <><Menu.Divider /><Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={() => confirmDelete(w.number, async () => {
                   try { await del(`/work-orders/${w.id}`); await qc.invalidateQueries({ queryKey: ['work-orders'] }); navigate('/work-orders'); } catch (e) { notifyError(e); } })}>{t('common.delete')}</Menu.Item></>}
