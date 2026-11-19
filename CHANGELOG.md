@@ -14,6 +14,11 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); num
   sandboxed. Files uploaded before this fix are covered too.
 - The stored type of an uploaded file now follows its file extension instead of what the browser reported.
 
+### Changed
+- **Release tags come from GitHub.** After a release deploys, the deploy workflow tags the commit `vX.Y.Z` itself,
+  so a release needs only a push of `main`; `scripts/release.sh` no longer tags and refuses a version already tagged
+  on GitHub.
+
 ## [0.0.0] - 2026-11-19
 
 The first numbered release: everything built so far.
