@@ -24,6 +24,12 @@ public class TenantSettings
     public string WorkRequestNumberPrefix { get; set; } = "WR-";
     /// <summary>Require "action taken" notes before a work order can be completed.</summary>
     public bool RequireCompletionNotes { get; set; } = true;
+    /// <summary>Completing a work order needs at least one labour entry.</summary>
+    public bool RequireLaborToComplete { get; set; }
+    /// <summary>Completing a work order needs every checklist step ticked (none to tick passes).</summary>
+    public bool RequireAllTasksDone { get; set; }
+    /// <summary>Completing breakdown work needs a failure code.</summary>
+    public bool RequireFailureCodeForBreakdowns { get; set; }
     /// <summary>Generate PM work orders automatically when they come within each schedule's lead time.</summary>
     public bool AutoGeneratePm { get; set; } = true;
     public string PurchaseOrderNumberPrefix { get; set; } = "PO-";

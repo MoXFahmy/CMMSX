@@ -100,6 +100,9 @@ function OrganizationSettings() {
             <TextInput label={t('settings.wrPrefix')} disabled={!editable} {...form.getInputProps('settings.workRequestNumberPrefix')} />
           </SimpleGrid>
           <Switch label={t('settings.requireCompletionNotes')} disabled={!editable} {...form.getInputProps('settings.requireCompletionNotes', { type: 'checkbox' })} />
+          <Switch label={t('settings.requireLaborToComplete')} disabled={!editable} {...form.getInputProps('settings.requireLaborToComplete', { type: 'checkbox' })} />
+          <Switch label={t('settings.requireAllTasksDone')} disabled={!editable} {...form.getInputProps('settings.requireAllTasksDone', { type: 'checkbox' })} />
+          <Switch label={t('settings.requireFailureCodeForBreakdowns')} disabled={!editable} {...form.getInputProps('settings.requireFailureCodeForBreakdowns', { type: 'checkbox' })} />
           <Switch label={t('settings.autoGeneratePm')} disabled={!editable} {...form.getInputProps('settings.autoGeneratePm', { type: 'checkbox' })} />
         </Stack></Card>
         <Card><Stack>

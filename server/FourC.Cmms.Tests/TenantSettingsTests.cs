@@ -17,5 +17,8 @@ public class TenantSettingsTests
         Assert.Empty(s.PmSkipAssetStatuses);
         Assert.Empty(s.PmNonWorkingDays);
         Assert.False(s.PmNoStacking);
+        Assert.False(s.RequireLaborToComplete);
+        Assert.False(s.RequireAllTasksDone);
+        Assert.False(s.RequireFailureCodeForBreakdowns);
     }
 }

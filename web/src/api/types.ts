@@ -16,6 +16,7 @@ export type TenantSettings = {
   terminology: Terminology; assetNumberPrefix: string; assetNumberPadding: number; autoNumberAssets: boolean;
   workOrderNumberPrefix: string; workRequestNumberPrefix: string; requireCompletionNotes: boolean; autoGeneratePm: boolean;
   purchaseOrderNumberPrefix: string; defaultTaxPercent: number; currency: string; dateFormat: string; timeZone: string;
+  requireLaborToComplete: boolean; requireAllTasksDone: boolean; requireFailureCodeForBreakdowns: boolean;
   pmSkipAssetStatuses: AssetStatus[]; pmNonWorkingDays: DayOfWeekName[]; pmNoStacking: boolean;
 };
 export type DayOfWeekName = 'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';

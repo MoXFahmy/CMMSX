@@ -185,6 +185,12 @@ public static class WorkOrderEndpoints
             {
                 var notes = input.CompletionNotes.Clean() ?? w.CompletionNotes;
                 if (settings.RequireCompletionNotes && notes is null) v.Add("completionNotes", "Describe the work that was done.");
+                if (settings.RequireLaborToComplete && !await db.WorkOrderLabor.AnyAsync(l => l.WorkOrderId == id, ct))
+                    v.Add("labor", "Log the labour before completing the work.");
+                if (settings.RequireAllTasksDone && await db.WorkOrderTasks.AnyAsync(t => t.WorkOrderId == id && !t.IsDone, ct))
+                    v.Add("tasks", "Tick every checklist step before completing the work.");
+                if (settings.RequireFailureCodeForBreakdowns && w.Type == WorkType.Breakdown && (input.FailureCodeId ?? w.FailureCodeId) is null)
+                    v.Add("failureCodeId", "Choose a failure code for breakdown work.");
                 if (input.FailureCodeId is { } fc && !await db.FailureCodes.AnyAsync(f => f.Id == fc, ct)) v.Add("failureCodeId", "Unknown failure code.");
                 if (input.ActualStart is { } st && input.ActualEnd is { } en && en < st) v.Add("actualEnd", "Actual end cannot be before the actual start.");
                 if (input.ActualEnd > DateTimeOffset.UtcNow.AddHours(1)) v.Add("actualEnd", "Actual end cannot be in the future.");
