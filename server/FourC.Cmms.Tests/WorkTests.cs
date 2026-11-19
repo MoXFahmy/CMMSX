@@ -179,4 +179,15 @@ public class WorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(3, await Total($"createdFrom={Iso(today)}&createdTo={Iso(today)}")); // a single day includes everything created today
         Assert.Equal(0, await Total($"createdTo={Iso(today.AddDays(-1))}"));
     }
+
+    [SkippableFact]
+    public async Task Work_order_detail_includes_the_asset_serial_number()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, site) = await SetupAsync();
+        var asset = (await Ok(await admin.PostAsJsonAsync("/api/assets", new { name = "Press", siteId = site, status = "Active", criticality = "High", warrantyType = "None", serialNumber = "SN-4471" }))).GetProperty("id").GetGuid();
+        var wo = (await Ok(await admin.PostAsJsonAsync("/api/work-orders", new { title = "Check press", type = "Inspection", priority = "Medium", siteId = site, assetId = asset }))).GetProperty("id").GetGuid();
+        var detail = await Ok(await admin.GetAsync($"/api/work-orders/{wo}"));
+        Assert.Equal("SN-4471", detail.GetProperty("asset").GetProperty("serialNumber").GetString()); // printed on the job card
+    }
 }

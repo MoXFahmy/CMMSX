@@ -123,7 +123,7 @@ public static class WorkOrderEndpoints
             {
                 w.Id, w.Number, w.Title, w.Description, w.Type, w.Priority, w.Status, w.HoldReason,
                 w.SiteId, Site = new { w.Site!.Id, w.Site.Name }, w.LocationId, LocationTrail = trail,
-                w.AssetId, Asset = w.Asset is null ? null : new { w.Asset.Id, w.Asset.AssetNumber, w.Asset.Name, w.Asset.Status, w.Asset.Criticality, w.Asset.NotesToTechnician,
+                w.AssetId, Asset = w.Asset is null ? null : new { w.Asset.Id, w.Asset.AssetNumber, w.Asset.Name, w.Asset.SerialNumber, w.Asset.Status, w.Asset.Criticality, w.Asset.NotesToTechnician,
                     w.Asset.WarrantyType, w.Asset.WarrantyExpiresOn, UnderWarranty = w.Asset.WarrantyType != FourC.Cmms.Core.Assets.WarrantyType.None && w.Asset.WarrantyExpiresOn >= Today },
                 w.RequestedBy, w.PreventionNotes,
                 w.TradeId, TradeName = w.Trade?.Name, w.FailureCodeId, FailureCode = w.FailureCode is null ? null : new { w.FailureCode.Code, w.FailureCode.Name },

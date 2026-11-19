@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActionIcon, Alert, Anchor, Badge, Breadcrumbs, Button, Card, Center, Checkbox, Grid, Group, Loader, Menu, Modal, NumberInput, Progress, Select, SimpleGrid, Stack, Switch, Table, Tabs, Text, TextInput, Textarea, Timeline, Title } from '@mantine/core';
+import { ActionIcon, Alert, Anchor, Badge, Breadcrumbs, Button, Card, Center, Checkbox, Grid, Group, Loader, Menu, Modal, NumberInput, Progress, Select, SimpleGrid, Stack, Switch, Table, Tabs, Text, TextInput, Textarea, Timeline, Title, Tooltip } from '@mantine/core';
 import { DateInput, DateTimePicker } from '@mantine/dates';
 import { useDisclosure } from '@mantine/hooks';
 import { useForm } from '@mantine/form';
@@ -7,7 +7,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
-import { IconAlertTriangle, IconCheck, IconCopy, IconDots, IconEdit, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconCopy, IconDots, IconEdit, IconPrinter, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp } from '@tabler/icons-react';
 import { ApiError, del, get, post, put } from '@/api/client';
 import { HOLD_REASONS, type ActivityItem, type Lookup, type WorkOrderDetail, type WorkOrderStatus } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -69,6 +69,8 @@ export function WorkOrderDetailPage() {
           {w.request && <> · <Anchor component={Link} to={`/work-requests?open=${w.request.id}`} fz="sm">{t('wo.fromRequest', { number: w.request.number })}</Anchor></>}
           {w.pm && <> · <Anchor component={Link} to={`/pm/schedules/${w.pm.id}`} fz="sm">{t('pm.fromPm', { code: w.pm.code })}</Anchor></>}</>}
         actions={<>
+          <Tooltip label={t('wo.printJobCard')}><ActionIcon variant="default" size="lg" component={Link} to={`/work-orders/${w.id}/print`} target="_blank" aria-label={t('wo.printJobCard')}>
+            <IconPrinter size={16} /></ActionIcon></Tooltip>
           {primary.map((s) => { const Icon = transitionIcon[s] ?? IconCheck; return (
             <Button key={s} leftSection={<Icon size={16} />} variant={s === 'Completed' || (s === 'InProgress' && w.status !== 'Completed') ? 'filled' : 'default'}
               color={s === 'Completed' ? 'teal' : undefined} onClick={() => move(s)}>{label(s)}</Button>); })}

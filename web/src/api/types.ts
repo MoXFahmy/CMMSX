@@ -110,7 +110,7 @@ export type WorkOrderListItem = {
 export type WorkOrderDetail = {
   id: string; number: string; title: string; description?: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
   siteId: string; site: { id: string; name: string }; locationId?: string; locationTrail: { id: string; name: string }[];
-  assetId?: string; asset?: { id: string; assetNumber: string; name: string; status: AssetStatus; criticality: Criticality; notesToTechnician?: string; warrantyType: WarrantyType; warrantyExpiresOn?: string; underWarranty: boolean };
+  assetId?: string; asset?: { id: string; assetNumber: string; name: string; serialNumber?: string; status: AssetStatus; criticality: Criticality; notesToTechnician?: string; warrantyType: WarrantyType; warrantyExpiresOn?: string; underWarranty: boolean };
   requestedBy?: string; preventionNotes?: string;
   tradeId?: string; tradeName?: string; failureCodeId?: string; failureCode?: { code: string; name: string };
   assignees: { employeeId: string; fullName: string; code: string }[]; plannedStart?: string; dueDate?: string; estimatedHours?: number;

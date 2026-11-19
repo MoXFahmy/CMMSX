@@ -516,7 +516,8 @@
     "sourceDirect": "Raised directly",
     "clearFilters": "Clear these filters",
     "duplicate": "Duplicate",
-    "duplicateTitle": "New work order (copy of {{number}})"
+    "duplicateTitle": "New work order (copy of {{number}})",
+    "printJobCard": "Print job card"
   },
   "wr": {
     "title": "Work requests",
@@ -982,5 +983,18 @@
     "lowStock_one": "{{count}} part at or below re-order level",
     "lowStock_other": "{{count}} parts at or below re-order level",
     "none": "Nothing needs attention"
+  },
+  "jobCard": {
+    "title": "Job card",
+    "printed": "Printed {{date}}",
+    "serial": "Serial number",
+    "assetCount_one": "{{count}} asset",
+    "assetCount_other": "{{count}} assets",
+    "step": "Step",
+    "part": "Part",
+    "completion": "Completion",
+    "technician": "Technician",
+    "supervisor": "Supervisor / customer",
+    "signDate": "Date"
   }
 }
