@@ -41,7 +41,7 @@ export function NotificationSettings() {
         ? <Alert color="teal" icon={<IconMail size={18} />}>{t('email.sendingFrom', { from: status.from })}</Alert>
         : <Alert color="yellow" icon={<IconMail size={18} />} title={t('email.notSetUpTitle')}>{t('email.notSetUpBody')}</Alert>}
       <Card><Stack>
-        <Group justify="space-between" wrap="nowrap" align="flex-start">
+        <Group justify="space-between" align="flex-start">
           <div><Title order={5}>{t('email.title')}</Title><Text c="dimmed" fz="sm">{t('email.hint')}</Text></div>
           <Button variant="light" leftSection={<IconSend size={16} />} onClick={sendTest} disabled={!status.available}>{t('email.sendTest')}</Button>
         </Group>
