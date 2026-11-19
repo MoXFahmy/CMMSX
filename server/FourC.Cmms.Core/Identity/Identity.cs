@@ -15,6 +15,8 @@ public class AppUser : IdentityUser<Guid>
     public string? LegacyRef { get; set; }
     /// <summary>Largest purchase order (base currency) this user may approve; null = no limit (legacy authorization limit).</summary>
     public decimal? PurchaseApprovalLimit { get; set; }
+    /// <summary>E-mail events (keys from <c>EmailEvents</c>) this user doesn't want.</summary>
+    public List<string> EmailOptOuts { get; set; } = [];
     public List<UserRole> Roles { get; set; } = [];
 }
 

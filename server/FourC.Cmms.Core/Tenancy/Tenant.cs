@@ -41,6 +41,11 @@ public class TenantSettings
     public string DateFormat { get; set; } = "yyyy-MM-dd";
     public string TimeZone { get; set; } = "UTC";
 
+    /// <summary>Send e-mail notifications at all (off until an administrator switches it on).</summary>
+    public bool EmailEnabled { get; set; }
+    /// <summary>E-mail events (keys from <c>EmailEvents</c>) the organization switched off.</summary>
+    public List<string> DisabledEmails { get; set; } = [];
+
     /// <summary>PM generation skips occurrences of single-asset schedules (and drops round assets) whose asset has one of these statuses.</summary>
     public List<AssetStatus> PmSkipAssetStatuses { get; set; } = [];
     /// <summary>PM work landing on these weekdays starts on the next working day; the schedule keeps its own dates.</summary>
