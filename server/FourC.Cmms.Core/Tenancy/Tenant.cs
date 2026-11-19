@@ -1,3 +1,4 @@
+using FourC.Cmms.Core.Assets;
 using FourC.Cmms.Core.Common;
 
 namespace FourC.Cmms.Core.Tenancy;
@@ -31,6 +32,13 @@ public class TenantSettings
     public string Currency { get; set; } = "USD";
     public string DateFormat { get; set; } = "yyyy-MM-dd";
     public string TimeZone { get; set; } = "UTC";
+
+    /// <summary>PM generation skips occurrences of single-asset schedules (and drops round assets) whose asset has one of these statuses.</summary>
+    public List<AssetStatus> PmSkipAssetStatuses { get; set; } = [];
+    /// <summary>PM work landing on these weekdays starts on the next working day; the schedule keeps its own dates.</summary>
+    public List<DayOfWeek> PmNonWorkingDays { get; set; } = [];
+    /// <summary>Scheduled-basis PM occurrences are skipped while an earlier work order of the same schedule is still open.</summary>
+    public bool PmNoStacking { get; set; }
 }
 
 /// <summary>Customers rename hierarchy levels (e.g. legacy "Department" shown as "Site").</summary>

@@ -1,6 +1,7 @@
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Pm;
+using FourC.Cmms.Core.Tenancy;
 using FourC.Cmms.Core.Work;
 using Microsoft.EntityFrameworkCore;
 
@@ -28,6 +29,7 @@ public static class PmGenerator
         if (siteId is not null) q = q.Where(s => s.SiteId == siteId);
         if (ids is { Count: > 0 }) q = q.Where(s => ids.Contains(s.Id));
         var candidates = await q.OrderBy(s => s.NextDueDate).Select(s => s.Id).ToListAsync(ct);
+        var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var results = new List<Result>();
         foreach (var id in candidates)
         {
@@ -35,7 +37,7 @@ public static class PmGenerator
             {
                 var query = db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Asset).Include(s => s.Assets).Where(s => s.Id == id);
                 var s = dryRun ? await query.AsNoTracking().FirstAsync(ct) : await query.FirstAsync(ct);
-                results.AddRange(await GenerateForAsync(db, ctx, s, until ?? today.AddDays(Math.Max(0, s.LeadDays)), dryRun, ct));
+                results.AddRange(await GenerateForAsync(db, ctx, s, until ?? today.AddDays(Math.Max(0, s.LeadDays)), dryRun, settings, ct));
             }
             catch (Exception ex) when (ex is DbUpdateException or DbUpdateConcurrencyException)
             {
@@ -54,14 +56,15 @@ public static class PmGenerator
         return results;
     }
 
-    private static async Task<List<Result>> GenerateForAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, DateOnly limit, bool dryRun, CancellationToken ct)
+    private static async Task<List<Result>> GenerateForAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, DateOnly limit, bool dryRun, TenantSettings settings,
+        CancellationToken ct)
     {
         var results = new List<Result>();
         if (s.NextDueDate is not { } first || first > limit) return results;
         if (s.Basis == PmBasis.Actual && await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && Active.Contains(w.Status), ct))
             return [new Result(s.Id, s.Code, s.Name, first, null, s.Asset?.AssetNumber, null, null, "Previous PM work order is still open")];
         IReadOnlyList<RoundAsset>? round = null;
-        if (s.Assets.Count > 0 && (round = await RoundAssetsAsync(db, s, ct)).Count == 0)
+        if (s.Assets.Count > 0 && (round = await RoundAssetsAsync(db, s, ct, settings.PmSkipAssetStatuses)).Count == 0)
             return [new Result(s.Id, s.Code, s.Name, first, null, null, null, null, NoActiveAssets)];
         var taskIds = s.ExtraTasks.Select(x => x.PmTaskId).Append(s.PmTaskId).Distinct().ToList();
         var tasks = await db.PmTasks.AsNoTracking().Include(t => t.Steps).Where(t => taskIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
@@ -71,7 +74,18 @@ public static class PmGenerator
             var task = tasks.GetValueOrDefault(PmCalendar.TaskFor(s, count)) ?? tasks.GetValueOrDefault(s.PmTaskId);
             WorkOrder? wo = null;
             var exists = await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && w.PmDueDate == due, ct);
-            if (!exists && !dryRun && task is not null) wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct, round);
+            var skip = exists || task is null ? null : await SkipReasonAsync(db, s, settings, ct);
+            if (skip is not null)
+            {
+                // A skipped occurrence moves the schedule on but is not a generation, so "every Nth" tasks are not lost.
+                results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, null, null, skip));
+                s.LastDueDate = due;
+                s.NextDueDate = PmCalendar.Next(s, due);
+                if (!dryRun) await db.SaveChangesAsync(ct);
+                if (s.Basis == PmBasis.Actual) break;
+                continue;
+            }
+            if (!exists && !dryRun && task is not null) wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct, round, settings.PmNonWorkingDays);
             results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, wo?.Id, wo?.Number,
                 task is null ? "PM task not found" : exists ? "Already generated" : null));
             s.GenerationCount = count; s.LastDueDate = due; s.LastGeneratedAt = DateTimeOffset.UtcNow; s.LastWorkOrderId = wo?.Id ?? s.LastWorkOrderId;
@@ -86,16 +100,34 @@ public static class PmGenerator
 
     public const string NoActiveAssets = "No active assets in the list";
 
+    /// <summary>Why the organization's PM rules skip this occurrence, or null to generate it.</summary>
+    private static async Task<string?> SkipReasonAsync(CmmsDbContext db, PmSchedule s, TenantSettings settings, CancellationToken ct)
+    {
+        if (s.Assets.Count == 0 && s.Asset is { } a && settings.PmSkipAssetStatuses.Contains(a.Status))
+            return $"Skipped: the asset is {StatusLabel(a.Status)}";
+        if (settings.PmNoStacking && s.Basis == PmBasis.Scheduled && await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && Active.Contains(w.Status), ct))
+            return "Skipped: the previous work order is still open";
+        return null;
+    }
+
+    private static string StatusLabel(Core.Assets.AssetStatus st) => st switch
+    {
+        Core.Assets.AssetStatus.UnderRepair => "Under repair",
+        Core.Assets.AssetStatus.InStorage => "In storage",
+        _ => st.ToString(),
+    };
+
     /// <param name="round">For a round schedule, its covered assets if already loaded; loaded here otherwise.</param>
+    /// <param name="nonWorkingDays">The work starts on the first other day; <paramref name="due"/> stays the occurrence's key.</param>
     public static async Task<WorkOrder> CreateWorkOrderAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, PmTask task, DateOnly? due, string? trigger, CancellationToken ct,
-        IReadOnlyList<RoundAsset>? round = null)
+        IReadOnlyList<RoundAsset>? round = null, IReadOnlyCollection<DayOfWeek>? nonWorkingDays = null)
     {
         if (s.Assets.Count > 0) round ??= await RoundAssetsAsync(db, s, ct);
         else round = null;
         var assignees = s.AssigneeIds.Count == 0 ? [] : await db.Employees.Where(e => s.AssigneeIds.Contains(e.Id) && e.IsActive).Select(e => e.Id).ToListAsync(ct);
         var description = string.Join("\n\n", new[] { task.Description ?? s.Description, task.SafetyNotes is { Length: > 0 } sn ? $"Safety: {sn}" : null, trigger }.Where(x => !string.IsNullOrWhiteSpace(x)));
         var title = task.Id == s.PmTaskId ? s.Name : $"{s.Name} — {task.Name}";
-        var start = due ?? Today;
+        var start = PmCalendar.NextWorkingDay(due ?? Today, nonWorkingDays ?? []);
         var steps = task.Steps.OrderBy(x => x.Sequence).Select(x => x.Description).ToList();
         // A round's work order has no single asset: it lists the covered assets and repeats the steps for each of them.
         var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description.Length == 0 ? null : description, WorkType.Preventive, s.Priority,
@@ -112,14 +144,15 @@ public static class PmGenerator
     }
 
     /// <summary>The assets a round's next work order covers (deleted assets drop out through the query filter).</summary>
-    private static async Task<IReadOnlyList<RoundAsset>> RoundAssetsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct)
+    private static async Task<IReadOnlyList<RoundAsset>> RoundAssetsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct,
+        IReadOnlyCollection<Core.Assets.AssetStatus>? skipStatuses = null)
     {
         var sequence = s.Assets.ToDictionary(a => a.AssetId, a => a.Sequence);
         var ids = sequence.Keys.ToList();
         var rows = await db.Assets.AsNoTracking().Where(a => ids.Contains(a.Id))
             .Select(a => new { a.Id, a.SiteId, a.Status, a.LocationId, Path = a.Location != null ? a.Location.Path : null }).ToListAsync(ct);
         return PmRound.Covered(rows.Select(a => new RoundAsset(a.Id, sequence[a.Id], a.SiteId, a.Path, a.LocationId,
-            a.Status is not (Core.Assets.AssetStatus.Disposed or Core.Assets.AssetStatus.Inactive))), s.SiteId);
+            a.Status is not (Core.Assets.AssetStatus.Disposed or Core.Assets.AssetStatus.Inactive) && skipStatuses?.Contains(a.Status) != true)), s.SiteId);
     }
 
     /// <summary>"Actual" schedules restart from the completion (or cancellation) of their latest work order.</summary>

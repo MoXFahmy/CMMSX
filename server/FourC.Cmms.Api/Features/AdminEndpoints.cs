@@ -134,7 +134,8 @@ public static class AdminEndpoints
         {
             var v = new Validator().Required("name", input.Name, "Organization name", 200)
                 .MaxLength("settings.assetNumberPrefix", input.Settings.AssetNumberPrefix, "Asset number prefix", 20)
-                .When(input.Settings.AssetNumberPadding is < 1 or > 12, "settings.assetNumberPadding", "Padding must be between 1 and 12.");
+                .When(input.Settings.AssetNumberPadding is < 1 or > 12, "settings.assetNumberPadding", "Padding must be between 1 and 12.")
+                .When(input.Settings.PmNonWorkingDays.Distinct().Count() >= 7, "settings.pmNonWorkingDays", "Leave at least one working day.");
             foreach (var (k, val) in new[] { ("site", input.Settings.Terminology.Site), ("location", input.Settings.Terminology.Location), ("asset", input.Settings.Terminology.Asset) })
                 v.Required($"settings.terminology.{k}", val, "Label", 40);
             if (!v.IsValid) return v.Problem();
