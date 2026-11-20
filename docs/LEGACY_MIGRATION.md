@@ -77,6 +77,7 @@ docker run --rm --init --memory 4g --network cmmsx_default -v cmmsx-importer:/ou
 | `workorders.Notes` | A comment on the work order |
 | `WOStatusAudit` | Status history (who and when). Consecutive 4CSQL statuses that map to the same cloud status are folded into one change |
 | `pmchecklist` + `checklistelements` | PM tasks with ordered sub-tasks |
+| `checklistInv` | PM task parts lists (part and quantity per task; planned on every generated work order). Rows whose task or part isn't found are skipped and counted in a warning |
 | `pmschedule` | PM schedules. `TypePMgen` 1/2 → fixed interval by scheduled/actual date; 3 → nth weekday (`WeekofMonth` 0–4 → 1st–last, `DayofWeek` VB 1 = Sunday); 4 → fixed date; 5 → fixed date with whole-month work period. `TypePM` 1 → the asset, 2 → the location, **3 → the section** (`SectionNo`, i.e. the department's Area location; a `PhyLocationNo`, when also set, wins). Interval = `FreqUnits` × `Frequency` days (weeks and years kept as such; 4CSQL "months" of 28 days are kept as exact days). `PeriodDays` → work period, `NextDate` → next due, `PMCounter` → generation count |
 | `pmschedule.IsMultipleAsset` + `PMScheduleAssets` | **PM round** (multi-asset PM): one schedule covering the listed assets in `SeqNo` order; each cycle generates one work order with the task's steps repeated per asset. A list spanning several sites is split into one round per site, coded `<PM no>-<site>` (4 in MEG), and each historical work order links to the part for its site. Leftover `PMScheduleAssets` rows on schedules without the flag are ignored |
 | `multiplepm` | Multiple-PM rules (task + every Nth) |
@@ -125,6 +126,6 @@ orders, unknown parts and work orders).
 
 ## Not yet imported
 
-User logins (invite users afresh), PM materials, attachments (`ExtFiles`: 60,741 rows in MEG), purchase-order receiving
+User logins (invite users afresh), attachments (`ExtFiles`: 60,741 rows in MEG), purchase-order receiving
 log (`Trans`; receipts come from `receive`), cost centres, per-step acceptable limits (`workorderelements.aLimits`), and
 the legacy report definitions.

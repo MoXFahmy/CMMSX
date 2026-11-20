@@ -117,10 +117,14 @@ export function WorkOrderPrintPage() {
         <div>
           <Title order={5} mb={6}>{t('wo.parts')}</Title>
           <Table withTableBorder withColumnBorders verticalSpacing={4}>
-            <Table.Thead><Table.Tr><Table.Th>{t('jobCard.part')}</Table.Th><Table.Th ta="right">{t('wo.qty')}</Table.Th></Table.Tr></Table.Thead>
+            <Table.Thead><Table.Tr><Table.Th>{t('jobCard.part')}</Table.Th><Table.Th ta="right">{t('plan.planned')}</Table.Th><Table.Th ta="right">{t('plan.used')}</Table.Th></Table.Tr></Table.Thead>
             <Table.Tbody>
-              {parts.map((p) => <Table.Tr key={p.id}><Table.Td>{p.label}</Table.Td><Table.Td ta="right">{fmtQty(p.qty)} {p.unit}</Table.Td></Table.Tr>)}
-              {blanks(2)}
+              {/* Planned parts first, with room to write what was used; then parts issued without a plan. */}
+              {w.plannedParts.map((p) => <Table.Tr key={p.id}><Table.Td>{p.partNumber} · {p.partName}</Table.Td><Table.Td ta="right">{fmtQty(p.quantity)} {p.unitOfMeasure}</Table.Td><Table.Td /></Table.Tr>)}
+              {parts.filter((p) => !w.plannedParts.some((x) => x.partId === p.id)).map((p) => (
+                <Table.Tr key={p.id}><Table.Td>{p.label}</Table.Td><Table.Td ta="right">—</Table.Td><Table.Td ta="right">{fmtQty(p.qty)} {p.unit}</Table.Td></Table.Tr>
+              ))}
+              {blanks(3)}
             </Table.Tbody>
           </Table>
         </div>

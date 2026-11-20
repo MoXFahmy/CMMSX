@@ -1,10 +1,13 @@
 export class ApiError extends Error {
   status: number;
   fieldErrors: Record<string, string>;
-  constructor(status: number, message: string, fieldErrors: Record<string, string> = {}) {
+  /** The parsed error body, for answers that carry more than a message (e.g. the reserved-stock warning). */
+  body?: unknown;
+  constructor(status: number, message: string, fieldErrors: Record<string, string> = {}, body?: unknown) {
     super(message);
     this.status = status;
     this.fieldErrors = fieldErrors;
+    this.body = body;
   }
 }
 
@@ -27,7 +30,7 @@ async function parseError(res: Response): Promise<ApiError> {
   const fieldErrors: Record<string, string> = {};
   for (const [k, v] of Object.entries(body.errors ?? {})) fieldErrors[k.charAt(0).toLowerCase() + k.slice(1)] = v.join(' ');
   const message = res.status === 403 ? 'You do not have permission to do this.' : body.title ?? `Request failed (${res.status})`;
-  return new ApiError(res.status, message, fieldErrors);
+  return new ApiError(res.status, message, fieldErrors, body);
 }
 
 export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {

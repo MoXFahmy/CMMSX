@@ -104,6 +104,30 @@ public class WorkOrderAssignee
     public Guid WorkOrderId { get; set; }
     public Guid EmployeeId { get; set; }
     public Employee? Employee { get; set; }
+    /// <summary>Hours planned for this technician on the job (optional).</summary>
+    public decimal? PlannedHours { get; set; }
+}
+
+/// <summary>
+/// A part the job needs, planned before anyone goes to the store. While the work order is open, what is not yet issued is
+/// reserved in <see cref="StoreId"/> (see <see cref="Inventory.Reservations"/>); the reserved figure itself is never stored.
+/// </summary>
+public class WorkOrderPart : Entity, ITenantOwned, IAuditable
+{
+    public Guid TenantId { get; set; }
+    public Guid WorkOrderId { get; set; }
+    public Guid PartId { get; set; }
+    public Inventory.Part? Part { get; set; }
+    /// <summary>Where the stock is reserved; null until a store is chosen (reserves nothing).</summary>
+    public Guid? StoreId { get; set; }
+    public Inventory.Store? Store { get; set; }
+    /// <summary>Planned quantity, in the part's unit.</summary>
+    public decimal Quantity { get; set; }
+    public string? Notes { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public Guid? CreatedById { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
+    public Guid? UpdatedById { get; set; }
 }
 
 public class WorkOrderTask : Entity, ITenantOwned

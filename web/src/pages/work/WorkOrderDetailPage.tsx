@@ -20,6 +20,7 @@ import { confirmDelete } from '@/components/confirm';
 import { StockTxModal } from '@/components/StockTxModal';
 import { TxTypeBadge } from '@/components/InventoryBadges';
 import { fmtDate, fmtDateTime, fmtMoney, fmtPrice, fmtQty, fromNow, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { PlannedHoursCard, PlannedPartsCard, PlanVsActualCard } from './WorkOrderPlanning';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={2}><Text fz="xs" c="dimmed">{label}</Text><Text fz="sm" fw={500} style={{ whiteSpace: 'pre-wrap' }}>{children === undefined || children === null || children === '' ? '—' : children}</Text></Stack>;
@@ -49,6 +50,11 @@ export function WorkOrderDetailPage() {
   };
   const locked = w.status === 'Closed' || w.status === 'Cancelled';
   const canExec = can(P.woExecute) && !locked;
+  // The plan (parts and hours) can change while the work is open, by people who edit work orders and see inventory.
+  const isOpen = w.status === 'Open' || w.status === 'InProgress' || w.status === 'OnHold';
+  const canPlan = can(P.woEdit) && can(P.inventoryView) && isOpen;
+  // Planned hours are part of editing the work order and need no inventory permission.
+  const canPlanHours = can(P.woEdit) && isOpen;
   const move = async (to: WorkOrderStatus) => {
     if (to === 'Completed') return complete.open();
     if (to === 'OnHold') return hold.open();
@@ -171,9 +177,9 @@ export function WorkOrderDetailPage() {
           </Grid>
         </Tabs.Panel>
         <Tabs.Panel value="tasks"><TasksPanel w={w} canExec={canExec} onChange={refresh} /></Tabs.Panel>
-        <Tabs.Panel value="labor"><LaborPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Tabs.Panel>
-        <Tabs.Panel value="parts"><WoPartsPanel w={w} canIssue={can(P.inventoryTransact) && !locked} canOrder={can(P.purchasingCreate) && !locked} onChange={refresh} currency={currency} /></Tabs.Panel>
-        <Tabs.Panel value="costs"><CostsPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Tabs.Panel>
+        <Tabs.Panel value="labor"><Stack><PlannedHoursCard w={w} canPlan={canPlanHours} onChange={refresh} currency={currency} /><LaborPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Stack></Tabs.Panel>
+        <Tabs.Panel value="parts"><WoPartsPanel w={w} canPlan={canPlan} canIssue={can(P.inventoryTransact) && !locked} canOrder={can(P.purchasingCreate) && !locked} onChange={refresh} currency={currency} /></Tabs.Panel>
+        <Tabs.Panel value="costs"><Stack><PlanVsActualCard w={w} currency={currency} /><CostsPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Stack></Tabs.Panel>
         <Tabs.Panel value="activity"><ActivityPanel id={w.id} /></Tabs.Panel>
         <Tabs.Panel value="files"><Card><Attachments entityType="WorkOrder" entityId={w.id} canEdit={canExec} /></Card></Tabs.Panel>
       </Tabs>
@@ -305,23 +311,30 @@ function LaborPanel({ w, canExec, onChange, currency }: { w: WorkOrderDetail; ca
   );
 }
 
-function WoPartsPanel({ w, canIssue, canOrder, onChange, currency }: { w: WorkOrderDetail; canIssue: boolean; canOrder: boolean; onChange: () => Promise<void>; currency: string }) {
+function WoPartsPanel({ w, canPlan, canIssue, canOrder, onChange, currency }: { w: WorkOrderDetail; canPlan: boolean; canIssue: boolean; canOrder: boolean; onChange: () => Promise<void>; currency: string }) {
   const { t } = useTranslation();
   const [kind, setKind] = useState<'issue' | 'return' | null>(null);
   const [part, setPart] = useState<{ id: string; partNumber: string; name: string } | null>(null);
+  // Issuing a planned line starts from its store and what it still reserves.
+  const [preset, setPreset] = useState<{ storeId?: string | null; quantity?: number }>({});
+  const open = (k: 'issue' | 'return', p: { id: string; partNumber: string; name: string } | null, x: { storeId?: string | null; quantity?: number } = {}) => { setPart(p); setPreset(x); setKind(k); };
   const net = Object.values(w.parts.reduce<Record<string, { partId: string; partNumber: string; partName: string; unit: string; qty: number; cost: number }>>((a, p) => {
     const x = (a[p.partId] ??= { partId: p.partId, partNumber: p.partNumber, partName: p.partName, unit: p.unitOfMeasure, qty: 0, cost: 0 });
     x.qty += p.quantity; x.cost += p.total; return a;
   }, {}));
   return (
     <Stack>
+      {(canPlan || w.plannedParts.length > 0) && (
+        <PlannedPartsCard w={w} canPlan={canPlan} canIssue={canIssue} onChange={onChange} currency={currency}
+          onIssue={(l) => open('issue', { id: l.partId, partNumber: l.partNumber, name: l.partName }, { storeId: l.storeId, quantity: l.reserved })} />
+      )}
       <Card p={0}>
         <Group justify="space-between" p="md" wrap="wrap">
           <Title order={5}>{t('wo.parts')} · {fmtPrice(w.totals.partsCost, currency)}</Title>
           <Group gap="xs">
             {canOrder && <Button size="xs" variant="default" component={Link} to={`/purchasing/orders/new?workOrderId=${w.id}`}>{t('wo.orderForJob')}</Button>}
-            {canIssue && <Button size="xs" variant="default" leftSection={<IconArrowBackUp size={14} />} disabled={!net.some((n) => n.qty > 0)} onClick={() => { setPart(null); setKind('return'); }}>{t('inv.tx.return')}</Button>}
-            {canIssue && <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => { setPart(null); setKind('issue'); }}>{t('wo.issuePart')}</Button>}
+            {canIssue && <Button size="xs" variant="default" leftSection={<IconArrowBackUp size={14} />} disabled={!net.some((n) => n.qty > 0)} onClick={() => open('return', null)}>{t('inv.tx.return')}</Button>}
+            {canIssue && <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => open('issue', null)}>{t('wo.issuePart')}</Button>}
           </Group>
         </Group>
         <Table.ScrollContainer minWidth={640}>
@@ -333,7 +346,7 @@ function WoPartsPanel({ w, canIssue, canOrder, onChange, currency }: { w: WorkOr
                 <Table.Tr key={n.partId}>
                   <Table.Td><Anchor component={Link} to={`/inventory/parts/${n.partId}`} fz="sm" fw={600}>{n.partNumber}</Anchor><Text fz="xs" c="dimmed">{n.partName}</Text></Table.Td>
                   <Table.Td ta="right">{fmtQty(n.qty)} {n.unit}</Table.Td><Table.Td ta="right">{fmtPrice(n.cost, currency)}</Table.Td>
-                  <Table.Td ta="right">{canIssue && n.qty > 0 && <Button size="compact-xs" variant="subtle" onClick={() => { setPart({ id: n.partId, partNumber: n.partNumber, name: n.partName }); setKind('return'); }}>{t('inv.tx.return')}</Button>}</Table.Td>
+                  <Table.Td ta="right">{canIssue && n.qty > 0 && <Button size="compact-xs" variant="subtle" onClick={() => open('return', { id: n.partId, partNumber: n.partNumber, name: n.partName })}>{t('inv.tx.return')}</Button>}</Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>
@@ -352,7 +365,7 @@ function WoPartsPanel({ w, canIssue, canOrder, onChange, currency }: { w: WorkOr
         </Card>
       )}
       {kind && <StockTxModal kind={kind} opened onClose={() => setKind(null)} onDone={onChange}
-        defaults={{ workOrderId: w.id, workOrder: { id: w.id, number: w.number, title: w.title }, partId: part?.id, part }} />}
+        defaults={{ workOrderId: w.id, workOrder: { id: w.id, number: w.number, title: w.title }, partId: part?.id, part, storeId: preset.storeId, quantity: preset.quantity }} />}
     </Stack>
   );
 }

@@ -17,7 +17,8 @@ import { AssetPicker } from '@/components/AssetPicker';
 import { useHierarchy } from '@/components/LocationPicker';
 import { confirmDelete } from '@/components/confirm';
 import { generateNow } from './generateNow';
-import { fmtDate, fmtDateTime, fmtNumber, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { PartPicker } from '@/components/PartPicker';
+import { fmtDate, fmtDateTime, fmtMoney, fmtNumber, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { BulkBar, FilterChips, ListTools, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
 const TABS = ['schedules', 'tasks', 'generate', 'forecast', 'meters'] as const;
@@ -129,7 +130,10 @@ function TasksTab() {
   const [opened, m] = useDisclosure();
   const [editing, setEditing] = useState<PmTaskDetail | null>(null);
   const [step, setStep] = useState('');
-  const blank = { code: '', name: '', description: '', tradeId: null as string | null, estimatedHours: '' as number | '', safetyNotes: '', steps: [] as string[], isActive: true };
+  const blank = { code: '', name: '', description: '', tradeId: null as string | null, estimatedHours: '' as number | '', safetyNotes: '', steps: [] as string[], isActive: true,
+    parts: [] as TaskPartRow[] };
+  const { me } = useAuth();
+  const currency = me?.tenant.settings.currency ?? 'USD';
   const form = useForm({ initialValues: blank });
   const open = async (id: string | null) => {
     form.clearErrors(); setStep('');
@@ -137,14 +141,15 @@ function TasksTab() {
     try {
       const x = await get<PmTaskDetail>(`/pm-tasks/${id}`);
       setEditing(x);
-      form.setValues({ code: x.code, name: x.name, description: x.description ?? '', tradeId: x.tradeId ?? null, estimatedHours: x.estimatedHours ?? '', safetyNotes: x.safetyNotes ?? '', steps: x.steps, isActive: x.isActive });
+      form.setValues({ code: x.code, name: x.name, description: x.description ?? '', tradeId: x.tradeId ?? null, estimatedHours: x.estimatedHours ?? '', safetyNotes: x.safetyNotes ?? '', steps: x.steps, isActive: x.isActive,
+        parts: x.parts.map((p) => ({ partId: p.partId, label: `${p.partNumber} · ${p.partName}`, unit: p.unitOfMeasure, quantity: p.quantity, unitCost: p.unitCost })) });
       m.open();
     } catch (e) { notifyError(e); }
   };
   const addStep = () => { if (step.trim()) { form.insertListItem('steps', step.trim()); setStep(''); } };
   const move = (i: number, d: number) => { const s = [...form.values.steps]; const j = i + d; if (j < 0 || j >= s.length) return; [s[i], s[j]] = [s[j], s[i]]; form.setFieldValue('steps', s); };
   const submit = form.onSubmit(async (v) => {
-    const body = { ...v, estimatedHours: v.estimatedHours === '' ? null : v.estimatedHours, rowVersion: editing?.rowVersion };
+    const body = { ...v, estimatedHours: v.estimatedHours === '' ? null : v.estimatedHours, rowVersion: editing?.rowVersion, parts: v.parts.map((p) => ({ partId: p.partId, quantity: p.quantity || 0 })) };
     try { if (editing) await put(`/pm-tasks/${editing.id}`, body); else await post('/pm-tasks', body); notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['pm-tasks'] }); m.close(); }
     catch (e) { handleFormError(form, e); }
   });
@@ -186,6 +191,25 @@ function TasksTab() {
             <Group gap="xs"><TextInput style={{ flex: 1 }} placeholder={t('pm.addStep')} value={step} onChange={(e) => setStep(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addStep(); } }} />
               <Button variant="light" leftSection={<IconPlus size={14} />} onClick={addStep}>{t('common.create')}</Button></Group>
           </Stack>
+          <Stack gap={4}>
+            <Text fz="sm" fw={500}>{t('pm.parts')} · {fmtMoney(form.values.parts.reduce((a, p) => a + Number(p.quantity || 0) * p.unitCost, 0), currency)}</Text>
+            <Text fz="xs" c="dimmed">{t('pm.partsHint')}</Text>
+            {form.values.parts.map((p, i) => (
+              <Group key={p.partId} gap={6} wrap="nowrap">
+                <Text fz="sm" style={{ flex: 1 }} lineClamp={1}>{p.label}</Text>
+                <NumberInput size="xs" w={130} min={0} decimalScale={3} suffix={` ${p.unit}`} aria-label={t('inv.quantity')} {...form.getInputProps(`parts.${i}.quantity`)} />
+                <ActionIcon variant="subtle" color="red" size="sm" aria-label={t('common.delete')} onClick={() => form.removeListItem('parts', i)}><IconTrash size={14} /></ActionIcon>
+              </Group>
+            ))}
+            {editable && (
+              <PartPicker placeholder={t('pm.addPart')} value={null} withStock={false}
+                onChange={(id, part) => {
+                  if (!id || !part || form.values.parts.some((x) => x.partId === id)) return;
+                  form.insertListItem('parts', { partId: id, label: `${part.partNumber} · ${part.name}`, unit: part.unitOfMeasure, quantity: 1, unitCost: part.averageCost });
+                }} />
+            )}
+            {form.errors.parts && <Text fz="xs" c="red">{form.errors.parts}</Text>}
+          </Stack>
           <Checkbox label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
           <Group justify="space-between">
             {editing && editable ? <Button variant="subtle" color="red" onClick={() => confirmDelete(editing.code, async () => { try { await del(`/pm-tasks/${editing.id}`); await qc.invalidateQueries({ queryKey: ['pm-tasks'] }); m.close(); } catch (e) { notifyError(e); } })}>{t('common.delete')}</Button> : <span />}
@@ -196,6 +220,8 @@ function TasksTab() {
     </Card>
   );
 }
+
+type TaskPartRow = { partId: string; label: string; unit: string; quantity: number | ''; unitCost: number };
 
 function GenerateTab() {
   const { t } = useTranslation();
@@ -259,6 +285,9 @@ function ForecastTab() {
     return [...groups.entries()];
   }, [data]);
   const canGenerate = can(P.pmGenerate);
+  const { me } = useAuth();
+  const currency = me?.tenant.settings.currency ?? 'USD';
+  const total = (data ?? []).reduce((a, x) => a + x.cost, 0);
   return (
     <Stack>
       <Card><Group align="flex-end" wrap="wrap">
@@ -266,6 +295,7 @@ function ForecastTab() {
         <DateInput label={t('pm.to')} value={to} onChange={(v) => setTo(v ? new Date(v) : null)} valueFormat="DD MMM YYYY" w={180} />
         <Select label={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={siteId} onChange={setSiteId} clearable placeholder={t('common.all')} w={220} />
         <Text c="dimmed" fz="sm">{isFetching ? t('common.loading') : `${data?.length ?? 0} ${t('pm.schedules').toLowerCase()}`}</Text>
+        {!isFetching && total > 0 && <Text fz="sm" fw={600}>{t('pm.forecastCost', { cost: fmtMoney(total, currency) })}</Text>}
       </Group></Card>
       {weeks.length === 0 && !isFetching && <Card><Text c="dimmed" ta="center">{t('pm.nothingDue')}</Text></Card>}
       {weeks.map(([week, items]) => (
@@ -282,6 +312,7 @@ function ForecastTab() {
                 <Table.Td><Text fz="sm" lineClamp={1}>{x.name}</Text></Table.Td>
                 <Table.Td visibleFrom="sm"><Text fz="sm" c="dimmed" lineClamp={1}>{x.taskName}</Text></Table.Td>
                 <Table.Td visibleFrom="md"><Text fz="sm" c="dimmed">{x.assetNumber ?? x.siteName}</Text></Table.Td>
+                <Table.Td w={110} ta="right"><Text fz="sm" c="dimmed">{x.cost ? fmtMoney(x.cost, currency) : '—'}</Text></Table.Td>
                 {canGenerate && <Table.Td w={130} ta="right">{x.isNext && (
                   <Button size="compact-xs" variant="light" onClick={() => generateNow(x.id, x.date, () => Promise.all([
                     qc.invalidateQueries({ queryKey: ['pm-forecast'] }), qc.invalidateQueries({ queryKey: ['work-orders'] })]))}>{t('pm.generateNow')}</Button>

@@ -88,6 +88,9 @@ function PartsTab() {
     { accessor: 'onHand', title: t('inv.onHand'), textAlign: 'right', noWrap: true, export: [{ key: 'onHand' }, { key: 'unitOfMeasure', title: t('inv.unit') }],
       render: (x) => <Group gap={4} justify="flex-end" wrap="nowrap">{x.low && <Tooltip label={t('inv.atReorder')}><IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" /></Tooltip>}
         <Text fz="sm" fw={x.low ? 600 : undefined} c={x.onHand <= 0 ? 'red' : x.low ? 'orange' : undefined}>{fmtQty(x.onHand)} {x.unitOfMeasure}</Text></Group> },
+    { accessor: 'reserved', title: t('plan.reserved'), textAlign: 'right', noWrap: true, render: (x) => x.reserved ? fmtQty(x.reserved) : <Text c="dimmed" fz="sm">—</Text> },
+    { accessor: 'available', title: t('plan.available'), textAlign: 'right', noWrap: true,
+      render: (x) => <Text fz="sm" c={x.available < 0 ? 'red' : undefined}>{fmtQty(x.available)}</Text> },
     { accessor: 'onOrder', title: t('inv.onOrder'), textAlign: 'right', noWrap: true, render: (x) => x.onOrder ? fmtQty(x.onOrder) : <Text c="dimmed" fz="sm">—</Text> },
     { accessor: 'averageCost', title: t('inv.avgCost'), sortable: true, textAlign: 'right', noWrap: true, render: (x) => fmtPrice(x.averageCost, currency) },
     { accessor: 'value', title: t('inv.value'), textAlign: 'right', noWrap: true, render: (x) => fmtPrice(x.value, currency) },
@@ -96,7 +99,7 @@ function PartsTab() {
     { accessor: 'isCritical', title: t('inv.critical'), noWrap: true, render: (x) => (x.isCritical ? t('common.yes') : t('common.no')) },
     { accessor: 'isActive', title: t('common.status'), noWrap: true, render: (x) => (x.isActive ? t('common.active') : t('common.inactive')) },
   ];
-  const cols = useListColumns('parts', allColumns, { defaultHidden: ['manufacturer', 'group', 'isCritical', 'isActive'] });
+  const cols = useListColumns('parts', allColumns, { defaultHidden: ['reserved', 'manufacturer', 'group', 'isCritical', 'isActive'] });
   const chips: FilterDef[] = [
     { keys: ['search'], label: t('common.search') },
     { keys: ['groupId'], label: t('inv.group'), format: ([v]) => groups?.find((g) => g.id === v)?.name ?? '…' },

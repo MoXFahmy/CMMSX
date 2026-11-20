@@ -118,7 +118,7 @@ export type WorkOrderDetail = {
   assetId?: string; asset?: { id: string; assetNumber: string; name: string; serialNumber?: string; status: AssetStatus; criticality: Criticality; notesToTechnician?: string; warrantyType: WarrantyType; warrantyExpiresOn?: string; underWarranty: boolean };
   requestedBy?: string; preventionNotes?: string;
   tradeId?: string; tradeName?: string; failureCodeId?: string; failureCode?: { code: string; name: string };
-  assignees: { employeeId: string; fullName: string; code: string }[]; plannedStart?: string; dueDate?: string; estimatedHours?: number;
+  assignees: { employeeId: string; fullName: string; code: string; plannedHours?: number | null; hourlyRate?: number | null }[]; plannedStart?: string; dueDate?: string; estimatedHours?: number;
   startedAt?: string; completedAt?: string; closedAt?: string; completionNotes?: string; causeNotes?: string; assetWasDown: boolean; downtimeHours?: number;
   locationNotesToTechnician?: string; request?: { id: string; number: string; requesterName?: string };
   pm?: { id: string; code: string; name: string }; pmDueDate?: string;
@@ -128,9 +128,18 @@ export type WorkOrderDetail = {
   labor: { id: string; employeeId: string; employeeName: string; workDate: string; createdAt: string; hours: number; overtimeHours: number; rate: number; overtimeRate: number; notes?: string; cost: number }[];
   costs: { id: string; description: string; quantity: number; unitCost: number; vendor?: string; reference?: string; total: number; createdAt: string }[];
   parts: WoPartItem[];
+  plannedParts: PlannedPart[];
   totals: { laborHours: number; laborCost: number; partsCost: number; otherCost: number; totalCost: number };
+  planned: { laborHours: number; laborCost: number; partsCost: number; totalCost: number };
   allowedTransitions: WorkOrderStatus[]; isOverdue: boolean; createdAt: string; updatedAt?: string; legacyRef?: string; rowVersion: string;
 };
+/** A part planned on a work order: what is still reserved for it and how short its store is (stock goes to the earliest due job first). */
+export type PlannedPart = {
+  id: string; partId: string; partNumber: string; partName: string; unitOfMeasure: string; storeId?: string | null; storeCode?: string | null;
+  quantity: number; issued: number; reserved: number; short: number; unitCost: number; plannedCost: number; notes?: string | null;
+};
+/** The 409 answer when a stock move would take stock reserved for other work. */
+export type ReservedConflict = { title: string; reserved: { workOrderId: string; workOrderNumber: string; title?: string; moreShort: number }[] };
 export type ActivityItem = { id: string; kind: 'comment' | 'status'; body?: string; from?: WorkOrderStatus; to?: WorkOrderStatus; holdReason?: HoldReason; by?: string; at: string };
 export type WorkRequestListItem = {
   id: string; number: string; title: string; status: WorkRequestStatus; priority: WorkPriority; type: WorkType; siteId: string; siteName: string;
@@ -165,7 +174,11 @@ export const FREQ_UNITS: FrequencyUnit[] = ['Day', 'Week', 'Month', 'Year'];
 export const DAY_NAMES: DayName[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 export type PmTaskListItem = { id: string; code: string; name: string; tradeId?: string; estimatedHours?: number; isActive: boolean; stepCount: number; scheduleCount: number };
-export type PmTaskDetail = { id: string; code: string; name: string; description?: string; tradeId?: string; estimatedHours?: number; safetyNotes?: string; isActive: boolean; steps: string[]; rowVersion: string };
+export type PmTaskPart = { partId: string; partNumber: string; partName: string; unitOfMeasure: string; quantity: number; unitCost: number };
+export type PmTaskDetail = { id: string; code: string; name: string; description?: string; tradeId?: string; estimatedHours?: number; safetyNotes?: string; isActive: boolean; steps: string[];
+  parts: PmTaskPart[]; partsCost: number; rowVersion: string };
+/** Estimated cost of one PM visit: parts at current average cost plus estimated hours at the technicians' average rate. */
+export type VisitCost = { parts: number; labour: number; total: number };
 export type PmScheduleListItem = {
   id: string; code: string; name: string; type: PmScheduleType; basis: PmBasis; isActive: boolean; siteId: string; siteName: string; assetId?: string; assetNumber?: string;
   assetName?: string; locationName?: string; taskCode: string; taskName: string; schedule: string; nextDueDate?: string; nextDueReading?: number; meterUnit?: string;
@@ -184,12 +197,14 @@ export type PmScheduleDetail = {
   meter?: { id: string; code: string; name: string; unit: string; currentReading?: number }; meterTrigger?: MeterTrigger; meterInterval?: number;
   nextDueReading?: number; lowerLimit?: number; upperLimit?: number; lowerTaskId?: string; upperTaskId?: string; timeBased: boolean; isActive: boolean;
   schedule: string; upcoming: string[]; recentWorkOrders: { id: string; number: string; title: string; status: WorkOrderStatus; pmDueDate?: string; completedAt?: string }[];
-  legacyRef?: string; rowVersion: string;
+  visitCost: VisitCost; legacyRef?: string; rowVersion: string;
 };
 export type PmRunResult = { scheduleId: string; code: string; name: string; dueDate?: string; taskName?: string; assetNumber?: string; workOrderId?: string; workOrderNumber?: string; skipped?: string };
 export type ForecastItem = { date: string; id: string; code: string; name: string; assetNumber?: string; siteName: string; type: PmScheduleType; taskName: string; overdue: boolean;
   /** The schedule's next occurrence: generating it creates no other work order. */
-  isNext: boolean };
+  isNext: boolean;
+  /** Estimated cost of the visit. */
+  cost: number };
 export type MeterItem = { id: string; code: string; name: string; assetId: string; assetNumber: string; assetName: string; unit: string; currentReading?: number; lastReadAt?: string; maxDailyIncrement?: number; isActive: boolean; schedules: number };
 export type MeterReadingItem = { id: string; value: number; readAt: string; note?: string; source: string; byName?: string; workOrderId?: string };
 
@@ -198,16 +213,21 @@ export type StockTransactionType = 'Receipt' | 'Issue' | 'Return' | 'Adjustment'
 export type StoreItem = { id: string; code: string; name: string; siteId: string; siteName: string; description?: string; isActive: boolean; parts: number; stockValue: number };
 export type PartListItem = {
   id: string; partNumber: string; name: string; manufacturer?: string; unitOfMeasure: string; groupName?: string; averageCost: number; isCritical: boolean; isShelfItem: boolean;
-  isActive: boolean; onHand: number; onOrder: number; low: boolean; value: number;
+  isActive: boolean; onHand: number; reserved: number; available: number; onOrder: number; low: boolean; value: number;
 };
 export type PartLookup = { id: string; partNumber: string; name: string; unitOfMeasure: string; averageCost: number; lastPurchasePrice?: number; isShelfItem: boolean; preferredSupplierId?: string; onHand: number };
-export type StockLevelItem = { id: string; storeId: string; storeCode: string; storeName: string; bin?: string; minLevel: number; reorderLevel: number; maxLevel: number; reorderQuantity: number; quantityOnHand: number };
+export type StockLevelItem = { id: string; storeId: string; storeCode: string; storeName: string; bin?: string; minLevel: number; reorderLevel: number; maxLevel: number; reorderQuantity: number; quantityOnHand: number;
+  /** Reserved for open work orders' planned parts; available = on hand − reserved (may be negative). */
+  reserved: number; available: number };
 export type PartDetail = {
   id: string; partNumber: string; name: string; specification?: string; manufacturer?: string; manufacturerPartNumber?: string; unitOfMeasure: string; groupId?: string; groupName?: string;
   standardPrice: number; averageCost: number; lastPurchasePrice?: number; leadTimeDays?: number; isCritical: boolean; isShelfItem: boolean; allowNegativeStock: boolean;
   preferredSupplierId?: string; preferredSupplier?: { id: string; code: string; name: string }; barcode?: string; alternatePartIds: string[];
   alternates: { id: string; partNumber: string; name: string }[]; notes?: string; isActive: boolean; levels: StockLevelItem[];
-  batches: { storeId: string; batchNumber: string; quantity: number; expiry?: string }[]; onHand: number; onOrder: number; stockValue: number; legacyRef?: string; rowVersion: string;
+  batches: { storeId: string; batchNumber: string; quantity: number; expiry?: string }[]; onHand: number; reserved: number; available: number; onOrder: number; stockValue: number;
+  /** Open work orders holding this part, in the order stock goes to them (earliest due first). */
+  reservedFor: { workOrderId: string; workOrderNumber: string; title?: string; storeCode: string; reserved: number; short: number; dueDate?: string }[];
+  legacyRef?: string; rowVersion: string;
 };
 export type StockTransactionItem = {
   id: string; type: StockTransactionType; date: string; partId: string; partNumber: string; partName: string; unit: string; storeId: string; storeCode: string;
@@ -216,7 +236,7 @@ export type StockTransactionItem = {
 };
 export type ProposalItem = {
   partId: string; partNumber: string; partName: string; unitOfMeasure: string; isCritical: boolean; storeId: string; storeCode: string; siteId: string; quantityOnHand: number;
-  onOrder: number; minLevel: number; reorderLevel: number; maxLevel: number; suggestedQuantity: number; preferredSupplierId?: string; supplierName?: string; unitPrice: number; belowMinimum: boolean;
+  reserved: number; available: number; onOrder: number; minLevel: number; reorderLevel: number; maxLevel: number; suggestedQuantity: number; preferredSupplierId?: string; supplierName?: string; unitPrice: number; belowMinimum: boolean;
 };
 export type WoPartItem = { id: string; type: StockTransactionType; date: string; partId: string; partNumber: string; partName: string; unitOfMeasure: string; storeId: string; storeCode: string; quantity: number; unitCost: number; total: number; batchNumber?: string; notes?: string; createdByName?: string };
 

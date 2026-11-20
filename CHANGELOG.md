@@ -4,6 +4,36 @@ All notable changes to 4C CMMS — the cloud app and the Android app share one v
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.3.0] - 2026-11-20
+
+Planned parts. List the parts a job needs before anyone goes to the store, keep that stock for the job, and see what is
+really available. Nothing changes for an organization until someone plans parts.
+
+### Added
+- **Planned parts on work orders** (Parts tab): part, store and quantity, with what has been issued, what is still
+  reserved and any shortage. The store defaults to the one on the work order's site with the most available stock (or a
+  central store on another site). When stock can't cover every job, the job due earliest gets it first; later jobs
+  show "short". Completing, closing or cancelling a work order releases what it still reserves; reopening brings it back.
+- **Issue anyway?** Issuing or transferring stock that another job has reserved asks first and lists the work orders
+  that would go short. The job due first never gets asked when it takes its own parts.
+- **Planned hours per technician** (Labour tab) and a **planned against actual cost** table (Costs tab) for labour,
+  parts and the total. Without planned hours, planned labour uses the work order's estimate.
+- **Parts lists on PM tasks.** Every work order generated from the task arrives with its parts planned and reserved
+  (multiplied by the number of assets on a round).
+- **Estimated cost per visit** on PM schedules, and per row on the PM forecast with the total.
+- **Reserved and available stock** on the part page, which also lists the open work orders holding the part; the parts
+  list has an *Available* column (and *Reserved*, hidden by default).
+- The job card prints the planned parts with a column for what was used.
+- Duplicating a work order copies its planned parts and planned hours.
+- The 4CSQL importer brings in PM parts lists (`checklistInv`).
+
+### Changed
+- **Re-order checks use available stock** (on hand less what open work has reserved): the parts list's *below re-order
+  level* filter, the alert bell, the purchase proposal and the *Stock below re-order level* report. The proposal also
+  orders enough to cover planned work beyond stock and open orders, even where no maximum level is set. With nothing
+  planned, every figure is as before.
+- A part that is planned on a work order or PM task can't be deleted; remove it from them or mark it inactive.
+
 ## [0.2.0] - 2026-11-20
 
 The list toolkit: work orders, work requests, PM schedules, parts, purchase orders and assets now share the same tools.

@@ -86,6 +86,7 @@ public sealed class LWorkOrder
     public string? PMNo { get; set; } public string? TaskNo { get; set; } public DateTime? PMTarStartDate { get; set; }
 }
 public sealed class LChecklist { public string ChecklistNo { get; set; } public string? CheckListName { get; set; } public double? EstimatedLaborHours { get; set; } public string? Tasks { get; set; } public int? Active { get; set; } }
+public sealed class LChecklistPart { public string? ChecklistNo { get; set; } public string? PartNo { get; set; } public double? Qty { get; set; } }
 public sealed class LChecklistStep { public long ElementId { get; set; } public string ChecklistNo { get; set; } public long? SeqNo { get; set; } public string? TaskDesc { get; set; } }
 public sealed class LPmSchedule
 {
@@ -130,6 +131,8 @@ public sealed class LegacyWork
     public List<LJobTask> Tasks = [];
     public List<LChecklist> Checklists = [];
     public List<LChecklistStep> ChecklistSteps = [];
+    /// <summary>PM parts lists (checklistInv); empty on 4CSQL versions without the table.</summary>
+    public List<LChecklistPart> ChecklistParts = [];
     public List<LPmSchedule> PmSchedules = [];
     /// <summary>PM No → Section (legacy department) for section PMs (TypePM 3); empty on 4CSQL versions without the column.</summary>
     public Dictionary<string, string> PmSections = new(StringComparer.OrdinalIgnoreCase);
@@ -258,6 +261,7 @@ public static class Legacy
             Tasks = (await Try(() => c.QueryAsync<LJobTask>("SELECT * FROM jobtask")) ?? []).ToList(),
             Checklists = (await Try(() => c.QueryAsync<LChecklist>("SELECT ChecklistNo, CAST(CheckListName AS nvarchar(max)) AS CheckListName, EstimatedLaborHours, CAST(Tasks AS nvarchar(max)) AS Tasks, CAST(Active AS int) AS Active FROM pmchecklist")) ?? []).ToList(),
             ChecklistSteps = (await Try(() => c.QueryAsync<LChecklistStep>("SELECT ElementId, ChecklistNo, SeqNo, TaskDesc FROM checklistelements")) ?? []).ToList(),
+            ChecklistParts = (await Try(() => c.QueryAsync<LChecklistPart>("SELECT ChecklistNo, PartNo, CAST(Qty AS float) AS Qty FROM checklistInv")) ?? []).ToList(),
             PmSchedules = (await Try(() => c.QueryAsync<LPmSchedule>("SELECT PMNo, CAST(PMName AS nvarchar(max)) AS PMName, AssetNo, PhyLocationNo, ChecklistNo, PeriodDays, FreqUnits, Frequency, StartDate, TargetStartDate, NextDate, CAST(TypePMgen AS nvarchar(10)) AS TypePMgen, CAST(TypePM AS nvarchar(10)) AS TypePM, PMCounter, PMActive, PMWOTrade, WeekofMonth, DayofWeek, SiteCode, workpriority FROM pmschedule")) ?? []).ToList(),
             // Read separately so that a 4CSQL version without SectionNo still loads its PM schedules.
             PmSections = ((await Try(() => c.QueryAsync<LIdText>("SELECT PMNo AS Id, SectionNo AS Text FROM pmschedule WHERE LTRIM(ISNULL(SectionNo, '')) <> ''"))) ?? [])

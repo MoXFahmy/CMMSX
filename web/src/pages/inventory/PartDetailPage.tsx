@@ -35,7 +35,7 @@ export function PartDetailPage() {
   const { data: p, isLoading, error } = useQuery({ queryKey: ['part', id], queryFn: () => get<PartDetail>(`/parts/${id}`) });
   if (isLoading) return <Center h={300}><Loader /></Center>;
   if (error || !p) return <Alert color="red">{(error as Error)?.message}</Alert>;
-  const low = p.levels.some((l) => l.reorderQuantity > 0 && l.quantityOnHand <= l.reorderLevel);
+  const low = p.levels.some((l) => l.reorderQuantity > 0 && l.available <= l.reorderLevel);
   const defaults = { partId: p.id, part: { id: p.id, partNumber: p.partNumber, name: p.name } };
   const actions: { kind: StockTxKind; icon: typeof IconPackageImport }[] = [
     { kind: 'receive', icon: IconPackageImport }, { kind: 'issue', icon: IconPackageExport }, { kind: 'return', icon: IconArrowBackUp },
@@ -68,8 +68,10 @@ export function PartDetailPage() {
             </Menu.Dropdown>
           </Menu>
         </>} />
-      <SimpleGrid cols={{ base: 2, md: 4 }} mb="lg">
+      <SimpleGrid cols={{ base: 2, md: 5 }} mb="lg">
         <Stat label={t('inv.onHand')} value={`${fmtQty(p.onHand)} ${p.unitOfMeasure}`} color={p.onHand <= 0 ? 'red' : low ? 'orange' : undefined} sub={t('inv.inStores', { count: p.levels.length })} />
+        <Stat label={t('plan.available')} value={`${fmtQty(p.available)} ${p.unitOfMeasure}`} color={p.available < 0 ? 'red' : undefined}
+          sub={p.reserved > 0 ? t('inv.reservedSub', { qty: fmtQty(p.reserved) }) : undefined} />
         <Stat label={t('inv.onOrder')} value={fmtQty(p.onOrder)} sub={p.leadTimeDays ? t('inv.leadTime', { days: p.leadTimeDays }) : undefined} />
         <Stat label={t('inv.avgCost')} value={fmtPrice(p.averageCost, currency)} sub={p.lastPurchasePrice !== undefined && p.lastPurchasePrice !== null ? t('inv.lastPrice', { price: fmtPrice(p.lastPurchasePrice, currency) }) : undefined} />
         <Stat label={t('inv.stockValue')} value={fmtPrice(p.stockValue, currency)} />
@@ -88,12 +90,13 @@ export function PartDetailPage() {
               <Table verticalSpacing="sm" highlightOnHover>
                 <Table.Thead><Table.Tr>
                   <Table.Th>{t('inv.store')}</Table.Th><Table.Th>{t('inv.bin')}</Table.Th><Table.Th ta="right">{t('inv.onHand')}</Table.Th>
+                  <Table.Th ta="right">{t('plan.reserved')}</Table.Th><Table.Th ta="right">{t('plan.available')}</Table.Th>
                   <Table.Th ta="right">{t('inv.min')}</Table.Th><Table.Th ta="right">{t('inv.reorderAt')}</Table.Th><Table.Th ta="right">{t('inv.max')}</Table.Th><Table.Th ta="right">{t('inv.reorderQty')}</Table.Th><Table.Th w={160} />
                 </Table.Tr></Table.Thead>
                 <Table.Tbody>
-                  {p.levels.length === 0 && <Table.Tr><Table.Td colSpan={8}><Text c="dimmed" ta="center" py="md">{t('inv.noLevels')}</Text></Table.Td></Table.Tr>}
+                  {p.levels.length === 0 && <Table.Tr><Table.Td colSpan={10}><Text c="dimmed" ta="center" py="md">{t('inv.noLevels')}</Text></Table.Td></Table.Tr>}
                   {p.levels.map((l) => {
-                    const atReorder = l.reorderQuantity > 0 && l.quantityOnHand <= l.reorderLevel;
+                    const atReorder = l.reorderQuantity > 0 && l.available <= l.reorderLevel;
                     const pct = l.maxLevel > 0 ? Math.min(100, (l.quantityOnHand / l.maxLevel) * 100) : 0;
                     return (
                       <Table.Tr key={l.id}>
@@ -101,6 +104,8 @@ export function PartDetailPage() {
                         <Table.Td>{l.bin ?? '—'}</Table.Td>
                         <Table.Td ta="right"><Text fz="sm" fw={600} c={l.quantityOnHand <= 0 ? 'red' : atReorder ? 'orange' : undefined}>{fmtQty(l.quantityOnHand)}</Text>
                           {l.maxLevel > 0 && <Tooltip label={`${Math.round(pct)}% of max`}><Progress value={pct} size={4} mt={4} color={atReorder ? 'orange' : 'teal'} /></Tooltip>}</Table.Td>
+                        <Table.Td ta="right">{l.reserved > 0 ? fmtQty(l.reserved) : '—'}</Table.Td>
+                        <Table.Td ta="right"><Text fz="sm" c={l.available < 0 ? 'red' : undefined}>{fmtQty(l.available)}</Text></Table.Td>
                         <Table.Td ta="right">{fmtQty(l.minLevel)}</Table.Td><Table.Td ta="right">{fmtQty(l.reorderLevel)}</Table.Td><Table.Td ta="right">{fmtQty(l.maxLevel)}</Table.Td><Table.Td ta="right">{fmtQty(l.reorderQuantity)}</Table.Td>
                         <Table.Td ta="right">{can(P.inventoryTransact) && <Group gap={4} justify="flex-end" wrap="nowrap">
                           <Button size="compact-xs" variant="light" onClick={() => setTx({ kind: 'issue', storeId: l.storeId })}>{t('inv.issueShort')}</Button>
@@ -112,6 +117,27 @@ export function PartDetailPage() {
               </Table>
             </Table.ScrollContainer>
           </Card>
+          {p.reservedFor.length > 0 && (
+            <Card p={0} mt="md">
+              <Text fw={600} p="md" pb={0}>{t('inv.reservedFor')}</Text>
+              <Table.ScrollContainer minWidth={560}>
+                <Table verticalSpacing={6} mt="xs">
+                  <Table.Thead><Table.Tr><Table.Th>{t('inv.workOrder')}</Table.Th><Table.Th>{t('inv.store')}</Table.Th><Table.Th ta="right">{t('plan.reserved')}</Table.Th>
+                    <Table.Th ta="right">{t('plan.short')}</Table.Th><Table.Th>{t('wo.dueDate')}</Table.Th></Table.Tr></Table.Thead>
+                  <Table.Tbody>
+                    {p.reservedFor.map((r) => (
+                      <Table.Tr key={`${r.workOrderId}-${r.storeCode}`}>
+                        <Table.Td><Anchor component={Link} to={`/work-orders/${r.workOrderId}`} fz="sm" fw={600}>{r.workOrderNumber}</Anchor><Text fz="xs" c="dimmed" lineClamp={1}>{r.title}</Text></Table.Td>
+                        <Table.Td>{r.storeCode}</Table.Td><Table.Td ta="right">{fmtQty(r.reserved)}</Table.Td>
+                        <Table.Td ta="right">{r.short > 0 ? <Text fz="sm" fw={600} c="red">{fmtQty(r.short)}</Text> : '—'}</Table.Td>
+                        <Table.Td>{r.dueDate ? fmtDate(r.dueDate) : '—'}</Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </Card>
+          )}
           {p.isShelfItem && (
             <Card p={0} mt="md">
               <Title order={5} p="md">{t('inv.batches')}</Title>

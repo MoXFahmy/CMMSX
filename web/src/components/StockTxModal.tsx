@@ -1,11 +1,11 @@
 import { useEffect, useMemo, useState } from 'react';
-import { Alert, Button, Group, Modal, NumberInput, SegmentedControl, Select, SimpleGrid, Stack, Text, TextInput, Textarea } from '@mantine/core';
+import { Alert, Button, Group, List, Modal, NumberInput, SegmentedControl, Select, SimpleGrid, Stack, Text, TextInput, Textarea } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { get, post } from '@/api/client';
-import type { PartDetail, PartLookup, SupplierLookup } from '@/api/types';
+import { ApiError, get, post } from '@/api/client';
+import type { PartDetail, PartLookup, ReservedConflict, SupplierLookup } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { locationOptions, useHierarchy } from './LocationPicker';
 import { PartPicker, useStores } from './PartPicker';
@@ -14,7 +14,8 @@ import { fmtPrice, fmtQty, handleFormError, notifySuccess, toIsoDate } from './u
 
 export type StockTxKind = 'receive' | 'issue' | 'return' | 'adjust' | 'transfer';
 
-type Defaults = { partId?: string; part?: { id: string; partNumber: string; name: string } | null; storeId?: string | null; workOrderId?: string; workOrder?: { id: string; number: string; title?: string } | null };
+type Defaults = { partId?: string; part?: { id: string; partNumber: string; name: string } | null; storeId?: string | null; quantity?: number;
+  workOrderId?: string; workOrder?: { id: string; number: string; title?: string } | null };
 
 /** One dialog for every stock movement: receipts, issues and returns to work, adjustments and store transfers. */
 export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind: StockTxKind; opened: boolean; onClose: () => void; onDone?: () => void | Promise<void>; defaults?: Defaults }) {
@@ -28,6 +29,8 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
   const [part, setPart] = useState<PartLookup | null>(null);
   const [target, setTarget] = useState<'wo' | 'location'>('wo');
   const [direction, setDirection] = useState<'add' | 'remove'>('remove');
+  // The "Issue anyway?" answer: other work orders this move would leave short. Confirming resends it with confirmReserved.
+  const [conflict, setConflict] = useState<ReservedConflict | null>(null);
   const form = useForm({
     initialValues: {
       partId: '' as string | null, storeId: '' as string | null, toStoreId: '' as string | null, quantity: '' as number | '', unitCost: '' as number | '', date: new Date() as Date | string | null,
@@ -36,12 +39,13 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
   });
   useEffect(() => {
     if (!opened) return;
-    form.setValues({ partId: defaults?.partId ?? null, storeId: defaults?.storeId ?? (stores?.length === 1 ? stores[0].id : null), toStoreId: null, quantity: '', unitCost: '', date: new Date(),
+    form.setValues({ partId: defaults?.partId ?? null, storeId: defaults?.storeId ?? (stores?.length === 1 ? stores[0].id : null), toStoreId: null, quantity: defaults?.quantity ?? '', unitCost: '', date: new Date(),
       supplierId: null, reference: '', batchNumber: '', expiryDate: null, workOrderId: defaults?.workOrderId ?? null, locationId: null, notes: '' });
-    form.clearErrors(); setPart(null); setTarget('wo'); setDirection('remove');
+    form.clearErrors(); setPart(null); setTarget('wo'); setDirection('remove'); setConflict(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
   const v = form.getValues();
+  useEffect(() => setConflict(null), [v.partId, v.storeId, v.toStoreId, v.quantity, v.workOrderId, target]);
   const { data: detail } = useQuery({ queryKey: ['part', v.partId], queryFn: () => get<PartDetail>(`/parts/${v.partId}`), enabled: opened && !!v.partId });
   useEffect(() => {
     if (kind === 'receive' && detail && form.getValues().unitCost === '') form.setFieldValue('unitCost', detail.lastPurchasePrice ?? detail.averageCost);
@@ -58,7 +62,7 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
   const locOpts = useMemo(() => (h ? (h.sites ?? []).flatMap((s) => locationOptions(h.locations, s.id).map((o) => ({ ...o, label: `${s.name} › ${o.label}` }))) : []), [h]);
 
   const submit = form.onSubmit(async (x) => {
-    const base = { partId: x.partId, quantity: x.quantity || 0, date: toIsoDate(x.date), batchNumber: x.batchNumber || null, notes: x.notes || null };
+    const base = { partId: x.partId, quantity: x.quantity || 0, date: toIsoDate(x.date), batchNumber: x.batchNumber || null, notes: x.notes || null, confirmReserved: conflict !== null };
     try {
       if (kind === 'receive') await post('/inventory/receive', { ...base, storeId: x.storeId, unitCost: x.unitCost === '' ? null : x.unitCost, supplierId: x.supplierId, reference: x.reference || null, expiryDate: toIsoDate(x.expiryDate) });
       else if (kind === 'issue' || kind === 'return')
@@ -70,7 +74,10 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
         qc.invalidateQueries({ queryKey: ['stores'] }), qc.invalidateQueries({ queryKey: ['part-lookup'] }), qc.invalidateQueries({ queryKey: ['proposal'] })]);
       await onDone?.();
       onClose();
-    } catch (e) { handleFormError(form, e); }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409 && Array.isArray((e.body as ReservedConflict | undefined)?.reserved)) { setConflict(e.body as ReservedConflict); return; }
+      handleFormError(form, e);
+    }
   });
 
   return (
@@ -119,7 +126,18 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
             ? <Textarea label={t('inv.reason')} required autosize minRows={2} {...form.getInputProps('notes')} />
             : <TextInput label={t('common.notes')} {...form.getInputProps('notes')} />}
           {kind === 'issue' && onHand !== undefined && Number(v.quantity || 0) > onHand && !detail?.allowNegativeStock && <Alert color="orange" p="xs">{t('inv.notEnough')}</Alert>}
-          <Group justify="flex-end"><Button variant="default" onClick={onClose}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t(`inv.tx.${kind}`)}</Button></Group>
+          {conflict && (
+            <Alert color="orange" title={t('plan.reservedTitle')}>
+              <Text fz="sm">{t('plan.reservedBody')}</Text>
+              <List size="sm" mt={4}>
+                {conflict.reserved.map((r) => <List.Item key={r.workOrderId}>{r.workOrderNumber}{r.title ? ` · ${r.title}` : ''} — {t('plan.moreShort', { qty: fmtQty(r.moreShort), unit: detail?.unitOfMeasure ?? '' })}</List.Item>)}
+              </List>
+            </Alert>
+          )}
+          <Group justify="flex-end">
+            <Button variant="default" onClick={onClose}>{t('common.cancel')}</Button>
+            <Button type="submit" loading={form.submitting} color={conflict ? 'orange' : undefined}>{conflict ? t(kind === 'transfer' ? 'plan.transferAnyway' : 'plan.issueAnyway') : t(`inv.tx.${kind}`)}</Button>
+          </Group>
         </Stack>
       </form>
     </Modal>

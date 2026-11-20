@@ -144,9 +144,14 @@ public static class PmGenerator
         var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description.Length == 0 ? null : description, WorkType.Preventive, s.Priority,
             s.SiteId, round is null ? s.LocationId : s.LocationId ?? PmRound.CommonLocationId(round), round is null ? s.AssetId : null, s.TradeId ?? task.TradeId, assignees,
             start, PmCalendar.DueDate(s, start), task.EstimatedHours, round is null ? steps : null);
+        // The task's parts come along as planned parts (× covered assets on a round), reserved in the default store for the site.
+        var planned = new List<WorkOrderPart>();
+        foreach (var tp in await db.PmTaskParts.AsNoTracking().Where(p => p.PmTaskId == task.Id).Select(p => new { p.PartId, p.Quantity }).ToListAsync(ct))
+            planned.Add(new WorkOrderPart { PartId = tp.PartId, Quantity = tp.Quantity * (round?.Count ?? 1), StoreId = await Planning.DefaultStoreAsync(db, tp.PartId, s.SiteId, ct) });
         return await WorkOrderEndpoints.CreateAsync(db, ctx, input, null, ct, w =>
         {
             w.PmScheduleId = s.Id; w.PmTaskId = task.Id; w.PmDueDate = due;
+            foreach (var p in planned) { p.WorkOrderId = w.Id; db.WorkOrderParts.Add(p); }
             if (round is null) return;
             for (var n = 0; n < round.Count; n++) w.Assets.Add(new WorkOrderAsset { WorkOrderId = w.Id, AssetId = round[n].Id, Sequence = n + 1 });
             foreach (var st in PmRound.Steps(round, steps))
@@ -155,7 +160,7 @@ public static class PmGenerator
     }
 
     /// <summary>The assets a round's next work order covers (deleted assets drop out through the query filter).</summary>
-    private static async Task<IReadOnlyList<RoundAsset>> RoundAssetsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct,
+    internal static async Task<IReadOnlyList<RoundAsset>> RoundAssetsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct,
         IReadOnlyCollection<Core.Assets.AssetStatus>? skipStatuses = null)
     {
         var sequence = s.Assets.ToDictionary(a => a.AssetId, a => a.Sequence);
@@ -248,5 +253,54 @@ public sealed class PmSchedulerService(IServiceScopeFactory scopes, IConfigurati
                 scope.ServiceProvider.GetService<EmailOutbox>())).Count(r => r.WorkOrderId is not null);
             if (created > 0) log.LogInformation("PM scheduler created {Count} work orders for tenant {Tenant}", created, tenantId);
         }
+    }
+}
+
+/// <summary>Estimated cost of one PM visit.</summary>
+public sealed record VisitCost(decimal Parts, decimal Labour, decimal Total);
+
+public static class PmCost
+{
+    /// <summary>
+    /// A visit's estimated cost: the task's parts at current average cost (× covered assets on a round) plus its estimated hours
+    /// at the average of the known hourly rates (technicians without a rate are left out).
+    /// </summary>
+    public static VisitCost Visit(IEnumerable<(decimal Quantity, decimal AverageCost)> parts, int multiplier, decimal? estimatedHours, IEnumerable<decimal?> rates)
+    {
+        var partsCost = Math.Round(parts.Sum(p => p.Quantity * p.AverageCost) * multiplier, 2);
+        var labour = Math.Round((estimatedHours ?? 0) * Planning.AverageRate(rates), 2);
+        return new VisitCost(partsCost, labour, partsCost + labour);
+    }
+
+    /// <summary>
+    /// The visit cost of each schedule and task pair, with a fixed number of queries for the whole list (task parts, task hours,
+    /// technicians' rates and round assets are each read once). Schedules need their ExtraTasks and Assets loaded.
+    /// </summary>
+    public static async Task<Dictionary<(Guid ScheduleId, Guid TaskId), VisitCost>> ForSchedulesAsync(CmmsDbContext db, IReadOnlyCollection<PmSchedule> schedules, CancellationToken ct)
+    {
+        var pairs = schedules.SelectMany(s => s.ExtraTasks.Select(e => e.PmTaskId).Append(s.PmTaskId).Distinct().Select(t => (S: s, TaskId: t))).ToList();
+        var taskIds = pairs.Select(p => p.TaskId).Distinct().ToList();
+        var parts = (await db.PmTaskParts.AsNoTracking().Where(p => taskIds.Contains(p.PmTaskId)).Select(p => new { p.PmTaskId, p.Quantity, p.Part!.AverageCost }).ToListAsync(ct))
+            .ToLookup(p => p.PmTaskId, p => (p.Quantity, p.AverageCost));
+        var hours = await db.PmTasks.AsNoTracking().Where(t => taskIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.EstimatedHours, ct);
+        var people = schedules.SelectMany(s => s.AssigneeIds).Distinct().ToList();
+        var rates = people.Count == 0 ? [] : await db.Employees.AsNoTracking().Where(e => people.Contains(e.Id) && e.IsActive).ToDictionaryAsync(e => e.Id, e => e.HourlyRate, ct);
+        var covered = await CoveredCountsAsync(db, schedules.Where(s => s.Assets.Count > 0).ToList(), ct);
+        return pairs.ToDictionary(p => (p.S.Id, p.TaskId), p => Visit(parts[p.TaskId], covered.GetValueOrDefault(p.S.Id, 1), hours.GetValueOrDefault(p.TaskId),
+            p.S.AssigneeIds.Where(rates.ContainsKey).Select(id => rates[id])));
+    }
+
+    /// <summary>How many assets each round's next work order would cover (as generation counts them), from one query.</summary>
+    private static async Task<Dictionary<Guid, int>> CoveredCountsAsync(CmmsDbContext db, IReadOnlyList<PmSchedule> rounds, CancellationToken ct)
+    {
+        if (rounds.Count == 0) return [];
+        var ids = rounds.SelectMany(s => s.Assets.Select(a => a.AssetId)).Distinct().ToList();
+        var rows = await db.Assets.AsNoTracking().Where(a => ids.Contains(a.Id))
+            .Select(a => new { a.Id, a.SiteId, a.Status, a.LocationId, Path = a.Location != null ? a.Location.Path : null }).ToDictionaryAsync(a => a.Id, ct);
+        return rounds.ToDictionary(s => s.Id, s => PmRound.Covered(s.Assets.Where(a => rows.ContainsKey(a.AssetId)).Select(a =>
+        {
+            var r = rows[a.AssetId];
+            return new RoundAsset(r.Id, a.Sequence, r.SiteId, r.Path, r.LocationId, r.Status is not (Core.Assets.AssetStatus.Disposed or Core.Assets.AssetStatus.Inactive));
+        }), s.SiteId).Count);
     }
 }
