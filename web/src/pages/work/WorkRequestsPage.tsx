@@ -1,6 +1,8 @@
 import { useEffect } from 'react';
 import { Alert, Anchor, Badge, Button, Card, Drawer, Group, Modal, Select, SimpleGrid, Stack, Tabs, Text, TextInput, Textarea, Title } from '@mantine/core';
-import { DateInput } from '@mantine/dates';
+import { DateInput, DateTimePicker } from '@mantine/dates';
+import dayjs from 'dayjs';
+import { SlaText } from '@/components/SlaBadge';
 import { useDisclosure } from '@mantine/hooks';
 import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -21,7 +23,7 @@ import { PriorityBadge, WrStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, fmtDateTime, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
 
-const TABS: { key: string; status?: WorkRequestStatus }[] = [{ key: 'New', status: 'New' }, { key: 'Approved', status: 'Approved' }, { key: 'Rejected', status: 'Rejected' }, { key: 'Cancelled', status: 'Cancelled' }, { key: 'all' }];
+const TABS: { key: string; status?: WorkRequestStatus; late?: boolean }[] = [{ key: 'New', status: 'New' }, { key: 'late', late: true }, { key: 'Approved', status: 'Approved' }, { key: 'Rejected', status: 'Rejected' }, { key: 'Cancelled', status: 'Cancelled' }, { key: 'all' }];
 
 export function WorkRequestsPage() {
   const { t } = useTranslation();
@@ -33,7 +35,8 @@ export function WorkRequestsPage() {
   const openId = p('open') || null;
   const status = TABS.find((x) => x.key === tab)?.status;
   const { data: h } = useHierarchy();
-  const listQuery = { search: p('search'), siteId: p('siteId'), status, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
+  const late = TABS.find((x) => x.key === tab)?.late ?? false;
+  const listQuery = { search: p('search'), siteId: p('siteId'), status, late: late ? 'true' : '', sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
   const { data, isFetching } = useQuery({
     queryKey: ['work-requests', listQuery, lp.page, lp.pageSize], placeholderData: (prev) => prev,
     queryFn: () => get<Paged<WorkRequestListItem>>('/work-requests', { ...listQuery, page: lp.page, pageSize: lp.pageSize }),
@@ -56,6 +59,13 @@ export function WorkRequestsPage() {
       render: (r) => (r.assetNumber ? `${r.assetNumber} · ${r.assetName}` : '—') },
     { accessor: 'requesterName', title: t('wr.requester') },
     { accessor: 'requiredBy', title: t('wr.requiredBy'), sortable: true, noWrap: true, render: (r) => fmtDate(r.requiredBy) },
+    { accessor: 'deadline', title: t('wo.due'), noWrap: true, export: [{ key: 'respondBy' }, { key: 'dueAt' }, { key: 'responseState' }, { key: 'completionState' }],
+      render: (r) => (
+        <Stack gap={0}>
+          {r.status === 'New' && r.respondBy && <Group gap={4} wrap="nowrap"><Text fz="xs" c="dimmed">{t('sla.respond')}</Text><SlaText fz="xs" deadline={r.respondBy} state={r.responseState} /></Group>}
+          <SlaText deadline={r.dueAt} state={r.completionState} />
+        </Stack>
+      ) },
     { accessor: 'createdAt', title: t('wo.createdOn'), sortable: true, noWrap: true, render: (r) => fmtDateTime(r.createdAt) },
     { accessor: 'workOrderNumber', title: t('wr.workOrder'), noWrap: true,
       render: (r) => r.workOrderId ? <Anchor component={Link} to={`/work-orders/${r.workOrderId}`} fz="sm" onClick={(e) => e.stopPropagation()}>{r.workOrderNumber}</Anchor> : '—' },
@@ -81,7 +91,8 @@ export function WorkRequestsPage() {
         <FilterChips defs={chips} p={p} set={set} />
       </Card>
       <Tabs value={tab} onChange={(v) => set({ tab: v })} mb="sm">
-        <Tabs.List>{TABS.map((x) => <Tabs.Tab key={x.key} value={x.key} rightSection={<Badge size="xs" variant="default" circle>{count(x.status)}</Badge>}>{x.status ? t(`wrStatus.${x.status}`) : t('wo.all')}</Tabs.Tab>)}</Tabs.List>
+        <Tabs.List>{TABS.map((x) => <Tabs.Tab key={x.key} value={x.key} rightSection={x.late ? undefined : <Badge size="xs" variant="default" circle>{count(x.status)}</Badge>}>
+          {x.late ? <Text span c="red" fz="sm">{t('sla.lateFilter')}</Text> : x.status ? t(`wrStatus.${x.status}`) : t('wo.all')}</Tabs.Tab>)}</Tabs.List>
       </Tabs>
       <Card p={0}>
         <DataTable<WorkRequestListItem> minHeight={240} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching}
@@ -152,12 +163,12 @@ function RequestDrawer({ id, onClose }: { id: string | null; onClose: () => void
   const [rejectOpen, reject] = useDisclosure();
   const { data: r } = useQuery({ queryKey: ['work-request', id], queryFn: () => get<WorkRequestDetail>(`/work-requests/${id}`), enabled: !!id });
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
-  const af = useForm({ initialValues: { priority: 'Medium' as string | null, type: 'Corrective' as string | null, tradeId: null as string | null, assigneeIds: [] as string[], dueDate: null as Date | null, note: '' } });
+  const af = useForm({ initialValues: { priority: 'Medium' as string | null, type: 'Corrective' as string | null, tradeId: null as string | null, assigneeIds: [] as string[], dueAt: null as string | null, note: '' } });
   const rf = useForm({ initialValues: { note: '' } });
   const refresh = async () => { await qc.invalidateQueries({ queryKey: ['work-requests'] }); await qc.invalidateQueries({ queryKey: ['work-request', id] }); await qc.invalidateQueries({ queryKey: ['dashboard'] }); };
-  const openApprove = () => { if (!r) return; af.setValues({ priority: r.priority, type: r.type, tradeId: null, assigneeIds: [], dueDate: r.requiredBy ? new Date(`${r.requiredBy}T00:00:00`) : null, note: '' }); approve.open(); };
+  const openApprove = () => { if (!r) return; af.setValues({ priority: r.priority, type: r.type, tradeId: null, assigneeIds: [], dueAt: null, note: '' }); approve.open(); };
   const doApprove = af.onSubmit(async (v) => {
-    try { const res = await post<{ workOrderId: string; number: string }>(`/work-requests/${id}/approve`, { ...v, dueDate: toIsoDate(v.dueDate) }); notifySuccess(t('wr.approved', { number: res.number })); approve.close(); await refresh(); navigate(`/work-orders/${res.workOrderId}`); }
+    try { const res = await post<{ workOrderId: string; number: string }>(`/work-requests/${id}/approve`, { ...v, dueAt: v.dueAt ? dayjs(v.dueAt).toISOString() : null, dueDate: null }); notifySuccess(t('wr.approved', { number: res.number })); approve.close(); await refresh(); navigate(`/work-orders/${res.workOrderId}`); }
     catch (e) { handleFormError(af, e); }
   });
   const doReject = rf.onSubmit(async (v) => { try { await post(`/work-requests/${id}/reject`, v); reject.close(); rf.reset(); await refresh(); } catch (e) { handleFormError(rf, e); } });
@@ -174,6 +185,8 @@ function RequestDrawer({ id, onClose }: { id: string | null; onClose: () => void
             <Stack gap={2}><Text fz="xs" c="dimmed">{t('wo.asset')}</Text>{r.asset ? <Anchor component={Link} to={`/assets/${r.asset.id}`} fz="sm">{r.asset.assetNumber} · {r.asset.name}</Anchor> : <Text fz="sm">—</Text>}</Stack>
             <Stack gap={2}><Text fz="xs" c="dimmed">{t('wr.requester')}</Text><Text fz="sm">{r.requesterName ?? r.createdBy}{r.requesterPhone && ` · ${r.requesterPhone}`}</Text></Stack>
             <Stack gap={2}><Text fz="xs" c="dimmed">{t('wr.requiredBy')}</Text><Text fz="sm">{fmtDate(r.requiredBy)}</Text></Stack>
+            <Stack gap={2}><Text fz="xs" c="dimmed">{t('sla.respondBy')}</Text><SlaText deadline={r.sla.respondBy} state={r.sla.response} /></Stack>
+            <Stack gap={2}><Text fz="xs" c="dimmed">{t('wo.due')}</Text><SlaText deadline={r.dueAt} state={r.sla.completion} /></Stack>
             <Stack gap={2}><Text fz="xs" c="dimmed">{t('wo.createdOn')}</Text><Text fz="sm">{fmtDateTime(r.createdAt)}</Text></Stack>
           </SimpleGrid></Card>
           {r.status !== 'New' && (
@@ -201,7 +214,12 @@ function RequestDrawer({ id, onClose }: { id: string | null; onClose: () => void
             <Select label={t('wo.trade')} clearable data={(trades ?? []).filter((x) => x.isActive).map((x) => ({ value: x.id, label: x.name }))} {...af.getInputProps('tradeId')} />
           </SimpleGrid>
           <EmployeePicker label={t('wo.assignees')} value={af.values.assigneeIds} onChange={(v) => af.setFieldValue('assigneeIds', v)} siteId={r?.siteId} tradeId={af.values.tradeId} />
-          <DateInput label={t('wo.dueDate')} clearable valueFormat="DD MMM YYYY" {...af.getInputProps('dueDate')} />
+          {/* Empty: the priority's target from when the request was raised (recomputed if the priority changes here). */}
+          <DateTimePicker label={t('wo.dueAt')} clearable valueFormat="DD MMM YYYY, HH:mm" {...af.getInputProps('dueAt')}
+            placeholder={r?.dueAt && af.values.priority === r.priority ? fmtDateTime(r.dueAt) : t('wo.dueAtHint')}
+            description={r?.requiredBy && (
+              <Anchor fz="xs" onClick={() => af.setFieldValue('dueAt', `${r.requiredBy} 23:59:00`)}>{t('wr.useNeededBy', { date: fmtDate(r.requiredBy) })}</Anchor>
+            )} />
           <Textarea label={t('wo.note')} autosize {...af.getInputProps('note')} />
           <Group justify="flex-end"><Button variant="default" onClick={approve.close}>{t('common.cancel')}</Button><Button type="submit" color="teal" loading={af.submitting}>{t('wr.approve')}</Button></Group>
         </Stack></form>

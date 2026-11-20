@@ -8,6 +8,7 @@ import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
 import { IconDevices, IconEdit, IconKey, IconPlus, IconTrash } from '@tabler/icons-react';
 import { DevicesModal } from '@/components/DevicesModal';
+import { TargetsEditor, timeZones } from './TargetsEditor';
 import { del, get, post, put } from '@/api/client';
 import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -81,7 +82,7 @@ function OrganizationSettings() {
           <TextInput label={t('auth.organizationName')} disabled={!editable} {...form.getInputProps('name')} />
           <SimpleGrid cols={2}>
             <TextInput label={t('settings.currency')} description="ISO code, e.g. USD, EGP, AED" maxLength={3} disabled={!editable} {...form.getInputProps('settings.currency')} />
-            <TextInput label={t('locations.timeZone')} disabled={!editable} {...form.getInputProps('settings.timeZone')} />
+            <Select label={t('locations.timeZone')} disabled={!editable} searchable data={timeZones(form.values.settings.timeZone)} {...form.getInputProps('settings.timeZone')} />
           </SimpleGrid>
         </Stack></Card>
         <Card><Stack>
@@ -118,6 +119,13 @@ function OrganizationSettings() {
             data={DAY_NAMES.map((d) => ({ value: d, label: t(`pm.days.${d}`) }))}
             {...form.getInputProps('settings.pmNonWorkingDays')} />
           <Switch label={t('settings.pmNoStacking')} disabled={!editable} {...form.getInputProps('settings.pmNoStacking', { type: 'checkbox' })} />
+        </Stack></Card>
+        <Card><Stack>
+          <div><Title order={5}>{t('settings.targets')}</Title><Text c="dimmed" fz="sm">{t('settings.targetsHint')}</Text></div>
+          <TargetsEditor disabled={!editable} value={form.values.settings.slaTargets ?? []} onChange={(v) => form.setFieldValue('settings.slaTargets', v)} />
+          {form.errors['settings.slaTargets'] && <Text c="red" fz="sm">{form.errors['settings.slaTargets']}</Text>}
+          <NumberInput label={t('settings.dailyCapacityHours')} description={t('settings.dailyCapacityHint')} w={260} min={1} max={24} decimalScale={1} disabled={!editable}
+            {...form.getInputProps('settings.dailyCapacityHours')} />
         </Stack></Card>
         <Card><Stack>
           <Title order={5}>{t('settings.purchasing')}</Title>

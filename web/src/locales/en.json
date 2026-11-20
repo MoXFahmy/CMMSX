@@ -147,7 +147,10 @@
     "completed30": "Completed (30 days)",
     "requestsAwaiting": "Requests awaiting triage",
     "urgentWork": "Highest priority open work",
-    "workByStatus": "Work orders by status"
+    "workByStatus": "Work orders by status",
+    "lateWork": "Late work",
+    "dueSoon": "Due soon",
+    "responseLate": "Waiting for a response"
   },
   "locations": {
     "title": "Locations",
@@ -334,7 +337,15 @@
     "defaultTax": "Default tax",
     "approvalLimit": "Purchase approval limit",
     "approvalLimitHint": "Largest order this user may approve, in base currency. Leave empty for no limit.",
-    "notifications": "Notifications"
+    "notifications": "Notifications",
+    "targets": "Targets by priority",
+    "targetsHint": "How soon work must be answered and finished. New requests and work orders get their deadlines from these (counting every hour); a deadline typed on a job always wins. Leave empty for no target.",
+    "respondMinutes": "Respond within",
+    "completeMinutes": "Complete within",
+    "hours": "hours",
+    "days": "days",
+    "dailyCapacityHours": "Working hours per technician per day",
+    "dailyCapacityHint": "Used by the planning board to show who is overloaded."
   },
   "audit": {
     "Created": "created this record",
@@ -522,7 +533,10 @@
     "printJobCard": "Print job card",
     "completedOn": "Completed",
     "assetFilterHint": "Work on the asset’s components is included.",
-    "signature": "Signature"
+    "signature": "Signature",
+    "due": "Due",
+    "dueAt": "Due date and time",
+    "dueAtHint": "Leave empty to use the priority's target"
   },
   "wr": {
     "title": "Work requests",
@@ -547,7 +561,8 @@
     "workOrder": "Work order",
     "newOnly": "Awaiting triage",
     "mine": "My requests",
-    "searchPlaceholder": "Search number, title or requester"
+    "searchPlaceholder": "Search number, title or requester",
+    "useNeededBy": "Use the requester’s date ({{date}})"
   },
   "pm": {
     "parts": "Parts",
@@ -1323,5 +1338,20 @@
     "title": "You're offline",
     "body": "The full app needs a connection: nothing here can be saved until the signal is back.",
     "techView": "Open the technician view, which keeps working offline."
+  },
+  "sla": {
+    "dueIn": "due in {{when}}",
+    "late": "{{by}} late",
+    "dueOn": "due {{date}}",
+    "met": "done in time",
+    "missed": "done late",
+    "notStarted": "not started in time",
+    "lateFilter": "Late",
+    "respond": "respond",
+    "respondBy": "Respond by",
+    "startBy": "Start by",
+    "requestAnswered": "Request answered by",
+    "respondedAt": "responded {{when}}",
+    "respondedLate": "responded late, {{when}}"
   }
 }

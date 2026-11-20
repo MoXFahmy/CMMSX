@@ -6,6 +6,7 @@ import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { SlaText } from '@/components/SlaBadge';
 import dayjs from 'dayjs';
 import { IconAlertTriangle, IconCheck, IconCopy, IconDots, IconEdit, IconPrinter, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp } from '@tabler/icons-react';
 import { ApiError, del, get, post, put } from '@/api/client';
@@ -165,7 +166,22 @@ export function WorkOrderDetailPage() {
                   <Field label={t('wo.trade')}>{w.tradeName}</Field>
                   <Field label={t('wo.requestedBy')}>{w.requestedBy ?? w.request?.requesterName}</Field>
                   <Field label={t('wo.plannedStart')}>{fmtDate(w.plannedStart)}</Field>
-                  <Field label={t('wo.dueDate')}><Text span c={w.isOverdue ? 'red' : undefined} fw={500} fz="sm">{fmtDate(w.dueDate)}</Text></Field>
+                  <Field label={t('wo.due')}>
+                    <Stack gap={0}>
+                      <Text span fw={500} fz="sm">{w.dueAt ? fmtDateTime(w.dueAt) : fmtDate(w.dueDate)}</Text>
+                      <SlaText fz="xs" deadline={w.sla.dueAt ?? w.dueAt} state={w.sla.completion} />
+                    </Stack>
+                  </Field>
+                  {w.sla.respondBy && (
+                    <Field label={w.request ? t('sla.requestAnswered') : t('sla.startBy')}>
+                      <Stack gap={0}>
+                        <Text span fw={500} fz="sm">{fmtDateTime(w.sla.respondBy)}</Text>
+                        {w.sla.respondedAt
+                          ? <Text span fz="xs" c={w.sla.response === 'Missed' ? 'red' : 'teal'}>{t(w.sla.response === 'Missed' ? 'sla.respondedLate' : 'sla.respondedAt', { when: fmtDateTime(w.sla.respondedAt) })}</Text>
+                          : <SlaText fz="xs" deadline={w.sla.respondBy} state={w.sla.response} />}
+                      </Stack>
+                    </Field>
+                  )}
                   <Field label={t('wo.estimatedHours')}>{w.estimatedHours}</Field>
                   <Field label={t('wo.createdOn')}>{fmtDateTime(w.createdAt)}</Field>
                   {w.startedAt && <Field label={t('wo.started')}>{fmtDateTime(w.startedAt)}</Field>}

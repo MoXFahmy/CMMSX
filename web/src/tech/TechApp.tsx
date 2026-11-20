@@ -7,7 +7,8 @@ import dayjs from 'dayjs';
 import { notifications } from '@mantine/notifications';
 import { IconCloudOff, IconCloudCheck, IconList, IconLogout, IconRefresh, IconScan, IconSearch, IconTransferVertical } from '@tabler/icons-react';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
-import { fmtDate, fmtDateTime, fromNow } from '@/components/utils';
+import { fmtDateTime, fromNow } from '@/components/utils';
+import { dueLabel } from './due';
 import { JobPage } from './JobPage';
 import { PlacePage } from './PlacePage';
 import { ScanPage } from './ScanPage';
@@ -159,7 +160,7 @@ function MyJobsPage() {
                 <Stack gap={4} align="flex-end">
                   <PriorityBadge value={j.priority} />
                   <WoStatusBadge status={j.status} />
-                  <Text fz="xs" c={g === 'overdue' ? 'red' : 'dimmed'}>{j.dueDate ? fmtDate(j.dueDate) : '—'}</Text>
+                  <Text fz="xs" c={g === 'overdue' ? 'red' : 'dimmed'}>{dueLabel(j.dueDate, j.dueAt) ?? '—'}</Text>
                 </Stack>
               </Group>
             </Card>

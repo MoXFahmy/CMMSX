@@ -6,6 +6,7 @@ import dayjs from 'dayjs';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { SlaText } from '@/components/SlaBadge';
 import { DataTable } from 'mantine-datatable';
 import { IconAdjustmentsHorizontal, IconFilterOff, IconFlag, IconPlus, IconSearch, IconUserPlus, IconArrowsExchange } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
@@ -86,8 +87,13 @@ export function WorkOrdersPage() {
     { accessor: 'site', title: terms.site, sortable: true, noWrap: true, export: [{ key: 'siteName' }], render: (w) => w.siteName },
     { accessor: 'location', title: terms.location, width: 220, ellipsis: true, export: [{ key: 'locationPath' }], render: (w) => <span title={w.locationPath}>{w.locationPath ?? '—'}</span> },
     { accessor: 'assignees', title: t('wo.assignees'), width: 180, render: (w) => <Text fz="sm" lineClamp={1} c={w.assignees.length ? undefined : 'dimmed'}>{w.assignees.join(', ') || t('wo.noAssignees')}</Text> },
-    { accessor: 'dueDate', title: t('wo.dueDate'), sortable: true, noWrap: true,
-      render: (w) => <Group gap={4} wrap="nowrap"><Text fz="sm" c={w.isOverdue ? 'red' : undefined} fw={w.isOverdue ? 600 : undefined}>{fmtDate(w.dueDate)}</Text>{w.isOverdue && <Badge size="xs" color="red" variant="light">{t('wo.overdue')}</Badge>}</Group> },
+    { accessor: 'dueDate', title: t('wo.due'), sortable: true, noWrap: true, export: [{ key: 'dueAt' }, { key: 'completionState' }, { key: 'responseState' }],
+      render: (w) => (
+        <Stack gap={0}>
+          <SlaText deadline={w.dueAt ?? w.dueDate} state={w.completionState} />
+          {w.responseState === 'Late' && <Text fz="xs" c="red">{t('sla.notStarted')}</Text>}
+        </Stack>
+      ) },
     { accessor: 'createdAt', title: t('wo.createdOn'), sortable: true, noWrap: true, render: (w) => fmtDate(w.createdAt) },
     { accessor: 'completedAt', title: t('wo.completedOn'), sortable: true, noWrap: true, render: (w) => fmtDate(w.completedAt) },
   ];
@@ -140,7 +146,7 @@ export function WorkOrdersPage() {
         <Group gap="xs" align="center" wrap="wrap">
           <SegmentedControl value={view} onChange={(v) => set({ view: v === 'everyone' ? null : v })} data={[
             { value: 'everyone', label: t('wo.all') }, { value: 'mine', label: t('wo.mine') },
-            { value: 'overdue', label: `${t('wo.overdue')}${summary?.overdue ? ` (${summary.overdue})` : ''}` },
+            { value: 'overdue', label: `${t('sla.lateFilter')}${summary?.overdue ? ` (${summary.overdue})` : ''}` },
           ]} />
           <TextInput placeholder={t('wo.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 240 }} />
           <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v, locationId: null })} clearable searchable w={{ base: '100%', xs: 180 }} />

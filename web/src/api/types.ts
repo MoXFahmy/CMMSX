@@ -1,3 +1,5 @@
+import type { SlaState } from '@/components/sla';
+
 export type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 export type AssetStatus = 'Active' | 'Inactive' | 'InStorage' | 'UnderRepair' | 'Disposed';
 export type Criticality = 'Low' | 'Medium' | 'High' | 'Critical';
@@ -19,7 +21,12 @@ export type TenantSettings = {
   requireLaborToComplete: boolean; requireAllTasksDone: boolean; requireFailureCodeForBreakdowns: boolean; autoStartWork: boolean;
   emailEnabled: boolean; disabledEmails: string[];
   pmSkipAssetStatuses: AssetStatus[]; pmNonWorkingDays: DayName[]; pmNoStacking: boolean;
+  /** Response and completion targets per priority, in minutes (0.5.0). */
+  slaTargets: SlaTarget[]; dailyCapacityHours: number;
 };
+export type SlaTarget = { priority: WorkPriority; respondMinutes?: number | null; completeMinutes?: number | null };
+/** Deadlines of one record and where it stands against them. */
+export type SlaView = { response: SlaState; completion: SlaState; respondBy?: string | null; dueAt?: string | null; respondedAt?: string | null };
 export type EmailStatusInfo = { available: boolean; allowed: boolean; slug: string; from?: string; enabled: boolean; events: string[] };
 export type EmailLogItem = {
   id: string; createdAt: string; sentAt?: string; eventKey: string; toAddress: string; subject: string; status: 'Pending' | 'Sent' | 'Failed'; attempts: number; lastError?: string;
@@ -113,6 +120,7 @@ export type WorkOrderListItem = {
   id: string; number: string; title: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
   siteId: string; siteName: string; locationId?: string; locationPath?: string; assetId?: string; assetNumber?: string; assetName?: string;
   tradeName?: string; assignees: string[]; dueDate?: string; createdAt: string; completedAt?: string; isOverdue: boolean;
+  dueAt?: string | null; startBy?: string | null; respondedAt?: string | null; responseState: SlaState; completionState: SlaState;
 };
 export type WorkOrderDetail = {
   id: string; number: string; title: string; description?: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
@@ -135,6 +143,7 @@ export type WorkOrderDetail = {
   signatures: { id: string; signedBy?: string | null; createdAt: string }[];
   totals: { laborHours: number; laborCost: number; partsCost: number; otherCost: number; totalCost: number };
   planned: { laborHours: number; laborCost: number; partsCost: number; totalCost: number };
+  dueAt?: string | null; dueFromTarget: boolean; startBy?: string | null; respondedAt?: string | null; sla: SlaView;
   allowedTransitions: WorkOrderStatus[]; isOverdue: boolean; createdAt: string; updatedAt?: string; legacyRef?: string; rowVersion: string;
 };
 /** A part planned on a work order: what is still reserved for it and how short its store is (stock goes to the earliest due job first). */
@@ -149,15 +158,17 @@ export type WorkRequestListItem = {
   id: string; number: string; title: string; status: WorkRequestStatus; priority: WorkPriority; type: WorkType; siteId: string; siteName: string;
   locationName?: string; assetId?: string; assetNumber?: string; assetName?: string; requesterName?: string; requiredBy?: string; createdAt: string;
   workOrderId?: string; workOrderNumber?: string;
+  respondBy?: string | null; dueAt?: string | null; responseState: SlaState; completionState: SlaState;
 };
 export type WorkRequestDetail = {
   id: string; number: string; title: string; description?: string; status: WorkRequestStatus; priority: WorkPriority; type: WorkType;
   siteId: string; site: { id: string; name: string }; locationId?: string; locationName?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
   requesterName?: string; requesterEmail?: string; requesterPhone?: string; requiredBy?: string; decisionNote?: string; decidedAt?: string; decidedBy?: string;
   workOrder?: { id: string; number: string; status: WorkOrderStatus }; createdAt: string; createdBy?: string; canCancel: boolean;
+  respondBy?: string | null; dueAt?: string | null; dueFromTarget: boolean; sla: SlaView;
 };
 export type WorkDashboard = {
-  open: number; overdue: number; completedLast30: number; requestsAwaiting: number;
+  open: number; overdue: number; completedLast30: number; requestsAwaiting: number; late: number; dueSoon: number; responseLate: number;
   byStatus: { status: WorkOrderStatus; count: number }[]; byPriority: { priority: WorkPriority; count: number }[];
   urgent: { id: string; number: string; title: string; priority: WorkPriority; status: WorkOrderStatus; dueDate?: string; assetNumber?: string }[];
 };

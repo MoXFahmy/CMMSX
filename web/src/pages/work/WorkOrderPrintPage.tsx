@@ -7,7 +7,7 @@ import { IconPrinter } from '@tabler/icons-react';
 import { get } from '@/api/client';
 import type { WorkOrderDetail } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
-import { fmtDate, fmtQty } from '@/components/utils';
+import { fmtDate, fmtDateTime, fmtQty } from '@/components/utils';
 
 /** Blank rows for the technician to fill in by hand. */
 const BLANK_ROWS = 4;
@@ -72,7 +72,7 @@ export function WorkOrderPrintPage() {
         {field(terms.asset, w.asset ? `${w.asset.assetNumber} · ${w.asset.name}` : w.assets.length ? t('jobCard.assetCount', { count: w.assets.length }) : null)}
         {field(t('jobCard.serial'), w.asset?.serialNumber)}
         {field(t('wo.plannedStart'), w.plannedStart ? fmtDate(w.plannedStart) : null)}
-        {field(t('wo.dueDate'), w.dueDate ? fmtDate(w.dueDate) : null)}
+        {field(t('wo.due'), w.dueAt ? fmtDateTime(w.dueAt) : w.dueDate ? fmtDate(w.dueDate) : null)}
         {field(t('wo.assignees'), w.assignees.map((a) => a.fullName).join(', '))}
         {field(t('wo.requestedBy'), w.requestedBy ?? w.request?.requesterName)}
       </SimpleGrid>

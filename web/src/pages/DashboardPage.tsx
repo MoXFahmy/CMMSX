@@ -3,7 +3,7 @@ import { DonutChart, BarChart } from '@mantine/charts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { IconAlertTriangle, IconBox, IconCash, IconShieldCheck, IconTool, IconDatabaseImport, IconClipboardList, IconClockExclamation, IconCircleCheck, IconInbox } from '@tabler/icons-react';
+import { IconAlertTriangle, IconBox, IconCash, IconShieldCheck, IconTool, IconDatabaseImport, IconClipboardList, IconClockExclamation, IconCircleCheck, IconInbox, IconHourglass, IconBellRinging } from '@tabler/icons-react';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { get, post } from '@/api/client';
 import type { Dashboard } from '@/api/types';
@@ -64,9 +64,11 @@ export function DashboardPage() {
       <PageHeader title={t('dashboard.greeting', { name: firstName })} subtitle={t('dashboard.subtitle', { sites: terms.sites.toLowerCase() })} />
       {can(P.woView) && (
         <>
-          <SimpleGrid cols={{ base: 1, xs: 2, lg: 4 }} mb="lg">
+          <SimpleGrid cols={{ base: 1, xs: 2, lg: 3 }} mb="lg">
             <Kpi label={t('dashboard.openWork')} value={data.work.open.toLocaleString()} icon={IconClipboardList} color="blue" to="/work-orders" />
-            <Kpi label={t('dashboard.overdueWork')} value={data.work.overdue.toLocaleString()} icon={IconClockExclamation} color="red" to="/work-orders?view=overdue" />
+            <Kpi label={t('dashboard.lateWork')} value={(data.work.late ?? data.work.overdue).toLocaleString()} icon={IconClockExclamation} color="red" to="/work-orders?view=overdue" />
+            <Kpi label={t('dashboard.dueSoon')} value={(data.work.dueSoon ?? 0).toLocaleString()} icon={IconHourglass} color="orange" to="/work-orders?sort=dueDate&dir=asc" />
+            <Kpi label={t('dashboard.responseLate')} value={(data.work.responseLate ?? 0).toLocaleString()} icon={IconBellRinging} color="red" to="/work-requests?tab=late" />
             <Kpi label={t('dashboard.completed30')} value={data.work.completedLast30.toLocaleString()} icon={IconCircleCheck} color="teal" to="/work-orders?tab=Completed" />
             <Kpi label={t('dashboard.requestsAwaiting')} value={data.work.requestsAwaiting.toLocaleString()} icon={IconInbox} color="grape" to="/work-requests" />
           </SimpleGrid>
