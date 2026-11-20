@@ -12,6 +12,8 @@ public class AppUser : IdentityUser<Guid>
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastLoginAt { get; set; }
+    /// <summary>"Sign out other devices": sign-ins without a device session (from before 0.4.0) issued before this are refused.</summary>
+    public DateTimeOffset? SignedOutBefore { get; set; }
     public string? LegacyRef { get; set; }
     /// <summary>Largest purchase order (base currency) this user may approve; null = no limit (legacy authorization limit).</summary>
     public decimal? PurchaseApprovalLimit { get; set; }

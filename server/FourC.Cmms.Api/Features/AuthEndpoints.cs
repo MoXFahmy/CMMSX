@@ -3,6 +3,7 @@ using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Services;
+using Microsoft.AspNetCore.Authentication;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,7 +12,11 @@ namespace FourC.Cmms.Api.Features;
 public static class AuthEndpoints
 {
     public sealed record RegisterRequest(string OrganizationName, string FullName, string Email, string Password);
-    public sealed record LoginRequest(string Email, string Password, bool RememberMe);
+    /// <param name="Technician">Signing in from the technician view: with RememberMe it lasts 30 days, like the Android app.</param>
+    public sealed record LoginRequest(string Email, string Password, bool RememberMe, bool Technician = false);
+
+    /// <summary>How long "Keep me signed in" lasts on a technician device (Android app or technician view) without use.</summary>
+    private static readonly TimeSpan TechnicianSignIn = TimeSpan.FromDays(30);
     public sealed record ChangePasswordRequest(string CurrentPassword, string NewPassword);
 
     /// <summary>Self-service sign-up of new organizations; switch off with Auth:AllowRegistration=false.</summary>
@@ -49,22 +54,30 @@ public static class AuthEndpoints
             return Results.Ok(new { ok = true });
         }).AllowAnonymous();
 
-        g.MapPost("/login", async (LoginRequest req, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext db) =>
+        g.MapPost("/login", async (LoginRequest req, HttpContext http, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext db, CancellationToken ct) =>
         {
             var user = string.IsNullOrWhiteSpace(req.Email) ? null : await users.FindByEmailAsync(req.Email.Trim());
             var tenantActive = user is not null && await db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.IsActive);
             if (user is null || !user.IsActive || !tenantActive)
                 return Results.Problem(title: "Invalid email or password.", statusCode: 401);
-            var result = await signIn.PasswordSignInAsync(user, req.Password ?? "", req.RememberMe, lockoutOnFailure: true);
+            var result = await signIn.CheckPasswordSignInAsync(user, req.Password ?? "", lockoutOnFailure: true);
             if (result.IsLockedOut) return Results.Problem(title: "Too many failed attempts. Try again in a few minutes.", statusCode: 429);
             if (!result.Succeeded) return Results.Problem(title: "Invalid email or password.", statusCode: 401);
+            // Every sign-in is a device the user (or an administrator) can sign out later.
+            var userAgent = http.Request.Headers.UserAgent.ToString();
+            var session = await Sessions.StartAsync(db, user.Id, user.TenantId, userAgent, ct);
+            var props = new AuthenticationProperties { IsPersistent = req.RememberMe };
+            props.Items[Sessions.Key] = session.Id.ToString();
+            if (req.RememberMe && (req.Technician || Sessions.IsAndroidApp(userAgent))) props.ExpiresUtc = DateTimeOffset.UtcNow.Add(TechnicianSignIn);
+            await signIn.SignInWithClaimsAsync(user, props, []);
             user.LastLoginAt = DateTimeOffset.UtcNow;
             await users.UpdateAsync(user);
             return Results.Ok(new { ok = true });
         }).AllowAnonymous();
 
-        g.MapPost("/logout", async (SignInManager<AppUser> signIn) =>
+        g.MapPost("/logout", async (HttpContext http, SignInManager<AppUser> signIn, CmmsDbContext db, Microsoft.Extensions.Caching.Memory.IMemoryCache cache, CancellationToken ct) =>
         {
+            if (await Sessions.CurrentAsync(http) is { } sid) await Sessions.RevokeAsync(db, cache, db.UserSessions.IgnoreQueryFilters().Where(s => s.Id == sid), ct);
             await signIn.SignOutAsync();
             return Results.Ok(new { ok = true });
         }).AllowAnonymous();
