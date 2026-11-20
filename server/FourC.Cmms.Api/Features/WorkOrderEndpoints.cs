@@ -63,21 +63,12 @@ public static class WorkOrderEndpoints
     {
         var g = api.MapGroup("/work-orders").WithTags("Work orders");
 
-        g.MapGet("/", async ([AsParameters] WorkOrderFilter f, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
-        {
-            var q = await FilterAsync(db, f, ctx, includeStatus: true, ct);
-            var today = Today;
-            var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "createdAt").Select(w => new
-            {
-                w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason, w.SiteId, SiteName = w.Site!.Name, w.LocationId, LocationPath = w.Location!.Path,
-                w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, TradeName = w.Trade!.Name,
-                Assignees = w.Assignees.Select(a => a.Employee!.FullName).ToList(), w.DueDate, w.CreatedAt, w.CompletedAt,
-            }).ToPagedAsync(f.Page ?? 1, f.PageSize ?? 25, ct);
-            var names = await LocationEndpoints.ResolvePathNamesAsync(db, paged.Items.Select(i => i.LocationPath), ct);
-            return new PagedResult<WorkOrderListItem>(paged.Items.Select(w => new WorkOrderListItem(w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason,
-                w.SiteId, w.SiteName, w.LocationId, w.LocationPath is null ? null : names(w.LocationPath), w.AssetId, w.AssetNumber, w.AssetName, w.TradeName,
-                w.Assignees, w.DueDate, w.CreatedAt, w.CompletedAt, w.DueDate < today && WorkOrderWorkflow.IsActive(w.Status))).ToList(), paged.Total, paged.Page, paged.PageSize);
-        }).RequirePermission(Permissions.WorkOrdersView);
+        g.MapGet("/", ([AsParameters] WorkOrderFilter f, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+            ListAsync(db, f, ctx, f.Page ?? 1, f.PageSize ?? 25, ct)).RequirePermission(Permissions.WorkOrdersView);
+
+        g.MapGet("/export", ([AsParameters] WorkOrderFilter f, HttpContext http, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+            ListExport.FileAsync(http, db, "work-orders", (page, size) => ListAsync(db, f, ctx, page, size, ct, ListExport.MaxRows), ct))
+            .RequirePermission(Permissions.WorkOrdersView);
 
         // Counts per status for the list tabs (same filters, ignoring status).
         g.MapGet("/summary", async ([AsParameters] WorkOrderFilter f, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
@@ -376,6 +367,24 @@ public static class WorkOrderEndpoints
 
     private static List<T> ParseEnums<T>(string? csv) where T : struct, Enum =>
         (csv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Select(x => Enum.TryParse<T>(x, true, out var e) ? (T?)e : null).OfType<T>().ToList();
+
+    /// <summary>One page of the work-order list (the list screen and its export share it, so their rows can't differ).</summary>
+    internal static async Task<PagedResult<WorkOrderListItem>> ListAsync(CmmsDbContext db, WorkOrderFilter f, ITenantContext ctx, int page, int pageSize,
+        CancellationToken ct, int maxPageSize = 500)
+    {
+        var q = await FilterAsync(db, f, ctx, includeStatus: true, ct);
+        var today = Today;
+        var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "createdAt").Select(w => new
+        {
+            w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason, w.SiteId, SiteName = w.Site!.Name, w.LocationId, LocationPath = w.Location!.Path,
+            w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, TradeName = w.Trade!.Name,
+            Assignees = w.Assignees.Select(a => a.Employee!.FullName).ToList(), w.DueDate, w.CreatedAt, w.CompletedAt,
+        }).ToPagedAsync(page, pageSize, ct, maxPageSize);
+        var names = await LocationEndpoints.ResolvePathNamesAsync(db, paged.Items.Select(i => i.LocationPath), ct);
+        return new PagedResult<WorkOrderListItem>(paged.Items.Select(w => new WorkOrderListItem(w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason,
+            w.SiteId, w.SiteName, w.LocationId, w.LocationPath is null ? null : names(w.LocationPath), w.AssetId, w.AssetNumber, w.AssetName, w.TradeName,
+            w.Assignees, w.DueDate, w.CreatedAt, w.CompletedAt, w.DueDate < today && WorkOrderWorkflow.IsActive(w.Status))).ToList(), paged.Total, paged.Page, paged.PageSize);
+    }
 
     private static async Task<IQueryable<WorkOrder>> FilterAsync(CmmsDbContext db, WorkOrderFilter f, ITenantContext ctx, bool includeStatus, CancellationToken ct)
     {

@@ -30,6 +30,57 @@ public static class PurchasingEndpoints
     private static Guid UserId(HttpContext http) => Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
     private static readonly PurchaseOrderStatus[] Receivable = [PurchaseOrderStatus.Approved, PurchaseOrderStatus.PartiallyReceived];
 
+    public sealed class PoFilter
+    {
+        public string? Search { get; set; }
+        public string? Status { get; set; }
+        public Guid? SupplierId { get; set; }
+        public Guid? SiteId { get; set; }
+        public bool? Overdue { get; set; }
+        public DateOnly? From { get; set; }
+        public DateOnly? To { get; set; }
+        public string? Sort { get; set; }
+        public string? Dir { get; set; }
+        public int? Page { get; set; }
+        public int? PageSize { get; set; }
+    }
+
+    public sealed record PoListItem(Guid Id, string Number, PurchaseOrderStatus Status, DateOnly OrderDate, DateOnly? ExpectedDate, Guid SupplierId, string SupplierName,
+        string SiteName, string Currency, string? RequestedBy, int Lines, decimal Total, decimal ReceivedPercent, bool IsOverdue);
+
+    /// <summary>One page of the purchase-order list (the list screen and its export share it).</summary>
+    internal static async Task<PagedResult<PoListItem>> ListAsync(CmmsDbContext db, PoFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
+    {
+            var q = db.PurchaseOrders.AsNoTracking();
+        if (f.Search.Clean() is { } t) q = q.Where(o => o.Number.Contains(t) || o.Supplier!.Name.Contains(t) || o.SupplierQuoteRef!.Contains(t) || o.RequestedBy!.Contains(t));
+        var statuses = (f.Status ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => Enum.TryParse<PurchaseOrderStatus>(x, true, out var e) ? e : (PurchaseOrderStatus?)null)
+            .Where(x => x is not null).Select(x => x!.Value).ToList();
+        if (statuses.Count > 0) q = q.Where(o => statuses.Contains(o.Status));
+        if (f.SupplierId is not null) q = q.Where(o => o.SupplierId == f.SupplierId);
+        if (f.SiteId is not null) q = q.Where(o => o.SiteId == f.SiteId);
+        if (f.From is not null) q = q.Where(o => o.OrderDate >= f.From);
+        if (f.To is not null) q = q.Where(o => o.OrderDate <= f.To);
+        if (f.Overdue == true) q = q.Where(o => Receivable.Contains(o.Status) && o.ExpectedDate < Today);
+        var map = new Dictionary<string, System.Linq.Expressions.Expression<Func<PurchaseOrder, object?>>>(StringComparer.OrdinalIgnoreCase)
+        {
+            ["number"] = o => o.Number, ["orderDate"] = o => o.OrderDate, ["expectedDate"] = o => o.ExpectedDate, ["supplier"] = o => o.Supplier!.Name, ["status"] = o => o.Status,
+        };
+        var paged = await q.SortBy(f.Sort ?? "orderDate", f.Dir ?? (f.Sort is null ? "desc" : f.Dir), map, "orderDate")
+            .Select(o => new { o.Id, o.Number, o.Status, o.OrderDate, o.ExpectedDate, o.SupplierId, SupplierName = o.Supplier!.Name, SiteName = o.Site!.Name, o.Currency, o.TaxPercent, o.ShippingCost, o.RequestedBy })
+            .ToPagedAsync(page, pageSize, ct, maxPageSize);
+        var ids = paged.Items.Select(o => o.Id).ToList();
+        var lines = (await db.PurchaseOrderLines.AsNoTracking().Where(l => ids.Contains(l.PurchaseOrderId)).ToListAsync(ct)).ToLookup(l => l.PurchaseOrderId);
+        return new PagedResult<PoListItem>(paged.Items.Select(o =>
+        {
+            var ls = lines[o.Id].ToList();
+            var po = new PurchaseOrder { Number = o.Number, TaxPercent = o.TaxPercent, ShippingCost = o.ShippingCost, Lines = ls };
+            var ordered = ls.Sum(l => l.Quantity);
+            return new PoListItem(o.Id, o.Number, o.Status, o.OrderDate, o.ExpectedDate, o.SupplierId, o.SupplierName, o.SiteName, o.Currency, o.RequestedBy, ls.Count,
+                PurchaseOrderMath.Total(po), ordered == 0 ? 0 : Math.Round(ls.Sum(l => Math.Min(l.QuantityReceived, l.Quantity)) / ordered * 100, 0),
+                Receivable.Contains(o.Status) && o.ExpectedDate < Today);
+        }).ToList(), paged.Total, paged.Page, paged.PageSize);
+    }
+
     public static void MapPurchasingEndpoints(this RouteGroupBuilder api)
     {
         // ---------------- Suppliers ----------------
@@ -89,41 +140,12 @@ public static class PurchasingEndpoints
 
         // ---------------- Purchase orders ----------------
         var g = api.MapGroup("/purchase-orders").WithTags("Purchase orders");
-        g.MapGet("/", async (CmmsDbContext db, string? search, string? status, Guid? supplierId, Guid? siteId, bool? overdue, DateOnly? from, DateOnly? to,
-            string? sort, string? dir, int? page, int? pageSize, CancellationToken ct) =>
-        {
-            var q = db.PurchaseOrders.AsNoTracking();
-            if (search.Clean() is { } t) q = q.Where(o => o.Number.Contains(t) || o.Supplier!.Name.Contains(t) || o.SupplierQuoteRef!.Contains(t) || o.RequestedBy!.Contains(t));
-            var statuses = (status ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => Enum.TryParse<PurchaseOrderStatus>(x, true, out var e) ? e : (PurchaseOrderStatus?)null)
-                .Where(x => x is not null).Select(x => x!.Value).ToList();
-            if (statuses.Count > 0) q = q.Where(o => statuses.Contains(o.Status));
-            if (supplierId is not null) q = q.Where(o => o.SupplierId == supplierId);
-            if (siteId is not null) q = q.Where(o => o.SiteId == siteId);
-            if (from is not null) q = q.Where(o => o.OrderDate >= from);
-            if (to is not null) q = q.Where(o => o.OrderDate <= to);
-            if (overdue == true) q = q.Where(o => Receivable.Contains(o.Status) && o.ExpectedDate < Today);
-            var map = new Dictionary<string, System.Linq.Expressions.Expression<Func<PurchaseOrder, object?>>>(StringComparer.OrdinalIgnoreCase)
-            {
-                ["number"] = o => o.Number, ["orderDate"] = o => o.OrderDate, ["expectedDate"] = o => o.ExpectedDate, ["supplier"] = o => o.Supplier!.Name, ["status"] = o => o.Status,
-            };
-            var paged = await q.SortBy(sort ?? "orderDate", dir ?? (sort is null ? "desc" : dir), map, "orderDate")
-                .Select(o => new { o.Id, o.Number, o.Status, o.OrderDate, o.ExpectedDate, o.SupplierId, SupplierName = o.Supplier!.Name, SiteName = o.Site!.Name, o.Currency, o.TaxPercent, o.ShippingCost, o.RequestedBy })
-                .ToPagedAsync(page ?? 1, pageSize ?? 25, ct);
-            var ids = paged.Items.Select(o => o.Id).ToList();
-            var lines = (await db.PurchaseOrderLines.AsNoTracking().Where(l => ids.Contains(l.PurchaseOrderId)).ToListAsync(ct)).ToLookup(l => l.PurchaseOrderId);
-            return new PagedResult<object>(paged.Items.Select(o =>
-            {
-                var ls = lines[o.Id].ToList();
-                var po = new PurchaseOrder { Number = o.Number, TaxPercent = o.TaxPercent, ShippingCost = o.ShippingCost, Lines = ls };
-                var ordered = ls.Sum(l => l.Quantity);
-                return (object)new
-                {
-                    o.Id, o.Number, o.Status, o.OrderDate, o.ExpectedDate, o.SupplierId, o.SupplierName, o.SiteName, o.Currency, o.RequestedBy, Lines = ls.Count,
-                    Total = PurchaseOrderMath.Total(po), ReceivedPercent = ordered == 0 ? 0 : Math.Round(ls.Sum(l => Math.Min(l.QuantityReceived, l.Quantity)) / ordered * 100, 0),
-                    IsOverdue = Receivable.Contains(o.Status) && o.ExpectedDate < Today,
-                };
-            }).ToList(), paged.Total, paged.Page, paged.PageSize);
-        }).RequirePermission(Permissions.PurchasingView);
+        g.MapGet("/", ([AsParameters] PoFilter f, CmmsDbContext db, CancellationToken ct) =>
+            ListAsync(db, f, f.Page ?? 1, f.PageSize ?? 25, ct)).RequirePermission(Permissions.PurchasingView);
+
+        g.MapGet("/export", ([AsParameters] PoFilter f, HttpContext http, CmmsDbContext db, CancellationToken ct) =>
+            ListExport.FileAsync(http, db, "purchase-orders", (page, size) => ListAsync(db, f, page, size, ct, ListExport.MaxRows), ct))
+            .RequirePermission(Permissions.PurchasingView);
 
         g.MapGet("/{id:guid}", async (Guid id, HttpContext http, CmmsDbContext db, PermissionService perms, CancellationToken ct) =>
         {

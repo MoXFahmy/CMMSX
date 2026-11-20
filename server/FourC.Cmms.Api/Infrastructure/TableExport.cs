@@ -49,10 +49,15 @@ public static class TableExport
     public static IReadOnlyList<object?[]> Rows(IEnumerable<object> items, IReadOnlyList<ExportColumn> cols, TimeZoneInfo tz)
     {
         var list = items.ToList();
-        if (list.Count > 0)
-            foreach (var c in cols)
-                if (Prop(list[0].GetType(), c.Key.Split('.')[0]) is null) throw new ArgumentException($"Unknown column: {c.Key}");
+        if (list.Count > 0) Check(list[0].GetType(), cols);
         return list.Select(item => cols.Select(c => Cell(Read(item, c.Key), tz)).ToArray()).ToList();
+    }
+
+    /// <summary>Throws <see cref="ArgumentException"/> when a column's first key segment isn't a property of <paramref name="rowType"/>.</summary>
+    public static void Check(Type rowType, IReadOnlyList<ExportColumn> cols)
+    {
+        foreach (var c in cols)
+            if (Prop(rowType, c.Key.Split('.')[0]) is null) throw new ArgumentException($"Unknown column: {c.Key}");
     }
 
     private static PropertyInfo? Prop(Type t, string name) =>

@@ -53,13 +53,8 @@ public static class AssetEndpoints
     {
         var g = api.MapGroup("/assets").WithTags("Assets");
 
-        g.MapGet("/", async ([AsParameters] AssetFilter f, CmmsDbContext db, CancellationToken ct) =>
-        {
-            var q = await FilterAsync(db, f, ct);
-            var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "assetNumber").Select(ListProjection).ToPagedAsync(f.Page ?? 1, f.PageSize ?? 25, ct);
-            var names = await LocationEndpoints.ResolvePathNamesAsync(db, paged.Items.Select(i => i.LocationPath), ct);
-            return new PagedResult<object>(paged.Items.Select(i => (object)(i with { LocationPath = names(i.LocationPath) })).ToList(), paged.Total, paged.Page, paged.PageSize);
-        }).RequirePermission(Permissions.AssetsView);
+        g.MapGet("/", ([AsParameters] AssetFilter f, CmmsDbContext db, CancellationToken ct) =>
+            ListAsync(db, f, f.Page ?? 1, f.PageSize ?? 25, ct)).RequirePermission(Permissions.AssetsView);
 
         g.MapGet("/lookup", async (CmmsDbContext db, string? search, Guid? excludeId, Guid? siteId, CancellationToken ct) =>
         {
@@ -70,24 +65,9 @@ public static class AssetEndpoints
             return await q.OrderBy(a => a.AssetNumber).Take(30).Select(a => new { a.Id, a.AssetNumber, a.Name, a.SiteId, a.LocationId }).ToListAsync(ct);
         }).RequirePermission(Permissions.AssetsView);
 
-        g.MapGet("/export", async ([AsParameters] AssetFilter f, CmmsDbContext db, CancellationToken ct) =>
-        {
-            var q = await FilterAsync(db, f, ct);
-            var rows = await q.SortBy(f.Sort, f.Dir, SortMap, "assetNumber").Take(50_000).Select(ListProjection).ToListAsync(ct);
-            var names = await LocationEndpoints.ResolvePathNamesAsync(db, rows.Select(i => i.LocationPath), ct);
-            var fields = await db.CustomFields.AsNoTracking().Where(c => c.EntityType == "Asset").OrderBy(c => c.SortOrder).ToListAsync(ct);
-            var sb = new StringBuilder();
-            string[] header = ["Asset Number", "Name", "Category", "Site", "Location", "Parent Asset", "Status", "Criticality", "Manufacturer", "Model", "Serial Number", "Commissioned On", "Warranty Expires On", .. fields.Select(c => c.Label)];
-            sb.AppendLine(string.Join(",", header.Select(Csv)));
-            foreach (var r in rows)
-            {
-                string?[] cells = [r.AssetNumber, r.Name, r.CategoryName, r.SiteName, names(r.LocationPath), r.ParentAssetNumber, r.Status.ToString(), r.Criticality.ToString(),
-                    r.Manufacturer, r.Model, r.SerialNumber, r.CommissionedOn?.ToString("yyyy-MM-dd"), r.WarrantyExpiresOn?.ToString("yyyy-MM-dd"),
-                    .. fields.Select(c => r.CustomFields.GetValueOrDefault(c.Key))];
-                sb.AppendLine(string.Join(",", cells.Select(Csv)));
-            }
-            return Results.File(Encoding.UTF8.GetPreamble().Concat(Encoding.UTF8.GetBytes(sb.ToString())).ToArray(), "text/csv", $"assets-{DateTime.UtcNow:yyyyMMdd-HHmm}.csv");
-        }).RequirePermission(Permissions.AssetsView);
+        g.MapGet("/export", ([AsParameters] AssetFilter f, HttpContext http, CmmsDbContext db, CancellationToken ct) =>
+            ListExport.FileAsync(http, db, "assets", (page, size) => ListAsync(db, f, page, size, ct, ListExport.MaxRows), ct))
+            .RequirePermission(Permissions.AssetsView);
 
         g.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
@@ -253,6 +233,15 @@ public static class AssetEndpoints
         AssetStatus Status, Criticality Criticality, string? Manufacturer, string? Model, string? SerialNumber, DateOnly? CommissionedOn,
         DateOnly? WarrantyExpiresOn, Dictionary<string, string?> CustomFields, DateTimeOffset? UpdatedAt);
 
+    /// <summary>One page of the asset list, location paths in names (the list screen and its export share it).</summary>
+    internal static async Task<PagedResult<AssetListItem>> ListAsync(CmmsDbContext db, AssetFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
+    {
+        var q = await FilterAsync(db, f, ct);
+        var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "assetNumber").Select(ListProjection).ToPagedAsync(page, pageSize, ct, maxPageSize);
+        var names = await LocationEndpoints.ResolvePathNamesAsync(db, paged.Items.Select(i => i.LocationPath), ct);
+        return new PagedResult<AssetListItem>(paged.Items.Select(i => i with { LocationPath = names(i.LocationPath) }).ToList(), paged.Total, paged.Page, paged.PageSize);
+    }
+
     private static readonly Expression<Func<Asset, AssetListItem>> ListProjection = a => new AssetListItem(
         a.Id, a.AssetNumber, a.Name, a.CategoryId, a.Category!.Name, a.Category.Color, a.SiteId, a.Site!.Name, a.LocationId, a.Location!.Name,
         a.Location.Path, a.ParentAssetId, a.ParentAsset!.AssetNumber, a.Status, a.Criticality, a.Manufacturer, a.Model, a.SerialNumber,
@@ -386,6 +375,4 @@ public static class AssetEndpoints
         throw new DomainException("Could not generate a unique asset number. Check the numbering settings.");
     }
 
-    private static string Csv(string? s) =>
-        s is null ? "" : s.IndexOfAny([',', '"', '\n', '\r']) >= 0 ? "\"" + s.Replace("\"", "\"\"") + "\"" : s;
 }
