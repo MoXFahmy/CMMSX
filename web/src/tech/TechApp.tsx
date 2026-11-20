@@ -69,7 +69,8 @@ function Header() {
         <Indicator label={waiting} size={16} disabled={waiting === 0} color={queue.some((c) => c.state === 'failed') ? 'red' : 'orange'}>
           <ActionIcon component={Link} to="/tech/sync" variant="default" aria-label={t('tech.sync')}><IconTransferVertical size={16} /></ActionIcon>
         </Indicator>
-        <Anchor fz="xs" href="/" onClick={() => { try { localStorage.setItem(MODE_KEY, 'full'); } catch { /* private mode */ } }}>{t('tech.fullApp')}</Anchor>
+        {/* The full app needs a connection; without one it would only fail. */}
+        {online && <Anchor fz="xs" href="/" onClick={() => { try { localStorage.setItem(MODE_KEY, 'full'); } catch { /* private mode */ } }}>{t('tech.fullApp')}</Anchor>}
         <ActionIcon variant="subtle" color="gray" onClick={confirmSignOut} aria-label={t('tech.signOut')}><IconLogout size={16} /></ActionIcon>
       </Group>
     </Group>

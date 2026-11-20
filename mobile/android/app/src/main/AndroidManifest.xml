@@ -32,6 +32,8 @@
     <!-- Permissions -->
 
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- Lets the web view tell the app when the network goes (airplane mode), so it shows "Offline" at once. -->
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
     <!-- QR scanning and photos in the technician view; asked the first time it's used. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />

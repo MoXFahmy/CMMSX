@@ -15,6 +15,8 @@ const LOAD_MS = 30_000;
 const UPLOAD_MS = 60_000;
 
 async function call(path: string, init: RequestInit | undefined, timeoutMs: number): Promise<Response> {
+  // The phone says there is no network (airplane mode): don't wait for a request that can't go anywhere.
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Offline();
   let res: Response;
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), timeoutMs);

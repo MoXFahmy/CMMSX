@@ -11,6 +11,9 @@ export class ApiError extends Error {
   }
 }
 
+/** Shown when a request gets no answer. The full app needs a connection; the technician view (/tech) works without one. */
+export const NO_CONNECTION = 'No connection. Check your signal and try again.';
+
 type Query = Record<string, string | number | boolean | null | undefined | string[]>;
 
 export function toQuery(params?: Query): string {
@@ -38,7 +41,10 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   let body = init?.body;
   if (init?.json !== undefined) { headers.set('Content-Type', 'application/json'); body = JSON.stringify(init.json); }
   headers.set('Accept', 'application/json');
-  const res = await fetch(`/api${path}`, { ...init, headers, body, credentials: 'same-origin' });
+  let res: Response;
+  // No answer at all (no signal, or the connection dropped): say so, not the browser's "Failed to fetch".
+  try { res = await fetch(`/api${path}`, { ...init, headers, body, credentials: 'same-origin' }); }
+  catch { throw new ApiError(0, NO_CONNECTION); }
   if (res.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('cmms:unauthorized'));
   if (!res.ok) throw await parseError(res);
   if (res.status === 204) return undefined as T;

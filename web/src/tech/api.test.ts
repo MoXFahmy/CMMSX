@@ -45,4 +45,12 @@ describe('api', () => {
     vi.stubGlobal('fetch', async () => { throw new TypeError('Failed to fetch'); });
     expect(await sendChange(change())).toEqual({ kind: 'retry' });
   });
+
+  it('when the phone knows it has no signal, answers "offline" at once without trying the network', async () => {
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    vi.stubGlobal('navigator', { onLine: false });
+    await expect(fetchMe()).rejects.toBeInstanceOf(Offline);
+    expect(fetch).not.toHaveBeenCalled();
+  });
 });
