@@ -4,6 +4,36 @@ All notable changes to 4C CMMS — the cloud app and the Android app share one v
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.5.0] - 2026-11-20
+
+Response and completion targets per priority, and a planning board. Nothing changes for an organization until someone sets
+targets (Settings › Organization), apart from due dates now meaning "by the end of that day". See
+[docs/PLANNING_AND_TARGETS.md](docs/PLANNING_AND_TARGETS.md).
+
+### Added
+- **Targets by priority** (Settings › Organization): *respond within* and *complete within*, in hours or days, for
+  each priority. New requests and work orders get their deadlines from them, counting every hour. A deadline typed on
+  a job always wins; changing a target never moves deadlines already set.
+- **Due date and time** on work orders. Lists show "due in 3 h", "2 h late" or "done in time", in orange when due soon
+  and red when late; a *Late* filter on work orders and a *Late* tab on requests.
+- **Responses**: a request is answered when it is approved or rejected; a work order when work first starts (In
+  progress, On hold, a ticked step or logged hours — the phone's time for offline work). Work orders and requests show
+  their response deadline and whether it was met.
+- **Dashboard**: late work, due soon, and waiting for a response. The alert bell and the backlog report use the due
+  time.
+- **Report "Targets met"** (Reports › Work): responses and completions met per month or per priority.
+- **Planning board** (Maintenance › Planning): week or month, by technician or by asset. Drag a card to another day or
+  person (with Undo); each person's day shows planned hours against their working hours (red when over); trays for
+  work from earlier days and work without a date; upcoming PMs as dashed cards with *Generate now*.
+
+### Changed
+- A date-only due date means the end of that day in the organization's time zone; existing due dates were filled in
+  that way. **Check Settings › Organization › Time zone** (now a list): if it was left on UTC, deadlines are an hour
+  or two off.
+- Approving a request: leave the due time empty to use the priority's target (counted from when the request was
+  raised, even if you change the priority); *Use the requester's date* fills in their "Needed by".
+- The job card prints the due date and time; the phone app shows the time when a job is due at a time of day.
+
 ## [0.4.1] - 2026-11-20
 
 Found in the 0.4.0 phone check: with no signal, the full app's work order page showed "Failed to fetch".
