@@ -69,7 +69,8 @@ public static class Reservations
             .Where(c => c.MoreShort > 0).ToList();
     }
 
-    private static IEnumerable<PlanLine> InOrderOfNeed(IEnumerable<PlanLine> lines) =>
+    /// <summary>Lines in the order stock goes to them: due date, then planned start, then work order number (undated last).</summary>
+    public static IEnumerable<PlanLine> InOrderOfNeed(IEnumerable<PlanLine> lines) =>
         lines.OrderBy(l => l.DueDate ?? DateOnly.MaxValue).ThenBy(l => l.PlannedStart ?? DateOnly.MaxValue).ThenBy(l => l.WorkOrderNumber, StringComparer.Ordinal);
 
     private static Dictionary<Guid, decimal> ShortByWorkOrder(IReadOnlyDictionary<Guid, decimal> shortages, IEnumerable<PlanLine> lines) =>

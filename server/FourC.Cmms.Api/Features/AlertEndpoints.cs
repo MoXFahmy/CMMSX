@@ -30,7 +30,7 @@ public static class AlertEndpoints
                 triage = await db.WorkRequests.CountAsync(r => r.Status == WorkRequestStatus.New, ct);
             if (mine.Contains(Permissions.InventoryView))
                 // The same rule as the parts list's "below re-order level" filter.
-                lowStock = await db.Parts.CountAsync(p => db.StockLevels.Any(l => l.PartId == p.Id && l.ReorderQuantity > 0 && l.QuantityOnHand <= l.ReorderLevel), ct);
+                lowStock = await db.Parts.CountAsync(p => db.StockLevels.Any(l => l.PartId == p.Id && l.ReorderQuantity > 0 && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel), ct);
             return Results.Ok(new { OverdueWorkOrders = overdue, MyOverdueWorkOrders = myOverdue, RequestsToTriage = triage, PartsBelowReorder = lowStock });
         }).WithTags("Alerts").RequireAuthorization();
     }

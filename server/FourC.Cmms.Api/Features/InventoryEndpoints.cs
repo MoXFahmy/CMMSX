@@ -49,7 +49,7 @@ public static class InventoryEndpoints
     }
 
     public sealed record PartListItem(Guid Id, string PartNumber, string Name, string? Manufacturer, string UnitOfMeasure, string? GroupName, decimal AverageCost,
-        bool IsCritical, bool IsShelfItem, bool IsActive, decimal OnHand, decimal OnOrder, bool Low, decimal Value);
+        bool IsCritical, bool IsShelfItem, bool IsActive, decimal OnHand, decimal Reserved, decimal Available, decimal OnOrder, bool Low, decimal Value);
 
     /// <summary>One page of the part list (the list screen and its export share it).</summary>
     internal static async Task<PagedResult<PartListItem>> ListAsync(CmmsDbContext db, PartFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
@@ -61,17 +61,21 @@ public static class InventoryEndpoints
         if (storeId is not null) q = q.Where(p => db.StockLevels.Any(l => l.PartId == p.Id && l.StoreId == storeId));
         if (f.Critical == true) q = q.Where(p => p.IsCritical);
         if (f.ActiveOnly == true) q = q.Where(p => p.IsActive);
-        if (f.BelowReorder == true) q = q.Where(p => db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0 && l.QuantityOnHand <= l.ReorderLevel));
+        // Re-order checks use available stock (on hand less what open work has reserved).
+        if (f.BelowReorder == true) q = q.Where(p => db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0
+            && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel));
         var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "partNumber").Select(p => new
         {
             p.Id, p.PartNumber, p.Name, p.Manufacturer, p.UnitOfMeasure, GroupName = p.Group!.Name, p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive,
             OnHand = db.StockLevels.Where(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId)).Sum(l => (decimal?)l.QuantityOnHand) ?? 0,
-            Low = db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0 && l.QuantityOnHand <= l.ReorderLevel),
+            Reserved = db.StockReservations.Where(r => r.PartId == p.Id && (storeId == null || r.StoreId == storeId)).Sum(r => (decimal?)r.Reserved) ?? 0,
+            Low = db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0 && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel),
             OnOrder = db.PurchaseOrderLines.Where(x => x.PartId == p.Id && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId && OpenPo.Contains(o.Status)))
                 .Sum(x => (decimal?)(x.Quantity - x.QuantityReceived)) ?? 0,
         }).ToPagedAsync(page, pageSize, ct, maxPageSize);
         return new PagedResult<PartListItem>(paged.Items.Select(p => new PartListItem(p.Id, p.PartNumber, p.Name, p.Manufacturer, p.UnitOfMeasure, p.GroupName,
-            p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive, p.OnHand, p.OnOrder, p.Low, Math.Round(p.OnHand * p.AverageCost, 2))).ToList(), paged.Total, paged.Page, paged.PageSize);
+            p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive, p.OnHand, p.Reserved, p.OnHand - p.Reserved, p.OnOrder, p.Low, Math.Round(p.OnHand * p.AverageCost, 2))).ToList(),
+            paged.Total, paged.Page, paged.PageSize);
     }
 
     public static void MapInventoryEndpoints(this RouteGroupBuilder api)
@@ -153,7 +157,24 @@ public static class InventoryEndpoints
             var p = await db.Parts.AsNoTracking().Include(x => x.Group).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (p is null) return Results.NotFound();
             var levels = await db.StockLevels.AsNoTracking().Where(l => l.PartId == id).OrderBy(l => l.Store!.Code)
-                .Select(l => new { l.Id, l.StoreId, StoreCode = l.Store!.Code, StoreName = l.Store.Name, l.Bin, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity, l.QuantityOnHand }).ToListAsync(ct);
+                .Select(l => new { l.Id, l.StoreId, StoreCode = l.Store!.Code, StoreName = l.Store.Name, l.Bin, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity, l.QuantityOnHand,
+                    Reserved = (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) })
+                .ToListAsync(ct);
+            // Who holds the stock: open work orders with something still reserved, in the order stock goes to them.
+            var holders = new List<(PlanLine Line, string StoreCode, decimal Short)>();
+            foreach (var l in levels.Where(l => l.Reserved > 0))
+            {
+                var lines = await Planning.OpenLinesAsync(db, id, l.StoreId, ct);
+                var shortages = Reservations.Shortages(l.QuantityOnHand, lines);
+                holders.AddRange(lines.Where(x => x.StillReserved > 0).Select(x => (x, l.StoreCode, shortages.GetValueOrDefault(x.LineId))));
+            }
+            var order = Reservations.InOrderOfNeed(holders.Select(h => h.Line)).Select((x, n) => (x.LineId, n)).ToDictionary(x => x.LineId, x => x.n);
+            var holderIds = holders.Select(h => h.Line.WorkOrderId).ToList();
+            var titles = await db.WorkOrders.AsNoTracking().Where(w => holderIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => w.Title, ct);
+            var reservedFor = holders.OrderBy(h => order[h.Line.LineId]).Select(h => new
+            {
+                h.Line.WorkOrderId, h.Line.WorkOrderNumber, Title = titles.GetValueOrDefault(h.Line.WorkOrderId), h.StoreCode, Reserved = h.Line.StillReserved, h.Short, h.Line.DueDate,
+            }).ToList();
             var batches = p.IsShelfItem ? await db.StockTransactions.AsNoTracking().Where(t => t.PartId == id && t.BatchNumber != null).GroupBy(t => new { t.StoreId, t.BatchNumber })
                 .Select(b => new { b.Key.StoreId, b.Key.BatchNumber, Quantity = b.Sum(t => t.Quantity), Expiry = b.Max(t => t.ExpiryDate) }).Where(b => b.Quantity != 0).ToListAsync(ct) : [];
             var alternates = await db.Parts.AsNoTracking().Where(x => p.AlternatePartIds.Contains(x.Id)).Select(x => new { x.Id, x.PartNumber, x.Name }).ToListAsync(ct);
@@ -161,12 +182,16 @@ public static class InventoryEndpoints
             var onOrder = await db.PurchaseOrderLines.Where(x => x.PartId == id && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId && OpenPo.Contains(o.Status)))
                 .SumAsync(x => (decimal?)(x.Quantity - x.QuantityReceived), ct) ?? 0;
             var onHand = levels.Sum(l => l.QuantityOnHand);
+            var reservedTotal = levels.Sum(l => l.Reserved);
             return Results.Ok(new
             {
                 p.Id, p.PartNumber, p.Name, p.Specification, p.Manufacturer, p.ManufacturerPartNumber, p.UnitOfMeasure, p.GroupId, GroupName = p.Group?.Name, p.StandardPrice,
                 p.AverageCost, p.LastPurchasePrice, p.LeadTimeDays, p.IsCritical, p.IsShelfItem, p.AllowNegativeStock, p.PreferredSupplierId, PreferredSupplier = supplier,
-                p.Barcode, p.AlternatePartIds, Alternates = alternates, p.Notes, p.IsActive, Levels = levels, Batches = batches,
-                OnHand = onHand, OnOrder = onOrder, StockValue = Math.Round(onHand * p.AverageCost, 2), p.LegacyRef, RowVersion = Convert.ToBase64String(p.RowVersion),
+                p.Barcode, p.AlternatePartIds, Alternates = alternates, p.Notes, p.IsActive,
+                Levels = levels.Select(l => new { l.Id, l.StoreId, l.StoreCode, l.StoreName, l.Bin, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity, l.QuantityOnHand,
+                    l.Reserved, Available = l.QuantityOnHand - l.Reserved }),
+                Batches = batches, ReservedFor = reservedFor,
+                OnHand = onHand, Reserved = reservedTotal, Available = onHand - reservedTotal, OnOrder = onOrder, StockValue = Math.Round(onHand * p.AverageCost, 2), p.LegacyRef, RowVersion = Convert.ToBase64String(p.RowVersion),
             });
         }).RequirePermission(Permissions.InventoryView);
 
@@ -337,15 +362,17 @@ public static class InventoryEndpoints
             {
                 l.PartId, l.Part!.PartNumber, PartName = l.Part.Name, l.Part.UnitOfMeasure, l.Part.IsCritical, l.StoreId, StoreCode = l.Store!.Code, l.Store.SiteId,
                 l.QuantityOnHand, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity, l.Part.PreferredSupplierId, Price = l.Part.LastPurchasePrice ?? l.Part.AverageCost,
+                Reserved = (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0),
                 OnOrder = db.PurchaseOrderLines.Where(x => x.PartId == l.PartId && x.StoreId == l.StoreId && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId &&
                     (o.Status == PurchaseOrderStatus.Draft || o.Status == PurchaseOrderStatus.Submitted || OpenPo.Contains(o.Status)))).Sum(x => (decimal?)(x.Quantity - x.QuantityReceived)) ?? 0,
             }).ToListAsync(ct);
             var suppliers = await db.Suppliers.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.Name, ct);
-            return rows.Where(r => r.QuantityOnHand + r.OnOrder <= r.ReorderLevel).Select(r =>
+            // A level is proposed when available stock plus what is on order is at or below its re-order level.
+            return rows.Where(r => r.QuantityOnHand - r.Reserved + r.OnOrder <= r.ReorderLevel).Select(r =>
             {
-                var suggested = Math.Max(r.ReorderQuantity, r.MaxLevel > 0 ? r.MaxLevel - r.QuantityOnHand - r.OnOrder : 0);
-                return new { r.PartId, r.PartNumber, r.PartName, r.UnitOfMeasure, r.IsCritical, r.StoreId, r.StoreCode, r.SiteId, r.QuantityOnHand, r.OnOrder, r.MinLevel, r.ReorderLevel, r.MaxLevel,
-                    SuggestedQuantity = Math.Max(suggested, 0), r.PreferredSupplierId, SupplierName = r.PreferredSupplierId is { } sid ? suppliers.GetValueOrDefault(sid) : null, UnitPrice = r.Price,
+                return new { r.PartId, r.PartNumber, r.PartName, r.UnitOfMeasure, r.IsCritical, r.StoreId, r.StoreCode, r.SiteId, r.QuantityOnHand, r.Reserved, Available = r.QuantityOnHand - r.Reserved,
+                    r.OnOrder, r.MinLevel, r.ReorderLevel, r.MaxLevel,
+                    SuggestedQuantity = SuggestedQuantity(r.QuantityOnHand, r.Reserved, r.OnOrder, r.ReorderQuantity, r.MaxLevel), r.PreferredSupplierId, SupplierName = r.PreferredSupplierId is { } sid ? suppliers.GetValueOrDefault(sid) : null, UnitPrice = r.Price,
                     BelowMinimum = r.QuantityOnHand < r.MinLevel };
             }).OrderByDescending(r => r.IsCritical).ThenByDescending(r => r.BelowMinimum).ThenBy(r => r.PartNumber);
         }).RequirePermission(Permissions.InventoryView);
@@ -356,6 +383,19 @@ public static class InventoryEndpoints
     {
         var v = new Validator().When(partId is null, "partId", "Choose a part.").When(storeId is null, "storeId", "Choose a store.");
         return v.IsValid ? null : v.Problem();
+    }
+
+    /// <summary>
+    /// What the re-order proposal suggests for a store level: the re-order quantity, enough to reach the max level from available
+    /// stock and open orders when a max level is set, or enough to cover planned need beyond stock and open orders — whichever is
+    /// most, never below 0. With nothing reserved the last term is never positive, so the suggestion is the one before 0.3.0.
+    /// </summary>
+    internal static decimal SuggestedQuantity(decimal onHand, decimal reserved, decimal onOrder, decimal reorderQuantity, decimal maxLevel)
+    {
+        var available = onHand - reserved;
+        var toMax = maxLevel > 0 ? maxLevel - available - onOrder : 0;
+        var plannedNeed = reserved - Math.Max(onHand, 0) - onOrder;
+        return Math.Max(Math.Max(reorderQuantity, toMax), Math.Max(plannedNeed, 0));
     }
 
     /// <summary>

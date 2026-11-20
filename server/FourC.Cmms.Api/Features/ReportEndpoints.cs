@@ -353,8 +353,10 @@ public static class ReportEndpoints
     private static async Task<ReportResult> ReorderAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
     {
         var open = new[] { PurchaseOrderStatus.Draft, PurchaseOrderStatus.Submitted, PurchaseOrderStatus.Approved, PurchaseOrderStatus.PartiallyReceived };
-        var xs = await Levels(db, a).Where(l => l.ReorderQuantity > 0 && l.QuantityOnHand <= l.ReorderLevel && l.Part!.IsActive).Select(l => new
+        // The parts list's "below re-order level" rule: available stock (on hand less reserved for open work).
+        var xs = await Levels(db, a).Where(l => l.ReorderQuantity > 0 && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel && l.Part!.IsActive).Select(l => new
         {
+            Reserved = (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0),
             l.PartId, l.Part!.PartNumber, l.Part.Name, l.Part.UnitOfMeasure, l.Part.IsCritical, Store = l.Store!.Code, l.QuantityOnHand, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity,
             OnOrder = db.PurchaseOrderLines.Where(x => x.PartId == l.PartId && x.StoreId == l.StoreId && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId && open.Contains(o.Status)))
                 .Sum(x => (decimal?)(x.Quantity - x.QuantityReceived)) ?? 0,
@@ -362,14 +364,16 @@ public static class ReportEndpoints
         }).ToListAsync(ct);
         var rows = xs.OrderByDescending(x => x.IsCritical).ThenBy(x => x.QuantityOnHand - x.MinLevel).Select(x =>
         {
-            var need = Math.Max(x.ReorderQuantity, x.MaxLevel > 0 ? x.MaxLevel - x.QuantityOnHand - x.OnOrder : 0);
-            var uncovered = x.QuantityOnHand + x.OnOrder <= x.ReorderLevel;
-            return Row(("partId", x.PartId), ("part", $"{x.PartNumber} · {x.Name}"), ("store", x.Store), ("onHand", x.QuantityOnHand), ("minLevel", x.MinLevel), ("reorderLevel", x.ReorderLevel),
+            var need = InventoryEndpoints.SuggestedQuantity(x.QuantityOnHand, x.Reserved, x.OnOrder, x.ReorderQuantity, x.MaxLevel);
+            var uncovered = x.QuantityOnHand - x.Reserved + x.OnOrder <= x.ReorderLevel;
+            return Row(("partId", x.PartId), ("part", $"{x.PartNumber} · {x.Name}"), ("store", x.Store), ("onHand", x.QuantityOnHand), ("reserved", x.Reserved),
+                ("available", x.QuantityOnHand - x.Reserved), ("minLevel", x.MinLevel), ("reorderLevel", x.ReorderLevel),
                 ("onOrder", x.OnOrder), ("suggested", uncovered ? Math.Max(need, 0) : 0), ("value", uncovered ? R2(Math.Max(need, 0) * x.Price) : 0), ("critical", x.IsCritical ? "Yes" : ""),
                 ("status", x.QuantityOnHand <= 0 ? "Out of stock" : x.QuantityOnHand < x.MinLevel ? "Below minimum" : uncovered ? "Re-order" : "On order"));
         }).ToList();
         return new("stock-reorder", "Stock below re-order level", $"As of {Today:d MMM yyyy}",
-            [new("part", "Part"), new("store", "Store"), new("status", "Status"), new("critical", "Critical"), new("onHand", "On hand", "number"), new("minLevel", "Minimum", "number"),
+            [new("part", "Part"), new("store", "Store"), new("status", "Status"), new("critical", "Critical"), new("onHand", "On hand", "number"),
+             new("reserved", "Reserved", "number"), new("available", "Available", "number"), new("minLevel", "Minimum", "number"),
              new("reorderLevel", "Re-order at", "number"), new("onOrder", "On order", "number"), new("suggested", "Suggested order", "number"), new("value", "Est. value", "currency")],
             rows, null,
             [new("Lines at re-order", rows.Count), new("Out of stock", xs.Count(x => x.QuantityOnHand <= 0)), new("Critical", xs.Count(x => x.IsCritical)),

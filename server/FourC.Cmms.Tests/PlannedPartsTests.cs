@@ -291,4 +291,86 @@ public class PlannedPartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Ok(await o.C.PostAsJsonAsync("/api/inventory/issue", new { partId = part, storeId = o.Main, quantity = 1, workOrderId = wo }));
         await Fails(await o.C.PostAsJsonAsync("/api/inventory/issue", new { partId = part, storeId = o.Main, quantity = 5, workOrderId = wo }), HttpStatusCode.BadRequest);
     }
+
+    private static async Task<Guid> LevelledPartAsync(HttpClient c, string no, Guid store, decimal reorderLevel, decimal reorderQty, decimal max = 0) =>
+        Id(await Ok(await c.PostAsJsonAsync("/api/parts", new
+        {
+            partNumber = no, name = $"Part {no}", unitOfMeasure = "EA", standardPrice = 10, isCritical = false, isShelfItem = false, allowNegativeStock = false,
+            levels = new[] { new { storeId = store, bin = "A1", minLevel = 0, reorderLevel, maxLevel = max, reorderQuantity = reorderQty } },
+        })));
+
+    private static async Task<JsonElement> ListRowAsync(HttpClient c, Guid part, string query = "") =>
+        (await Ok(await c.GetAsync($"/api/parts?pageSize=100{query}"))).GetProperty("items").EnumerateArray().Single(p => p.GetProperty("id").GetGuid() == part);
+
+    private static async Task<JsonElement?> ProposalRowAsync(HttpClient c, Guid part) =>
+        (await Ok(await c.GetAsync("/api/inventory/proposal"))).EnumerateArray().Where(r => r.GetProperty("partId").GetGuid() == part).Select(r => (JsonElement?)r).FirstOrDefault();
+
+    [SkippableFact]
+    public async Task Part_page_and_list_show_reserved_and_available_and_who_holds_the_stock()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        await ReceiveAsync(o.C, part, o.Main, 10);
+        var wo1 = await WorkOrderAsync(o.C, o.SiteA, dueInDays: 1);
+        var wo2 = await WorkOrderAsync(o.C, o.SiteA, dueInDays: 5);
+        await PlanAsync(o.C, wo1, part, 6);
+        await PlanAsync(o.C, wo2, part, 6);
+
+        var p = await Ok(await o.C.GetAsync($"/api/parts/{part}"));
+        var level = p.GetProperty("levels")[0];
+        Assert.Equal((12m, -2m), (Dec(level, "reserved"), Dec(level, "available")));
+        Assert.Equal((12m, -2m), (Dec(p, "reserved"), Dec(p, "available")));
+        var holders = p.GetProperty("reservedFor").EnumerateArray().ToList();
+        Assert.Equal([wo1, wo2], holders.Select(h => h.GetProperty("workOrderId").GetGuid()));
+        Assert.Equal([0m, 2m], holders.Select(h => Dec(h, "short")));
+
+        var row = await ListRowAsync(o.C, part);
+        Assert.Equal((10m, 12m, -2m), (Dec(row, "onHand"), Dec(row, "reserved"), Dec(row, "available")));
+    }
+
+    [SkippableFact]
+    public async Task Reorder_checks_use_available_stock()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await LevelledPartAsync(o.C, "P-1", o.Main, reorderLevel: 5, reorderQty: 10);
+        await ReceiveAsync(o.C, part, o.Main, 8);
+        Assert.False((await ListRowAsync(o.C, part)).GetProperty("low").GetBoolean());
+        Assert.Null(await ProposalRowAsync(o.C, part));
+
+        await PlanAsync(o.C, await WorkOrderAsync(o.C, o.SiteA), part, 6);
+        Assert.True((await ListRowAsync(o.C, part, "&belowReorder=true")).GetProperty("low").GetBoolean());
+        Assert.Equal(1, (await Ok(await o.C.GetAsync("/api/alerts"))).GetProperty("partsBelowReorder").GetInt32());
+        var prop = await ProposalRowAsync(o.C, part);
+        Assert.NotNull(prop);
+        Assert.Equal((6m, 2m, 10m), (Dec(prop!.Value, "reserved"), Dec(prop.Value, "available"), Dec(prop.Value, "suggestedQuantity")));
+        var report = (await Ok(await o.C.GetAsync("/api/reports/stock-reorder"))).GetProperty("rows").EnumerateArray().Single(r => r.GetProperty("partId").GetGuid() == part);
+        Assert.Equal((6m, 2m, 10m), (Dec(report, "reserved"), Dec(report, "available"), Dec(report, "suggested")));
+    }
+
+    [SkippableFact]
+    public async Task Proposal_covers_planned_need_where_no_max_level_is_set()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await LevelledPartAsync(o.C, "P-1", o.Main, reorderLevel: 0, reorderQty: 1);
+        await ReceiveAsync(o.C, part, o.Main, 2);
+        await PlanAsync(o.C, await WorkOrderAsync(o.C, o.SiteA), part, 7);
+        Assert.Equal(5m, Dec((await ProposalRowAsync(o.C, part))!.Value, "suggestedQuantity"));
+    }
+
+    [SkippableFact]
+    public async Task Nothing_changes_without_plans()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await LevelledPartAsync(o.C, "P-1", o.Main, reorderLevel: 5, reorderQty: 10, max: 20);
+        await ReceiveAsync(o.C, part, o.Main, 4);
+        var row = await ListRowAsync(o.C, part);
+        Assert.Equal((4m, 0m, 4m, true), (Dec(row, "onHand"), Dec(row, "reserved"), Dec(row, "available"), row.GetProperty("low").GetBoolean()));
+        Assert.Equal(16m, Dec((await ProposalRowAsync(o.C, part))!.Value, "suggestedQuantity")); // max 20 − on hand 4, as before
+        var report = (await Ok(await o.C.GetAsync("/api/reports/stock-reorder"))).GetProperty("rows").EnumerateArray().Single(r => r.GetProperty("partId").GetGuid() == part);
+        Assert.Equal(16m, Dec(report, "suggested"));
+    }
 }
