@@ -10,6 +10,7 @@ import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, fmtDateTime, fmtQty, notifyError } from '@/components/utils';
 import { withQueued } from './overlay';
 import { shrink } from './photos';
+import { dueLabel } from './due';
 import { SignaturePad, type SignatureHandle } from './SignaturePad';
 import { useTech } from './useTech';
 import type { TechJob } from './types';
@@ -53,7 +54,7 @@ export function JobPage() {
       <Card withBorder p="sm">
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <div style={{ minWidth: 0 }}>
-            <Text fz="xs" c="dimmed">{job.number}{job.dueDate ? ` · ${t('tech.due', { date: fmtDate(job.dueDate) })}` : ''}</Text>
+            <Text fz="xs" c="dimmed">{job.number}{dueLabel(job.dueDate, job.dueAt) ? ` · ${t('tech.due', { date: dueLabel(job.dueDate, job.dueAt) })}` : ''}</Text>
             <Title order={4}>{job.title}</Title>
           </div>
           <Stack gap={4} align="flex-end"><PriorityBadge value={job.priority} /><WoStatusBadge status={job.status} /></Stack>

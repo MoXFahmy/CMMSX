@@ -23,5 +23,7 @@ public class TenantSettingsTests
         Assert.False(s.AutoStartWork);
         Assert.False(s.EmailEnabled);
         Assert.Empty(s.DisabledEmails);
+        Assert.Empty(s.SlaTargets);
+        Assert.Equal(8m, s.DailyCapacityHours);
     }
 }

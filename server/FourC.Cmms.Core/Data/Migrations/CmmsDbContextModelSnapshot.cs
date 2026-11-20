@@ -2582,8 +2582,14 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasPrecision(9, 2)
                         .HasColumnType("decimal(9,2)");
 
+                    b.Property<DateTimeOffset?>("DueAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateOnly?>("DueDate")
                         .HasColumnType("date");
+
+                    b.Property<bool>("DueFromTarget")
+                        .HasColumnType("bit");
 
                     b.Property<decimal?>("EstimatedHours")
                         .HasPrecision(9, 2)
@@ -2632,6 +2638,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<DateTimeOffset?>("RespondedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -2640,6 +2649,9 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.Property<Guid>("SiteId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("StartBy")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset?>("StartedAt")
                         .HasColumnType("datetimeoffset");
@@ -3079,6 +3091,12 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTimeOffset?>("DueAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("DueFromTarget")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -3111,6 +3129,9 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.Property<DateOnly?>("RequiredBy")
                         .HasColumnType("date");
+
+                    b.Property<DateTimeOffset?>("RespondBy")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()

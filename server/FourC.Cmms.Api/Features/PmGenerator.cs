@@ -156,7 +156,7 @@ public static class PmGenerator
             for (var n = 0; n < round.Count; n++) w.Assets.Add(new WorkOrderAsset { WorkOrderId = w.Id, AssetId = round[n].Id, Sequence = n + 1 });
             foreach (var st in PmRound.Steps(round, steps))
                 db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = st.Sequence, AssetId = st.AssetId, Description = st.Description.Length > 1000 ? st.Description[..1000] : st.Description });
-        }, $"Generated from PM {s.Code}", mail);
+        }, $"Generated from PM {s.Code}", mail, applyTargets: false);
     }
 
     /// <summary>The assets a round's next work order covers (deleted assets drop out through the query filter).</summary>
@@ -245,7 +245,11 @@ public sealed class PmSchedulerService(IServiceScopeFactory scopes, IConfigurati
         var options = scope.ServiceProvider.GetRequiredService<DbContextOptions<CmmsDbContext>>();
         List<Guid> tenantIds;
         await using (var root = new CmmsDbContext(options, new FixedTenantContext(null)))
+        {
             tenantIds = (await root.Tenants.AsNoTracking().Where(t => t.IsActive).ToListAsync(ct)).Where(t => t.Settings.AutoGeneratePm).Select(t => t.Id).ToList();
+            // Due dates written without a due time since the last run (an older server during a deploy, an import) get theirs.
+            await FourC.Cmms.Core.Services.DueBackfill.RunAsync(root, ct);
+        }
         foreach (var tenantId in tenantIds)
         {
             await using var db = new CmmsDbContext(options, new FixedTenantContext(tenantId, null, "PM scheduler"));

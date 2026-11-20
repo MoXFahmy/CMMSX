@@ -101,7 +101,9 @@ var app = builder.Build();
 if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {
     using var scope = app.Services.CreateScope();
-    await scope.ServiceProvider.GetRequiredService<CmmsDbContext>().Database.MigrateAsync();
+    var db = scope.ServiceProvider.GetRequiredService<CmmsDbContext>();
+    await db.Database.MigrateAsync();
+    await FourC.Cmms.Core.Services.DueBackfill.RunAsync(db);
 }
 
 app.UseExceptionHandler();
@@ -132,6 +134,7 @@ api.MapPeopleEndpoints();
 api.MapWorkRequestEndpoints();
 api.MapWorkOrderEndpoints();
 api.MapPlanningEndpoints();
+api.MapPlanningBoardEndpoints();
 api.MapPmEndpoints();
 api.MapInventoryEndpoints();
 api.MapPurchasingEndpoints();

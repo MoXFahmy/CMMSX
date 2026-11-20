@@ -19,9 +19,8 @@ public static class AlertEndpoints
             int? overdue = null, myOverdue = null, triage = null, lowStock = null;
             if (mine.Contains(Permissions.WorkOrdersView))
             {
-                var today = DateOnly.FromDateTime(DateTime.UtcNow);
-                // The same rule as the work order list's "overdue" filter.
-                var late = db.WorkOrders.Where(w => w.DueDate < today && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold));
+                // The same rule as the work order list's "late" filter.
+                var late = SlaQueries.LateWork(db.WorkOrders, DateTimeOffset.UtcNow);
                 overdue = await late.CountAsync(ct);
                 var me = await db.Employees.Where(e => e.UserId == ctx.UserId).Select(e => (Guid?)e.Id).FirstOrDefaultAsync(ct);
                 myOverdue = me is null ? 0 : await late.CountAsync(w => w.Assignees.Any(a => a.EmployeeId == me), ct);

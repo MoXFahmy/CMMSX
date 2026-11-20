@@ -277,21 +277,7 @@ public static class PmEndpoints
         pm.MapGet("/forecast", async (DateOnly from, DateOnly to, Guid? siteId, CmmsDbContext db, CancellationToken ct) =>
         {
             if (to < from || to > from.AddYears(2)) throw new DomainException("Choose a range of up to two years.");
-            var q = db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Assets).Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= to);
-            if (siteId is not null) q = q.Where(x => x.SiteId == siteId);
-            var list = await q.Select(x => new { S = x, AssetNumber = x.Asset!.AssetNumber, TaskName = x.PmTask!.Name, SiteName = x.Site!.Name }).ToListAsync(ct);
-            var taskNames = await db.PmTasks.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, ct);
-            // Estimated cost per visit, worked out once per schedule and task (not per forecast row).
-            var costs = (await PmCost.ForSchedulesAsync(db, list.Select(i => i.S).ToList(), ct)).ToDictionary(x => x.Key, x => x.Value.Total);
-            return list.SelectMany(i => PmCalendar.Forecast(i.S, to, 400).Select((d, k) => new
-            {
-                Date = d, i.S.Id, i.S.Code, i.S.Name, i.AssetNumber, i.SiteName, i.S.Type,
-                TaskName = taskNames.GetValueOrDefault(PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + k)) ?? i.TaskName,
-                Cost = costs.GetValueOrDefault((i.S.Id, PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + k))),
-                Overdue = d < Today,
-                // The schedule's next occurrence: generating it creates no other work order.
-                IsNext = k == 0,
-            })).Where(x => x.Date >= from || x.Overdue).OrderBy(x => x.Date).Take(5000);
+            return await ForecastAsync(db, from, to, siteId, ct);
         }).RequirePermission(Permissions.PmView);
 
         // ---------------- Meters ----------------
@@ -485,5 +471,45 @@ public static class PmEndpoints
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.Meters.AnyAsync(x => x.Code == i.Code.Trim() && x.Id != id, ct)) v.Add("code", "Another meter uses this number.");
         if (!await db.Assets.AnyAsync(a => a.Id == i.AssetId, ct)) v.Add("assetId", "Choose the asset this meter is on.");
         return v;
+    }
+
+    /// <summary>A future PM occurrence (not generated yet): the PM page's forecast and the planning board.</summary>
+    public sealed class ForecastRow
+    {
+        public DateOnly Date { get; init; }
+        public Guid Id { get; init; }
+        public required string Code { get; init; }
+        public required string Name { get; init; }
+        public Guid? AssetId { get; init; }
+        public string? AssetNumber { get; init; }
+        public Guid SiteId { get; init; }
+        public required string SiteName { get; init; }
+        public PmScheduleType Type { get; init; }
+        public string? TaskName { get; init; }
+        public decimal? Cost { get; init; }
+        public bool Overdue { get; init; }
+        public bool IsNext { get; init; }
+        /// <summary>The people the work order will go to (the schedule's technicians).</summary>
+        public List<Guid> AssigneeIds { get; init; } = [];
+    }
+
+    internal static async Task<List<ForecastRow>> ForecastAsync(CmmsDbContext db, DateOnly from, DateOnly to, Guid? siteId, CancellationToken ct)
+    {
+        var q = db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Assets).Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= to);
+        if (siteId is not null) q = q.Where(x => x.SiteId == siteId);
+        var list = await q.Select(x => new { S = x, AssetNumber = x.Asset!.AssetNumber, TaskName = x.PmTask!.Name, SiteName = x.Site!.Name }).ToListAsync(ct);
+        var taskNames = await db.PmTasks.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+        // Estimated cost per visit, worked out once per schedule and task (not per forecast row).
+        var costs = (await PmCost.ForSchedulesAsync(db, list.Select(i => i.S).ToList(), ct)).ToDictionary(x => x.Key, x => x.Value.Total);
+        return list.SelectMany(i => PmCalendar.Forecast(i.S, to, 400).Select((d, k) => new ForecastRow
+        {
+            Date = d, Id = i.S.Id, Code = i.S.Code, Name = i.S.Name, AssetId = i.S.AssetId, AssetNumber = i.AssetNumber, SiteId = i.S.SiteId, SiteName = i.SiteName, Type = i.S.Type,
+            TaskName = taskNames.GetValueOrDefault(PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + k)) ?? i.TaskName,
+            Cost = costs.GetValueOrDefault((i.S.Id, PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + k))),
+            Overdue = d < Today,
+            // The schedule's next occurrence: generating it creates no other work order.
+            IsNext = k == 0,
+            AssigneeIds = i.S.AssigneeIds,
+        })).Where(x => x.Date >= from || x.Overdue).OrderBy(x => x.Date).Take(5000).ToList();
     }
 }

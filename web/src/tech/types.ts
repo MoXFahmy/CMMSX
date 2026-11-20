@@ -3,7 +3,7 @@ import type { HoldReason, WorkOrderStatus, WorkPriority, WorkType } from '@/api/
 /** A job as the phone keeps it (GET /api/tech/bundle). */
 export type TechJob = {
   id: string; number: string; title: string; description?: string | null; type: WorkType; priority: WorkPriority; status: WorkOrderStatus;
-  holdReason?: HoldReason | null; dueDate?: string | null; plannedStart?: string | null; siteId: string;
+  holdReason?: HoldReason | null; dueDate?: string | null; dueAt?: string | null; plannedStart?: string | null; siteId: string;
   asset?: { id: string; assetNumber: string; name: string; notesToTechnician?: string | null } | null;
   location?: { id: string; path?: string | null; notesToTechnician?: string | null } | null;
   roundAssets: { id: string; assetNumber: string; name: string }[];

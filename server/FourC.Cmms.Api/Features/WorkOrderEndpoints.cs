@@ -15,9 +15,10 @@ public static class WorkOrderEndpoints
 {
     public sealed record WorkOrderInput(string Title, string? Description, WorkType Type, WorkPriority Priority, Guid SiteId, Guid? LocationId, Guid? AssetId,
         Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? PlannedStart, DateOnly? DueDate, decimal? EstimatedHours, List<string>? Tasks, string? RowVersion = null,
-        string? RequestedBy = null, Guid? CopyPlanFromId = null);
+        string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
-        Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null);
+        Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
+        DateTimeOffset? At = null);
     public sealed record BulkInput(Guid[]? Ids, StatusInput? Status, WorkPriority? Priority, Guid[]? AddAssigneeIds);
     public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null);
     public sealed record LaborInput(Guid EmployeeId, DateOnly WorkDate, decimal Hours, decimal OvertimeHours, string? Notes);
@@ -36,7 +37,14 @@ public static class WorkOrderEndpoints
         public Guid? TradeId { get; set; }
         public Guid? AssigneeId { get; set; }
         public bool? Mine { get; set; }
+        /// <summary>Old name of <see cref="Late"/> (phones and bookmarks).</summary>
         public bool? Overdue { get; set; }
+        /// <summary>Past the due time, or past the start-by with nobody having acted on it.</summary>
+        public bool? Late { get; set; }
+        /// <summary>Past the start-by with nobody having acted on it.</summary>
+        public bool? ResponseLate { get; set; }
+        /// <summary>Open and due soon (less than a quarter of the target, or 2 hours, left).</summary>
+        public bool? DueSoon { get; set; }
         public bool? ActiveOnly { get; set; }
         public DateOnly? CreatedFrom { get; set; }
         public DateOnly? CreatedTo { get; set; }
@@ -59,7 +67,8 @@ public static class WorkOrderEndpoints
 
     public sealed record WorkOrderListItem(Guid Id, string Number, string Title, WorkType Type, WorkPriority Priority, WorkOrderStatus Status, HoldReason? HoldReason,
         Guid SiteId, string SiteName, Guid? LocationId, string? LocationPath, Guid? AssetId, string? AssetNumber, string? AssetName, string? TradeName,
-        List<string> Assignees, DateOnly? DueDate, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, bool IsOverdue);
+        List<string> Assignees, DateOnly? DueDate, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, bool IsOverdue,
+        DateTimeOffset? DueAt, DateTimeOffset? StartBy, DateTimeOffset? RespondedAt, SlaState ResponseState, SlaState CompletionState);
 
     public static void MapWorkOrderEndpoints(this RouteGroupBuilder api)
     {
@@ -76,9 +85,8 @@ public static class WorkOrderEndpoints
         g.MapGet("/summary", async ([AsParameters] WorkOrderFilter f, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             var q = await FilterAsync(db, f, ctx, includeStatus: false, ct);
-            var today = Today;
             var byStatus = await q.GroupBy(w => w.Status).Select(x => new { Status = x.Key, Count = x.Count() }).ToListAsync(ct);
-            var overdue = await q.CountAsync(w => w.DueDate < today && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold), ct);
+            var overdue = await SlaQueries.LateWork(q, DateTimeOffset.UtcNow).CountAsync(ct);
             return new { byStatus, overdue };
         }).RequirePermission(Permissions.WorkOrdersView);
 
@@ -106,7 +114,16 @@ public static class WorkOrderEndpoints
                 .OrderByDescending(t => t.Date).ThenByDescending(t => t.CreatedAt)
                 .Select(t => new { t.Id, t.Type, t.Date, t.PartId, t.Part!.PartNumber, PartName = t.Part.Name, t.Part.UnitOfMeasure, t.StoreId, StoreCode = t.Store!.Code,
                     Quantity = -t.Quantity, t.UnitCost, Total = Math.Round(-t.Quantity * t.UnitCost, 2), t.BatchNumber, t.Notes, t.CreatedByName }).ToListAsync(ct);
-            var request = w.WorkRequestId is { } rid ? await db.WorkRequests.AsNoTracking().Where(r => r.Id == rid).Select(r => new { r.Id, r.Number, r.RequesterName }).FirstOrDefaultAsync(ct) : null;
+            var request = w.WorkRequestId is { } rid ? await db.WorkRequests.AsNoTracking().Where(r => r.Id == rid).Select(r => new { r.Id, r.Number, r.RequesterName, r.RespondBy, r.DecidedAt }).FirstOrDefaultAsync(ct) : null;
+            var settings = await SlaQueries.SettingsAsync(db, ct);
+            var now = DateTimeOffset.UtcNow;
+            var sla = SlaQueries.Work(settings, w.Priority, w.Status, w.StartBy, w.RespondedAt, w.DueAt, w.DueFromTarget, w.CompletedAt, now);
+            // Raised as a request: its response was the request's decision.
+            if (request is not null) sla = sla with
+            {
+                Response = Sla.State(request.RespondBy, request.DecidedAt, now, Sla.For(settings, w.Priority)?.RespondMinutes is { } m ? TimeSpan.FromMinutes(m) : null),
+                RespondBy = request.RespondBy, RespondedAt = request.DecidedAt,
+            };
             var mine = await perms.GetAsync(UserId(http));
             var transitions = WorkOrderWorkflow.NextStatuses(w.Status)
                 .Where(s => mine.Contains(Permissions.WorkOrdersExecute) && (!WorkOrderWorkflow.RequiresClosePermission(w.Status, s) || mine.Contains(Permissions.WorkOrdersClose)));
@@ -127,7 +144,7 @@ public static class WorkOrderEndpoints
                 w.RequestedBy, w.PreventionNotes,
                 w.TradeId, TradeName = w.Trade?.Name, w.FailureCodeId, FailureCode = w.FailureCode is null ? null : new { w.FailureCode.Code, w.FailureCode.Name },
                 Assignees = w.Assignees.Select(a => new { a.EmployeeId, a.Employee!.FullName, a.Employee.Code, a.PlannedHours, a.Employee.HourlyRate }),
-                w.PlannedStart, w.DueDate, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
+                w.PlannedStart, w.DueDate, w.DueAt, w.DueFromTarget, w.StartBy, w.RespondedAt, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 LocationNotesToTechnician = locationNotes, Request = request, Pm = pm, w.PmDueDate,
                 Assets = roundAssets,
                 Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName }),
@@ -138,7 +155,7 @@ public static class WorkOrderEndpoints
                     LaborHours = labor.Sum(l => l.Hours + l.OvertimeHours), LaborCost = labor.Sum(l => l.Cost), PartsCost = parts.Sum(p => p.Total), OtherCost = costs.Sum(c => c.Total),
                     TotalCost = labor.Sum(l => l.Cost) + parts.Sum(p => p.Total) + costs.Sum(c => c.Total),
                 },
-                AllowedTransitions = transitions, IsOverdue = w.DueDate < Today && WorkOrderWorkflow.IsActive(w.Status),
+                AllowedTransitions = transitions, IsOverdue = sla.Completion == SlaState.Late || sla.Response == SlaState.Late, Sla = sla,
                 w.CreatedAt, w.UpdatedAt, w.LegacyRef, RowVersion = Convert.ToBase64String(w.RowVersion),
             });
         }).RequirePermission(Permissions.WorkOrdersView);
@@ -166,7 +183,11 @@ public static class WorkOrderEndpoints
             var v = await ValidateAsync(input, db, ct);
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(w).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
+            var priorityBefore = w.Priority;
             Apply(w, input);
+            var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+            var raisedAt = w.WorkRequestId is { } rid ? await db.WorkRequests.Where(r => r.Id == rid).Select(r => (DateTimeOffset?)r.CreatedAt).FirstOrDefaultAsync(ct) ?? w.CreatedAt : w.CreatedAt;
+            Deadlines.OnUpdate(w, input.DueAt, input.DueDate, priorityBefore, settings, raisedAt);
             var before = w.Assignees.Select(a => a.EmployeeId).ToHashSet();
             SyncAssignees(w, input.AssigneeIds);
             await mail.AssigneesAddedAsync(db, ctx, w, w.Assignees.Select(a => a.EmployeeId).Where(e => !before.Contains(e)).ToList(), ct);
@@ -216,6 +237,9 @@ public static class WorkOrderEndpoints
             if (add.Count > 0 && await db.Employees.CountAsync(e => add.Contains(e.Id), ct) != add.Count) throw new DomainException("A chosen technician wasn't found.");
 
             var rows = await db.WorkOrders.Include(x => x.Assignees).Where(w => ids.Contains(w.Id)).OrderBy(w => w.Number).ToListAsync(ct);
+            // A priority change recomputes target deadlines from when the work was raised (as on the edit page).
+            var requestIds = rows.Where(r => r.WorkRequestId != null).Select(r => r.WorkRequestId!.Value).ToList();
+            var raised = await db.WorkRequests.Where(r => requestIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, r => r.CreatedAt, ct);
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
             var canClose = mine.Contains(Permissions.WorkOrdersClose);
             var skipped = new List<BulkSkip>();
@@ -231,7 +255,13 @@ public static class WorkOrderEndpoints
                     else if (await ChangeStatusAsync(db, ctx, mail, settings, w, st, ct) is { IsValid: false } v) reason = v.Messages.First();
                 }
                 else if (w.Status is WorkOrderStatus.Closed or WorkOrderStatus.Cancelled) reason = "Reopen it first.";
-                else if (input.Priority is { } priority) w.Priority = priority;
+                else if (input.Priority is { } priority)
+                {
+                    var before = w.Priority;
+                    w.Priority = priority;
+                    Deadlines.OnUpdate(w, w.DueAt, w.DueDate, before, settings,
+                        w.WorkRequestId is { } rid && raised.TryGetValue(rid, out var at) ? at : w.CreatedAt);
+                }
                 else
                 {
                     var before = w.Assignees.Select(a => a.EmployeeId).ToHashSet();
@@ -399,6 +429,8 @@ public static class WorkOrderEndpoints
             WorkOrderId = w.Id, FromStatus = w.Status, ToStatus = input.Status, HoldReason = input.Status == WorkOrderStatus.OnHold ? input.HoldReason : null,
             Note = input.Note.Clean(), ChangedAt = now, ChangedById = ctx.UserId, ChangedByName = ctx.UserName,
         });
+        // Leaving Open (start, hold or straight to completed) is the response; the phone's time for offline work.
+        if (input.Status != WorkOrderStatus.Open) w.RespondedAt ??= input.At ?? now;
         w.Status = input.Status;
         w.HoldReason = input.Status == WorkOrderStatus.OnHold ? input.HoldReason : null;
         switch (input.Status)
@@ -436,17 +468,24 @@ public static class WorkOrderEndpoints
         CancellationToken ct, int maxPageSize = 500)
     {
         var q = await FilterAsync(db, f, ctx, includeStatus: true, ct);
-        var today = Today;
+        var settings = await SlaQueries.SettingsAsync(db, ct);
+        var now = DateTimeOffset.UtcNow;
         var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "createdAt").Select(w => new
         {
             w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason, w.SiteId, SiteName = w.Site!.Name, w.LocationId, LocationPath = w.Location!.Path,
             w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, TradeName = w.Trade!.Name,
             Assignees = w.Assignees.Select(a => a.Employee!.FullName).ToList(), w.DueDate, w.CreatedAt, w.CompletedAt,
+            w.DueAt, w.StartBy, w.RespondedAt, w.DueFromTarget,
         }).ToPagedAsync(page, pageSize, ct, maxPageSize);
         var names = await LocationEndpoints.ResolvePathNamesAsync(db, paged.Items.Select(i => i.LocationPath), ct);
-        return new PagedResult<WorkOrderListItem>(paged.Items.Select(w => new WorkOrderListItem(w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason,
-            w.SiteId, w.SiteName, w.LocationId, w.LocationPath is null ? null : names(w.LocationPath), w.AssetId, w.AssetNumber, w.AssetName, w.TradeName,
-            w.Assignees, w.DueDate, w.CreatedAt, w.CompletedAt, w.DueDate < today && WorkOrderWorkflow.IsActive(w.Status))).ToList(), paged.Total, paged.Page, paged.PageSize);
+        return new PagedResult<WorkOrderListItem>(paged.Items.Select(w =>
+        {
+            var sla = SlaQueries.Work(settings, w.Priority, w.Status, w.StartBy, w.RespondedAt, w.DueAt, w.DueFromTarget, w.CompletedAt, now);
+            return new WorkOrderListItem(w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason,
+                w.SiteId, w.SiteName, w.LocationId, w.LocationPath is null ? null : names(w.LocationPath), w.AssetId, w.AssetNumber, w.AssetName, w.TradeName,
+                w.Assignees, w.DueDate, w.CreatedAt, w.CompletedAt, sla.Completion == SlaState.Late || sla.Response == SlaState.Late,
+                w.DueAt, w.StartBy, w.RespondedAt, sla.Response, sla.Completion);
+        }).ToList(), paged.Total, paged.Page, paged.PageSize);
     }
 
     private static async Task<IQueryable<WorkOrder>> FilterAsync(CmmsDbContext db, WorkOrderFilter f, ITenantContext ctx, bool includeStatus, CancellationToken ct)
@@ -482,12 +521,21 @@ public static class WorkOrderEndpoints
             var me = await db.Employees.Where(e => e.UserId == ctx.UserId).Select(e => (Guid?)e.Id).FirstOrDefaultAsync(ct);
             q = q.Where(w => me != null && w.Assignees.Any(a => a.EmployeeId == me));
         }
-        if (f.Overdue == true)
+        if (f.Late == true || f.Overdue == true) q = SlaQueries.LateWork(q, DateTimeOffset.UtcNow);
+        if (f.ResponseLate == true) q = SlaQueries.LateResponse(q, DateTimeOffset.UtcNow);
+        if (f.DueSoon == true)
         {
-            var today = Today;
-            q = q.Where(w => w.DueDate < today && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold));
+            var soon = await SlaQueries.DueSoonIdsAsync(q, await SlaQueries.SettingsAsync(db, ct), DateTimeOffset.UtcNow, ct);
+            q = q.Where(w => soon.Contains(w.Id));
         }
         return q;
+    }
+
+    /// <summary>The work order's first action (a tick or hours) is its response: the earliest one counts.</summary>
+    internal static async Task MarkRespondedAsync(CmmsDbContext db, Guid workOrderId, DateTimeOffset? at, CancellationToken ct)
+    {
+        var w = await db.WorkOrders.FirstOrDefaultAsync(x => x.Id == workOrderId, ct);
+        if (w is not null) w.RespondedAt ??= at ?? DateTimeOffset.UtcNow;
     }
 
     /// <summary>"Start work automatically" setting: an Open work order moves to In progress when work is first recorded on it.</summary>
@@ -508,10 +556,12 @@ public static class WorkOrderEndpoints
 
     public static async Task<Validator> ValidateAsync(WorkOrderInput i, CmmsDbContext db, CancellationToken ct)
     {
+        // The due time's day in the organization's time zone (01:00 in Cairo is still the same local day).
+        var dueDay = i.DueAt is { } da ? Sla.LocalDay(da, Sla.Zone((await SlaQueries.SettingsAsync(db, ct)).TimeZone)) : i.DueDate;
         var v = new Validator().Required("title", i.Title, "Title", 300)
             .When(!Enum.IsDefined(i.Type), "type", "Choose a work type.").When(!Enum.IsDefined(i.Priority), "priority", "Choose a priority.")
             .When(i.EstimatedHours < 0, "estimatedHours", "Estimate cannot be negative.")
-            .When(i.PlannedStart is not null && i.DueDate is not null && i.DueDate < i.PlannedStart, "dueDate", "Due date cannot be before the planned start.");
+            .When(i.PlannedStart is { } ps && dueDay is { } dd && dd < ps, "dueDate", "Due date cannot be before the planned start.");
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct)) v.Add("locationId", "Location must belong to the selected site.");
         if (i.AssetId is not null && !await db.Assets.AnyAsync(a => a.Id == i.AssetId && a.SiteId == i.SiteId, ct)) v.Add("assetId", "Asset must belong to the selected site.");
@@ -522,7 +572,7 @@ public static class WorkOrderEndpoints
     }
 
     public static async Task<WorkOrder> CreateAsync(CmmsDbContext db, ITenantContext ctx, WorkOrderInput input, Guid? requestId, CancellationToken ct,
-        Action<WorkOrder>? configure = null, string? note = null, EmailOutbox? mail = null)
+        Action<WorkOrder>? configure = null, string? note = null, EmailOutbox? mail = null, bool applyTargets = true, DateTimeOffset? raisedAt = null)
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var number = await Numbering.NextAsync(db, "WorkOrder", settings.WorkOrderNumberPrefix, 5,
@@ -532,6 +582,7 @@ public static class WorkOrderEndpoints
         if (input.AssetId is not null && input.LocationId is null)
             input = input with { LocationId = await db.Assets.Where(a => a.Id == input.AssetId).Select(a => a.LocationId).FirstOrDefaultAsync(ct) };
         Apply(w, input);
+        Deadlines.OnCreate(w, input.DueAt, input.DueDate, settings, raisedAt ?? DateTimeOffset.UtcNow, requestId is not null, applyTargets);
         SyncAssignees(w, input.AssigneeIds);
         configure?.Invoke(w);
         db.WorkOrders.Add(w);
@@ -548,7 +599,7 @@ public static class WorkOrderEndpoints
     private static void Apply(WorkOrder w, WorkOrderInput i)
     {
         w.Title = i.Title.Trim(); w.Description = i.Description.Clean(); w.Type = i.Type; w.Priority = i.Priority; w.SiteId = i.SiteId; w.LocationId = i.LocationId;
-        w.AssetId = i.AssetId; w.TradeId = i.TradeId; w.PlannedStart = i.PlannedStart; w.DueDate = i.DueDate; w.EstimatedHours = i.EstimatedHours;
+        w.AssetId = i.AssetId; w.TradeId = i.TradeId; w.PlannedStart = i.PlannedStart; w.EstimatedHours = i.EstimatedHours; // deadlines: Deadlines
         w.RequestedBy = i.RequestedBy.Clean() is { } rb && rb.Length > 200 ? rb[..200] : i.RequestedBy.Clean();
     }
 
@@ -569,6 +620,7 @@ public static class WorkOrderEndpoints
             Rate = emp.HourlyRate ?? 0, OvertimeRate = emp.OvertimeRate ?? emp.HourlyRate ?? 0, Notes = input.Notes.Clean() };
         db.WorkOrderLabor.Add(l);
         await AutoStartAsync(db, ctx, workOrderId, "Started automatically: labour logged", ct, at);
+        await MarkRespondedAsync(db, workOrderId, at, ct);
         return (v, l);
     }
 
@@ -592,7 +644,11 @@ public static class WorkOrderEndpoints
         if (isDone is { } done && done != t.IsDone)
         {
             t.IsDone = done; t.DoneAt = done ? at : null; t.DoneBy = done ? ctx.UserName : null; changed = true;
-            if (done) await AutoStartAsync(db, ctx, workOrderId, "Started automatically: checklist step done", ct, at);
+            if (done)
+            {
+                await AutoStartAsync(db, ctx, workOrderId, "Started automatically: checklist step done", ct, at);
+                await MarkRespondedAsync(db, workOrderId, at, ct);
+            }
         }
         if (changed) { t.UpdatedAt = at; t.UpdatedById = ctx.UserId; t.UpdatedByName = ctx.UserName; }
     }

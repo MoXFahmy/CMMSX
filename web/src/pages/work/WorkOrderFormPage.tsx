@@ -1,6 +1,7 @@
 import { useEffect } from 'react';
 import { ActionIcon, Button, Card, Center, Grid, Group, Loader, NumberInput, Select, SimpleGrid, Stack, TextInput, Textarea, Title } from '@mantine/core';
-import { DateInput } from '@mantine/dates';
+import { DateInput, DateTimePicker } from '@mantine/dates';
+import dayjs from 'dayjs';
 import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
@@ -17,10 +18,13 @@ import { handleFormError, notifySuccess, toIsoDate } from '@/components/utils';
 
 type Values = {
   title: string; description: string; type: string; priority: string; siteId: string | null; locationId: string | null; assetId: string | null;
-  tradeId: string | null; assigneeIds: string[]; plannedStart: Date | null; dueDate: Date | null; estimatedHours: number | ''; tasks: string[]; requestedBy: string;
+  tradeId: string | null; assigneeIds: string[]; plannedStart: Date | null;
+  /** Due date and time, local ("YYYY-MM-DD HH:mm:ss"); empty = from the priority's target. */
+  dueAt: string | null; estimatedHours: number | ''; tasks: string[]; requestedBy: string;
 };
 const empty: Values = { title: '', description: '', type: 'Corrective', priority: 'Medium', siteId: null, locationId: null, assetId: null, tradeId: null,
-  assigneeIds: [], plannedStart: null, dueDate: null, estimatedHours: '', tasks: [], requestedBy: '' };
+  assigneeIds: [], plannedStart: null, dueAt: null, estimatedHours: '', tasks: [], requestedBy: '' };
+const local = (v?: string | null) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : null);
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 
 export function WorkOrderFormPage() {
@@ -43,7 +47,7 @@ export function WorkOrderFormPage() {
       form.setValues({
         title: wo.title, description: wo.description ?? '', type: wo.type, priority: wo.priority, siteId: wo.siteId, locationId: wo.locationId ?? null,
         assetId: wo.assetId ?? null, tradeId: wo.tradeId ?? null, assigneeIds: wo.assignees.map((a) => a.employeeId), plannedStart: d(wo.plannedStart),
-        dueDate: d(wo.dueDate), estimatedHours: wo.estimatedHours ?? '', tasks: [], requestedBy: wo.requestedBy ?? '',
+        dueAt: local(wo.dueAt), estimatedHours: wo.estimatedHours ?? '', tasks: [], requestedBy: wo.requestedBy ?? '',
       });
       form.resetDirty();
     } else if (source) {
@@ -64,7 +68,8 @@ export function WorkOrderFormPage() {
 
   const submit = form.onSubmit(async (v) => {
     const body = {
-      ...v, plannedStart: toIsoDate(v.plannedStart), dueDate: toIsoDate(v.dueDate), estimatedHours: v.estimatedHours === '' ? null : v.estimatedHours,
+      ...v, plannedStart: toIsoDate(v.plannedStart), dueAt: v.dueAt ? dayjs(v.dueAt).toISOString() : null, dueDate: null,
+      estimatedHours: v.estimatedHours === '' ? null : v.estimatedHours,
       tasks: v.tasks.filter((x) => x.trim()), rowVersion: wo?.rowVersion,
       // Duplicate: the source's planned parts and hours come along (server side).
       copyPlanFromId: !editing && source ? source.id : undefined,
@@ -127,7 +132,8 @@ export function WorkOrderFormPage() {
               siteId={form.values.siteId} tradeId={form.values.tradeId} error={err('assigneeIds')} />
             <SimpleGrid cols={2}>
               <DateInput label={t('wo.plannedStart')} clearable valueFormat="DD MMM YYYY" {...form.getInputProps('plannedStart')} />
-              <DateInput label={t('wo.dueDate')} clearable valueFormat="DD MMM YYYY" {...form.getInputProps('dueDate')} />
+              <DateTimePicker label={t('wo.dueAt')} description={t('wo.dueAtHint')} clearable valueFormat="DD MMM YYYY, HH:mm" {...form.getInputProps('dueAt')}
+                error={err('dueDate')} />
             </SimpleGrid>
             <NumberInput label={t('wo.estimatedHours')} min={0} decimalScale={2} {...form.getInputProps('estimatedHours')} />
             <TextInput label={t('wo.requestedBy')} {...form.getInputProps('requestedBy')} />

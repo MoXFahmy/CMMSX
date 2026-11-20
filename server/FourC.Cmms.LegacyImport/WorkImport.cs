@@ -152,6 +152,7 @@ static class WorkImport
             wo.FailureCodeId = !string.IsNullOrWhiteSpace(r.FailureCauseCode) && failureByCode.TryGetValue(K(r.FailureCauseCode), out var fc) ? fc.Id : null;
             wo.CreatedAt = Utc(r.DateReceived) ?? wo.CreatedAt;
             wo.DueDate = Day(r.DateRequired); wo.PlannedStart = Day(r.EstDateStart);
+            wo.DueAt = null; wo.DueFromTarget = false; // re-imported: DueBackfill gives the (new) due date its due time after the import
             wo.EstimatedHours = r.EstDuration is > 0 and < 100000 ? Dec(r.EstDuration) : null;
             wo.StartedAt = Utc(r.ActDateStart);
             wo.CompletedAt = status is WorkOrderStatus.Completed or WorkOrderStatus.Closed ? Utc(r.ActDateEnd) ?? Utc(r.ActDateStart) : null;
@@ -255,6 +256,7 @@ static class WorkImport
             wr.SiteId = site.Id; wr.LocationId = loc; wr.AssetId = asset; wr.Type = MapType(r.WorkType); wr.Priority = MapPriority(r.WorkPriority);
             wr.Status = st.Contains("cancel") ? WorkRequestStatus.Cancelled : linked is not null || st.Contains("raised") || st.Contains("close") ? WorkRequestStatus.Approved : WorkRequestStatus.New;
             wr.WorkOrderId = linked?.Id; wr.RequiredBy = Day(r.RequiredDate); wr.CreatedAt = Utc(r.ReceivedDate) ?? wr.CreatedAt;
+            wr.DueAt = null; wr.DueFromTarget = false; // see the work orders above
             wr.RequesterName = Trunc((r.requestby?.Trim() is { Length: > 0 } rb ? rb : null) ?? EmpName(r.EmployeeNo), 200);
             wr.RequesterPhone = Trunc(r.telno?.Trim() is { Length: > 0 } tel ? tel : null, 50);
             if (linked is not null && linked.WorkRequestId is null)
