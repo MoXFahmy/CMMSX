@@ -18,7 +18,8 @@ public sealed record ExportColumn(string Key, string Title);
 /// </summary>
 public static class TableExport
 {
-    private static readonly ConcurrentDictionary<(Type, string), PropertyInfo?> Props = new();
+    /// <summary>The readable properties of each row type, by name ignoring case (indexers left out). One entry per type, so it stays small.</summary>
+    private static readonly ConcurrentDictionary<Type, Dictionary<string, PropertyInfo>> Props = new();
 
     /// <summary>"InProgress" → "In progress"; runs of capitals ("PM") stay together.</summary>
     public static string Words(string value)
@@ -53,15 +54,40 @@ public static class TableExport
         return list.Select(item => cols.Select(c => Cell(Read(item, c.Key), tz)).ToArray()).ToList();
     }
 
-    /// <summary>Throws <see cref="ArgumentException"/> when a column's first key segment isn't a property of <paramref name="rowType"/>.</summary>
+    /// <summary>
+    /// Throws <see cref="ArgumentException"/> unless every column key is a path of <paramref name="rowType"/>: properties of
+    /// objects, then any key of a dictionary. A path can't go further into a plain value (text, number, date) or a list.
+    /// </summary>
     public static void Check(Type rowType, IReadOnlyList<ExportColumn> cols)
     {
         foreach (var c in cols)
-            if (Prop(rowType, c.Key.Split('.')[0]) is null) throw new ArgumentException($"Unknown column: {c.Key}");
+        {
+            var t = rowType;
+            foreach (var part in c.Key.Split('.'))
+            {
+                if (IsPlain(t)) throw new ArgumentException($"Unknown column: {c.Key}");
+                if (DictionaryValueType(t) is { } valueType) { t = valueType; continue; }
+                if (typeof(IEnumerable).IsAssignableFrom(t)) throw new ArgumentException($"Unknown column: {c.Key}");
+                var p = Prop(t, part) ?? throw new ArgumentException($"Unknown column: {c.Key}");
+                t = Nullable.GetUnderlyingType(p.PropertyType) ?? p.PropertyType;
+            }
+        }
     }
 
-    private static PropertyInfo? Prop(Type t, string name) =>
-        Props.GetOrAdd((t, name), k => k.Item1.GetProperty(k.Item2, BindingFlags.Public | BindingFlags.Instance | BindingFlags.IgnoreCase));
+    private static bool IsPlain(Type t) => t.IsPrimitive || t.IsEnum || t == typeof(string) || t == typeof(decimal) || t == typeof(DateOnly) || t == typeof(DateTime)
+        || t == typeof(DateTimeOffset) || t == typeof(TimeOnly) || t == typeof(TimeSpan) || t == typeof(Guid);
+
+    private static Type? DictionaryValueType(Type t)
+    {
+        var generic = (t.IsGenericType && t.GetGenericTypeDefinition() == typeof(IDictionary<,>) ? t : null)
+            ?? t.GetInterfaces().FirstOrDefault(i => i.IsGenericType && i.GetGenericTypeDefinition() == typeof(IDictionary<,>));
+        if (generic is not null) return generic.GetGenericArguments()[0] == typeof(string) ? generic.GetGenericArguments()[1] : null;
+        return typeof(IDictionary).IsAssignableFrom(t) ? typeof(object) : null;
+    }
+
+    private static PropertyInfo? Prop(Type t, string name) => Props.GetOrAdd(t, type => type.GetProperties(BindingFlags.Public | BindingFlags.Instance)
+        .Where(p => p.GetIndexParameters().Length == 0).GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
+        .ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase)).GetValueOrDefault(name);
 
     private static object? Read(object item, string key)
     {
@@ -188,6 +214,9 @@ public static class TableExport
                 {
                     case null: break;
                     case decimal m: sb.Append($"<c r=\"{at}\"><v>{m.ToString(CultureInfo.InvariantCulture)}</v></c>"); break;
+                    // Excel's dates start in 1900 (and count 29 Feb 1900, which never was): earlier ones go in as text.
+                    case DateOnly d when d < ExcelDatesFrom: sb.Append($"<c r=\"{at}\" t=\"inlineStr\"><is><t>{Plain(d)}</t></is></c>"); break;
+                    case DateTime dt when dt < ExcelDatesFrom.ToDateTime(TimeOnly.MinValue): sb.Append($"<c r=\"{at}\" t=\"inlineStr\"><is><t>{Plain(dt)}</t></is></c>"); break;
                     case DateOnly d: sb.Append($"<c r=\"{at}\" s=\"2\"><v>{d.ToDateTime(TimeOnly.MinValue).ToOADate().ToString(CultureInfo.InvariantCulture)}</v></c>"); break;
                     case DateTime dt: sb.Append($"<c r=\"{at}\" s=\"3\"><v>{dt.ToOADate().ToString(CultureInfo.InvariantCulture)}</v></c>"); break;
                     case var v: sb.Append($"<c r=\"{at}\" t=\"inlineStr\"><is><t xml:space=\"preserve\">{Esc(Plain(v))}</t></is></c>"); break;
@@ -199,6 +228,8 @@ public static class TableExport
         if (cols.Count > 0) sb.Append($"<autoFilter ref=\"A1:{last}{rows.Count + 1}\"/>");
         return sb.Append("</worksheet>").ToString();
     }
+
+    private static readonly DateOnly ExcelDatesFrom = new(1900, 3, 1);
 
     /// <summary>0 → A, 25 → Z, 26 → AA.</summary>
     private static string Col(int i)

@@ -95,11 +95,20 @@ public static class ViewEndpoints
             var v = ValidateColumns(new Validator(), input.HiddenColumns);
             if (!v.IsValid) return v.Problem();
             var me = Me(ctx);
-            var row = await db.UserListSettings.FirstOrDefaultAsync(x => x.UserId == me && x.List == list, ct);
-            if (row is null) db.UserListSettings.Add(row = new UserListSetting { UserId = me, List = list });
-            row.HiddenColumns = Columns(input.HiddenColumns);
-            await db.SaveChangesAsync(ct);
-            return Results.Ok(new { row.HiddenColumns });
+            var cols = Columns(input.HiddenColumns);
+            for (var attempt = 1; ; attempt++)
+            {
+                var row = await db.UserListSettings.FirstOrDefaultAsync(x => x.UserId == me && x.List == list, ct);
+                if (row is null) db.UserListSettings.Add(row = new UserListSetting { UserId = me, List = list });
+                row.HiddenColumns = cols;
+                try
+                {
+                    await db.SaveChangesAsync(ct);
+                    return Results.Ok(new { row.HiddenColumns });
+                }
+                // Two quick saves on a list with no row yet: the other one inserted first, so update its row instead.
+                catch (DbUpdateException) when (attempt < 3) { db.ChangeTracker.Clear(); }
+            }
         });
     }
 

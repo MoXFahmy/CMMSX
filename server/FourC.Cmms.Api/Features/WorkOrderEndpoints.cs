@@ -196,6 +196,7 @@ public static class WorkOrderEndpoints
             if ((input.Status is null ? 0 : 1) + (input.Priority is null ? 0 : 1) + (add.Count > 0 ? 1 : 0) != 1) throw new DomainException("Choose one change to make.");
             var mine = await perms.GetAsync(UserId(http));
             if (!mine.Contains(input.Status is null ? Permissions.WorkOrdersEdit : Permissions.WorkOrdersExecute)) return Results.Forbid();
+            if (input.Priority is { } wanted && !Enum.IsDefined(wanted)) throw new DomainException("Unknown priority.");
             if (input.Status is { Status: WorkOrderStatus.OnHold, HoldReason: null })
                 return new Validator().When(true, "holdReason", "Choose why the work is on hold.").Problem();
             if (add.Count > 0 && await db.Employees.CountAsync(e => add.Contains(e.Id), ct) != add.Count) throw new DomainException("A chosen technician wasn't found.");

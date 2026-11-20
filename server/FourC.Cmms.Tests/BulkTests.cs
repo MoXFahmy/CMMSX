@@ -162,6 +162,17 @@ public class BulkTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Bad(new { ids = new[] { wo }, priority = "Low", status = new { status = "InProgress" } });
     }
 
+    [SkippableFact]
+    public async Task Bulk_priority_refuses_values_the_edit_form_refuses()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, site) = await OrgAsync();
+        var wo = await WorkOrderAsync(admin, site);
+        var r = await admin.PostAsJsonAsync("/api/work-orders/bulk", new { ids = new[] { wo }, priority = 42 });
+        Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
+        Assert.Equal("Medium", (await Get(admin, wo)).GetProperty("priority").GetString());
+    }
+
     private static async Task<Guid> PmScheduleAsync(HttpClient c, Guid site, DateOnly start)
     {
         var asset = Id(await Ok(await c.PostAsJsonAsync("/api/assets", new { name = "Boiler", siteId = site, status = "Active", criticality = "High", warrantyType = "None" })));

@@ -131,4 +131,19 @@ public class ViewTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Empty(theirs.EnumerateObject());
         Assert.Equal(HttpStatusCode.BadRequest, (await admin.PutAsJsonAsync("/api/auth/me/list-settings/nope", new { hiddenColumns = Array.Empty<string>() })).StatusCode);
     }
+
+    [SkippableFact]
+    public async Task Quick_column_changes_on_a_new_list_all_save()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        for (var round = 0; round < 3; round++)
+        {
+            var admin = await OrgAsync();
+            // Ticking columns quickly sends saves side by side; the first ones all find no saved row yet.
+            var saves = Enumerable.Range(0, 6).Select(i => admin.PutAsJsonAsync("/api/auth/me/list-settings/parts", new { hiddenColumns = new[] { $"c{i}" } })).ToList();
+            foreach (var r in await Task.WhenAll(saves)) await Ok(r);
+            var mine = await Ok(await admin.GetAsync("/api/auth/me/list-settings"));
+            Assert.Single(mine.GetProperty("parts").GetProperty("hiddenColumns").EnumerateArray());
+        }
+    }
 }

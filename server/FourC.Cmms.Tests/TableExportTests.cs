@@ -58,6 +58,33 @@ public class TableExportTests
         Assert.Null(row[10]);
     }
 
+    [Theory]
+    [InlineData("number.chars")]
+    [InlineData("number.length")]
+    [InlineData("names.item")]
+    [InlineData("status.x")]
+    [InlineData("customFields.colour.more")]
+    public void Rows_rejects_keys_that_reach_into_plain_values(string key)
+    {
+        var ex = Assert.Throws<ArgumentException>(() => TableExport.Rows([Sample()], [new ExportColumn(key, "X")], Plus2));
+        Assert.Contains(key, ex.Message);
+        Assert.Throws<ArgumentException>(() => TableExport.Check(typeof(Row), [new ExportColumn(key, "X")]));
+    }
+
+    [Fact]
+    public void Xlsx_writes_dates_excel_cannot_hold_as_text()
+    {
+        var cols = new[] { new ExportColumn("a", "A"), new ExportColumn("b", "B"), new ExportColumn("c", "C") };
+        var bytes = TableExport.Xlsx("Old", cols, [[new DateOnly(50, 6, 1), new DateOnly(1899, 12, 31), new DateTime(1900, 2, 1, 8, 0, 0)]]);
+        using var zip = new ZipArchive(new MemoryStream(bytes));
+        using var r = new StreamReader(zip.GetEntry("xl/worksheets/sheet1.xml")!.Open());
+        var sheet = r.ReadToEnd();
+        Assert.Contains(">0050-06-01<", sheet);
+        Assert.Contains(">1899-12-31<", sheet);
+        Assert.Contains(">1900-02-01 08:00<", sheet);
+        Assert.DoesNotContain("s=\"2\"", sheet);
+    }
+
     [Fact]
     public void Rows_reads_anonymous_objects()
     {
