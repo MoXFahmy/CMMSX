@@ -37,4 +37,11 @@ public class RoundImportTests
         Assert.Equal("b", RoundImport.JoinRemarks(null, "b"));
         Assert.Null(RoundImport.JoinRemarks("  ", null));
     }
+
+    [Fact]
+    public void Pm_parts_rows_are_cleaned_and_merged()
+    {
+        (string?, string?, double?)[] rows = [(" T1 ", "P1", 1), ("t1", "p1 ", 2), ("T1", "", 1), ("T2", "P2", 0), (null, "P3", 1)];
+        Assert.Equal([("T1", "P1", 3m)], PmPartsRules.Lines(rows));
+    }
 }

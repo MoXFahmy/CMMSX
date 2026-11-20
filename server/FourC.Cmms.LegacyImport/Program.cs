@@ -273,6 +273,8 @@ Console.WriteLine($"Legacy materials: {materials.Parts.Count} parts, {materials.
     $"{materials.Receipts.Count + materials.Issues.Count + materials.Returns.Count + materials.Adjustments.Count} stock transactions");
 var baseCurrency = (await db.Tenants.IgnoreQueryFilters().Where(t => t.Id == tenantId).Select(t => t.Settings).FirstAsync()).Currency;
 await InventoryImport.RunAsync(db, tenantId, materials, report, SiteFor, baseCurrency);
+Console.WriteLine($"Legacy PM parts: {work.ChecklistParts.Count} rows");
+await PmPartsImport.RunAsync(db, tenantId, work, report);
 
 Console.WriteLine();
 report.Print();

@@ -27,6 +27,7 @@
   <ItemGroup>
     <!-- Pure 4CSQL mapping rules; linked rather than referenced because the importer is an executable with its own Program. -->
     <Compile Include="..\FourC.Cmms.LegacyImport\RoundImport.cs" Link="Legacy\RoundImport.cs" />
+    <Compile Include="..\FourC.Cmms.LegacyImport\PmPartsRules.cs" Link="Legacy\PmPartsRules.cs" />
   </ItemGroup>
 
 </Project>
