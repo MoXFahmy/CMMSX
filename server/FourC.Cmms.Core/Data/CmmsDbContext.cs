@@ -53,11 +53,13 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<WorkOrderAssignee> WorkOrderAssignees => Set<WorkOrderAssignee>();
     public DbSet<WorkOrderTask> WorkOrderTasks => Set<WorkOrderTask>();
     public DbSet<WorkOrderLabor> WorkOrderLabor => Set<WorkOrderLabor>();
+    public DbSet<WorkOrderPart> WorkOrderParts => Set<WorkOrderPart>();
     public DbSet<WorkOrderCost> WorkOrderCosts => Set<WorkOrderCost>();
     public DbSet<WorkOrderComment> WorkOrderComments => Set<WorkOrderComment>();
     public DbSet<WorkOrderStatusChange> WorkOrderStatusChanges => Set<WorkOrderStatusChange>();
     public DbSet<PmTask> PmTasks => Set<PmTask>();
     public DbSet<PmTaskStep> PmTaskSteps => Set<PmTaskStep>();
+    public DbSet<PmTaskPart> PmTaskParts => Set<PmTaskPart>();
     public DbSet<PmSchedule> PmSchedules => Set<PmSchedule>();
     public DbSet<PmScheduleTask> PmScheduleTasks => Set<PmScheduleTask>();
     public DbSet<PmScheduleAsset> PmScheduleAssets => Set<PmScheduleAsset>();
@@ -68,6 +70,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<PartGroup> PartGroups => Set<PartGroup>();
     public DbSet<Part> Parts => Set<Part>();
     public DbSet<StockLevel> StockLevels => Set<StockLevel>();
+    /// <summary>Stock reserved for open work per part and store (a view; read-only).</summary>
+    public DbSet<StockReservation> StockReservations => Set<StockReservation>();
     public DbSet<StockTransaction> StockTransactions => Set<StockTransaction>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
@@ -291,6 +295,15 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         {
             e.HasKey(x => new { x.WorkOrderId, x.EmployeeId });
             e.HasOne(x => x.Employee).WithMany().HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.PlannedHours).HasPrecision(9, 2);
+        });
+        b.Entity<WorkOrderPart>(e =>
+        {
+            e.Property(x => x.Quantity).HasPrecision(18, 3); e.Property(x => x.Notes).HasMaxLength(500);
+            e.HasOne(x => x.Part).WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Store).WithMany().HasForeignKey(x => x.StoreId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.WorkOrderId, x.PartId }).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.PartId, x.StoreId });
         });
         b.Entity<WorkOrderTask>(e =>
         {
@@ -330,9 +343,16 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             ConfigureTenantEntity(e);
             e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(300); e.Property(x => x.EstimatedHours).HasPrecision(9, 2);
             e.HasMany(x => x.Steps).WithOne().HasForeignKey(x => x.PmTaskId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Parts).WithOne().HasForeignKey(x => x.PmTaskId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
         b.Entity<PmTaskStep>(e => e.Property(x => x.Description).HasMaxLength(2000));
+        b.Entity<PmTaskPart>(e =>
+        {
+            e.Property(x => x.Quantity).HasPrecision(18, 3);
+            e.HasOne(x => x.Part).WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.PmTaskId, x.PartId }).IsUnique();
+        });
         b.Entity<PmSchedule>(e =>
         {
             ConfigureTenantEntity(e);
@@ -448,6 +468,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasOne(x => x.Part).WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Restrict);
             e.Ignore(x => x.NetUnitPrice); e.Ignore(x => x.LineTotal);
         });
+
+        b.Entity<StockReservation>(e => { e.HasNoKey(); e.ToView(Reservations.ViewName); e.Property(x => x.Reserved).HasPrecision(18, 3); });
 
         // Tenant isolation (+ soft delete) for every tenant-owned entity.
         foreach (var type in b.Model.GetEntityTypes().Select(t => t.ClrType).Where(t => typeof(ITenantOwned).IsAssignableFrom(t)).ToList())

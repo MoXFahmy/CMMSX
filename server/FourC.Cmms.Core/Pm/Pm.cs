@@ -23,6 +23,17 @@ public class PmTask : TenantEntity
     public string? SafetyNotes { get; set; }
     public bool IsActive { get; set; } = true;
     public List<PmTaskStep> Steps { get; set; } = [];
+    /// <summary>Parts every work order generated from this task needs (planned and reserved on generation).</summary>
+    public List<PmTaskPart> Parts { get; set; } = [];
+}
+
+public class PmTaskPart : Entity
+{
+    public Guid PmTaskId { get; set; }
+    public Guid PartId { get; set; }
+    public Inventory.Part? Part { get; set; }
+    /// <summary>Quantity per work order (per covered asset on a round).</summary>
+    public decimal Quantity { get; set; }
 }
 
 public class PmTaskStep : Entity

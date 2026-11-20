@@ -876,6 +876,26 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.ToTable("StockLevels");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Inventory.StockReservation", b =>
+                {
+                    b.Property<Guid>("PartId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Reserved")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid>("StoreId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.ToTable((string)null);
+
+                    b.ToView("StockReservations", (string)null);
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Inventory.StockTransaction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1893,6 +1913,32 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.ToTable("PmTasks");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmTaskPart", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PartId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("PmTaskId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PartId");
+
+                    b.HasIndex("PmTaskId", "PartId")
+                        .IsUnique();
+
+                    b.ToTable("PmTaskParts");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Pm.PmTaskStep", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2587,6 +2633,10 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<Guid>("EmployeeId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<decimal?>("PlannedHours")
+                        .HasPrecision(9, 2)
+                        .HasColumnType("decimal(9,2)");
+
                     b.HasKey("WorkOrderId", "EmployeeId");
 
                     b.HasIndex("EmployeeId");
@@ -2739,6 +2789,58 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasIndex("TenantId", "WorkOrderId");
 
                     b.ToTable("WorkOrderLabor");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderPart", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<Guid>("PartId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<Guid?>("StoreId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("PartId");
+
+                    b.HasIndex("StoreId");
+
+                    b.HasIndex("WorkOrderId", "PartId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "PartId", "StoreId");
+
+                    b.ToTable("WorkOrderParts");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderStatusChange", b =>
@@ -3245,6 +3347,23 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Pm.PmTaskPart", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Inventory.Part", "Part")
+                        .WithMany()
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.Pm.PmTask", null)
+                        .WithMany("Parts")
+                        .HasForeignKey("PmTaskId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Part");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Pm.PmTaskStep", b =>
                 {
                     b.HasOne("FourC.Cmms.Core.Pm.PmTask", null)
@@ -3373,6 +3492,24 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Navigation("Employee");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderPart", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Inventory.Part", "Part")
+                        .WithMany()
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.Inventory.Store", "Store")
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.Navigation("Part");
+
+                    b.Navigation("Store");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderTask", b =>
                 {
                     b.HasOne("FourC.Cmms.Core.Assets.Asset", null)
@@ -3447,6 +3584,8 @@ namespace FourC.Cmms.Core.Data.Migrations
 
             modelBuilder.Entity("FourC.Cmms.Core.Pm.PmTask", b =>
                 {
+                    b.Navigation("Parts");
+
                     b.Navigation("Steps");
                 });
 
