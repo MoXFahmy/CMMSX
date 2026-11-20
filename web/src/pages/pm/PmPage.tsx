@@ -3,7 +3,7 @@ import { ActionIcon, Alert, Anchor, Badge, Button, Card, Checkbox, Drawer, Group
 import { DateInput } from '@mantine/dates';
 import { useDisclosure } from '@mantine/hooks';
 import { useForm } from '@mantine/form';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
@@ -18,6 +18,7 @@ import { useHierarchy } from '@/components/LocationPicker';
 import { confirmDelete } from '@/components/confirm';
 import { generateNow } from './generateNow';
 import { fmtDate, fmtDateTime, fmtNumber, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { BulkBar, FilterChips, ListTools, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
 const TABS = ['schedules', 'tasks', 'generate', 'forecast', 'meters'] as const;
 
@@ -45,41 +46,73 @@ export function PmPage() {
 
 function SchedulesTab() {
   const { t } = useTranslation();
-  const { terms } = useAuth();
+  const { terms, can } = useAuth();
   const navigate = useNavigate();
-  const [search, setSearch] = useState('');
-  const [siteId, setSiteId] = useState<string | null>(null);
-  const [activeOnly, setActiveOnly] = useState(true);
-  const [page, setPage] = useState(1);
+  const qc = useQueryClient();
+  const lp = useListParams<PmScheduleListItem>({ sort: 'nextDueDate', dir: 'asc' });
+  const { p, set } = lp;
   const { data: h } = useHierarchy();
+  const listQuery = { search: p('search'), siteId: p('siteId'), activeOnly: p('showInactive') !== 'true', sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
   const { data, isFetching } = useQuery({
-    queryKey: ['pm-schedules', search, siteId, activeOnly, page], placeholderData: (prev) => prev,
-    queryFn: () => get<Paged<PmScheduleListItem>>('/pm-schedules', { search, siteId, activeOnly, page, pageSize: 25, sort: 'nextDueDate' }),
+    queryKey: ['pm-schedules', listQuery, lp.page, lp.pageSize], placeholderData: (prev) => prev,
+    queryFn: () => get<Paged<PmScheduleListItem>>('/pm-schedules', { ...listQuery, page: lp.page, pageSize: lp.pageSize }),
   });
-  return (
-    <Card p={0}>
-      <Group p="sm" gap="xs" wrap="wrap">
-        <TextInput placeholder={t('common.search')} leftSection={<IconSearch size={16} />} value={search} onChange={(e) => { setSearch(e.currentTarget.value); setPage(1); }} w={{ base: '100%', sm: 260 }} />
-        <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={siteId} onChange={(v) => { setSiteId(v); setPage(1); }} clearable w={{ base: '100%', xs: 200 }} />
-        <Switch label={t('pm.active')} checked={activeOnly} onChange={(e) => setActiveOnly(e.currentTarget.checked)} />
-      </Group>
-      <DataTable<PmScheduleListItem> minHeight={240} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []}
-        noRecordsText={t('common.noRecords')} totalRecords={data?.total ?? 0} recordsPerPage={25} page={page} onPageChange={setPage}
-        rowClassName={() => 'clickable-row'} onRowClick={({ record }) => navigate(`/pm/schedules/${record.id}`)}
-        columns={[
-          { accessor: 'code', title: t('pm.code'), noWrap: true, render: (s) => <Text fw={600} fz="sm" c={s.isActive ? 'brand' : 'dimmed'}>{s.code}</Text> },
-          { accessor: 'name', title: t('common.name'), width: 260, render: (s) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{s.name}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{s.taskCode} · {s.taskName}{s.multipleTasks > 0 && ` +${s.multipleTasks}`}</Text></Stack> },
-          { accessor: 'asset', title: t('pm.target'), width: 220, render: (s) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{s.assetCount > 0 ? t('pm.assetCount', { count: s.assetCount }) : s.assetNumber ?? s.locationName}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{s.assetCount > 0 ? s.locationName ?? s.siteName : s.assetName ?? s.siteName}</Text></Stack> },
-          { accessor: 'schedule', title: t('pm.schedule'), render: (s) => <Stack gap={0}><Text fz="sm">{s.schedule}{s.type === 'Meter' && s.meterUnit ? ` ${s.meterUnit}` : ''}</Text><Text fz="xs" c="dimmed">{t(`pm.types.${s.type}`)}</Text></Stack> },
-          { accessor: 'nextDueDate', title: t('pm.nextDue'), noWrap: true, render: (s) => (
+  const allColumns: ListColumn<PmScheduleListItem>[] = [
+          { accessor: 'code', title: t('pm.code'), sortable: true, noWrap: true, render: (s) => <Text fw={600} fz="sm" c={s.isActive ? 'brand' : 'dimmed'}>{s.code}</Text> },
+          { accessor: 'name', title: t('common.name'), sortable: true, width: 260, export: [{ key: 'name' }, { key: 'taskCode', title: t('pm.task') }, { key: 'taskName', title: `${t('pm.task')} · ${t('common.name')}` }], render: (s) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{s.name}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{s.taskCode} · {s.taskName}{s.multipleTasks > 0 && ` +${s.multipleTasks}`}</Text></Stack> },
+          { accessor: 'asset', title: t('pm.target'), sortable: true, width: 220, export: [{ key: 'assetNumber' }, { key: 'assetName', title: `${t('pm.target')} · ${t('common.name')}` }, { key: 'locationName', title: terms.location }, { key: 'assetCount', title: t('pm.assetsInRound') }], render: (s) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{s.assetCount > 0 ? t('pm.assetCount', { count: s.assetCount }) : s.assetNumber ?? s.locationName}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{s.assetCount > 0 ? s.locationName ?? s.siteName : s.assetName ?? s.siteName}</Text></Stack> },
+          { accessor: 'schedule', title: t('pm.schedule'), export: [{ key: 'schedule' }, { key: 'type', title: t('pm.typeLabel') }], render: (s) => <Stack gap={0}><Text fz="sm">{s.schedule}{s.type === 'Meter' && s.meterUnit ? ` ${s.meterUnit}` : ''}</Text><Text fz="xs" c="dimmed">{t(`pm.types.${s.type}`)}</Text></Stack> },
+          { accessor: 'nextDueDate', title: t('pm.nextDue'), sortable: true, noWrap: true, export: [{ key: 'nextDueDate' }, { key: 'nextDueReading', title: t('pm.nextDueReading') }], render: (s) => (
             <Stack gap={2}>
               {s.nextDueDate ? <Text fz="sm" c={s.isOverdue ? 'red' : undefined} fw={s.isOverdue ? 600 : undefined}>{fmtDate(s.nextDueDate)}</Text> : s.basis === 'Actual' && s.openWorkOrders > 0 ? <Badge color="yellow" variant="light">{t('pm.waiting')}</Badge> : null}
               {s.type === 'Meter' && s.nextDueReading != null && <Text fz="xs" c="dimmed">@ {fmtNumber(s.nextDueReading)} {s.meterUnit} ({t('pm.current').toLowerCase()} {fmtNumber(s.meterReading)})</Text>}
             </Stack>) },
           { accessor: 'lastWorkOrderNumber', title: t('pm.lastWo'), noWrap: true, render: (s) => s.lastWorkOrderId ? <Anchor component={Link} to={`/work-orders/${s.lastWorkOrderId}`} fz="sm" onClick={(e) => e.stopPropagation()}>{s.lastWorkOrderNumber}</Anchor> : '—' },
           { accessor: 'isActive', title: t('common.status'), noWrap: true, render: (s) => <Badge color={s.isActive ? 'teal' : 'gray'}>{s.isActive ? t('common.active') : t('common.inactive')}</Badge> },
-        ]} />
-    </Card>
+    { accessor: 'site', title: terms.site, noWrap: true, export: [{ key: 'siteName' }], render: (s) => s.siteName },
+    { accessor: 'lastGeneratedAt', title: t('pm.lastGenerated'), sortable: true, noWrap: true, render: (s) => fmtDateTime(s.lastGeneratedAt) },
+    { accessor: 'openWorkOrders', title: t('pm.openWorkOrders'), noWrap: true },
+  ];
+  const cols = useListColumns('pm-schedules', allColumns, { defaultHidden: ['site', 'lastGeneratedAt', 'openWorkOrders'] });
+  const chips: FilterDef[] = [
+    { keys: ['search'], label: t('common.search') },
+    { keys: ['siteId'], label: terms.site, format: ([v]) => h?.sites.find((x) => x.id === v)?.name ?? '…' },
+    { keys: ['showInactive'], label: t('pm.showing'), format: () => t('pm.activeAndPaused') },
+  ];
+  const canManage = can(P.pmManage);
+  const [selected, setSelected] = useState<PmScheduleListItem[]>([]);
+  const bulk = useMutation({
+    mutationFn: (active: boolean) => post<BulkResult>('/pm-schedules/bulk', { ids: selected.map((x) => x.id), active }),
+    onSuccess: (r) => { showBulkResult(t, r); setSelected([]); void qc.invalidateQueries({ queryKey: ['pm-schedules'] }); },
+    onError: notifyError,
+  });
+  return (
+    <>
+      <Card p="sm" mb="md">
+        <Group gap="xs" wrap="wrap">
+          <TextInput placeholder={t('common.search')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 260 }} />
+          <Select placeholder={terms.site} data={(h?.sites ?? []).map((x) => ({ value: x.id, label: x.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v })} clearable w={{ base: '100%', xs: 200 }} />
+          <Switch label={t('pm.active')} checked={p('showInactive') !== 'true'} onChange={(e) => set({ showInactive: e.currentTarget.checked ? null : 'true' })} />
+          <Group gap={6} ml="auto">
+            <ListTools list="pm-schedules" lp={lp} cols={cols} exportPath="/pm-schedules/export" exportQuery={listQuery} total={data?.total} />
+          </Group>
+        </Group>
+        <FilterChips defs={chips} p={p} set={set} />
+      </Card>
+      <BulkBar count={selected.length} onClear={() => setSelected([])}>
+        <Button size="xs" variant="white" loading={bulk.isPending} onClick={() => bulk.mutate(false)}>{t('list.pause')}</Button>
+        <Button size="xs" variant="white" loading={bulk.isPending} onClick={() => bulk.mutate(true)}>{t('list.resume')}</Button>
+      </BulkBar>
+      <Card p={0}>
+        <DataTable<PmScheduleListItem> minHeight={240} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []}
+          columns={cols.columns} noRecordsText={t('common.noRecords')} totalRecords={data?.total ?? 0} recordsPerPage={lp.pageSize} page={lp.page}
+          onPageChange={(n) => set({ page: String(n) })} recordsPerPageOptions={[25, 50, 100]} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
+          sortStatus={lp.sort} onSortStatusChange={lp.setSort}
+          selectedRecords={canManage ? selected : undefined} onSelectedRecordsChange={canManage ? setSelected : undefined}
+          rowClassName={() => 'clickable-row'} onRowClick={({ record }) => navigate(`/pm/schedules/${record.id}`)}
+          paginationText={({ from, to, totalRecords }) => `${from}–${to} / ${totalRecords}`} />
+      </Card>
+    </>
   );
 }
 

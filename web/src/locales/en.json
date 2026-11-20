@@ -545,7 +545,8 @@
     "decision": "Decision",
     "workOrder": "Work order",
     "newOnly": "Awaiting triage",
-    "mine": "My requests"
+    "mine": "My requests",
+    "searchPlaceholder": "Search number, title or requester"
   },
   "pm": {
     "title": "Preventive maintenance",
@@ -685,7 +686,13 @@
     "generateNextNow": "Generate next now",
     "generateNowTitle": "Generate this PM work now?",
     "generateNowBody": "Creates the work order for {{date}} now instead of waiting for its lead time.",
-    "nothingGenerated": "No work order was created."
+    "nothingGenerated": "No work order was created.",
+    "assetsInRound": "Assets in the round",
+    "typeLabel": "Kind",
+    "lastGenerated": "Last generated",
+    "openWorkOrders": "Open work orders",
+    "showing": "Showing",
+    "activeAndPaused": "active and paused"
   },
   "txType": {
     "Receipt": "Receipt",

@@ -3,9 +3,12 @@ import { useSearchParams } from 'react-router';
 import { useDebouncedValue } from '@mantine/hooks';
 import type { DataTableSortStatus } from 'mantine-datatable';
 
-/** The address of a list as a saved view stores it: every key but the page number, sorted, empty values dropped. */
+/** Address keys that aren't part of a view: the page number, and keys that open a drawer or form over the list. */
+const NOT_IN_VIEW = ['page', 'open', 'new'];
+
+/** The address of a list as a saved view stores it: every key but those above, sorted, empty values dropped. */
 export function viewQuery(params: URLSearchParams): string {
-  const entries = [...params.entries()].filter(([k, v]) => k !== 'page' && v !== '').sort(([a], [b]) => a.localeCompare(b));
+  const entries = [...params.entries()].filter(([k, v]) => !NOT_IN_VIEW.includes(k) && v !== '').sort(([a], [b]) => a.localeCompare(b));
   return new URLSearchParams(entries).toString();
 }
 
@@ -44,6 +47,6 @@ export function useListParams<T>(defaultSort: { sort: string; dir: 'asc' | 'desc
     setSort: (s: DataTableSortStatus<T>) => set({ sort: String(s.columnAccessor), dir: s.direction }),
     /** The address as a saved view would store it. */
     query: viewQuery(params),
-    isEmpty: params.toString() === '',
+    isEmpty: viewQuery(params) === '',
   };
 }
