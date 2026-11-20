@@ -125,6 +125,15 @@ public static class InventoryEndpoints
             ListExport.FileAsync(http, db, "parts", (page, size) => ListAsync(db, f, page, size, ct, ListExport.MaxRows), ct))
             .RequirePermission(Permissions.InventoryView);
 
+        g.MapPost("/bulk", async (BulkActiveInput input, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var ids = Bulk.Ids(input.Ids, "parts");
+            var rows = await db.Parts.Where(p => ids.Contains(p.Id)).ToListAsync(ct);
+            foreach (var p in rows) p.IsActive = input.Active;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new BulkResult(rows.Count, ids.Except(rows.Select(r => r.Id)).Select(id => new BulkSkip(id, "", "Not found.")).ToList()));
+        }).RequirePermission(Permissions.InventoryManage);
+
         g.MapGet("/lookup", async (CmmsDbContext db, string? search, Guid? storeId, CancellationToken ct) =>
         {
             var q = db.Parts.AsNoTracking().Where(p => p.IsActive);

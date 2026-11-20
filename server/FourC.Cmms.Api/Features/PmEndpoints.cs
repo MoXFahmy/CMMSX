@@ -136,6 +136,16 @@ public static class PmEndpoints
             ListExport.FileAsync(http, db, "pm-schedules", (page, size) => ListAsync(db, f, page, size, ct, ListExport.MaxRows), ct))
             .RequirePermission(Permissions.PmView);
 
+        // Pause or resume many schedules. Resuming a calendar schedule starts it again from today, as the edit form does.
+        g.MapPost("/bulk", async (BulkActiveInput input, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var ids = Bulk.Ids(input.Ids, "PM schedules");
+            var rows = await db.PmSchedules.Where(s => ids.Contains(s.Id)).ToListAsync(ct);
+            foreach (var s in rows) SetActive(s, input.Active);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new BulkResult(rows.Count, ids.Except(rows.Select(r => r.Id)).Select(id => new BulkSkip(id, "", "Not found.")).ToList()));
+        }).RequirePermission(Permissions.PmManage);
+
         g.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
             var s = await db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Asset).Include(x => x.Meter).Include(x => x.PmTask)
@@ -386,6 +396,13 @@ public static class PmEndpoints
             if (i.TimeBased && i.MeterTrigger == MeterTrigger.Threshold) v.Add("timeBased", "Time-based generation is only available for incremental meters.");
         }
         return v;
+    }
+
+    /// <summary>Pauses or resumes a schedule; resuming a calendar schedule moves its next due date to the first one from today.</summary>
+    internal static void SetActive(PmSchedule s, bool active)
+    {
+        if (active && !s.IsActive && PmCalendar.UsesCalendar(s)) s.NextDueDate = PmCalendar.FirstOnOrAfter(s, Today);
+        s.IsActive = active;
     }
 
     private static void ApplySchedule(PmSchedule s, ScheduleInput i)

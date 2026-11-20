@@ -19,9 +19,6 @@ public static class WorkOrderEndpoints
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null);
     public sealed record BulkInput(Guid[]? Ids, StatusInput? Status, WorkPriority? Priority, Guid[]? AddAssigneeIds);
-    public sealed record BulkSkip(Guid Id, string Number, string Reason);
-    public sealed record BulkResult(int Updated, List<BulkSkip> Skipped);
-    private const int MaxBulk = 500;
     public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null);
     public sealed record LaborInput(Guid EmployeeId, DateOnly WorkDate, decimal Hours, decimal OvertimeHours, string? Notes);
     public sealed record CostInput(string Description, decimal Quantity, decimal UnitCost, string? Vendor, string? Reference = null);
@@ -194,8 +191,7 @@ public static class WorkOrderEndpoints
         g.MapPost("/bulk", async (BulkInput input, CmmsDbContext db, ITenantContext ctx, HttpContext http, PermissionService perms, EmailOutbox mail,
             CancellationToken ct) =>
         {
-            var ids = (input.Ids ?? []).Distinct().ToList();
-            if (ids.Count is 0 or > MaxBulk) throw new DomainException($"Select between 1 and {MaxBulk} work orders.");
+            var ids = Bulk.Ids(input.Ids, "work orders");
             var add = (input.AddAssigneeIds ?? []).Distinct().ToList();
             if ((input.Status is null ? 0 : 1) + (input.Priority is null ? 0 : 1) + (add.Count > 0 ? 1 : 0) != 1) throw new DomainException("Choose one change to make.");
             var mine = await perms.GetAsync(UserId(http));

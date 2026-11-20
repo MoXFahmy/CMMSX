@@ -161,4 +161,66 @@ public class BulkTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Bad(new { ids = new[] { wo } });
         await Bad(new { ids = new[] { wo }, priority = "Low", status = new { status = "InProgress" } });
     }
+
+    private static async Task<Guid> PmScheduleAsync(HttpClient c, Guid site, DateOnly start)
+    {
+        var asset = Id(await Ok(await c.PostAsJsonAsync("/api/assets", new { name = "Boiler", siteId = site, status = "Active", criticality = "High", warrantyType = "None" })));
+        var task = Id(await Ok(await c.PostAsJsonAsync("/api/pm-tasks", new { code = $"T{Guid.NewGuid():N}"[..8], name = "Boiler check", steps = new[] { "Look" } })));
+        return Id(await Ok(await c.PostAsJsonAsync("/api/pm-schedules", new
+        {
+            name = "Boiler PM", siteId = site, assetId = asset, priority = "Medium", pmTaskId = task, type = "FixedInterval", basis = "Scheduled", frequency = 1, unit = "Month",
+            workPeriodDays = 1, wholeMonth = false, leadDays = 0, startDate = Iso(start), timeBased = false, extraTasks = Array.Empty<object>(), assigneeIds = Array.Empty<Guid>(),
+        })));
+    }
+
+    [SkippableFact]
+    public async Task Bulk_pause_and_resume_PM_schedules()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, site) = await OrgAsync();
+        var pm = await PmScheduleAsync(admin, site, Today.AddDays(-75));
+        async Task<JsonElement> Schedule() => await Ok(await admin.GetAsync($"/api/pm-schedules/{pm}"));
+        Assert.True(DateOnly.Parse((await Schedule()).GetProperty("nextDueDate").GetString()!) < Today);
+
+        var paused = await Ok(await admin.PostAsJsonAsync("/api/pm-schedules/bulk", new { ids = new[] { pm }, active = false }));
+        Assert.Equal(1, paused.GetProperty("updated").GetInt32());
+        Assert.False((await Schedule()).GetProperty("isActive").GetBoolean());
+        var due = await Ok(await admin.GetAsync("/api/pm-schedules?dueWithinDays=60"));
+        Assert.DoesNotContain(due.GetProperty("items").EnumerateArray(), x => Id(x) == pm);
+
+        await Ok(await admin.PostAsJsonAsync("/api/pm-schedules/bulk", new { ids = new[] { pm }, active = true }));
+        var resumed = await Schedule();
+        Assert.True(resumed.GetProperty("isActive").GetBoolean());
+        Assert.True(DateOnly.Parse(resumed.GetProperty("nextDueDate").GetString()!) >= Today, "resuming starts from today, like the edit form");
+    }
+
+    [SkippableFact]
+    public async Task Bulk_parts_active_flag()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _) = await OrgAsync();
+        var part = Id(await Ok(await admin.PostAsJsonAsync("/api/parts", new
+        {
+            partNumber = "P1", name = "Filter", unitOfMeasure = "EA", standardPrice = 10, isCritical = false, isShelfItem = false, allowNegativeStock = false,
+            levels = Array.Empty<object>(),
+        })));
+        var r = await Ok(await admin.PostAsJsonAsync("/api/parts/bulk", new { ids = new[] { part }, active = false }));
+        Assert.Equal(1, r.GetProperty("updated").GetInt32());
+        Assert.False((await Ok(await admin.GetAsync($"/api/parts/{part}"))).GetProperty("isActive").GetBoolean());
+        var active = await Ok(await admin.GetAsync("/api/parts?activeOnly=true"));
+        Assert.DoesNotContain(active.GetProperty("items").EnumerateArray(), x => Id(x) == part);
+        await Ok(await admin.PostAsJsonAsync("/api/parts/bulk", new { ids = new[] { part }, active = true }));
+        Assert.True((await Ok(await admin.GetAsync($"/api/parts/{part}"))).GetProperty("isActive").GetBoolean());
+    }
+
+    [SkippableFact]
+    public async Task Pm_and_part_bulk_need_manage_permission()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _) = await OrgAsync();
+        var tech = await UserAsync(admin, "Technician");
+        Assert.Equal(HttpStatusCode.Forbidden, (await tech.PostAsJsonAsync("/api/pm-schedules/bulk", new { ids = new[] { Guid.NewGuid() }, active = false })).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await tech.PostAsJsonAsync("/api/parts/bulk", new { ids = new[] { Guid.NewGuid() }, active = false })).StatusCode);
+        Assert.Equal(HttpStatusCode.BadRequest, (await admin.PostAsJsonAsync("/api/parts/bulk", new { ids = Array.Empty<Guid>(), active = false })).StatusCode);
+    }
 }
