@@ -11,7 +11,7 @@ const cfg = printed.app?.extConfig ?? printed;
 const checks = [
   ['app id', () => assert.equal(cfg.appId, 'com.fourcsystems.cmms')],
   ['app name', () => assert.equal(cfg.appName, '4C CMMS')],
-  ['opens the cloud app', () => assert.equal(cfg.server?.url, 'https://dxvjhwlc6echh.cloudfront.net')],
+  ['opens the cloud app at the technician start page', () => assert.equal(cfg.server?.url, 'https://dxvjhwlc6echh.cloudfront.net/tech/')],
   ['offline page', () => assert.equal(cfg.server?.errorPath, 'offline.html')],
   ['version in the user agent', () => assert.equal(cfg.android?.appendUserAgent, `4CCMMS-Android/${version}`)],
   // Android 15+ draws apps edge to edge; 'native' keeps the cloud app's header clear of the status bar.

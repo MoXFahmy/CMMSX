@@ -13,7 +13,9 @@ const config: CapacitorConfig = {
   appName: '4C CMMS',
   webDir: 'www',
   server: {
-    url: cloudUrl,
+    // The technician view's start page: kept on the phone by a service worker, so the app opens with no connection.
+    // With a connection it goes straight on to the full app.
+    url: `${cloudUrl}/tech/`,
     // Shown instead of a browser error when the cloud app can't be reached.
     errorPath: 'offline.html',
   },
