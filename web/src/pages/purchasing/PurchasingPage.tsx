@@ -3,9 +3,9 @@ import { ActionIcon, Anchor, Badge, Button, Card, Checkbox, Group, Modal, Number
 import { useDebouncedValue, useDisclosure } from '@mantine/hooks';
 import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { DataTable, type DataTableSortStatus } from 'mantine-datatable';
+import { DataTable } from 'mantine-datatable';
 import { IconEdit, IconFilterOff, IconPlus, IconSearch, IconShoppingCartPlus, IconTrash } from '@tabler/icons-react';
 import { del, get, post, put } from '@/api/client';
 import { PO_STATUSES, type Paged, type PoListItem, type ProposalItem, type PurchaseOrderStatus, type SupplierDetail, type SupplierItem, type SupplierLookup } from '@/api/types';
@@ -15,6 +15,7 @@ import { useHierarchy } from '@/components/LocationPicker';
 import { PoStatusBadge } from '@/components/InventoryBadges';
 import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtPrice, fmtQty, handleFormError, notifyError, notifySuccess } from '@/components/utils';
+import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
 
 const VIEWS: { key: string; statuses: PurchaseOrderStatus[] | null }[] = [
   { key: 'open', statuses: ['Draft', 'Submitted', 'Approved', 'PartiallyReceived'] }, { key: 'Draft', statuses: ['Draft'] }, { key: 'Submitted', statuses: ['Submitted'] },
@@ -48,63 +49,69 @@ function OrdersTab() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { terms } = useAuth();
-  const [params, setParams] = useSearchParams();
-  const p = (k: string) => params.get(k) ?? '';
-  const set = (patch: Record<string, string | null>) => {
-    const next = new URLSearchParams(params);
-    for (const [k, v] of Object.entries(patch)) { if (v) next.set(k, v); else next.delete(k); }
-    if (!('page' in patch)) next.delete('page');
-    setParams(next, { replace: true });
-  };
-  const [search, setSearch] = useState(p('search'));
-  const [debounced] = useDebouncedValue(search, 300);
-  useEffect(() => { if (debounced !== p('search')) set({ search: debounced || null }); /* eslint-disable-next-line */ }, [debounced]);
+  const lp = useListParams<PoListItem>({ sort: 'orderDate', dir: 'desc' });
+  const { p, set } = lp;
   const view = p('view') || 'open';
   const statuses = VIEWS.find((v) => v.key === view)?.statuses ?? null;
-  const page = Number(p('page') || 1);
-  const sort: DataTableSortStatus<PoListItem> = { columnAccessor: p('sort') || 'orderDate', direction: (p('dir') as 'asc' | 'desc') || 'desc' };
   const q = { search: p('search'), supplierId: p('supplierId'), siteId: p('siteId'), overdue: p('overdue') };
+  const listQuery = { ...q, status: statuses ?? undefined, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
   const { data, isFetching } = useQuery({
-    queryKey: ['purchase-orders', q, view, page, sort], placeholderData: (prev) => prev,
-    queryFn: () => get<Paged<PoListItem>>('/purchase-orders', { ...q, status: statuses ?? undefined, page, pageSize: 25, sort: String(sort.columnAccessor), dir: sort.direction }),
+    queryKey: ['purchase-orders', listQuery, lp.page, lp.pageSize], placeholderData: (prev) => prev,
+    queryFn: () => get<Paged<PoListItem>>('/purchase-orders', { ...listQuery, page: lp.page, pageSize: lp.pageSize }),
   });
   const { data: suppliers } = useQuery({ queryKey: ['suppliers', 'lookup'], queryFn: () => get<SupplierLookup[]>('/suppliers/lookup') });
   const { data: h } = useHierarchy();
   const filtersActive = ['search', 'supplierId', 'siteId', 'overdue'].some((k) => p(k));
+  const allColumns: ListColumn<PoListItem>[] = [
+    { accessor: 'number', title: t('po.number'), sortable: true, noWrap: true,
+      render: (x) => <Anchor component={Link} to={`/purchasing/orders/${x.id}`} fw={600} fz="sm" onClick={(e) => e.stopPropagation()}>{x.number}</Anchor> },
+    { accessor: 'supplier', title: t('po.supplier'), sortable: true, width: 260, export: [{ key: 'supplierName' }, { key: 'siteName', title: terms.site }, { key: 'requestedBy', title: t('po.requestedBy') }],
+      render: (x) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{x.supplierName}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{x.siteName}{x.requestedBy && ` · ${x.requestedBy}`}</Text></Stack> },
+    { accessor: 'status', title: t('common.status'), sortable: true, noWrap: true, render: (x) => <PoStatusBadge status={x.status} /> },
+    { accessor: 'orderDate', title: t('po.orderDate'), sortable: true, noWrap: true, render: (x) => fmtDate(x.orderDate) },
+    { accessor: 'expectedDate', title: t('po.expected'), sortable: true, noWrap: true,
+      render: (x) => <Group gap={4} wrap="nowrap"><Text fz="sm" c={x.isOverdue ? 'red' : undefined} fw={x.isOverdue ? 600 : undefined}>{fmtDate(x.expectedDate)}</Text>{x.isOverdue && <Badge size="xs" color="red" variant="filled">{t('wo.overdueBadge')}</Badge>}</Group> },
+    { accessor: 'received', title: t('po.received'), width: 130, export: [{ key: 'receivedPercent', title: `${t('po.received')} %` }], render: (x) => x.status === 'Draft' || x.status === 'Submitted' || x.status === 'Cancelled' ? <Text fz="sm" c="dimmed">—</Text>
+      : <Group gap={6} wrap="nowrap"><Progress value={x.receivedPercent} size="sm" w={60} color={x.receivedPercent >= 100 ? 'teal' : 'blue'} /><Text fz="xs" c="dimmed">{x.receivedPercent}%</Text></Group> },
+    { accessor: 'total', title: t('po.total'), textAlign: 'right', noWrap: true, export: [{ key: 'total' }, { key: 'currency', title: t('po.currency') }], render: (x) => fmtPrice(x.total, x.currency) },
+    { accessor: 'site', title: terms.site, noWrap: true, export: [{ key: 'siteName' }], render: (x) => x.siteName },
+    { accessor: 'requestedBy', title: t('po.requestedBy'), noWrap: true, render: (x) => x.requestedBy ?? '—' },
+    { accessor: 'lines', title: t('po.lines'), textAlign: 'right', noWrap: true },
+  ];
+  const cols = useListColumns('purchase-orders', allColumns, { defaultHidden: ['site', 'requestedBy', 'lines'] });
+  const chips: FilterDef[] = [
+    { keys: ['search'], label: t('common.search') },
+    { keys: ['supplierId'], label: t('po.supplier'), format: ([v]) => suppliers?.find((x) => x.id === v)?.name ?? '…' },
+    { keys: ['siteId'], label: terms.site, format: ([v]) => h?.sites.find((x) => x.id === v)?.name ?? '…' },
+    { keys: ['overdue'], label: t('po.overdueOnly'), format: () => t('common.yes') },
+  ];
   return (
     <>
       <Card p="sm" mb="md">
         <Group gap="xs" wrap="wrap">
-          <TextInput placeholder={t('po.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={search} onChange={(e) => setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 240 }} />
-          <Select placeholder={t('po.supplier')} data={(suppliers ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('supplierId') || null} onChange={(v) => set({ supplierId: v })} clearable searchable w={{ base: '100%', xs: 200 }} />
-          <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v })} clearable w={{ base: '100%', xs: 180 }} />
+          <TextInput placeholder={t('po.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 240 }} />
+          <Select placeholder={t('po.supplier')} data={(suppliers ?? []).map((x) => ({ value: x.id, label: x.name }))} value={p('supplierId') || null} onChange={(v) => set({ supplierId: v })} clearable searchable w={{ base: '100%', xs: 200 }} />
+          <Select placeholder={terms.site} data={(h?.sites ?? []).map((x) => ({ value: x.id, label: x.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v })} clearable w={{ base: '100%', xs: 180 }} />
           <Checkbox label={t('po.overdueOnly')} checked={!!p('overdue')} onChange={(e) => set({ overdue: e.currentTarget.checked ? 'true' : null })} />
-          {filtersActive && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')} onClick={() => { setSearch(''); setParams(view !== 'open' ? { view } : {}, { replace: true }); }}><IconFilterOff size={16} /></ActionIcon></Tooltip>}
+          {filtersActive && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')}
+            onClick={() => lp.replaceAll(view !== 'open' ? `view=${view}` : '')}><IconFilterOff size={16} /></ActionIcon></Tooltip>}
+          <Group gap={6} ml="auto">
+            <ListTools list="purchase-orders" lp={lp} cols={cols} exportPath="/purchase-orders/export" exportQuery={listQuery} total={data?.total} />
+          </Group>
         </Group>
+        <FilterChips defs={chips} p={p} set={set} />
       </Card>
       <Tabs value={view} onChange={(v) => set({ view: v === 'open' ? null : v })} mb="sm" variant="pills" radius="xl">
         <Tabs.List>{VIEWS.map((v) => <Tabs.Tab key={v.key} value={v.key}>{t(`po.views.${v.key}`)}</Tabs.Tab>)}</Tabs.List>
       </Tabs>
       <Card p={0}>
         <DataTable<PoListItem>
-          minHeight={260} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []}
-          noRecordsText={t('po.empty')} totalRecords={data?.total ?? 0} recordsPerPage={25} page={page} onPageChange={(n) => set({ page: String(n) })}
-          sortStatus={sort} onSortStatusChange={(s) => set({ sort: String(s.columnAccessor), dir: s.direction })}
+          minHeight={260} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []} columns={cols.columns}
+          noRecordsText={t('po.empty')} totalRecords={data?.total ?? 0} recordsPerPage={lp.pageSize} page={lp.page} onPageChange={(n) => set({ page: String(n) })}
+          recordsPerPageOptions={[25, 50, 100]} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
+          sortStatus={lp.sort} onSortStatusChange={lp.setSort}
           rowClassName={() => 'clickable-row'} onRowClick={({ record }) => navigate(`/purchasing/orders/${record.id}`)}
           paginationText={({ from, to, totalRecords }) => `${from}–${to} / ${totalRecords}`}
-          columns={[
-            { accessor: 'number', title: t('po.number'), sortable: true, noWrap: true,
-              render: (x) => <Anchor component={Link} to={`/purchasing/orders/${x.id}`} fw={600} fz="sm" onClick={(e) => e.stopPropagation()}>{x.number}</Anchor> },
-            { accessor: 'supplier', title: t('po.supplier'), sortable: true, width: 260,
-              render: (x) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{x.supplierName}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{x.siteName}{x.requestedBy && ` · ${x.requestedBy}`}</Text></Stack> },
-            { accessor: 'status', title: t('common.status'), sortable: true, noWrap: true, render: (x) => <PoStatusBadge status={x.status} /> },
-            { accessor: 'orderDate', title: t('po.orderDate'), sortable: true, noWrap: true, render: (x) => fmtDate(x.orderDate) },
-            { accessor: 'expectedDate', title: t('po.expected'), sortable: true, noWrap: true,
-              render: (x) => <Group gap={4} wrap="nowrap"><Text fz="sm" c={x.isOverdue ? 'red' : undefined} fw={x.isOverdue ? 600 : undefined}>{fmtDate(x.expectedDate)}</Text>{x.isOverdue && <Badge size="xs" color="red" variant="filled">{t('wo.overdueBadge')}</Badge>}</Group> },
-            { accessor: 'received', title: t('po.received'), width: 130, render: (x) => x.status === 'Draft' || x.status === 'Submitted' || x.status === 'Cancelled' ? <Text fz="sm" c="dimmed">—</Text>
-              : <Group gap={6} wrap="nowrap"><Progress value={x.receivedPercent} size="sm" w={60} color={x.receivedPercent >= 100 ? 'teal' : 'blue'} /><Text fz="xs" c="dimmed">{x.receivedPercent}%</Text></Group> },
-            { accessor: 'total', title: t('po.total'), textAlign: 'right', noWrap: true, render: (x) => fmtPrice(x.total, x.currency) },
-          ]}
         />
       </Card>
     </>

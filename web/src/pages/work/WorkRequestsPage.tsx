@@ -4,63 +4,95 @@ import { DateInput } from '@mantine/dates';
 import { useDisclosure } from '@mantine/hooks';
 import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
-import { IconCheck, IconPlus, IconX } from '@tabler/icons-react';
+import { IconCheck, IconPlus, IconSearch, IconX } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
 import { WORK_PRIORITIES, WORK_TYPES, type AssetDetail, type Lookup, type Paged, type WorkRequestDetail, type WorkRequestListItem, type WorkRequestStatus } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
-import { LocationPicker } from '@/components/LocationPicker';
+import { LocationPicker, useHierarchy } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
 import { EmployeePicker } from '@/components/EmployeePicker';
 import { Attachments } from '@/components/Attachments';
 import { AssetCheck } from '@/components/AssetCheck';
 import { PriorityBadge, WrStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, fmtDateTime, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
 
 const TABS: { key: string; status?: WorkRequestStatus }[] = [{ key: 'New', status: 'New' }, { key: 'Approved', status: 'Approved' }, { key: 'Rejected', status: 'Rejected' }, { key: 'Cancelled', status: 'Cancelled' }, { key: 'all' }];
 
 export function WorkRequestsPage() {
   const { t } = useTranslation();
-  const { can } = useAuth();
-  const [params, setParams] = useSearchParams();
-  const [newOpen, newM] = useDisclosure(params.get('new') === '1');
-  const tab = params.get('tab') ?? (can(P.requestsManage) ? 'New' : 'all');
-  const page = Number(params.get('page') || 1);
-  const openId = params.get('open');
+  const { can, terms } = useAuth();
+  const lp = useListParams<WorkRequestListItem>({ sort: 'createdAt', dir: 'desc' });
+  const { p, set } = lp;
+  const [newOpen, newM] = useDisclosure(p('new') === '1');
+  const tab = p('tab') || (can(P.requestsManage) ? 'New' : 'all');
+  const openId = p('open') || null;
   const status = TABS.find((x) => x.key === tab)?.status;
+  const { data: h } = useHierarchy();
+  const listQuery = { search: p('search'), siteId: p('siteId'), status, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
   const { data, isFetching } = useQuery({
-    queryKey: ['work-requests', tab, page], placeholderData: (prev) => prev,
-    queryFn: () => get<Paged<WorkRequestListItem>>('/work-requests', { status, page, pageSize: 25, sort: 'createdAt', dir: 'desc' }),
+    queryKey: ['work-requests', listQuery, lp.page, lp.pageSize], placeholderData: (prev) => prev,
+    queryFn: () => get<Paged<WorkRequestListItem>>('/work-requests', { ...listQuery, page: lp.page, pageSize: lp.pageSize }),
   });
   const { data: summary } = useQuery({ queryKey: ['work-requests', 'summary'], queryFn: () => get<{ status: WorkRequestStatus; count: number }[]>('/work-requests/summary') });
   const count = (s?: WorkRequestStatus) => (summary ?? []).filter((x) => !s || x.status === s).reduce((a, b) => a + b.count, 0);
-  const setParam = (k: string, v: string | null) => { const n = new URLSearchParams(params); if (v) n.set(k, v); else n.delete(k); if (k !== 'page' && k !== 'open') n.delete('page'); setParams(n, { replace: true }); };
+  // Opening a request or the new-request form doesn't go back to page 1.
+  const setKeep = (k: 'open' | 'new', v: string | null) => set({ [k]: v, page: lp.p('page') || null });
+
+  const allColumns: ListColumn<WorkRequestListItem>[] = [
+    { accessor: 'number', title: t('wr.number'), sortable: true, noWrap: true, render: (r) => <Text fw={600} fz="sm" c="brand">{r.number}</Text> },
+    { accessor: 'title', title: t('common.name'), sortable: true, width: 320,
+      render: (r) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{r.title}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{[r.assetNumber && `${r.assetNumber} · ${r.assetName}`, r.locationName, r.siteName].filter(Boolean).join(' · ')}</Text></Stack> },
+    { accessor: 'status', title: t('common.status'), sortable: true, noWrap: true, render: (r) => <WrStatusBadge status={r.status} /> },
+    { accessor: 'priority', title: t('priority.label'), sortable: true, noWrap: true, render: (r) => <PriorityBadge value={r.priority} /> },
+    { accessor: 'type', title: t('workType.label'), noWrap: true, render: (r) => t(`workType.${r.type}`) },
+    { accessor: 'site', title: terms.site, sortable: true, noWrap: true, export: [{ key: 'siteName' }], render: (r) => r.siteName },
+    { accessor: 'location', title: terms.location, noWrap: true, export: [{ key: 'locationName' }], render: (r) => r.locationName ?? '—' },
+    { accessor: 'asset', title: terms.asset, noWrap: true, export: [{ key: 'assetNumber' }, { key: 'assetName', title: `${terms.asset} · ${t('common.name')}` }],
+      render: (r) => (r.assetNumber ? `${r.assetNumber} · ${r.assetName}` : '—') },
+    { accessor: 'requesterName', title: t('wr.requester') },
+    { accessor: 'requiredBy', title: t('wr.requiredBy'), sortable: true, noWrap: true, render: (r) => fmtDate(r.requiredBy) },
+    { accessor: 'createdAt', title: t('wo.createdOn'), sortable: true, noWrap: true, render: (r) => fmtDateTime(r.createdAt) },
+    { accessor: 'workOrderNumber', title: t('wr.workOrder'), noWrap: true,
+      render: (r) => r.workOrderId ? <Anchor component={Link} to={`/work-orders/${r.workOrderId}`} fz="sm" onClick={(e) => e.stopPropagation()}>{r.workOrderNumber}</Anchor> : '—' },
+  ];
+  const cols = useListColumns('work-requests', allColumns, { defaultHidden: ['type', 'site', 'location', 'asset', 'requiredBy'] });
+  const chips: FilterDef[] = [
+    { keys: ['search'], label: t('common.search') },
+    { keys: ['siteId'], label: terms.site, format: ([v]) => h?.sites.find((s) => s.id === v)?.name ?? '…' },
+  ];
+
   return (
     <>
       <PageHeader title={t('wr.title')} subtitle={t('wr.subtitle')}
         actions={can(P.requestsCreate) && <Button leftSection={<IconPlus size={16} />} onClick={newM.open}>{t('wr.new')}</Button>} />
-      <Tabs value={tab} onChange={(v) => setParam('tab', v)} mb="sm">
+      <Card p="sm" mb="md">
+        <Group gap="xs" align="center" wrap="wrap">
+          <TextInput placeholder={t('wr.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 260 }} />
+          <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v })} clearable searchable w={{ base: '100%', xs: 200 }} />
+          <Group gap={6} ml="auto">
+            <ListTools list="work-requests" lp={lp} cols={cols} exportPath="/work-requests/export" exportQuery={listQuery} total={data?.total} />
+          </Group>
+        </Group>
+        <FilterChips defs={chips} p={p} set={set} />
+      </Card>
+      <Tabs value={tab} onChange={(v) => set({ tab: v })} mb="sm">
         <Tabs.List>{TABS.map((x) => <Tabs.Tab key={x.key} value={x.key} rightSection={<Badge size="xs" variant="default" circle>{count(x.status)}</Badge>}>{x.status ? t(`wrStatus.${x.status}`) : t('wo.all')}</Tabs.Tab>)}</Tabs.List>
       </Tabs>
       <Card p={0}>
         <DataTable<WorkRequestListItem> minHeight={240} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching}
-          records={data?.items ?? []} noRecordsText={t('common.noRecords')} totalRecords={data?.total ?? 0} recordsPerPage={25} page={page}
-          onPageChange={(n) => setParam('page', String(n))} rowClassName={() => 'clickable-row'} onRowClick={({ record }) => setParam('open', record.id)}
-          columns={[
-            { accessor: 'number', title: t('wr.number'), noWrap: true, render: (r) => <Text fw={600} fz="sm" c="brand">{r.number}</Text> },
-            { accessor: 'title', title: t('common.name'), width: 320, render: (r) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{r.title}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{[r.assetNumber && `${r.assetNumber} · ${r.assetName}`, r.locationName, r.siteName].filter(Boolean).join(' · ')}</Text></Stack> },
-            { accessor: 'status', title: t('common.status'), noWrap: true, render: (r) => <WrStatusBadge status={r.status} /> },
-            { accessor: 'priority', title: t('priority.label'), noWrap: true, render: (r) => <PriorityBadge value={r.priority} /> },
-            { accessor: 'requesterName', title: t('wr.requester') },
-            { accessor: 'createdAt', title: t('wo.createdOn'), noWrap: true, render: (r) => fmtDateTime(r.createdAt) },
-            { accessor: 'workOrderNumber', title: t('wr.workOrder'), noWrap: true, render: (r) => r.workOrderId ? <Anchor component={Link} to={`/work-orders/${r.workOrderId}`} fz="sm" onClick={(e) => e.stopPropagation()}>{r.workOrderNumber}</Anchor> : '—' },
-          ]} />
+          records={data?.items ?? []} columns={cols.columns} noRecordsText={t('common.noRecords')} totalRecords={data?.total ?? 0} recordsPerPage={lp.pageSize} page={lp.page}
+          onPageChange={(n) => set({ page: String(n) })} recordsPerPageOptions={[25, 50, 100]} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
+          sortStatus={lp.sort} onSortStatusChange={lp.setSort}
+          rowClassName={() => 'clickable-row'} onRowClick={({ record }) => setKeep('open', record.id)}
+          paginationText={({ from, to, totalRecords }) => `${from}–${to} / ${totalRecords}`} />
       </Card>
-      <RequestFormModal opened={newOpen} onClose={() => { newM.close(); setParam('new', null); }} />
-      <RequestDrawer id={openId} onClose={() => setParam('open', null)} />
+      <RequestFormModal opened={newOpen} onClose={() => { newM.close(); setKeep('new', null); }} />
+      <RequestDrawer id={openId} onClose={() => setKeep('open', null)} />
     </>
   );
 }

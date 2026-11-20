@@ -23,28 +23,50 @@ public static class WorkRequestEndpoints
         ["requiredBy"] = r => r.RequiredBy, ["site"] = r => r.Site!.Name,
     };
 
+    public sealed class RequestFilter
+    {
+        public string? Search { get; set; }
+        public string? Status { get; set; }
+        public Guid? SiteId { get; set; }
+        public Guid? AssetId { get; set; }
+        public bool? Mine { get; set; }
+        public string? Sort { get; set; }
+        public string? Dir { get; set; }
+        public int? Page { get; set; }
+        public int? PageSize { get; set; }
+    }
+
+    public sealed record WorkRequestListItem(Guid Id, string Number, string Title, WorkRequestStatus Status, WorkPriority Priority, WorkType Type, Guid SiteId,
+        string SiteName, string? LocationName, Guid? AssetId, string? AssetNumber, string? AssetName, string? RequesterName, DateOnly? RequiredBy,
+        DateTimeOffset CreatedAt, Guid? WorkOrderId, string? WorkOrderNumber);
+
+    /// <summary>One page of the requests this user may see (the list screen and its export share it).</summary>
+    internal static async Task<PagedResult<WorkRequestListItem>> ListAsync(CmmsDbContext db, HttpContext http, PermissionService perms, ITenantContext ctx,
+        RequestFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
+    {
+        var q = await VisibleAsync(db, http, perms, ctx);
+        if (f.Mine == true) q = q.Where(r => r.CreatedById == ctx.UserId);
+        if (f.Search.Clean() is { } s) q = q.Where(r => r.Number.Contains(s) || r.Title.Contains(s) || r.RequesterName!.Contains(s));
+        var statuses = (f.Status ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => Enum.TryParse<WorkRequestStatus>(x, true, out var e) ? (WorkRequestStatus?)e : null).OfType<WorkRequestStatus>().ToList();
+        if (statuses.Count > 0) q = q.Where(r => statuses.Contains(r.Status));
+        if (f.SiteId is not null) q = q.Where(r => r.SiteId == f.SiteId);
+        if (f.AssetId is not null) q = q.Where(r => r.AssetId == f.AssetId);
+        return await q.SortBy(f.Sort, f.Dir, SortMap, "createdAt").Select(r => new WorkRequestListItem(
+            r.Id, r.Number, r.Title, r.Status, r.Priority, r.Type, r.SiteId, r.Site!.Name, r.Location!.Name,
+            r.AssetId, r.Asset!.AssetNumber, r.Asset.Name, r.RequesterName, r.RequiredBy, r.CreatedAt, r.WorkOrderId,
+            db.WorkOrders.Where(w => w.Id == r.WorkOrderId).Select(w => w.Number).FirstOrDefault())).ToPagedAsync(page, pageSize, ct, maxPageSize);
+    }
+
     public static void MapWorkRequestEndpoints(this RouteGroupBuilder api)
     {
         var g = api.MapGroup("/work-requests").WithTags("Work requests");
 
-        g.MapGet("/", async (CmmsDbContext db, HttpContext http, PermissionService perms, ITenantContext ctx, string? search, string? status, Guid? siteId, Guid? assetId,
-            bool? mine, string? sort, string? dir, int? page, int? pageSize, CancellationToken ct) =>
-        {
-            var q = await VisibleAsync(db, http, perms, ctx);
-            if (mine == true) q = q.Where(r => r.CreatedById == ctx.UserId);
-            if (search.Clean() is { } s) q = q.Where(r => r.Number.Contains(s) || r.Title.Contains(s) || r.RequesterName!.Contains(s));
-            var statuses = (status ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).Select(x => Enum.TryParse<WorkRequestStatus>(x, true, out var e) ? (WorkRequestStatus?)e : null).OfType<WorkRequestStatus>().ToList();
-            if (statuses.Count > 0) q = q.Where(r => statuses.Contains(r.Status));
-            if (siteId is not null) q = q.Where(r => r.SiteId == siteId);
-            if (assetId is not null) q = q.Where(r => r.AssetId == assetId);
-            var paged = await q.SortBy(sort, dir, SortMap, "createdAt").Select(r => new
-            {
-                r.Id, r.Number, r.Title, r.Status, r.Priority, r.Type, r.SiteId, SiteName = r.Site!.Name, LocationName = r.Location!.Name,
-                r.AssetId, AssetNumber = r.Asset!.AssetNumber, AssetName = r.Asset.Name, r.RequesterName, r.RequiredBy, r.CreatedAt, r.WorkOrderId,
-                WorkOrderNumber = db.WorkOrders.Where(w => w.Id == r.WorkOrderId).Select(w => w.Number).FirstOrDefault(),
-            }).ToPagedAsync(page ?? 1, pageSize ?? 25, ct);
-            return paged;
-        }).RequireAuthorization();
+        g.MapGet("/", ([AsParameters] RequestFilter f, CmmsDbContext db, HttpContext http, PermissionService perms, ITenantContext ctx, CancellationToken ct) =>
+            ListAsync(db, http, perms, ctx, f, f.Page ?? 1, f.PageSize ?? 25, ct)).RequireAuthorization();
+
+        g.MapGet("/export", ([AsParameters] RequestFilter f, CmmsDbContext db, HttpContext http, PermissionService perms, ITenantContext ctx, CancellationToken ct) =>
+            ListExport.FileAsync(http, db, "work-requests", (page, size) => ListAsync(db, http, perms, ctx, f, page, size, ct, ListExport.MaxRows), ct))
+            .RequireAuthorization();
 
         g.MapGet("/summary", async (CmmsDbContext db, HttpContext http, PermissionService perms, ITenantContext ctx, CancellationToken ct) =>
             await (await VisibleAsync(db, http, perms, ctx)).GroupBy(r => r.Status).Select(x => new { Status = x.Key, Count = x.Count() }).ToListAsync(ct))

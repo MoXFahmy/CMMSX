@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useState } from 'react';
 import { ActionIcon, Anchor, Badge, Button, Card, Checkbox, Group, Menu, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Tabs, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
-import { useDebouncedValue, useDisclosure } from '@mantine/hooks';
+import { useDisclosure } from '@mantine/hooks';
 import { useForm } from '@mantine/form';
-import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { DataTable, type DataTableSortStatus } from 'mantine-datatable';
+import { DataTable } from 'mantine-datatable';
 import { IconAlertTriangle, IconArrowsExchange, IconClipboardCheck, IconDownload, IconEdit, IconFilterOff, IconPackageExport, IconPackageImport, IconPlus, IconSearch, IconTrash, IconAdjustments, IconArrowBackUp } from '@tabler/icons-react';
 import { del, get, post, put } from '@/api/client';
 import type { Lookup, Paged, PartListItem, StockTransactionItem, StockTransactionType, StoreItem } from '@/api/types';
@@ -19,6 +19,7 @@ import { StockTxModal, type StockTxKind } from '@/components/StockTxModal';
 import { TxTypeBadge } from '@/components/InventoryBadges';
 import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtPrice, fmtQty, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { BulkBar, FilterChips, ListTools, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
 const TABS = ['parts', 'stores', 'transactions', 'stock-take', 'groups'] as const;
 
@@ -63,65 +64,87 @@ export function InventoryPage() {
 
 function PartsTab() {
   const { t } = useTranslation();
-  const { me } = useAuth();
+  const { me, can } = useAuth();
   const currency = me?.tenant.settings.currency ?? 'USD';
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
-  const p = (k: string) => params.get(k) ?? '';
-  const set = (patch: Record<string, string | null>) => {
-    const next = new URLSearchParams(params);
-    for (const [k, v] of Object.entries(patch)) { if (v) next.set(k, v); else next.delete(k); }
-    if (!('page' in patch)) next.delete('page');
-    setParams(next, { replace: true });
-  };
-  const [search, setSearch] = useState(p('search'));
-  const [debounced] = useDebouncedValue(search, 300);
-  useEffect(() => { if (debounced !== p('search')) set({ search: debounced || null }); /* eslint-disable-next-line */ }, [debounced]);
-  const page = Number(p('page') || 1);
-  const pageSize = Number(p('pageSize') || 25);
-  const sort: DataTableSortStatus<PartListItem> = { columnAccessor: p('sort') || 'partNumber', direction: (p('dir') as 'asc' | 'desc') || 'asc' };
+  const qc = useQueryClient();
+  const lp = useListParams<PartListItem>({ sort: 'partNumber', dir: 'asc' });
+  const { p, set } = lp;
   const q = { search: p('search'), groupId: p('groupId'), storeId: p('storeId'), belowReorder: p('low'), critical: p('critical'), activeOnly: p('inactive') ? '' : 'true' };
+  const listQuery = { ...q, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
   const { data, isFetching } = useQuery({
-    queryKey: ['parts', q, page, pageSize, sort], placeholderData: (prev) => prev,
-    queryFn: () => get<Paged<PartListItem>>('/parts', { ...q, page, pageSize, sort: String(sort.columnAccessor), dir: sort.direction }),
+    queryKey: ['parts', listQuery, lp.page, lp.pageSize], placeholderData: (prev) => prev,
+    queryFn: () => get<Paged<PartListItem>>('/parts', { ...listQuery, page: lp.page, pageSize: lp.pageSize }),
   });
   const { data: groups } = useQuery({ queryKey: ['part-groups'], queryFn: () => get<Lookup[]>('/part-groups') });
   const { data: stores } = useStores();
   const filtersActive = ['search', 'groupId', 'storeId', 'low', 'critical', 'inactive'].some((k) => p(k));
+  const allColumns: ListColumn<PartListItem>[] = [
+    { accessor: 'partNumber', title: t('inv.partNumber'), sortable: true, noWrap: true,
+      render: (x) => <Anchor component={Link} to={`/inventory/parts/${x.id}`} fw={600} fz="sm" onClick={(e) => e.stopPropagation()}>{x.partNumber}</Anchor> },
+    { accessor: 'name', title: t('common.description'), sortable: true, width: 320, export: [{ key: 'name' }, { key: 'groupName', title: t('inv.group') }, { key: 'manufacturer', title: t('inv.manufacturer') }],
+      render: (x) => <Stack gap={0}><Group gap={6} wrap="nowrap"><Text fz="sm" lineClamp={1}>{x.name}</Text>{x.isCritical && <Badge size="xs" color="red" variant="light">{t('inv.critical')}</Badge>}{!x.isActive && <Badge size="xs" color="gray">{t('common.inactive')}</Badge>}</Group>
+        <Text fz="xs" c="dimmed" lineClamp={1}>{[x.groupName, x.manufacturer].filter(Boolean).join(' · ') || '—'}</Text></Stack> },
+    { accessor: 'onHand', title: t('inv.onHand'), textAlign: 'right', noWrap: true, export: [{ key: 'onHand' }, { key: 'unitOfMeasure', title: t('inv.unit') }],
+      render: (x) => <Group gap={4} justify="flex-end" wrap="nowrap">{x.low && <Tooltip label={t('inv.atReorder')}><IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" /></Tooltip>}
+        <Text fz="sm" fw={x.low ? 600 : undefined} c={x.onHand <= 0 ? 'red' : x.low ? 'orange' : undefined}>{fmtQty(x.onHand)} {x.unitOfMeasure}</Text></Group> },
+    { accessor: 'onOrder', title: t('inv.onOrder'), textAlign: 'right', noWrap: true, render: (x) => x.onOrder ? fmtQty(x.onOrder) : <Text c="dimmed" fz="sm">—</Text> },
+    { accessor: 'averageCost', title: t('inv.avgCost'), sortable: true, textAlign: 'right', noWrap: true, render: (x) => fmtPrice(x.averageCost, currency) },
+    { accessor: 'value', title: t('inv.value'), textAlign: 'right', noWrap: true, render: (x) => fmtPrice(x.value, currency) },
+    { accessor: 'manufacturer', title: t('inv.manufacturer'), sortable: true, noWrap: true, render: (x) => x.manufacturer ?? '—' },
+    { accessor: 'group', title: t('inv.group'), sortable: true, noWrap: true, export: [{ key: 'groupName' }], render: (x) => x.groupName ?? '—' },
+    { accessor: 'isCritical', title: t('inv.critical'), noWrap: true, render: (x) => (x.isCritical ? t('common.yes') : t('common.no')) },
+    { accessor: 'isActive', title: t('common.status'), noWrap: true, render: (x) => (x.isActive ? t('common.active') : t('common.inactive')) },
+  ];
+  const cols = useListColumns('parts', allColumns, { defaultHidden: ['manufacturer', 'group', 'isCritical', 'isActive'] });
+  const chips: FilterDef[] = [
+    { keys: ['search'], label: t('common.search') },
+    { keys: ['groupId'], label: t('inv.group'), format: ([v]) => groups?.find((g) => g.id === v)?.name ?? '…' },
+    { keys: ['storeId'], label: t('inv.store'), format: ([v]) => { const st = stores?.find((x) => x.id === v); return st ? `${st.code} · ${st.name}` : '…'; } },
+    { keys: ['low'], label: t('inv.belowReorder'), format: () => t('common.yes') },
+    { keys: ['critical'], label: t('inv.criticalOnly'), format: () => t('common.yes') },
+    { keys: ['inactive'], label: t('common.showInactive'), format: () => t('common.yes') },
+  ];
+  const canManage = can(P.inventoryManage);
+  const [selected, setSelected] = useState<PartListItem[]>([]);
+  // Ticked rows belong to the list on screen: changing its filters, tab or sort starts a new selection.
+  const selectionKey = JSON.stringify(listQuery);
+  useEffect(() => setSelected([]), [selectionKey]);
+  const bulk = useMutation({
+    mutationFn: (active: boolean) => post<BulkResult>('/parts/bulk', { ids: selected.map((x) => x.id), active }),
+    onSuccess: (r) => { showBulkResult(t, r); setSelected([]); void qc.invalidateQueries({ queryKey: ['parts'] }); },
+    onError: notifyError,
+  });
   return (
     <>
       <Card p="sm" mb="md">
         <Group gap="xs" wrap="wrap">
-          <TextInput placeholder={t('inv.searchParts')} leftSection={<IconSearch size={16} />} value={search} onChange={(e) => setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 260 }} />
+          <TextInput placeholder={t('inv.searchParts')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 260 }} />
           <Select placeholder={t('inv.group')} data={(groups ?? []).map((g) => ({ value: g.id, label: g.name }))} value={p('groupId') || null} onChange={(v) => set({ groupId: v })} clearable w={{ base: '100%', xs: 180 }} />
-          <Select placeholder={t('inv.store')} data={(stores ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))} value={p('storeId') || null} onChange={(v) => set({ storeId: v })} clearable w={{ base: '100%', xs: 200 }} />
+          <Select placeholder={t('inv.store')} data={(stores ?? []).map((st) => ({ value: st.id, label: `${st.code} · ${st.name}` }))} value={p('storeId') || null} onChange={(v) => set({ storeId: v })} clearable w={{ base: '100%', xs: 200 }} />
           <Checkbox label={t('inv.belowReorder')} checked={!!p('low')} onChange={(e) => set({ low: e.currentTarget.checked ? 'true' : null })} />
           <Checkbox label={t('inv.criticalOnly')} checked={!!p('critical')} onChange={(e) => set({ critical: e.currentTarget.checked ? 'true' : null })} />
           <Checkbox label={t('common.showInactive')} checked={!!p('inactive')} onChange={(e) => set({ inactive: e.currentTarget.checked ? '1' : null })} />
-          {filtersActive && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')} onClick={() => { setSearch(''); setParams({}, { replace: true }); }}><IconFilterOff size={16} /></ActionIcon></Tooltip>}
+          {filtersActive && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')} onClick={() => lp.replaceAll('')}><IconFilterOff size={16} /></ActionIcon></Tooltip>}
+          <Group gap={6} ml="auto">
+            <ListTools list="parts" lp={lp} cols={cols} exportPath="/parts/export" exportQuery={listQuery} total={data?.total} />
+          </Group>
         </Group>
+        <FilterChips defs={chips} p={p} set={set} />
       </Card>
+      <BulkBar count={selected.length} onClear={() => setSelected([])}>
+        <Button size="xs" variant="white" loading={bulk.isPending} onClick={() => bulk.mutate(true)}>{t('list.markActive')}</Button>
+        <Button size="xs" variant="white" loading={bulk.isPending} onClick={() => bulk.mutate(false)}>{t('list.markInactive')}</Button>
+      </BulkBar>
       <Card p={0}>
         <DataTable<PartListItem>
-          minHeight={260} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []}
-          noRecordsText={t('inv.noParts')} totalRecords={data?.total ?? 0} recordsPerPage={pageSize} page={page} onPageChange={(n) => set({ page: String(n) })}
+          minHeight={260} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []} columns={cols.columns}
+          noRecordsText={t('inv.noParts')} totalRecords={data?.total ?? 0} recordsPerPage={lp.pageSize} page={lp.page} onPageChange={(n) => set({ page: String(n) })}
           recordsPerPageOptions={[25, 50, 100]} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
-          sortStatus={sort} onSortStatusChange={(s) => set({ sort: String(s.columnAccessor), dir: s.direction })}
+          sortStatus={lp.sort} onSortStatusChange={lp.setSort}
+          selectedRecords={canManage ? selected : undefined} onSelectedRecordsChange={canManage ? setSelected : undefined}
           rowClassName={() => 'clickable-row'} onRowClick={({ record }) => navigate(`/inventory/parts/${record.id}`)}
           paginationText={({ from, to, totalRecords }) => `${from}–${to} / ${totalRecords}`}
-          columns={[
-            { accessor: 'partNumber', title: t('inv.partNumber'), sortable: true, noWrap: true,
-              render: (x) => <Anchor component={Link} to={`/inventory/parts/${x.id}`} fw={600} fz="sm" onClick={(e) => e.stopPropagation()}>{x.partNumber}</Anchor> },
-            { accessor: 'name', title: t('common.description'), sortable: true, width: 320,
-              render: (x) => <Stack gap={0}><Group gap={6} wrap="nowrap"><Text fz="sm" lineClamp={1}>{x.name}</Text>{x.isCritical && <Badge size="xs" color="red" variant="light">{t('inv.critical')}</Badge>}{!x.isActive && <Badge size="xs" color="gray">{t('common.inactive')}</Badge>}</Group>
-                <Text fz="xs" c="dimmed" lineClamp={1}>{[x.groupName, x.manufacturer].filter(Boolean).join(' · ') || '—'}</Text></Stack> },
-            { accessor: 'onHand', title: t('inv.onHand'), textAlign: 'right', noWrap: true,
-              render: (x) => <Group gap={4} justify="flex-end" wrap="nowrap">{x.low && <Tooltip label={t('inv.atReorder')}><IconAlertTriangle size={14} color="var(--mantine-color-orange-6)" /></Tooltip>}
-                <Text fz="sm" fw={x.low ? 600 : undefined} c={x.onHand <= 0 ? 'red' : x.low ? 'orange' : undefined}>{fmtQty(x.onHand)} {x.unitOfMeasure}</Text></Group> },
-            { accessor: 'onOrder', title: t('inv.onOrder'), textAlign: 'right', noWrap: true, render: (x) => x.onOrder ? fmtQty(x.onOrder) : <Text c="dimmed" fz="sm">—</Text> },
-            { accessor: 'averageCost', title: t('inv.avgCost'), sortable: true, textAlign: 'right', noWrap: true, render: (x) => fmtPrice(x.averageCost, currency) },
-            { accessor: 'value', title: t('inv.value'), textAlign: 'right', noWrap: true, render: (x) => fmtPrice(x.value, currency) },
-          ]}
         />
       </Card>
     </>

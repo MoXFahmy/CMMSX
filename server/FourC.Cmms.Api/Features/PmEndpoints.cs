@@ -33,6 +33,49 @@ public static class PmEndpoints
 
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
 
+    public sealed class PmScheduleFilter
+    {
+        public string? Search { get; set; }
+        public Guid? SiteId { get; set; }
+        public Guid? AssetId { get; set; }
+        public PmScheduleType? Type { get; set; }
+        public bool? ActiveOnly { get; set; }
+        public int? DueWithinDays { get; set; }
+        public string? Sort { get; set; }
+        public string? Dir { get; set; }
+        public int? Page { get; set; }
+        public int? PageSize { get; set; }
+    }
+
+    public sealed record PmScheduleListItem(Guid Id, string Code, string Name, PmScheduleType Type, PmBasis Basis, bool IsActive, Guid SiteId, string SiteName,
+        Guid? AssetId, string? AssetNumber, string? AssetName, string? LocationName, string? TaskCode, string? TaskName, string Schedule, DateOnly? NextDueDate,
+        decimal? NextDueReading, string? MeterUnit, decimal? MeterReading, DateTimeOffset? LastGeneratedAt, Guid? LastWorkOrderId, string? LastWorkOrderNumber,
+        int OpenWorkOrders, bool IsOverdue, int MultipleTasks, int AssetCount);
+
+    /// <summary>One page of the PM schedule list (the list screen and its export share it).</summary>
+    internal static async Task<PagedResult<PmScheduleListItem>> ListAsync(CmmsDbContext db, PmScheduleFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
+    {
+            var q = db.PmSchedules.AsNoTracking();
+        if (f.Search.Clean() is { } s) q = q.Where(x => x.Code.Contains(s) || x.Name.Contains(s) || x.Asset!.AssetNumber.Contains(s));
+        if (f.SiteId is not null) q = q.Where(x => x.SiteId == f.SiteId);
+        if (f.AssetId is not null) q = q.Where(x => x.AssetId == f.AssetId || (x.Asset != null && x.Asset.ParentAssetId == f.AssetId) || x.Assets.Any(a => a.AssetId == f.AssetId));
+        if (f.Type is not null) q = q.Where(x => x.Type == f.Type);
+        if (f.ActiveOnly == true) q = q.Where(x => x.IsActive);
+        if (f.DueWithinDays is { } d) { var until = Today.AddDays(d); q = q.Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= until); }
+        var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "nextDueDate").Include(x => x.Meter).Include(x => x.ExtraTasks)
+            .Select(x => new { S = x, SiteName = x.Site!.Name, AssetNumber = x.Asset!.AssetNumber, AssetName = x.Asset.Name, LocationName = x.Location!.Name, TaskCode = x.PmTask!.Code, TaskName = x.PmTask.Name,
+                MeterUnit = x.Meter!.Unit, MeterReading = x.Meter.CurrentReading, AssetCount = x.Assets.Count,
+                LastWorkOrderNumber = db.WorkOrders.Where(w => w.Id == x.LastWorkOrderId).Select(w => w.Number).FirstOrDefault(),
+                OpenWorkOrders = db.WorkOrders.Count(w => w.PmScheduleId == x.Id && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold)) })
+            .ToPagedAsync(page, pageSize, ct, maxPageSize);
+        var today = Today;
+        return new PagedResult<PmScheduleListItem>(paged.Items.Select(i => new PmScheduleListItem(
+            i.S.Id, i.S.Code, i.S.Name, i.S.Type, i.S.Basis, i.S.IsActive, i.S.SiteId, i.SiteName, i.S.AssetId, i.AssetNumber, i.AssetName, i.LocationName,
+            i.TaskCode, i.TaskName, PmCalendar.Describe(i.S), i.S.NextDueDate, i.S.NextDueReading, i.MeterUnit, i.MeterReading, i.S.LastGeneratedAt,
+            i.S.LastWorkOrderId, i.LastWorkOrderNumber, i.OpenWorkOrders, i.S.IsActive && i.S.NextDueDate < today, i.S.ExtraTasks.Count, i.AssetCount)).ToList(),
+            paged.Total, paged.Page, paged.PageSize);
+    }
+
     public static void MapPmEndpoints(this RouteGroupBuilder api)
     {
         // ---------------- PM tasks ----------------
@@ -86,30 +129,22 @@ public static class PmEndpoints
 
         // ---------------- PM schedules ----------------
         var g = api.MapGroup("/pm-schedules").WithTags("PM schedules");
-        g.MapGet("/", async (CmmsDbContext db, string? search, Guid? siteId, Guid? assetId, PmScheduleType? type, bool? activeOnly, int? dueWithinDays,
-            string? sort, string? dir, int? page, int? pageSize, CancellationToken ct) =>
+        g.MapGet("/", ([AsParameters] PmScheduleFilter f, CmmsDbContext db, CancellationToken ct) =>
+            ListAsync(db, f, f.Page ?? 1, f.PageSize ?? 25, ct)).RequirePermission(Permissions.PmView);
+
+        g.MapGet("/export", ([AsParameters] PmScheduleFilter f, HttpContext http, CmmsDbContext db, CancellationToken ct) =>
+            ListExport.FileAsync(http, db, "pm-schedules", (page, size) => ListAsync(db, f, page, size, ct, ListExport.MaxRows), ct))
+            .RequirePermission(Permissions.PmView);
+
+        // Pause or resume many schedules. Resuming a calendar schedule starts it again from today, as the edit form does.
+        g.MapPost("/bulk", async (BulkActiveInput input, CmmsDbContext db, CancellationToken ct) =>
         {
-            var q = db.PmSchedules.AsNoTracking();
-            if (search.Clean() is { } s) q = q.Where(x => x.Code.Contains(s) || x.Name.Contains(s) || x.Asset!.AssetNumber.Contains(s));
-            if (siteId is not null) q = q.Where(x => x.SiteId == siteId);
-            if (assetId is not null) q = q.Where(x => x.AssetId == assetId || (x.Asset != null && x.Asset.ParentAssetId == assetId) || x.Assets.Any(a => a.AssetId == assetId));
-            if (type is not null) q = q.Where(x => x.Type == type);
-            if (activeOnly == true) q = q.Where(x => x.IsActive);
-            if (dueWithinDays is { } d) { var until = Today.AddDays(d); q = q.Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= until); }
-            var paged = await q.SortBy(sort, dir, SortMap, "nextDueDate").Include(x => x.Meter).Include(x => x.ExtraTasks)
-                .Select(x => new { S = x, SiteName = x.Site!.Name, AssetNumber = x.Asset!.AssetNumber, AssetName = x.Asset.Name, LocationName = x.Location!.Name, TaskCode = x.PmTask!.Code, TaskName = x.PmTask.Name,
-                    MeterUnit = x.Meter!.Unit, MeterReading = x.Meter.CurrentReading, AssetCount = x.Assets.Count,
-                    LastWorkOrderNumber = db.WorkOrders.Where(w => w.Id == x.LastWorkOrderId).Select(w => w.Number).FirstOrDefault(),
-                    OpenWorkOrders = db.WorkOrders.Count(w => w.PmScheduleId == x.Id && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold)) })
-                .ToPagedAsync(page ?? 1, pageSize ?? 25, ct);
-            var today = Today;
-            return new PagedResult<object>(paged.Items.Select(i => (object)new
-            {
-                i.S.Id, i.S.Code, i.S.Name, i.S.Type, i.S.Basis, i.S.IsActive, i.S.SiteId, i.SiteName, i.S.AssetId, i.AssetNumber, i.AssetName, i.LocationName,
-                i.TaskCode, i.TaskName, Schedule = PmCalendar.Describe(i.S), i.S.NextDueDate, i.S.NextDueReading, i.MeterUnit, i.MeterReading, i.S.LastGeneratedAt,
-                i.S.LastWorkOrderId, i.LastWorkOrderNumber, i.OpenWorkOrders, IsOverdue = i.S.IsActive && i.S.NextDueDate < today, MultipleTasks = i.S.ExtraTasks.Count, i.AssetCount,
-            }).ToList(), paged.Total, paged.Page, paged.PageSize);
-        }).RequirePermission(Permissions.PmView);
+            var ids = Bulk.Ids(input.Ids, "PM schedules");
+            var rows = await db.PmSchedules.Where(s => ids.Contains(s.Id)).ToListAsync(ct);
+            foreach (var s in rows) SetActive(s, input.Active);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new BulkResult(rows.Count, ids.Except(rows.Select(r => r.Id)).Select(id => new BulkSkip(id, "", "Not found.")).ToList()));
+        }).RequirePermission(Permissions.PmManage);
 
         g.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
@@ -361,6 +396,13 @@ public static class PmEndpoints
             if (i.TimeBased && i.MeterTrigger == MeterTrigger.Threshold) v.Add("timeBased", "Time-based generation is only available for incremental meters.");
         }
         return v;
+    }
+
+    /// <summary>Pauses or resumes a schedule; resuming a calendar schedule moves its next due date to the first one from today.</summary>
+    internal static void SetActive(PmSchedule s, bool active)
+    {
+        if (active && !s.IsActive && PmCalendar.UsesCalendar(s)) s.NextDueDate = PmCalendar.FirstOnOrAfter(s, Today);
+        s.IsActive = active;
     }
 
     private static void ApplySchedule(PmSchedule s, ScheduleInput i)

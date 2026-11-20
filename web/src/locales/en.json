@@ -519,7 +519,9 @@
     "clearFilters": "Clear these filters",
     "duplicate": "Duplicate",
     "duplicateTitle": "New work order (copy of {{number}})",
-    "printJobCard": "Print job card"
+    "printJobCard": "Print job card",
+    "completedOn": "Completed",
+    "assetFilterHint": "Work on the asset’s components is included."
   },
   "wr": {
     "title": "Work requests",
@@ -543,7 +545,8 @@
     "decision": "Decision",
     "workOrder": "Work order",
     "newOnly": "Awaiting triage",
-    "mine": "My requests"
+    "mine": "My requests",
+    "searchPlaceholder": "Search number, title or requester"
   },
   "pm": {
     "title": "Preventive maintenance",
@@ -683,7 +686,13 @@
     "generateNextNow": "Generate next now",
     "generateNowTitle": "Generate this PM work now?",
     "generateNowBody": "Creates the work order for {{date}} now instead of waiting for its lead time.",
-    "nothingGenerated": "No work order was created."
+    "nothingGenerated": "No work order was created.",
+    "assetsInRound": "Assets in the round",
+    "typeLabel": "Kind",
+    "lastGenerated": "Last generated",
+    "openWorkOrders": "Open work orders",
+    "showing": "Showing",
+    "activeAndPaused": "active and paused"
   },
   "txType": {
     "Receipt": "Receipt",
@@ -1083,5 +1092,47 @@
     },
     "notAllowedTitle": "E-mail isn't available for this organization yet",
     "notAllowedBody": "Anyone can sign up on this server, so e-mail is only sent for organizations its operator allows. Ask them to allow \"{{slug}}\"."
+  },
+  "list": {
+    "views": "Views",
+    "noViews": "No saved views yet. Set up the list, then save it here.",
+    "default": "Opens by default",
+    "saveView": "Save as a new view…",
+    "updateView": "Update a view with this list",
+    "renameView": "Rename view…",
+    "setDefault": "Open this view by default",
+    "removeDefault": "Stop opening by default",
+    "deleteView": "Delete view",
+    "viewName": "View name",
+    "makeDefault": "Open this view by default",
+    "makeDefaultHint": "Used when you open the list without filters.",
+    "viewSaved": "View saved",
+    "columns": "Columns",
+    "export": "Export",
+    "exportXlsx": "Excel (.xlsx)",
+    "exportCsv": "CSV",
+    "exportCapped": "More than {{max}} rows match. The file will hold the first {{max}} of {{count}}.",
+    "removeFilter": "Remove filter {{name}}",
+    "from": "from {{date}}",
+    "until": "until {{date}}",
+    "clearSelection": "Clear selection",
+    "tooMany": "Select at most {{max}} rows.",
+    "bulkUpdated_one": "{{count}} row updated",
+    "bulkUpdated_other": "{{count}} rows updated",
+    "bulkPartly": "{{updated}} updated, {{skipped}} skipped",
+    "andMore": "…and {{count}} more",
+    "setStatus": "Change status",
+    "setPriority": "Set priority",
+    "addTechnicians": "Add technicians",
+    "statusTitle": "Change the status of {{count}} work orders",
+    "statusHint": "Each work order follows the usual rules; any that can't change are listed afterwards.",
+    "completionNotesShared": "Work done (for every work order)",
+    "techniciansTitle": "Add technicians to {{count}} work orders",
+    "techniciansHint": "They are added to anyone already assigned and get the usual e-mail.",
+    "pause": "Pause",
+    "resume": "Resume",
+    "markActive": "Mark active",
+    "markInactive": "Mark inactive",
+    "statusConfirm": "This marks {{count}} work orders {{status}}. Reopening them later needs the close permission."
   }
 }

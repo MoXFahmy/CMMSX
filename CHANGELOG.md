@@ -4,6 +4,36 @@ All notable changes to 4C CMMS — the cloud app and the Android app share one v
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.2.0] - 2026-11-20
+
+The list toolkit: work orders, work requests, PM schedules, parts, purchase orders and assets now share the same tools.
+
+### Added
+- **Columns:** show or hide columns on every one of these lists. Your choice is saved with your account, so it follows
+  you to any browser or phone.
+- **Saved views:** save a list as a named view (its filters, tab, sort, page size and columns), update, rename or
+  delete it, and mark one view per list to open by default when you open the list without filters. Views are personal.
+- **Filter chips** under the filters show each active filter in words; the × removes it.
+- **Export to Excel (.xlsx) or CSV** from every list: all rows that match the filters (up to 10,000), with the columns
+  you show, in the same order and with the same titles. In Excel, dates are dates and numbers are numbers.
+- **Bulk actions** on ticked rows (up to 500 at a time). Rows that can't change are listed afterwards with the reason:
+  - work orders: change status (with the same rules as one at a time, including the completion rules), set priority,
+    add technicians (they get the usual e-mail);
+  - PM schedules: pause and resume (resuming starts the schedule again from today);
+  - parts: mark active or inactive;
+  - assets: status, criticality and category, as before.
+- New columns you can switch on: work order type, trade, site, location and completed date; request type, site,
+  location, asset and needed-by date; PM site, last generated and open work orders; part manufacturer, group,
+  critical and status; purchase order site, requester and number of lines.
+- The work request list has a search box, a site filter and sortable columns.
+
+### Changed
+- The PM schedule list keeps its filters in the address, like the other lists, so it can be bookmarked and saved.
+- The asset export follows the columns on screen. Called without columns (for example from a script), it now lists
+  every field under its field name instead of the old fixed headings.
+- Exports hold up to 10,000 rows; the asset export used to go up to 50,000. The export menu says when more rows match.
+- The asset list's column choice moves from the browser to your account (carried over automatically the first time).
+
 ## [0.1.0] - 2026-11-19
 
 E-mail notifications. They are **off** for every organization until an administrator switches them on in

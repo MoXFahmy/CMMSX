@@ -31,6 +31,46 @@ public static class InventoryEndpoints
         ["partNumber"] = p => p.PartNumber, ["name"] = p => p.Name, ["group"] = p => p.Group!.Name, ["averageCost"] = p => p.AverageCost, ["manufacturer"] = p => p.Manufacturer,
     };
 
+    public sealed class PartFilter
+    {
+        public string? Search { get; set; }
+        public Guid? GroupId { get; set; }
+        public Guid? StoreId { get; set; }
+        public bool? BelowReorder { get; set; }
+        public bool? Critical { get; set; }
+        public bool? ActiveOnly { get; set; }
+        public string? Sort { get; set; }
+        public string? Dir { get; set; }
+        public int? Page { get; set; }
+        public int? PageSize { get; set; }
+    }
+
+    public sealed record PartListItem(Guid Id, string PartNumber, string Name, string? Manufacturer, string UnitOfMeasure, string? GroupName, decimal AverageCost,
+        bool IsCritical, bool IsShelfItem, bool IsActive, decimal OnHand, decimal OnOrder, bool Low, decimal Value);
+
+    /// <summary>One page of the part list (the list screen and its export share it).</summary>
+    internal static async Task<PagedResult<PartListItem>> ListAsync(CmmsDbContext db, PartFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
+    {
+        var storeId = f.StoreId;
+        var q = db.Parts.AsNoTracking();
+        if (f.Search.Clean() is { } s) q = q.Where(p => p.PartNumber.Contains(s) || p.Name.Contains(s) || p.Manufacturer!.Contains(s) || p.ManufacturerPartNumber!.Contains(s) || p.Barcode == s);
+        if (f.GroupId is not null) q = q.Where(p => p.GroupId == f.GroupId);
+        if (storeId is not null) q = q.Where(p => db.StockLevels.Any(l => l.PartId == p.Id && l.StoreId == storeId));
+        if (f.Critical == true) q = q.Where(p => p.IsCritical);
+        if (f.ActiveOnly == true) q = q.Where(p => p.IsActive);
+        if (f.BelowReorder == true) q = q.Where(p => db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0 && l.QuantityOnHand <= l.ReorderLevel));
+        var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "partNumber").Select(p => new
+        {
+            p.Id, p.PartNumber, p.Name, p.Manufacturer, p.UnitOfMeasure, GroupName = p.Group!.Name, p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive,
+            OnHand = db.StockLevels.Where(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId)).Sum(l => (decimal?)l.QuantityOnHand) ?? 0,
+            Low = db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0 && l.QuantityOnHand <= l.ReorderLevel),
+            OnOrder = db.PurchaseOrderLines.Where(x => x.PartId == p.Id && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId && OpenPo.Contains(o.Status)))
+                .Sum(x => (decimal?)(x.Quantity - x.QuantityReceived)) ?? 0,
+        }).ToPagedAsync(page, pageSize, ct, maxPageSize);
+        return new PagedResult<PartListItem>(paged.Items.Select(p => new PartListItem(p.Id, p.PartNumber, p.Name, p.Manufacturer, p.UnitOfMeasure, p.GroupName,
+            p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive, p.OnHand, p.OnOrder, p.Low, Math.Round(p.OnHand * p.AverageCost, 2))).ToList(), paged.Total, paged.Page, paged.PageSize);
+    }
+
     public static void MapInventoryEndpoints(this RouteGroupBuilder api)
     {
         PeopleEndpoints.MapLookup(api, "/part-groups", "Part groups", db => db.PartGroups, () => new PartGroup { Code = "", Name = "" }, Permissions.InventoryManage,
@@ -78,27 +118,21 @@ public static class InventoryEndpoints
 
         // ---------------- Parts ----------------
         var g = api.MapGroup("/parts").WithTags("Parts");
-        g.MapGet("/", async (CmmsDbContext db, string? search, Guid? groupId, Guid? storeId, bool? belowReorder, bool? critical, bool? activeOnly,
-            string? sort, string? dir, int? page, int? pageSize, CancellationToken ct) =>
+        g.MapGet("/", ([AsParameters] PartFilter f, CmmsDbContext db, CancellationToken ct) =>
+            ListAsync(db, f, f.Page ?? 1, f.PageSize ?? 25, ct)).RequirePermission(Permissions.InventoryView);
+
+        g.MapGet("/export", ([AsParameters] PartFilter f, HttpContext http, CmmsDbContext db, CancellationToken ct) =>
+            ListExport.FileAsync(http, db, "parts", (page, size) => ListAsync(db, f, page, size, ct, ListExport.MaxRows), ct))
+            .RequirePermission(Permissions.InventoryView);
+
+        g.MapPost("/bulk", async (BulkActiveInput input, CmmsDbContext db, CancellationToken ct) =>
         {
-            var q = db.Parts.AsNoTracking();
-            if (search.Clean() is { } s) q = q.Where(p => p.PartNumber.Contains(s) || p.Name.Contains(s) || p.Manufacturer!.Contains(s) || p.ManufacturerPartNumber!.Contains(s) || p.Barcode == s);
-            if (groupId is not null) q = q.Where(p => p.GroupId == groupId);
-            if (storeId is not null) q = q.Where(p => db.StockLevels.Any(l => l.PartId == p.Id && l.StoreId == storeId));
-            if (critical == true) q = q.Where(p => p.IsCritical);
-            if (activeOnly == true) q = q.Where(p => p.IsActive);
-            if (belowReorder == true) q = q.Where(p => db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0 && l.QuantityOnHand <= l.ReorderLevel));
-            var paged = await q.SortBy(sort, dir, SortMap, "partNumber").Select(p => new
-            {
-                p.Id, p.PartNumber, p.Name, p.Manufacturer, p.UnitOfMeasure, GroupName = p.Group!.Name, p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive,
-                OnHand = db.StockLevels.Where(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId)).Sum(l => (decimal?)l.QuantityOnHand) ?? 0,
-                Low = db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0 && l.QuantityOnHand <= l.ReorderLevel),
-                OnOrder = db.PurchaseOrderLines.Where(x => x.PartId == p.Id && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId && OpenPo.Contains(o.Status)))
-                    .Sum(x => (decimal?)(x.Quantity - x.QuantityReceived)) ?? 0,
-            }).ToPagedAsync(page ?? 1, pageSize ?? 25, ct);
-            return new PagedResult<object>(paged.Items.Select(p => (object)new { p.Id, p.PartNumber, p.Name, p.Manufacturer, p.UnitOfMeasure, p.GroupName, p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive,
-                p.OnHand, p.OnOrder, p.Low, Value = Math.Round(p.OnHand * p.AverageCost, 2) }).ToList(), paged.Total, paged.Page, paged.PageSize);
-        }).RequirePermission(Permissions.InventoryView);
+            var ids = Bulk.Ids(input.Ids, "parts");
+            var rows = await db.Parts.Where(p => ids.Contains(p.Id)).ToListAsync(ct);
+            foreach (var p in rows) p.IsActive = input.Active;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new BulkResult(rows.Count, ids.Except(rows.Select(r => r.Id)).Select(id => new BulkSkip(id, "", "Not found.")).ToList()));
+        }).RequirePermission(Permissions.InventoryManage);
 
         g.MapGet("/lookup", async (CmmsDbContext db, string? search, Guid? storeId, CancellationToken ct) =>
         {

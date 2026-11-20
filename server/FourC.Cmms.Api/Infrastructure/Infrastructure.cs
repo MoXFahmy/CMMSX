@@ -301,6 +301,8 @@ public sealed class Validator
 {
     private readonly Dictionary<string, List<string>> _errors = [];
     public bool IsValid => _errors.Count == 0;
+    /// <summary>Every message, in the order they were added.</summary>
+    public IEnumerable<string> Messages => _errors.Values.SelectMany(m => m);
 
     public Validator Required(string field, string? value, string label, int max = 0)
     {
@@ -339,10 +341,11 @@ public static class QueryExtensions
         return desc ? q.OrderByDescending(map[key]) : q.OrderBy(map[key]);
     }
 
-    public static async Task<PagedResult<T>> ToPagedAsync<T>(this IQueryable<T> q, int page, int pageSize, CancellationToken ct)
+    /// <summary>One page of the query and the total count. <paramref name="maxPageSize"/> is 500 for screens; exports pass more.</summary>
+    public static async Task<PagedResult<T>> ToPagedAsync<T>(this IQueryable<T> q, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
     {
         page = Math.Max(1, page);
-        pageSize = Math.Clamp(pageSize, 1, 500);
+        pageSize = Math.Clamp(pageSize, 1, maxPageSize);
         var total = await q.CountAsync(ct);
         var items = await q.Skip((page - 1) * pageSize).Take(pageSize).ToListAsync(ct);
         return new PagedResult<T>(items, total, page, pageSize);
