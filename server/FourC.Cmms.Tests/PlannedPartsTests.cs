@@ -230,4 +230,65 @@ public class PlannedPartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var a = Assert.Single(d.GetProperty("assignees").EnumerateArray());
         Assert.Equal(2m, a.GetProperty("plannedHours").GetDecimal());
     }
+
+    [SkippableFact]
+    public async Task Taking_reserved_stock_asks_first_and_goes_through_when_confirmed()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        await ReceiveAsync(o.C, part, o.Main, 5);
+        var woA = await WorkOrderAsync(o.C, o.SiteA, dueInDays: 3);
+        await PlanAsync(o.C, woA, part, 4);
+
+        var other = await WorkOrderAsync(o.C, o.SiteA); // an unplanned job
+        var issue = new { partId = part, storeId = o.Main, quantity = 3, workOrderId = other };
+        var body = JsonDocument.Parse(await Fails(await o.C.PostAsJsonAsync("/api/inventory/issue", issue), HttpStatusCode.Conflict)).RootElement;
+        var r = Assert.Single(body.GetProperty("reserved").EnumerateArray());
+        Assert.Equal((woA, 2m), (r.GetProperty("workOrderId").GetGuid(), r.GetProperty("moreShort").GetDecimal()));
+        Assert.Equal(5m, (await Ok(await o.C.GetAsync($"/api/parts/{part}"))).GetProperty("onHand").GetDecimal());
+
+        await Ok(await o.C.PostAsJsonAsync("/api/inventory/issue", new { partId = part, storeId = o.Main, quantity = 3, workOrderId = other, confirmReserved = true }));
+        Assert.Equal(2m, Dec(await LineAsync(o.C, woA, part), "short"));
+    }
+
+    [SkippableFact]
+    public async Task The_most_urgent_job_takes_its_own_parts_without_a_question()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        await ReceiveAsync(o.C, part, o.Main, 10);
+        var woB = await WorkOrderAsync(o.C, o.SiteA, dueInDays: 1);
+        var woA = await WorkOrderAsync(o.C, o.SiteA, dueInDays: 30);
+        await PlanAsync(o.C, woB, part, 5);
+        await PlanAsync(o.C, woA, part, 10); // already 5 short
+        await Ok(await o.C.PostAsJsonAsync("/api/inventory/issue", new { partId = part, storeId = o.Main, quantity = 5, workOrderId = woB }));
+    }
+
+    [SkippableFact]
+    public async Task Transfers_out_warn_too_and_adjustments_never_do()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main, o.Sat);
+        await ReceiveAsync(o.C, part, o.Main, 5);
+        var wo = await WorkOrderAsync(o.C, o.SiteA);
+        await PlanAsync(o.C, wo, part, 4, o.Main);
+        await Fails(await o.C.PostAsJsonAsync("/api/inventory/transfer", new { partId = part, fromStoreId = o.Main, toStoreId = o.Sat, quantity = 3 }), HttpStatusCode.Conflict);
+        await Ok(await o.C.PostAsJsonAsync("/api/inventory/transfer", new { partId = part, fromStoreId = o.Main, toStoreId = o.Sat, quantity = 3, confirmReserved = true }));
+        await Ok(await o.C.PostAsJsonAsync("/api/inventory/adjust", new { partId = part, storeId = o.Main, quantity = -1, notes = "Damaged" }));
+    }
+
+    [SkippableFact]
+    public async Task Without_planned_parts_issuing_asks_nothing_new()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        await ReceiveAsync(o.C, part, o.Main, 2);
+        var wo = await WorkOrderAsync(o.C, o.SiteA);
+        await Ok(await o.C.PostAsJsonAsync("/api/inventory/issue", new { partId = part, storeId = o.Main, quantity = 1, workOrderId = wo }));
+        await Fails(await o.C.PostAsJsonAsync("/api/inventory/issue", new { partId = part, storeId = o.Main, quantity = 5, workOrderId = wo }), HttpStatusCode.BadRequest);
+    }
 }

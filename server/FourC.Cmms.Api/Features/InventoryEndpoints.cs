@@ -17,9 +17,12 @@ public static class InventoryEndpoints
         string? Barcode, List<Guid>? AlternatePartIds, string? Notes, bool IsActive = true, List<LevelInput>? Levels = null, string? RowVersion = null);
     public sealed record LevelInput(Guid StoreId, string? Bin, decimal MinLevel, decimal ReorderLevel, decimal MaxLevel, decimal ReorderQuantity);
     public sealed record ReceiveInput(Guid? PartId, Guid? StoreId, decimal Quantity, decimal UnitCost, DateOnly? Date, Guid? SupplierId, string? Reference, string? BatchNumber, DateOnly? ExpiryDate, string? Notes);
-    public sealed record IssueInput(Guid? PartId, Guid? StoreId, decimal Quantity, DateOnly? Date, Guid? WorkOrderId, Guid? LocationId, string? BatchNumber, string? Notes);
+    /// <param name="ConfirmReserved">Issue even if it takes stock reserved for other work (the answer to "Issue anyway?").</param>
+    public sealed record IssueInput(Guid? PartId, Guid? StoreId, decimal Quantity, DateOnly? Date, Guid? WorkOrderId, Guid? LocationId, string? BatchNumber, string? Notes,
+        bool ConfirmReserved = false);
     public sealed record AdjustInput(Guid? PartId, Guid? StoreId, decimal Quantity, DateOnly? Date, string? BatchNumber, string Notes);
-    public sealed record TransferInput(Guid? PartId, Guid? FromStoreId, Guid? ToStoreId, decimal Quantity, DateOnly? Date, string? BatchNumber, string? Notes);
+    public sealed record TransferInput(Guid? PartId, Guid? FromStoreId, Guid? ToStoreId, decimal Quantity, DateOnly? Date, string? BatchNumber, string? Notes,
+        bool ConfirmReserved = false);
     public sealed record CountLine(Guid PartId, decimal CountedQuantity);
     public sealed record StockTakeInput(Guid StoreId, DateOnly? Date, List<CountLine> Lines, string? Notes);
 
@@ -255,6 +258,7 @@ public static class InventoryEndpoints
         {
             if (Missing(i.PartId, i.StoreId) is { } bad) return bad;
             await RequireIssueTargetAsync(db, i.WorkOrderId, i.LocationId, ct);
+            if (!i.ConfirmReserved && await ReservedConflictAsync(db, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.WorkOrderId, ct) is { } reserved) return reserved;
             var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
                 WorkOrderId: i.WorkOrderId, LocationId: i.LocationId, BatchNumber: i.BatchNumber, Notes: i.Notes), tk), ct);
             return Results.Ok(new { tx.Id });
@@ -290,6 +294,7 @@ public static class InventoryEndpoints
         {
             if (Missing(i.PartId, i.FromStoreId) is { } bad) return bad;
             if (i.ToStoreId is null) return new Validator().When(true, "toStoreId", "Choose the receiving store.").Problem();
+            if (!i.ConfirmReserved && i.ToStoreId != i.FromStoreId && await ReservedConflictAsync(db, i.PartId!.Value, i.FromStoreId!.Value, i.Quantity, null, ct) is { } reserved) return reserved;
             var (o, _) = await db.InTransactionAsync(tk => StockLedger.TransferAsync(db, ctx, i.PartId!.Value, i.FromStoreId!.Value, i.ToStoreId.Value, i.Quantity, i.Date ?? Today, i.BatchNumber.Clean(), i.Notes, tk), ct);
             return Results.Ok(new { o.Id });
         }).RequirePermission(Permissions.InventoryTransact);
@@ -351,6 +356,29 @@ public static class InventoryEndpoints
     {
         var v = new Validator().When(partId is null, "partId", "Choose a part.").When(storeId is null, "storeId", "Choose a store.");
         return v.IsValid ? null : v.Problem();
+    }
+
+    /// <summary>
+    /// The "Issue anyway?" check: a 409 listing the other open work orders that taking <paramref name="quantity"/> from the store
+    /// would leave short or more short, or null when it shorts nobody. A move the ledger will refuse anyway (not enough stock)
+    /// gets that answer instead.
+    /// </summary>
+    private static async Task<IResult?> ReservedConflictAsync(CmmsDbContext db, Guid partId, Guid storeId, decimal quantity, Guid? toWorkOrderId, CancellationToken ct)
+    {
+        if (quantity <= 0) return null;
+        var lines = await Planning.OpenLinesAsync(db, partId, storeId, ct);
+        if (!lines.Any(l => l.StillReserved > 0 && l.WorkOrderId != toWorkOrderId)) return null;
+        var onHand = await Planning.OnHandAsync(db, partId, storeId, ct);
+        if (quantity > onHand && !await db.Parts.Where(p => p.Id == partId).Select(p => p.AllowNegativeStock).FirstOrDefaultAsync(ct)) return null;
+        var changes = Reservations.WouldShort(onHand, lines, quantity, toWorkOrderId);
+        if (changes.Count == 0) return null;
+        var ids = changes.Select(c => c.WorkOrderId).ToList();
+        var titles = await db.WorkOrders.AsNoTracking().Where(w => ids.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => w.Title, ct);
+        return Results.Json(new
+        {
+            Status = 409, Title = "This takes stock reserved for other work.",
+            Reserved = changes.Select(c => new { c.WorkOrderId, c.WorkOrderNumber, Title = titles.GetValueOrDefault(c.WorkOrderId), c.MoreShort }),
+        }, statusCode: StatusCodes.Status409Conflict);
     }
 
     private static async Task RequireIssueTargetAsync(CmmsDbContext db, Guid? workOrderId, Guid? locationId, CancellationToken ct)
