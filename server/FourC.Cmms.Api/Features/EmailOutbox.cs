@@ -154,8 +154,8 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         if (await NotAllowedAsync(db, ct) is { } notAllowed) return notAllowed;
         var me = await db.Users.AsNoTracking().Where(u => u.Id == ctx.UserId).Select(u => new EmailRecipient(u.Email, u.FullName, u.Id)).FirstOrDefaultAsync(ct);
         if (string.IsNullOrWhiteSpace(me?.Email)) return "Your account has no e-mail address.";
-        await QueueAsync(db, ctx, EmailEvents.Test, [me], org => EmailTemplates.Layout(org, "Test e-mail from 4C CMMS", "E-mail is working",
-                [("Organization", org), ("Sent to", me.Email)], "If you can read this, 4C CMMS can send e-mail to you.",
+        await QueueAsync(db, ctx, EmailEvents.Test, [me], org => EmailTemplates.Layout(org, "Test e-mail from CMX", "E-mail is working",
+                [("Organization", org), ("Sent to", me.Email)], "If you can read this, CMX can send e-mail to you.",
                 Link("/settings/notifications"), "Open notification settings"),
             null, null, ct, ignoreToggles: true, ignoreEnabled: true, keepActor: true);
         return null;

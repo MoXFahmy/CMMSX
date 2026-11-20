@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
-# Build the 4C CMMS Android app in Docker (see docs/VERSIONING.md).
+# Build the CMX Android app in Docker (see docs/VERSIONING.md).
 #
-#   mobile/build-apk.sh debug     -> mobile/out/4C-CMMS-<version>-debug.apk (debug-signed, for testing)
-#   mobile/build-apk.sh release   -> mobile/out/4C-CMMS-<version>.apk (signed with the release key)
+#   mobile/build-apk.sh debug     -> mobile/out/CMX-<version>-debug.apk (debug-signed, for testing)
+#   mobile/build-apk.sh release   -> mobile/out/CMX-<version>.apk (signed with the release key)
 #
 # Release builds need CMMS_KEYSTORE (path to the key file), CMMS_KEYSTORE_PASSWORD, CMMS_KEY_ALIAS and
 # CMMS_KEY_PASSWORD; scripts/release.sh sets them from the private signing folder. The key and its passwords only
@@ -30,9 +30,9 @@ if [ "$MODE" = release ]; then
   done
   [ -f "$CMMS_KEYSTORE" ] || { echo "build-apk: key file not found: $CMMS_KEYSTORE" >&2; exit 1; }
   args+=(-v "$CMMS_KEYSTORE":/signing/release.jks:ro -e CMMS_KEYSTORE_PASSWORD -e CMMS_KEY_ALIAS -e CMMS_KEY_PASSWORD)
-  OUT_NAME="4C-CMMS-$VERSION.apk"
+  OUT_NAME="CMX-$VERSION.apk"
 else
-  OUT_NAME="4C-CMMS-$VERSION-debug.apk"
+  OUT_NAME="CMX-$VERSION-debug.apk"
 fi
 
 docker run "${args[@]}" -e MODE="$MODE" -e OUT_NAME="$OUT_NAME" "$IMAGE" bash -euo pipefail -c '

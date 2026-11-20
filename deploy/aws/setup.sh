@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup that lets this repository's GitHub Actions deploy 4C CMMS into your AWS account.
+# One-time setup that lets this repository's GitHub Actions deploy CMX into your AWS account.
 #
 # Run it in AWS CloudShell, in the region where the app should run (region menu at the top right):
 #   curl -fsSLO https://raw.githubusercontent.com/MoXFahmy/CMMSX/main/deploy/aws/setup.sh

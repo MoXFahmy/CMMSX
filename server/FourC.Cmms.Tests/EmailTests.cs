@@ -422,7 +422,7 @@ public class EmailTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(3, fx.Emails.To(to).Count);
         var m = fx.Emails.To(to[0])[0];
         Assert.Equal("noreply@cmms.test", m.From);
-        Assert.Equal("Mail Co via 4C CMMS", m.FromName);
+        Assert.Equal("Mail Co via CMX", m.FromName);
         Assert.All(await RowsAsync(to), r => { Assert.Equal(EmailStatus.Sent, r.Status); Assert.NotNull(r.SentAt); });
     }
 

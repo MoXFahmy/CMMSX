@@ -131,7 +131,7 @@ jobs:
         if: always() && steps.deploy.outputs.url != ''
         run: |
           {
-            echo "### 4C CMMS on AWS"
+            echo "### CMX on AWS"
             echo ""
             echo "**${{ steps.deploy.outputs.url }}**"
             echo ""

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time setup that lets this repository's GitHub Actions deploy 4C CMMS into your Azure subscription.
+# One-time setup that lets this repository's GitHub Actions deploy CMX into your Azure subscription.
 #
 # Run it in Azure Cloud Shell (Bash) as an Owner of the subscription:
 #   curl -fsSLO https://raw.githubusercontent.com/MoXFahmy/CMMSX/main/deploy/azure/setup.sh

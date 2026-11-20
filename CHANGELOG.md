@@ -1,8 +1,16 @@
 # Changelog
 
-All notable changes to 4C CMMS — the cloud app and the Android app share one version number.
+All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android app share one version number.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
+
+## [0.5.3] - 2026-11-21
+
+### Changed
+- **The app is now called CMX** (was 4C CMMS): the web app's title and header, the sign-in page, the technician view,
+  the Android app's name under its icon, and e-mails. E-mails come from "*organization* via CMX" (just "CMX" when the
+  organization has that name). New APKs are named `CMX-x.y.z.apk`.
+- Nothing else changes: the Android app updates over the old one as before and keeps you signed in.
 
 ## [0.5.2] - 2026-11-20
 

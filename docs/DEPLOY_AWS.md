@@ -112,7 +112,7 @@ Repository variables read by the deployment workflow:
 
 ## Sending e-mail
 
-4C CMMS e-mails requesters, technicians, approvers and suppliers through **Amazon SES**. The app's role is allowed to
+CMX e-mails requesters, technicians, approvers and suppliers through **Amazon SES**. The app's role is allowed to
 send, so no password is stored. Mail comes from your own domain; AWS has to know the domain is yours, and new AWS
 accounts may only send to addresses verified one by one (the SES *sandbox*) until you ask for normal sending.
 
@@ -131,7 +131,7 @@ accounts may only send to addresses verified one by one (the SES *sandbox*) unti
    `CMMS_MAIL_ALLOWED_ORGS` (their short names, shown on **Settings → Notifications** when not yet allowed), then
    deploy again. With sign-up closed, every organization may send and the variable can stay empty. `*` allows every
    organization; use it only with sign-up closed.
-7. In 4C CMMS, each organization's administrator opens **Settings → Notifications**, sends a test e-mail and switches
+7. In CMX, each organization's administrator opens **Settings → Notifications**, sends a test e-mail and switches
    e-mail on. Every organization starts with e-mail **off**.
 
 The **E-mail log** on that page shows each message and, for failures, the reason (SES's message, e.g. an address not

@@ -4,7 +4,7 @@ namespace FourC.Cmms.Core.Notifications;
 
 public enum EmailStatus { Pending = 1, Sent = 2, Failed = 3 }
 
-/// <summary>The e-mails 4C CMMS can send; organizations switch them off and users opt out by these keys.</summary>
+/// <summary>The e-mails CMX can send; organizations switch them off and users opt out by these keys.</summary>
 public static class EmailEvents
 {
     public const string RequestSubmitted = "request.submitted";

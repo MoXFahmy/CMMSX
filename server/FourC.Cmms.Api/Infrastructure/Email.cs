@@ -22,7 +22,7 @@ public sealed class EmailOptions
     /// <summary>"Ses" (Amazon SES, credentials from the environment/task role) or "Smtp"; empty = e-mail is not set up.</summary>
     public string? Provider { get; set; }
     public string? From { get; set; }
-    public string FromName { get; set; } = "4C CMMS";
+    public string FromName { get; set; } = "CMX";
     /// <summary>SES region; defaults to the SDK's own region resolution.</summary>
     public string? Region { get; set; }
     public int PollSeconds { get; set; } = 15;
@@ -119,6 +119,13 @@ public static class EmailText
     {
         var t = string.Join(' ', (s ?? "").Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries)).Trim();
         return t.Length > 200 ? t[..200] : t;
+    }
+
+    /// <summary>"Organization via CMX"; just the app name when there is no organization name or it is the same.</summary>
+    public static string SenderName(string? organization, string app)
+    {
+        var org = OneLine(organization);
+        return org.Length == 0 || string.Equals(org, app.Trim(), StringComparison.OrdinalIgnoreCase) ? OneLine(app) : OneLine($"{org} via {app}");
     }
 
     /// <summary>For HTML bodies.</summary>

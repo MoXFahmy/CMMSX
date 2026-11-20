@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  4C CMMS - web app + API on ECS Fargate behind an Application Load Balancer and CloudFront (HTTPS),
+  CMX - web app + API on ECS Fargate behind an Application Load Balancer and CloudFront (HTTPS),
   RDS for SQL Server, S3 for attachments. Deployed by .github/workflows/deploy-aws.yml; see docs/DEPLOY_AWS.md.
 
 Parameters:
@@ -185,7 +185,7 @@ Resources:
     DeletionPolicy: Delete
     UpdateReplacePolicy: Delete
     Properties:
-      Description: !Sub "4C CMMS database login (${AWS::StackName})"
+      Description: !Sub "CMX database login (${AWS::StackName})"
       GenerateSecretString:
         SecretStringTemplate: '{"username":"cmmsadmin"}'
         GenerateStringKey: password
@@ -452,7 +452,7 @@ Resources:
     Properties:
       OriginRequestPolicyConfig:
         Name: !Sub "${AWS::StackName}-${AWS::Region}-app"
-        Comment: 4C CMMS - forward everything to the app
+        Comment: CMX - forward everything to the app
         HeadersConfig:
           HeaderBehavior: allViewerAndWhitelistCloudFront
           Headers: [CloudFront-Forwarded-Proto]
@@ -464,7 +464,7 @@ Resources:
     Properties:
       DistributionConfig:
         Enabled: true
-        Comment: !Sub "4C CMMS (${AWS::StackName}, ${AWS::Region})"
+        Comment: !Sub "CMX (${AWS::StackName}, ${AWS::Region})"
         HttpVersion: http2and3
         PriceClass: PriceClass_All
         Aliases: !If [HasDomain, [!Ref Domain], !Ref AWS::NoValue]
