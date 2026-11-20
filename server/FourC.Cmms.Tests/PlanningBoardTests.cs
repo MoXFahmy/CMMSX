@@ -97,10 +97,12 @@ public class PlanningBoardTests(ApiFixture fx) : IClassFixture<ApiFixture>
         {
             name = "Pump PM", siteId = o.Site, assetId = asset, priority = "Medium", pmTaskId = task, type = "FixedInterval", basis = "Scheduled", frequency = 1, unit = "Week",
             workPeriodDays = 2, wholeMonth = false, leadDays = 0, startDate = D(Today.AddDays(2)), timeBased = false, extraTasks = Array.Empty<object>(),
+            assigneeIds = new[] { o.A },
         })));
         var b = await BoardAsync(o.C, Today, Today.AddDays(6));
         var pm = Assert.Single(b.GetProperty("pms").EnumerateArray());
         Assert.Equal((schedule, D(Today.AddDays(2)), asset), (pm.GetProperty("id").GetGuid(), pm.GetProperty("date").GetString(), pm.GetProperty("assetId").GetGuid()));
+        Assert.Equal([o.A], pm.GetProperty("assigneeIds").EnumerateArray().Select(x => x.GetGuid()).ToList()); // the people it will go to
     }
 
     private static Task<HttpResponseMessage> MoveAsync(HttpClient c, object body) => c.PostAsJsonAsync("/api/planning/move", body);

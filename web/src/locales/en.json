@@ -22,7 +22,8 @@
     "people": "People",
     "myWork": "My work",
     "pm": "Preventive Maintenance",
-    "insights": "Insights"
+    "insights": "Insights",
+    "planning": "Planning"
   },
   "common": {
     "save": "Save",
@@ -1353,5 +1354,27 @@
     "requestAnswered": "Request answered by",
     "respondedAt": "responded {{when}}",
     "respondedLate": "responded late, {{when}}"
+  },
+  "planning": {
+    "title": "Planning",
+    "subtitle": "Who does what, day by day. Drag a card to another day or person.",
+    "byPerson": "By technician",
+    "byAsset": "By {{asset}}",
+    "week": "Week",
+    "month": "Month",
+    "previous": "Previous",
+    "next": "Next",
+    "today": "Today",
+    "unassigned": "Nobody yet",
+    "noAsset": "No asset",
+    "load": "{{hours}} / {{capacity}} h",
+    "earlier": "From earlier days",
+    "earlierHint": "Not done on the day they were planned. Drag one onto a day to plan it again.",
+    "unscheduled": "No date",
+    "unscheduledHint": "Open work without a planned start or due date. Drag one onto a day.",
+    "trayEmpty": "Nothing here.",
+    "wasPlanned": "was planned {{date}}",
+    "moved": "Moved.",
+    "undo": "Undo"
   }
 }

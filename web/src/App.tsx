@@ -28,6 +28,7 @@ import { ReportsPage, ReportViewPage } from './pages/reports/ReportsPage';
 
 import { TechApp } from './tech/TechApp';
 import { LabelsPage } from './pages/labels/LabelsPage';
+import { PlanningPage } from './pages/planning/PlanningPage';
 import { QrRedirect } from './pages/QrRedirect';
 export function App() {
   const { me, loading } = useAuth();
@@ -58,6 +59,7 @@ export function App() {
         <Route path="assets/:id" element={<AssetDetailPage />} />
         <Route path="assets/:id/edit" element={<AssetFormPage />} />
         <Route path="work-orders" element={<WorkOrdersPage />} />
+        <Route path="planning" element={<PlanningPage />} />
         <Route path="work-orders/new" element={<WorkOrderFormPage />} />
         <Route path="work-orders/:id" element={<WorkOrderDetailPage />} />
         <Route path="work-orders/:id/edit" element={<WorkOrderFormPage />} />

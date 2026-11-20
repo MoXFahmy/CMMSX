@@ -489,6 +489,8 @@ public static class PmEndpoints
         public decimal? Cost { get; init; }
         public bool Overdue { get; init; }
         public bool IsNext { get; init; }
+        /// <summary>The people the work order will go to (the schedule's technicians).</summary>
+        public List<Guid> AssigneeIds { get; init; } = [];
     }
 
     internal static async Task<List<ForecastRow>> ForecastAsync(CmmsDbContext db, DateOnly from, DateOnly to, Guid? siteId, CancellationToken ct)
@@ -507,6 +509,7 @@ public static class PmEndpoints
             Overdue = d < Today,
             // The schedule's next occurrence: generating it creates no other work order.
             IsNext = k == 0,
+            AssigneeIds = i.S.AssigneeIds,
         })).Where(x => x.Date >= from || x.Overdue).OrderBy(x => x.Date).Take(5000).ToList();
     }
 }
