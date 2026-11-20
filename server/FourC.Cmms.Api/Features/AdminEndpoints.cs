@@ -135,10 +135,16 @@ public static class AdminEndpoints
             // A list sent as null means "none"; never store null where generation expects a list.
             input.Settings.PmNonWorkingDays ??= [];
             input.Settings.PmSkipAssetStatuses ??= [];
+            input.Settings.SlaTargets ??= [];
             var v = new Validator().Required("name", input.Name, "Organization name", 200)
                 .MaxLength("settings.assetNumberPrefix", input.Settings.AssetNumberPrefix, "Asset number prefix", 20)
                 .When(input.Settings.AssetNumberPadding is < 1 or > 12, "settings.assetNumberPadding", "Padding must be between 1 and 12.")
-                .When(input.Settings.PmNonWorkingDays.Distinct().Count() >= 7, "settings.pmNonWorkingDays", "Leave at least one working day.");
+                .When(input.Settings.PmNonWorkingDays.Distinct().Count() >= 7, "settings.pmNonWorkingDays", "Leave at least one working day.")
+                .When(!TimeZoneInfo.TryFindSystemTimeZoneById(input.Settings.TimeZone ?? "", out _), "settings.timeZone", "Choose a time zone from the list.")
+                .When(input.Settings.DailyCapacityHours is < 1 or > 24, "settings.dailyCapacityHours", "Hours per day must be between 1 and 24.")
+                .When(input.Settings.SlaTargets.GroupBy(x => x.Priority).Any(g => g.Count() > 1), "settings.slaTargets", "Set each priority's targets once.")
+                .When(input.Settings.SlaTargets.Any(x => !Enum.IsDefined(x.Priority) || OutOfRange(x.RespondMinutes) || OutOfRange(x.CompleteMinutes)),
+                    "settings.slaTargets", "Targets must be between 1 minute and 365 days.");
             foreach (var (k, val) in new[] { ("site", input.Settings.Terminology.Site), ("location", input.Settings.Terminology.Location), ("asset", input.Settings.Terminology.Asset) })
                 v.Required($"settings.terminology.{k}", val, "Label", 40);
             if (!v.IsValid) return v.Problem();
@@ -159,6 +165,8 @@ public static class AdminEndpoints
             return Results.Ok(new { created, history });
         }).RequirePermission(Permissions.SettingsManage);
     }
+
+    private static bool OutOfRange(int? minutes) => minutes is < 1 or > 365 * 24 * 60;
 
     private static List<string> CleanPermissions(List<string>? p) => (p ?? []).Intersect(Permissions.All.Select(x => x.Code)).Distinct().ToList();
 
