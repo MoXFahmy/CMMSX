@@ -1,24 +1,25 @@
-import { useEffect, useMemo, useState } from 'react';
-import { Anchor, Badge, Button, Card, Collapse, Group, MultiSelect, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, TextInput, ActionIcon, Tooltip } from '@mantine/core';
+import { useMemo, useState } from 'react';
+import { Anchor, Badge, Button, Card, Collapse, Group, Menu, Modal, MultiSelect, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, Textarea, TextInput, ActionIcon, Tooltip } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
-import { useDebouncedValue, useDisclosure } from '@mantine/hooks';
+import { useDisclosure } from '@mantine/hooks';
 import dayjs from 'dayjs';
-import { useQuery } from '@tanstack/react-query';
-import { Link, useNavigate, useSearchParams } from 'react-router';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Link, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { DataTable, type DataTableSortStatus } from 'mantine-datatable';
-import { IconAdjustmentsHorizontal, IconFilterOff, IconPlus, IconSearch } from '@tabler/icons-react';
-import { get } from '@/api/client';
-import { WORK_PRIORITIES, WORK_TYPES, type Lookup, type Paged, type WorkOrderListItem, type WorkOrderStatus } from '@/api/types';
+import { DataTable } from 'mantine-datatable';
+import { IconAdjustmentsHorizontal, IconFilterOff, IconFlag, IconPlus, IconSearch, IconUserPlus, IconArrowsExchange } from '@tabler/icons-react';
+import { get, post } from '@/api/client';
+import { HOLD_REASONS, WORK_PRIORITIES, WORK_TYPES, type HoldReason, type Lookup, type Paged, type WorkOrderListItem, type WorkOrderStatus, type WorkPriority } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { locationOptions, useHierarchy } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
-import { useEmployees } from '@/components/EmployeePicker';
+import { EmployeePicker, useEmployees } from '@/components/EmployeePicker';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
-import { fmtDate } from '@/components/utils';
+import { fmtDate, notifyError } from '@/components/utils';
+import { BulkBar, FilterChips, ListTools, listText, rangeText, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
-/** Filters behind "More filters"; they live in the URL like the others. */
+/** Filters behind "More filters"; they live in the address like the others. */
 const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source'] as const;
 const isoDay = (d: string | Date | null) => (d ? dayjs(d).format('YYYY-MM-DD') : null);
 
@@ -27,49 +28,105 @@ const TABS: { key: string; statuses: WorkOrderStatus[] | null }[] = [
   { key: 'OnHold', statuses: ['OnHold'] }, { key: 'Completed', statuses: ['Completed'] }, { key: 'Closed', statuses: ['Closed'] }, { key: 'all', statuses: null },
 ];
 
+/** Statuses a bulk change offers; closing, cancelling (and reopening those) need the close permission, as one at a time. */
+const BULK_STATUSES: WorkOrderStatus[] = ['InProgress', 'OnHold', 'Completed', 'Open', 'Closed', 'Cancelled'];
+
+type BulkBody = { status?: { status: WorkOrderStatus; holdReason?: HoldReason | null; completionNotes?: string | null }; priority?: WorkPriority; addAssigneeIds?: string[] };
+
 export function WorkOrdersPage() {
   const { t } = useTranslation();
   const { can, terms } = useAuth();
   const navigate = useNavigate();
-  const [params, setParams] = useSearchParams();
-  const p = (k: string) => params.get(k) ?? '';
-  const set = (patch: Record<string, string | null>) => {
-    const next = new URLSearchParams(params);
-    for (const [k, v] of Object.entries(patch)) { if (v) next.set(k, v); else next.delete(k); }
-    if (!('page' in patch)) next.delete('page');
-    setParams(next, { replace: true });
-  };
-  const [search, setSearch] = useState(p('search'));
-  const [debounced] = useDebouncedValue(search, 300);
-  useEffect(() => { if (debounced !== p('search')) set({ search: debounced || null }); /* eslint-disable-next-line */ }, [debounced]);
+  const qc = useQueryClient();
+  const lp = useListParams<WorkOrderListItem>({ sort: 'createdAt', dir: 'desc' });
+  const { p, set } = lp;
   const tab = p('tab') || 'active';
   const view = p('view') || 'everyone';
   const statuses = TABS.find((x) => x.key === tab)?.statuses ?? null;
-  const page = Number(p('page') || 1);
-  const pageSize = Number(p('pageSize') || 25);
-  const sort: DataTableSortStatus<WorkOrderListItem> = { columnAccessor: p('sort') || 'createdAt', direction: (p('dir') as 'asc' | 'desc') || 'desc' };
   const base = {
     search: p('search'), siteId: p('siteId'), priority: p('priority'), type: p('type'), tradeId: p('tradeId'), assetId: p('assetId'),
     mine: view === 'mine' ? 'true' : '', overdue: view === 'overdue' ? 'true' : '',
     locationId: p('locationId'), assigneeId: p('assigneeId'), createdFrom: p('createdFrom'), createdTo: p('createdTo'),
     dueFrom: p('dueFrom'), dueTo: p('dueTo'), source: p('source'),
   };
+  const listQuery = { ...base, status: statuses ?? undefined, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
   const { data, isFetching } = useQuery({
-    queryKey: ['work-orders', base, tab, page, pageSize, sort],
-    queryFn: () => get<Paged<WorkOrderListItem>>('/work-orders', { ...base, status: statuses ?? undefined, page, pageSize, sort: String(sort.columnAccessor), dir: sort.direction }),
+    queryKey: ['work-orders', listQuery, lp.page, lp.pageSize],
+    queryFn: () => get<Paged<WorkOrderListItem>>('/work-orders', { ...listQuery, page: lp.page, pageSize: lp.pageSize }),
     placeholderData: (prev) => prev,
   });
   const { data: summary } = useQuery({ queryKey: ['work-orders', 'summary', base], queryFn: () => get<{ byStatus: { status: WorkOrderStatus; count: number }[]; overdue: number }>('/work-orders/summary', base) });
   const { data: h } = useHierarchy();
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
+  const { data: filterAsset } = useQuery({ queryKey: ['asset', p('assetId')], queryFn: () => get<{ assetNumber: string; name: string }>(`/assets/${p('assetId')}`), enabled: !!p('assetId') });
   const count = (s: WorkOrderStatus[] | null) => (summary?.byStatus ?? []).filter((x) => !s || s.includes(x.status)).reduce((a, b) => a + b.count, 0);
   const filtersActive = ['search', 'siteId', 'priority', 'type', 'tradeId', ...EXTRA_FILTERS].some((k) => p(k));
   const tradeOpts = useMemo(() => (trades ?? []).map((x) => ({ value: x.id, label: x.name })), [trades]);
   const extraCount = [p('locationId'), p('assetId'), p('assigneeId'), p('createdFrom') || p('createdTo'), p('dueFrom') || p('dueTo'), p('source')].filter(Boolean).length;
   const [moreOpen, more] = useDisclosure(extraCount > 0);
-  const locOpts = useMemo(() => locationOptions(h?.locations ?? [], p('siteId') || null), [h, params]); // eslint-disable-line react-hooks/exhaustive-deps
+  const locOpts = useMemo(() => locationOptions(h?.locations ?? [], p('siteId') || null), [h, lp.params]); // eslint-disable-line react-hooks/exhaustive-deps
   const { data: employees } = useEmployees(p('siteId') || null);
   const empOpts = useMemo(() => (employees ?? []).map((e) => ({ value: e.id, label: e.fullName })), [employees]);
+  const sources: Record<string, string> = { pm: t('wo.sourcePm'), request: t('wo.sourceRequest'), direct: t('wo.sourceDirect') };
+
+  const allColumns: ListColumn<WorkOrderListItem>[] = [
+    { accessor: 'number', title: t('wo.number'), sortable: true, noWrap: true,
+      render: (w) => <Anchor component={Link} to={`/work-orders/${w.id}`} fw={600} fz="sm" onClick={(e) => e.stopPropagation()}>{w.number}</Anchor> },
+    { accessor: 'title', title: t('common.name'), sortable: true, width: 300,
+      render: (w) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{w.title}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{t(`workType.${w.type}`)}{w.tradeName && ` · ${w.tradeName}`}</Text></Stack> },
+    { accessor: 'status', title: t('common.status'), sortable: true, noWrap: true,
+      export: [{ key: 'status' }, { key: 'holdReason', title: t('wo.holdReason') }],
+      render: (w) => <Stack gap={2}><WoStatusBadge status={w.status} />{w.holdReason && <Text fz={11} c="dimmed">{t(`holdReason.${w.holdReason}`)}</Text>}</Stack> },
+    { accessor: 'priority', title: t('priority.label'), sortable: true, noWrap: true, render: (w) => <PriorityBadge value={w.priority} /> },
+    { accessor: 'type', title: t('workType.label'), sortable: true, noWrap: true, render: (w) => t(`workType.${w.type}`) },
+    { accessor: 'trade', title: t('wo.trade'), noWrap: true, export: [{ key: 'tradeName' }], render: (w) => w.tradeName ?? '—' },
+    { accessor: 'asset', title: terms.asset, sortable: true, width: 220,
+      export: [{ key: 'assetNumber' }, { key: 'assetName', title: `${terms.asset} · ${t('common.name')}` }],
+      render: (w) => w.assetId ? <Stack gap={0}><Text fz="sm" lineClamp={1}>{w.assetNumber}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{w.assetName}</Text></Stack> : <Text fz="sm" c="dimmed" lineClamp={1}>{w.locationPath ?? w.siteName}</Text> },
+    { accessor: 'site', title: terms.site, sortable: true, noWrap: true, export: [{ key: 'siteName' }], render: (w) => w.siteName },
+    { accessor: 'location', title: terms.location, width: 220, ellipsis: true, export: [{ key: 'locationPath' }], render: (w) => <span title={w.locationPath}>{w.locationPath ?? '—'}</span> },
+    { accessor: 'assignees', title: t('wo.assignees'), width: 180, render: (w) => <Text fz="sm" lineClamp={1} c={w.assignees.length ? undefined : 'dimmed'}>{w.assignees.join(', ') || t('wo.noAssignees')}</Text> },
+    { accessor: 'dueDate', title: t('wo.dueDate'), sortable: true, noWrap: true,
+      render: (w) => <Group gap={4} wrap="nowrap"><Text fz="sm" c={w.isOverdue ? 'red' : undefined} fw={w.isOverdue ? 600 : undefined}>{fmtDate(w.dueDate)}</Text>{w.isOverdue && <Badge size="xs" color="red" variant="light">{t('wo.overdue')}</Badge>}</Group> },
+    { accessor: 'createdAt', title: t('wo.createdOn'), sortable: true, noWrap: true, render: (w) => fmtDate(w.createdAt) },
+    { accessor: 'completedAt', title: t('wo.completedOn'), sortable: true, noWrap: true, render: (w) => fmtDate(w.completedAt) },
+  ];
+  const cols = useListColumns('work-orders', allColumns, { defaultHidden: ['type', 'trade', 'site', 'location', 'completedAt'] });
+
+  const chips: FilterDef[] = [
+    { keys: ['search'], label: t('common.search') },
+    { keys: ['siteId'], label: terms.site, format: ([v]) => h?.sites.find((s) => s.id === v)?.name ?? '…' },
+    { keys: ['priority'], label: t('priority.label'), format: listText((v) => t(`priority.${v}`)) },
+    { keys: ['type'], label: t('workType.label'), format: listText((v) => t(`workType.${v}`)) },
+    { keys: ['tradeId'], label: t('wo.trade'), format: ([v]) => tradeOpts.find((o) => o.value === v)?.label ?? '…' },
+    { keys: ['locationId'], label: terms.location, format: ([v]) => h?.locations.find((l) => l.id === v)?.name ?? '…' },
+    { keys: ['assetId'], label: terms.asset, format: () => (filterAsset ? `${filterAsset.assetNumber} ${filterAsset.name}` : '…') },
+    { keys: ['assigneeId'], label: t('wo.filterAssignee'), format: ([v]) => empOpts.find((o) => o.value === v)?.label ?? '…' },
+    { keys: ['createdFrom', 'createdTo'], label: t('wo.createdBetween'), format: rangeText(fmtDate, t) },
+    { keys: ['dueFrom', 'dueTo'], label: t('wo.dueBetween'), format: rangeText(fmtDate, t) },
+    { keys: ['source'], label: t('wo.source'), format: ([v]) => sources[v] ?? v },
+  ];
+
+  // ---- bulk actions ----
+  const canBulkStatus = can(P.woExecute);
+  const canBulkEdit = can(P.woEdit);
+  const [selected, setSelected] = useState<WorkOrderListItem[]>([]);
+  const [statusTarget, setStatusTarget] = useState<WorkOrderStatus | null>(null);
+  const [holdReason, setHoldReason] = useState<HoldReason | null>(null);
+  const [notes, setNotes] = useState('');
+  const [techOpen, setTechOpen] = useState(false);
+  const [techs, setTechs] = useState<string[]>([]);
+  const bulk = useMutation({
+    mutationFn: (body: BulkBody) => post<BulkResult>('/work-orders/bulk', { ids: selected.map((s) => s.id), ...body }),
+    onSuccess: (r) => {
+      showBulkResult(t, r);
+      setSelected([]); setStatusTarget(null); setTechOpen(false); setTechs([]); setNotes(''); setHoldReason(null);
+      void qc.invalidateQueries({ queryKey: ['work-orders'] });
+    },
+    onError: notifyError,
+  });
+  const pickStatus = (s: WorkOrderStatus) => (s === 'OnHold' || s === 'Completed' ? setStatusTarget(s) : bulk.mutate({ status: { status: s } }));
+  const statusOptions = BULK_STATUSES.filter((s) => can(P.woClose) || (s !== 'Closed' && s !== 'Cancelled'));
 
   return (
     <>
@@ -81,7 +138,7 @@ export function WorkOrdersPage() {
             { value: 'everyone', label: t('wo.all') }, { value: 'mine', label: t('wo.mine') },
             { value: 'overdue', label: `${t('wo.overdue')}${summary?.overdue ? ` (${summary.overdue})` : ''}` },
           ]} />
-          <TextInput placeholder={t('wo.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={search} onChange={(e) => setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 240 }} />
+          <TextInput placeholder={t('wo.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 240 }} />
           <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v, locationId: null })} clearable searchable w={{ base: '100%', xs: 180 }} />
           <MultiSelect placeholder={p('priority') ? undefined : t('priority.label')} data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))}
             value={p('priority') ? p('priority').split(',') : []} onChange={(v) => set({ priority: v.join(',') || null })} clearable w={{ base: '100%', xs: 170 }} />
@@ -91,7 +148,11 @@ export function WorkOrdersPage() {
           <Button variant={moreOpen ? 'light' : 'default'} leftSection={<IconAdjustmentsHorizontal size={16} />} onClick={more.toggle} aria-expanded={moreOpen}
             rightSection={extraCount ? <Badge size="xs" circle>{extraCount}</Badge> : null}>{t('wo.moreFilters')}</Button>
           {filtersActive && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')}
-            onClick={() => { setSearch(''); setParams(tab !== 'active' ? { tab } : {}, { replace: true }); }}><IconFilterOff size={16} /></ActionIcon></Tooltip>}
+            onClick={() => lp.replaceAll(new URLSearchParams(Object.entries({ tab: tab !== 'active' ? tab : '', view: view !== 'everyone' ? view : '' }).filter(([, v]) => v)).toString())}>
+            <IconFilterOff size={16} /></ActionIcon></Tooltip>}
+          <Group gap={6} ml="auto">
+            <ListTools list="work-orders" lp={lp} cols={cols} exportPath="/work-orders/export" exportQuery={listQuery} total={data?.total} />
+          </Group>
         </Group>
         <Collapse in={moreOpen}>
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mt="sm" spacing="xs">
@@ -108,7 +169,8 @@ export function WorkOrdersPage() {
           </SimpleGrid>
           {extraCount > 0 && <Group justify="flex-end" mt="xs"><Button variant="subtle" size="xs" onClick={() => set(Object.fromEntries(EXTRA_FILTERS.map((k) => [k, null])))}>{t('wo.clearFilters')}</Button></Group>}
         </Collapse>
-        {p('assetId') && <Text fz="xs" c="dimmed" mt={6}>{t('wo.asset')}: {data?.items[0]?.assetNumber ?? '…'} ({t('assets.components').toLowerCase()} included)</Text>}
+        <FilterChips defs={chips} p={p} set={set} />
+        {p('assetId') && <Text fz="xs" c="dimmed" mt={6}>{t('wo.assetFilterHint')}</Text>}
       </Card>
       <Tabs value={tab} onChange={(v) => set({ tab: v === 'active' ? null : v })} mb="sm">
         <Tabs.List>
@@ -119,31 +181,56 @@ export function WorkOrdersPage() {
           ))}
         </Tabs.List>
       </Tabs>
+      <BulkBar count={selected.length} onClear={() => setSelected([])}>
+        {canBulkStatus && (
+          <Menu><Menu.Target><Button size="xs" variant="white" leftSection={<IconArrowsExchange size={14} />} loading={bulk.isPending}>{t('list.setStatus')}</Button></Menu.Target>
+            <Menu.Dropdown>{statusOptions.map((s) => <Menu.Item key={s} onClick={() => pickStatus(s)}>{t(`woStatus.${s}`)}</Menu.Item>)}</Menu.Dropdown></Menu>
+        )}
+        {canBulkEdit && (
+          <Menu><Menu.Target><Button size="xs" variant="white" leftSection={<IconFlag size={14} />}>{t('list.setPriority')}</Button></Menu.Target>
+            <Menu.Dropdown>{WORK_PRIORITIES.map((x) => <Menu.Item key={x} onClick={() => bulk.mutate({ priority: x })}>{t(`priority.${x}`)}</Menu.Item>)}</Menu.Dropdown></Menu>
+        )}
+        {canBulkEdit && <Button size="xs" variant="white" leftSection={<IconUserPlus size={14} />} onClick={() => setTechOpen(true)}>{t('list.addTechnicians')}</Button>}
+      </BulkBar>
       <Card p={0}>
         <DataTable<WorkOrderListItem>
-          minHeight={260} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []}
-          noRecordsText={t('wo.emptyTitle')} totalRecords={data?.total ?? 0} recordsPerPage={pageSize} page={page} onPageChange={(n) => set({ page: String(n) })}
+          minHeight={260} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []} columns={cols.columns}
+          noRecordsText={t('wo.emptyTitle')} totalRecords={data?.total ?? 0} recordsPerPage={lp.pageSize} page={lp.page} onPageChange={(n) => set({ page: String(n) })}
           recordsPerPageOptions={[25, 50, 100]} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
-          sortStatus={sort} onSortStatusChange={(s) => set({ sort: String(s.columnAccessor), dir: s.direction })}
+          sortStatus={lp.sort} onSortStatusChange={lp.setSort}
+          selectedRecords={canBulkStatus || canBulkEdit ? selected : undefined} onSelectedRecordsChange={canBulkStatus || canBulkEdit ? setSelected : undefined}
           rowClassName={() => 'clickable-row'} onRowClick={({ record }) => navigate(`/work-orders/${record.id}`)}
           paginationText={({ from, to, totalRecords }) => `${from}–${to} / ${totalRecords}`}
-          columns={[
-            { accessor: 'number', title: t('wo.number'), sortable: true, noWrap: true,
-              render: (w) => <Anchor component={Link} to={`/work-orders/${w.id}`} fw={600} fz="sm" onClick={(e) => e.stopPropagation()}>{w.number}</Anchor> },
-            { accessor: 'title', title: t('common.name'), sortable: true, width: 300,
-              render: (w) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{w.title}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{t(`workType.${w.type}`)}{w.tradeName && ` · ${w.tradeName}`}</Text></Stack> },
-            { accessor: 'status', title: t('common.status'), sortable: true, noWrap: true,
-              render: (w) => <Stack gap={2}><WoStatusBadge status={w.status} />{w.holdReason && <Text fz={11} c="dimmed">{t(`holdReason.${w.holdReason}`)}</Text>}</Stack> },
-            { accessor: 'priority', title: t('priority.label'), sortable: true, noWrap: true, render: (w) => <PriorityBadge value={w.priority} /> },
-            { accessor: 'asset', title: t('wo.asset'), sortable: true, width: 220,
-              render: (w) => w.assetId ? <Stack gap={0}><Text fz="sm" lineClamp={1}>{w.assetNumber}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{w.assetName}</Text></Stack> : <Text fz="sm" c="dimmed" lineClamp={1}>{w.locationPath || w.siteName}</Text> },
-            { accessor: 'assignees', title: t('wo.assignees'), width: 180, render: (w) => <Text fz="sm" lineClamp={1} c={w.assignees.length ? undefined : 'dimmed'}>{w.assignees.join(', ') || t('wo.noAssignees')}</Text> },
-            { accessor: 'dueDate', title: t('wo.dueDate'), sortable: true, noWrap: true,
-              render: (w) => <Group gap={4} wrap="nowrap"><Text fz="sm" c={w.isOverdue ? 'red' : undefined} fw={w.isOverdue ? 600 : undefined}>{fmtDate(w.dueDate)}</Text>{w.isOverdue && <Badge size="xs" color="red" variant="filled">{t('wo.overdueBadge')}</Badge>}</Group> },
-            { accessor: 'createdAt', title: t('wo.createdOn'), sortable: true, noWrap: true, render: (w) => fmtDate(w.createdAt) },
-          ]}
         />
       </Card>
+
+      <Modal opened={statusTarget !== null} onClose={() => setStatusTarget(null)} size="md"
+        title={t('list.statusTitle', { count: selected.length })}>
+        <Stack>
+          <Text fz="sm" c="dimmed">{t('list.statusHint')}</Text>
+          {statusTarget === 'OnHold' && <Select label={t('wo.holdReason')} required data={HOLD_REASONS.map((r) => ({ value: r, label: t(`holdReason.${r}`) }))}
+            value={holdReason} onChange={(v) => setHoldReason(v as HoldReason | null)} />}
+          {statusTarget === 'Completed' && <Textarea label={t('list.completionNotesShared')} autosize minRows={3} value={notes} onChange={(e) => setNotes(e.currentTarget.value)} />}
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setStatusTarget(null)}>{t('common.cancel')}</Button>
+            <Button loading={bulk.isPending} disabled={statusTarget === 'OnHold' && !holdReason}
+              onClick={() => statusTarget && bulk.mutate({ status: { status: statusTarget, holdReason, completionNotes: notes.trim() || null } })}>
+              {statusTarget ? t(`woStatus.${statusTarget}`) : ''}
+            </Button>
+          </Group>
+        </Stack>
+      </Modal>
+
+      <Modal opened={techOpen} onClose={() => setTechOpen(false)} size="md" title={t('list.techniciansTitle', { count: selected.length })}>
+        <Stack>
+          <Text fz="sm" c="dimmed">{t('list.techniciansHint')}</Text>
+          <EmployeePicker label={t('wo.assignees')} value={techs} onChange={setTechs} siteId={p('siteId') || null} />
+          <Group justify="flex-end">
+            <Button variant="default" onClick={() => setTechOpen(false)}>{t('common.cancel')}</Button>
+            <Button loading={bulk.isPending} disabled={techs.length === 0} onClick={() => bulk.mutate({ addAssigneeIds: techs })}>{t('list.addTechnicians')}</Button>
+          </Group>
+        </Stack>
+      </Modal>
     </>
   );
 }

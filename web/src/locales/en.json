@@ -519,7 +519,9 @@
     "clearFilters": "Clear these filters",
     "duplicate": "Duplicate",
     "duplicateTitle": "New work order (copy of {{number}})",
-    "printJobCard": "Print job card"
+    "printJobCard": "Print job card",
+    "completedOn": "Completed",
+    "assetFilterHint": "Work on the asset’s components is included."
   },
   "wr": {
     "title": "Work requests",
