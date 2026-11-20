@@ -4,6 +4,18 @@ All notable changes to 4C CMMS — the cloud app and the Android app share one v
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.4.1] - 2026-11-20
+
+Found in the 0.4.0 phone check: with no signal, the full app's work order page showed "Failed to fetch".
+
+### Fixed
+- **No connection is now said plainly.** When the full app can't reach the server it says "No connection. Check your
+  signal and try again." instead of the browser's "Failed to fetch", and an orange *You're offline* bar explains that
+  the full app needs a connection (with a link to the technician view, which keeps working offline).
+- **The technician view notices at once when the phone loses its network** (airplane mode): it shows *Offline* and
+  hides the links into the full app (*Full app*, *Issue parts*, *New work order*) instead of waiting for the next sync
+  attempt. The Android app now has permission to see the network status, which it needs for this.
+
 ## [0.4.0] - 2026-11-20
 
 The technician app. Technicians on plant floors, in basements and at remote sites can do their jobs on a phone with no

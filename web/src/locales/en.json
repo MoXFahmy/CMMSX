@@ -1318,5 +1318,10 @@
     "signedOut": "{{name}} signed out.",
     "othersSignedOut": "All other devices signed out.",
     "signOutOthers": "Sign out all other devices"
+  },
+  "offline": {
+    "title": "You're offline",
+    "body": "The full app needs a connection: nothing here can be saved until the signal is back.",
+    "techView": "Open the technician view, which keeps working offline."
   }
 }

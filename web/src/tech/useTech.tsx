@@ -166,8 +166,10 @@ export function TechProvider({ children }: { children: ReactNode }) {
     const send = window.setInterval(() => { void drainNow(); }, DRAIN_EVERY_MS);
     const fresh = window.setInterval(() => { void refresh(); }, REFRESH_EVERY_MS);
     const back = () => { void drainNow(true); void refresh(); };
+    const gone = () => setOnline(false); // the phone lost its network: show "Offline" and hide the full-app links at once
     window.addEventListener('online', back);
-    return () => { window.clearInterval(send); window.clearInterval(fresh); window.removeEventListener('online', back); };
+    window.addEventListener('offline', gone);
+    return () => { window.clearInterval(send); window.clearInterval(fresh); window.removeEventListener('online', back); window.removeEventListener('offline', gone); };
   }, [phase, drainNow, refresh]);
 
   const add = useCallback<TechState['add']>(async (change, file) => {

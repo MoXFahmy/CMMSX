@@ -1,16 +1,17 @@
-import { AppShell, Avatar, Badge, Burger, Divider, Group, Menu, NavLink, ScrollArea, Text, UnstyledButton, useMantineColorScheme, Modal, PasswordInput, Button, Stack } from '@mantine/core';
+import { AppShell, Avatar, Badge, Burger, Divider, Group, Menu, NavLink, ScrollArea, Text, UnstyledButton, useMantineColorScheme, Modal, PasswordInput, Button, Stack, Alert, Anchor } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useForm } from '@mantine/form';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DevicesModal } from './DevicesModal';
+import { useOnline } from './useOnline';
 import { appVersionLabel } from '@/components/utils';
 import { AlertBell } from '@/components/AlertBell';
 import { EmailPreferences } from '@/components/EmailPreferences';
 import {
   IconLayoutDashboard, IconMapPin, IconBox, IconClipboardText, IconTool, IconCalendarRepeat, IconPackage, IconShoppingCart,
-  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices } from '@tabler/icons-react';
+  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices, IconCloudOff } from '@tabler/icons-react';
 import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { handleFormError, notifySuccess } from './utils';
@@ -24,6 +25,7 @@ export function AppLayout() {
   const [pwOpen, pw] = useDisclosure();
   const [mailOpen, mailPrefs] = useDisclosure();
   const [devicesOpen, devices] = useDisclosure();
+  const online = useOnline();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -130,6 +132,14 @@ export function AppLayout() {
         </ScrollArea>
       </AppShell.Navbar>
       <AppShell.Main>
+        {!online && (
+          <Alert color="orange" icon={<IconCloudOff size={18} />} mb="md" title={t('offline.title')}>
+            {t('offline.body')}
+            {me?.employeeId && (
+              <> <Anchor href="/tech/" onClick={() => { try { localStorage.removeItem('cmms.tech.mode'); } catch { /* private mode */ } }}>{t('offline.techView')}</Anchor></>
+            )}
+          </Alert>
+        )}
         <Outlet />
       </AppShell.Main>
       <ChangePasswordModal opened={pwOpen} onClose={pw.close} />
