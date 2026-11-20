@@ -41,6 +41,10 @@ public static class WorkOrderEndpoints
         public bool? Overdue { get; set; }
         /// <summary>Past the due time, or past the start-by with nobody having acted on it.</summary>
         public bool? Late { get; set; }
+        /// <summary>Past the start-by with nobody having acted on it.</summary>
+        public bool? ResponseLate { get; set; }
+        /// <summary>Open and due soon (less than a quarter of the target, or 2 hours, left).</summary>
+        public bool? DueSoon { get; set; }
         public bool? ActiveOnly { get; set; }
         public DateOnly? CreatedFrom { get; set; }
         public DateOnly? CreatedTo { get; set; }
@@ -233,6 +237,9 @@ public static class WorkOrderEndpoints
             if (add.Count > 0 && await db.Employees.CountAsync(e => add.Contains(e.Id), ct) != add.Count) throw new DomainException("A chosen technician wasn't found.");
 
             var rows = await db.WorkOrders.Include(x => x.Assignees).Where(w => ids.Contains(w.Id)).OrderBy(w => w.Number).ToListAsync(ct);
+            // A priority change recomputes target deadlines from when the work was raised (as on the edit page).
+            var requestIds = rows.Where(r => r.WorkRequestId != null).Select(r => r.WorkRequestId!.Value).ToList();
+            var raised = await db.WorkRequests.Where(r => requestIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, r => r.CreatedAt, ct);
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
             var canClose = mine.Contains(Permissions.WorkOrdersClose);
             var skipped = new List<BulkSkip>();
@@ -248,7 +255,13 @@ public static class WorkOrderEndpoints
                     else if (await ChangeStatusAsync(db, ctx, mail, settings, w, st, ct) is { IsValid: false } v) reason = v.Messages.First();
                 }
                 else if (w.Status is WorkOrderStatus.Closed or WorkOrderStatus.Cancelled) reason = "Reopen it first.";
-                else if (input.Priority is { } priority) w.Priority = priority;
+                else if (input.Priority is { } priority)
+                {
+                    var before = w.Priority;
+                    w.Priority = priority;
+                    Deadlines.OnUpdate(w, w.DueAt, w.DueDate, before, settings,
+                        w.WorkRequestId is { } rid && raised.TryGetValue(rid, out var at) ? at : w.CreatedAt);
+                }
                 else
                 {
                     var before = w.Assignees.Select(a => a.EmployeeId).ToHashSet();
@@ -509,6 +522,12 @@ public static class WorkOrderEndpoints
             q = q.Where(w => me != null && w.Assignees.Any(a => a.EmployeeId == me));
         }
         if (f.Late == true || f.Overdue == true) q = SlaQueries.LateWork(q, DateTimeOffset.UtcNow);
+        if (f.ResponseLate == true) q = SlaQueries.LateResponse(q, DateTimeOffset.UtcNow);
+        if (f.DueSoon == true)
+        {
+            var soon = await SlaQueries.DueSoonIdsAsync(q, await SlaQueries.SettingsAsync(db, ct), DateTimeOffset.UtcNow, ct);
+            q = q.Where(w => soon.Contains(w.Id));
+        }
         return q;
     }
 
@@ -537,10 +556,12 @@ public static class WorkOrderEndpoints
 
     public static async Task<Validator> ValidateAsync(WorkOrderInput i, CmmsDbContext db, CancellationToken ct)
     {
+        // The due time's day in the organization's time zone (01:00 in Cairo is still the same local day).
+        var dueDay = i.DueAt is { } da ? Sla.LocalDay(da, Sla.Zone((await SlaQueries.SettingsAsync(db, ct)).TimeZone)) : i.DueDate;
         var v = new Validator().Required("title", i.Title, "Title", 300)
             .When(!Enum.IsDefined(i.Type), "type", "Choose a work type.").When(!Enum.IsDefined(i.Priority), "priority", "Choose a priority.")
             .When(i.EstimatedHours < 0, "estimatedHours", "Estimate cannot be negative.")
-            .When(i.PlannedStart is { } ps && (i.DueAt is { } da ? DateOnly.FromDateTime(da.UtcDateTime) : i.DueDate) is { } dd && dd < ps, "dueDate", "Due date cannot be before the planned start.");
+            .When(i.PlannedStart is { } ps && dueDay is { } dd && dd < ps, "dueDate", "Due date cannot be before the planned start.");
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct)) v.Add("locationId", "Location must belong to the selected site.");
         if (i.AssetId is not null && !await db.Assets.AnyAsync(a => a.Id == i.AssetId && a.SiteId == i.SiteId, ct)) v.Add("assetId", "Asset must belong to the selected site.");

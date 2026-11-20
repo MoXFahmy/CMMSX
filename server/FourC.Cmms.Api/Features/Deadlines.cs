@@ -43,19 +43,21 @@ internal static class Deadlines
         var zone = Sla.Zone(s.TimeZone);
         var (at, day) = HandSet(dueAt, dueDate, zone);
         var changed = dueAt is { } a ? w.DueAt is not { } current || (a - current).Duration() >= SameMinute : day != w.DueDate;
+        var priorityChanged = w.Priority != priorityBefore;
         if (changed)
         {
-            SetDue(w, at, false, zone);
-            return;
+            // Cleared: back to the priority's target ("leave empty to use the target"), PM work excepted.
+            if (at is null && w.PmScheduleId is null && Sla.CompleteBy(s, w.Priority, raisedAt) is { } target) SetDue(w, target, true, zone);
+            else SetDue(w, at, false, zone);
         }
-        if (w.Priority == priorityBefore) return;
-        if (w.DueFromTarget)
+        else if (priorityChanged && w.DueFromTarget)
         {
             // The new priority has no target: keep the deadline the job already has, now as if set by hand.
             if (Sla.CompleteBy(s, w.Priority, raisedAt) is { } due) SetDue(w, due, true, zone);
             else w.DueFromTarget = false;
         }
-        if (w.WorkRequestId is null && w.PmScheduleId is null && w.RespondedAt is null) w.StartBy = Sla.RespondBy(s, w.Priority, raisedAt);
+        // The response deadline follows the priority, whether or not the due time was changed in the same edit.
+        if (priorityChanged && w.WorkRequestId is null && w.PmScheduleId is null && w.RespondedAt is null) w.StartBy = Sla.RespondBy(s, w.Priority, raisedAt);
     }
 
     /// <summary>A new request: its response deadline, and its completion deadline (the target, else the end of the "Needed by" day).</summary>
@@ -74,9 +76,17 @@ internal static class Deadlines
     /// </summary>
     internal static (DateTimeOffset? At, bool FromTarget) OnApprove(WorkRequest r, WorkPriority priority, DateTimeOffset? dueAt, DateOnly? dueDate, TenantSettings s)
     {
-        var (at, _) = HandSet(dueAt, dueDate, Sla.Zone(s.TimeZone));
+        var zone = Sla.Zone(s.TimeZone);
+        var (at, _) = HandSet(dueAt, dueDate, zone);
         if (at is not null) return (at, false);
-        if ((priority != r.Priority || r.DueAt is null) && Sla.CompleteBy(s, priority, r.CreatedAt) is { } due) return (due, true);
+        var target = Sla.CompleteBy(s, priority, r.CreatedAt);
+        if (priority != r.Priority)
+        {
+            if (target is not null) return (target, true);
+            // The new priority has no completion target: the requester's "Needed by", else the deadline it already had.
+            return (r.RequiredBy is { } d ? Sla.EndOfDay(d, zone) : r.DueAt, false);
+        }
+        if (r.DueAt is null && target is not null) return (target, true); // targets set after the request was raised
         return (r.DueAt, r.DueFromTarget);
     }
 }

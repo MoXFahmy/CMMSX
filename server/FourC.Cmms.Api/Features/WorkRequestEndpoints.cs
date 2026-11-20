@@ -70,7 +70,9 @@ public static class WorkRequestEndpoints
             var work = r.Work is { } w ? SlaQueries.Work(settings, w.Priority, w.Status, w.StartBy, w.RespondedAt, w.DueAt, w.DueFromTarget, w.CompletedAt, now).Completion : (SlaState?)null;
             var sla = SlaQueries.Request(settings, r.Priority, r.Status, r.RespondBy, r.DecidedAt, r.DueAt, r.DueFromTarget, work, now);
             return new WorkRequestListItem(r.Id, r.Number, r.Title, r.Status, r.Priority, r.Type, r.SiteId, r.SiteName, r.LocationName, r.AssetId, r.AssetNumber, r.AssetName,
-                r.RequesterName, r.RequiredBy, r.CreatedAt, r.WorkOrderId, r.Work?.Number, r.RespondBy, r.DueAt, sla.Response, sla.Completion);
+                r.RequesterName, r.RequiredBy, r.CreatedAt, r.WorkOrderId, r.Work?.Number, r.RespondBy,
+                // Approved: the work order's deadline, the one its state is about.
+                r.Status == WorkRequestStatus.Approved && r.Work is { } wo ? wo.DueAt : r.DueAt, sla.Response, sla.Completion);
         }).ToList(), paged.Total, paged.Page, paged.PageSize);
     }
 
@@ -105,7 +107,8 @@ public static class WorkRequestEndpoints
             {
                 r.Id, r.Number, r.Title, r.Description, r.Status, r.Priority, r.Type, r.SiteId, Site = new { r.Site!.Id, r.Site.Name }, r.LocationId, LocationName = r.Location?.Name,
                 r.AssetId, Asset = r.Asset is null ? null : new { r.Asset.Id, r.Asset.AssetNumber, r.Asset.Name }, r.RequesterName, r.RequesterEmail, r.RequesterPhone,
-                r.RequiredBy, r.RespondBy, r.DueAt, r.DueFromTarget, Sla = sla, r.DecisionNote, r.DecidedAt, DecidedBy = r.DecidedById is { } d ? users.GetValueOrDefault(d) : null, WorkOrder = wo,
+                r.RequiredBy, r.RespondBy, DueAt = r.Status == WorkRequestStatus.Approved && work is not null ? work.DueAt : r.DueAt, r.DueFromTarget, Sla = sla,
+                r.DecisionNote, r.DecidedAt, DecidedBy = r.DecidedById is { } d ? users.GetValueOrDefault(d) : null, WorkOrder = wo,
                 r.CreatedAt, CreatedBy = r.CreatedById is { } c ? users.GetValueOrDefault(c) : null, CanCancel = r.Status == WorkRequestStatus.New && r.CreatedById == ctx.UserId,
             });
         }).RequireAuthorization();
@@ -178,7 +181,9 @@ public static class WorkRequestEndpoints
     }
 
     /// <summary>Raises a work request (numbered, requester defaulted from the signed-in user, reviewers e-mailed).</summary>
-    internal static async Task<(Validator V, WorkRequest? Request)> CreateAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, RequestInput input, CancellationToken ct)
+    /// <param name="raisedAt">When it was raised, if not now (a request made offline on a phone): its deadlines count from then.</param>
+    internal static async Task<(Validator V, WorkRequest? Request)> CreateAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, RequestInput input, CancellationToken ct,
+        DateTimeOffset? raisedAt = null)
     {
         var v = await ValidateAsync(input, db, ct);
         if (!v.IsValid) return (v, null);
@@ -194,7 +199,7 @@ public static class WorkRequestEndpoints
             RequesterName = input.RequesterName.Clean() ?? me?.FullName, RequesterEmail = input.RequesterEmail.Clean() ?? me?.Email, RequesterPhone = input.RequesterPhone.Clean() ?? me?.Phone,
         };
         if (r.AssetId is not null && r.LocationId is null) r.LocationId = await db.Assets.Where(a => a.Id == r.AssetId).Select(a => a.LocationId).FirstOrDefaultAsync(ct);
-        r.CreatedAt = DateTimeOffset.UtcNow;
+        r.CreatedAt = raisedAt ?? DateTimeOffset.UtcNow;
         Deadlines.OnCreate(r, settings, r.CreatedAt);
         db.WorkRequests.Add(r);
         await mail.RequestSubmittedAsync(db, ctx, r, ct);

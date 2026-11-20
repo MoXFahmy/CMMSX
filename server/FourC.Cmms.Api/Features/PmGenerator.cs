@@ -245,7 +245,11 @@ public sealed class PmSchedulerService(IServiceScopeFactory scopes, IConfigurati
         var options = scope.ServiceProvider.GetRequiredService<DbContextOptions<CmmsDbContext>>();
         List<Guid> tenantIds;
         await using (var root = new CmmsDbContext(options, new FixedTenantContext(null)))
+        {
             tenantIds = (await root.Tenants.AsNoTracking().Where(t => t.IsActive).ToListAsync(ct)).Where(t => t.Settings.AutoGeneratePm).Select(t => t.Id).ToList();
+            // Due dates written without a due time since the last run (an older server during a deploy, an import) get theirs.
+            await FourC.Cmms.Core.Services.DueBackfill.RunAsync(root, ct);
+        }
         foreach (var tenantId in tenantIds)
         {
             await using var db = new CmmsDbContext(options, new FixedTenantContext(tenantId, null, "PM scheduler"));

@@ -60,14 +60,18 @@ internal static class SlaQueries
     }
 
     /// <summary>Open work orders whose due time is coming up (less than a quarter of the target, or 2 hours, left).</summary>
-    internal static async Task<int> DueSoonAsync(IQueryable<WorkOrder> q, TenantSettings s, DateTimeOffset now, CancellationToken ct)
+    internal static async Task<int> DueSoonAsync(IQueryable<WorkOrder> q, TenantSettings s, DateTimeOffset now, CancellationToken ct) =>
+        (await DueSoonIdsAsync(q, s, now, ct)).Count;
+
+    internal static async Task<List<Guid>> DueSoonIdsAsync(IQueryable<WorkOrder> q, TenantSettings s, DateTimeOffset now, CancellationToken ct)
     {
         var longest = s.SlaTargets.Select(t => t.CompleteMinutes ?? 0).DefaultIfEmpty(0).Max() / 4.0;
         var horizon = now.AddMinutes(Math.Max(longest, Sla.DueSoonWithoutTarget.TotalMinutes));
         var rows = await q.Where(w => (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold)
                                       && w.DueAt >= now && w.DueAt < horizon)
-            .Select(w => new { w.Priority, w.DueAt, w.DueFromTarget }).ToListAsync(ct);
-        return rows.Count(w => Sla.State(w.DueAt, null, now, w.DueFromTarget ? Window(Sla.For(s, w.Priority)?.CompleteMinutes) : null) == SlaState.DueSoon);
+            .Select(w => new { w.Id, w.Priority, w.DueAt, w.DueFromTarget }).ToListAsync(ct);
+        return rows.Where(w => Sla.State(w.DueAt, null, now, w.DueFromTarget ? Window(Sla.For(s, w.Priority)?.CompleteMinutes) : null) == SlaState.DueSoon)
+            .Select(w => w.Id).ToList();
     }
 
     internal static async Task<TenantSettings> SettingsAsync(CmmsDbContext db, CancellationToken ct) =>

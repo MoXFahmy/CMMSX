@@ -16,14 +16,12 @@ import { priorityColors } from '@/components/WorkBadges';
 import { SlaText } from '@/components/SlaBadge';
 import { notifyError } from '@/components/utils';
 import { generateNow } from '@/pages/pm/generateNow';
-import { cellsByAsset, cellsByPerson, days as dayList, isPm, load, NO_ASSET, UNASSIGNED, type Board, type BoardJob, type ForecastRow } from './board';
+import { cellsByAsset, cellsByPerson, days as dayList, isPm, load, NO_ASSET, planMove, TRAY, UNASSIGNED, type Board, type BoardJob, type ForecastRow, type Move } from './board';
 
-type Move = { workOrderId: string; day?: string; fromEmployeeId?: string; toEmployeeId?: string };
 /** When the last drag ended: the click that ends a drag must not also open the work order. */
 let lastDragEnd = 0;
 /** What a card being dragged carries: the job and the row it was dragged from (a person, UNASSIGNED, or a tray). */
 type Dragged = { job: BoardJob; row: string };
-const TRAY = 'tray';
 
 /** The planning board: open work by day and person (or asset); drag a card to another day or person. */
 export function PlanningPage() {
@@ -75,20 +73,8 @@ export function PlanningPage() {
     const target = e.over?.id ? String(e.over.id).split('|') : null; // "row|day"
     if (!dragged || !target) return;
     const [row, day] = target;
-    const { job } = dragged;
-    const m: Move = { workOrderId: job.id };
-    const undo: Move = { workOrderId: job.id };
-    if (day !== job.day) { m.day = day; if (job.plannedStart ?? job.day) undo.day = job.plannedStart ?? job.day ?? undefined; }
-    if (view === 'person' && row !== dragged.row) {
-      // From a tray, a job with one person moves to the new person; a job with several keeps them (only its day changes).
-      const fromPerson = dragged.row === TRAY ? (job.assignees.length === 1 ? job.assignees[0].employeeId : undefined)
-        : dragged.row !== UNASSIGNED ? dragged.row : undefined;
-      const toPerson = row !== UNASSIGNED && (dragged.row !== TRAY || job.assignees.length <= 1) ? row : undefined;
-      if (fromPerson) { m.fromEmployeeId = fromPerson; undo.toEmployeeId = fromPerson; }
-      if (toPerson && !job.assignees.some((a) => a.employeeId === toPerson)) { m.toEmployeeId = toPerson; undo.fromEmployeeId = toPerson; }
-    }
-    if (!m.day && !m.fromEmployeeId && !m.toEmployeeId) return;
-    void send(m, undo);
+    const plan = planMove(dragged.job, dragged.row, row, day, view);
+    if (plan) void send(plan.move, plan.undo);
   };
 
   const byPerson = useMemo(() => (data ? cellsByPerson(data) : new Map()), [data]);
@@ -201,7 +187,9 @@ function JobCard({ job, row, canEdit }: { job: BoardJob; row: string; canEdit: b
   return (
     <Paper ref={setNodeRef} {...listeners} {...attributes} withBorder p={4} radius="sm" shadow={isDragging ? 'md' : undefined}
       onClick={() => { if (Date.now() - lastDragEnd > 300) navigate(`/work-orders/${job.id}`); }}
+      // touch-action: a finger on a card drags it instead of scrolling the page (tablets).
       style={{ borderLeft: `3px solid var(--mantine-color-${priorityColors[job.priority]}-6)`, cursor: canEdit ? 'grab' : 'pointer', opacity: isDragging ? 0.8 : 1,
+        touchAction: canEdit ? 'none' : undefined,
         transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined, zIndex: isDragging ? 10 : undefined, background: 'var(--mantine-color-body)' }}>
       <Text fz={11} fw={700} c={late ? 'red' : 'brand'}>{job.number}</Text>
       <Text fz={11} lineClamp={2}>{job.title}</Text>

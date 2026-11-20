@@ -67,8 +67,8 @@ export function DashboardPage() {
           <SimpleGrid cols={{ base: 1, xs: 2, lg: 3 }} mb="lg">
             <Kpi label={t('dashboard.openWork')} value={data.work.open.toLocaleString()} icon={IconClipboardList} color="blue" to="/work-orders" />
             <Kpi label={t('dashboard.lateWork')} value={(data.work.late ?? data.work.overdue).toLocaleString()} icon={IconClockExclamation} color="red" to="/work-orders?view=overdue" />
-            <Kpi label={t('dashboard.dueSoon')} value={(data.work.dueSoon ?? 0).toLocaleString()} icon={IconHourglass} color="orange" to="/work-orders?sort=dueDate&dir=asc" />
-            <Kpi label={t('dashboard.responseLate')} value={(data.work.responseLate ?? 0).toLocaleString()} icon={IconBellRinging} color="red" to="/work-requests?tab=late" />
+            <Kpi label={t('dashboard.dueSoon')} value={(data.work.dueSoon ?? 0).toLocaleString()} icon={IconHourglass} color="orange" to="/work-orders?view=dueSoon" />
+            <Kpi label={t('dashboard.responseLate')} value={(data.work.responseLate ?? 0).toLocaleString()} icon={IconBellRinging} color="red" to="/work-orders?view=responseLate" />
             <Kpi label={t('dashboard.completed30')} value={data.work.completedLast30.toLocaleString()} icon={IconCircleCheck} color="teal" to="/work-orders?tab=Completed" />
             <Kpi label={t('dashboard.requestsAwaiting')} value={data.work.requestsAwaiting.toLocaleString()} icon={IconInbox} color="grape" to="/work-requests" />
           </SimpleGrid>

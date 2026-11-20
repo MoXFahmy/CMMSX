@@ -21,6 +21,36 @@ export type Board = { capacityHours: number; people: BoardPerson[]; jobs: BoardJ
 export const UNASSIGNED = 'unassigned';
 /** Row key for jobs and PMs without an asset (location work, PM rounds). */
 export const NO_ASSET = 'none';
+/** Where a card dragged from a tray (earlier days, no date) comes from. */
+export const TRAY = 'tray';
+
+export type Move = { workOrderId: string; day?: string; fromEmployeeId?: string; toEmployeeId?: string };
+
+/**
+ * What dropping a card does, and how to undo it. By person: a new day re-plans it; another row hands that person's part
+ * over (from a tray: a one-person job goes to the new person, a job with several keeps them); Nobody yet takes the person
+ * off. By asset: only the day. Null when nothing changes.
+ */
+export function planMove(job: BoardJob, sourceRow: string, targetRow: string, targetDay: string, view: 'person' | 'asset'): { move: Move; undo: Move } | null {
+  const move: Move = { workOrderId: job.id };
+  const undo: Move = { workOrderId: job.id };
+  if (targetDay !== job.day) {
+    move.day = targetDay;
+    const before = job.plannedStart ?? job.day;
+    if (before) undo.day = before;
+  }
+  if (view === 'person' && targetRow !== sourceRow) {
+    const people = job.assignees.map((a) => a.employeeId);
+    const fromTray = sourceRow === TRAY;
+    const from = fromTray ? (people.length === 1 ? people[0] : undefined) : sourceRow !== UNASSIGNED ? sourceRow : undefined;
+    const to = targetRow !== UNASSIGNED && (!fromTray || people.length <= 1) ? targetRow : undefined;
+    if (from === undefined || from !== to) {
+      if (from) { move.fromEmployeeId = from; undo.toEmployeeId = from; }
+      if (to && !people.includes(to)) { move.toEmployeeId = to; undo.fromEmployeeId = to; }
+    }
+  }
+  return move.day || move.fromEmployeeId || move.toEmployeeId ? { move, undo } : null;
+}
 
 export const isPm = (x: BoardJob | ForecastRow): x is ForecastRow => 'date' in x;
 
@@ -39,19 +69,19 @@ function add<T>(cells: Map<string, Map<string, T[]>>, row: string, day: string, 
   cells.set(row, r);
 }
 
-/** person (or UNASSIGNED) → day → jobs and upcoming PMs; a job with two people is in both rows. */
+/**
+ * person (or UNASSIGNED) → day → jobs and upcoming PMs; a job with two people is in both rows. A job whose people aren't
+ * on the board (left, another site or trade) is under Nobody yet, so it can't disappear.
+ */
 export function cellsByPerson(data: Board): Map<string, Map<string, (BoardJob | ForecastRow)[]>> {
+  const shown = new Set(data.people.map((p) => p.id));
   const cells = new Map<string, Map<string, (BoardJob | ForecastRow)[]>>();
-  for (const j of data.jobs) {
-    if (!j.day) continue;
-    if (j.assignees.length === 0) add<BoardJob | ForecastRow>(cells, UNASSIGNED, j.day, j);
-    for (const a of j.assignees) add<BoardJob | ForecastRow>(cells, a.employeeId, j.day, j);
-  }
-  for (const p of data.pms) {
-    const people = p.assigneeIds ?? [];
-    if (people.length === 0) add<BoardJob | ForecastRow>(cells, UNASSIGNED, p.date, p);
-    for (const id of people) add<BoardJob | ForecastRow>(cells, id, p.date, p);
-  }
+  const place = (people: string[], day: string, item: BoardJob | ForecastRow) => {
+    const rows = people.filter((id) => shown.has(id));
+    for (const row of rows.length > 0 ? rows : [UNASSIGNED]) add<BoardJob | ForecastRow>(cells, row, day, item);
+  };
+  for (const j of data.jobs) if (j.day) place(j.assignees.map((a) => a.employeeId), j.day, j);
+  for (const p of data.pms) place(p.assigneeIds ?? [], p.date, p);
   return cells;
 }
 

@@ -220,7 +220,7 @@ public static partial class TechEndpoints
                            ?? (p.LocationId is { } lid ? await db.Locations.Where(x => x.Id == lid).Select(x => (Guid?)x.SiteId).FirstOrDefaultAsync(ct) : null)
                            ?? throw new Rejected("Choose where the problem is.");
                 var (v, _) = await WorkRequestEndpoints.CreateAsync(db, ctx, mail, new WorkRequestEndpoints.RequestInput(p.Title ?? "", p.Description, site, p.LocationId, p.AssetId,
-                    p.Priority ?? WorkPriority.Medium, WorkType.Corrective, null, null, null, null), ct);
+                    p.Priority ?? WorkPriority.Medium, WorkType.Corrective, null, null, null, null), ct, raisedAt: at);
                 Ensure(v);
                 return new Answer("done");
             }

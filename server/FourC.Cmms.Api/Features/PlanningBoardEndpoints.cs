@@ -24,6 +24,37 @@ public static class PlanningBoardEndpoints
     private const int MaxTray = 200;
     private const int MaxDays = 42;
 
+    private sealed class JobRow
+    {
+        public Guid Id { get; init; }
+        public required string Number { get; init; }
+        public required string Title { get; init; }
+        public WorkPriority Priority { get; init; }
+        public WorkOrderStatus Status { get; init; }
+        public Guid SiteId { get; init; }
+        public Guid? AssetId { get; init; }
+        public string? AssetNumber { get; init; }
+        public string? AssetName { get; init; }
+        public DateOnly? Day { get; init; }
+        public DateOnly? PlannedStart { get; init; }
+        public DateTimeOffset? DueAt { get; init; }
+        public bool DueFromTarget { get; init; }
+        public DateTimeOffset? StartBy { get; init; }
+        public DateTimeOffset? RespondedAt { get; init; }
+        public DateTimeOffset? CompletedAt { get; init; }
+        public decimal? EstimatedHours { get; init; }
+        public List<AssigneeRow> Assignees { get; init; } = [];
+    }
+    private sealed class AssigneeRow { public Guid EmployeeId { get; init; } public decimal? PlannedHours { get; init; } }
+
+    private static IQueryable<JobRow> Project(IQueryable<WorkOrder> q) => q.Select(w => new JobRow
+    {
+        Id = w.Id, Number = w.Number, Title = w.Title, Priority = w.Priority, Status = w.Status, SiteId = w.SiteId, AssetId = w.AssetId,
+        AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, Day = w.PlannedStart ?? w.DueDate, PlannedStart = w.PlannedStart, DueAt = w.DueAt,
+        DueFromTarget = w.DueFromTarget, StartBy = w.StartBy, RespondedAt = w.RespondedAt, CompletedAt = w.CompletedAt, EstimatedHours = w.EstimatedHours,
+        Assignees = w.Assignees.Select(a => new AssigneeRow { EmployeeId = a.EmployeeId, PlannedHours = a.PlannedHours }).ToList(),
+    });
+
     public static void MapPlanningBoardEndpoints(this RouteGroupBuilder api)
     {
         var g = api.MapGroup("/planning").WithTags("Planning board");
@@ -46,13 +77,12 @@ public static class PlanningBoardEndpoints
                 var ofTrade = employees.Where(e => e.TradeIds.Contains(trade)).Select(e => e.Id).ToList();
                 q = q.Where(w => w.TradeId == trade || w.Assignees.Any(a => ofTrade.Contains(a.EmployeeId)));
             }
-            var rows = await q.Where(w => (w.PlannedStart ?? w.DueDate) == null || (w.PlannedStart ?? w.DueDate) <= to)
-                .Select(w => new
-                {
-                    w.Id, w.Number, w.Title, w.Priority, w.Status, w.SiteId, w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name,
-                    Day = w.PlannedStart ?? w.DueDate, w.PlannedStart, w.DueAt, w.DueFromTarget, w.StartBy, w.RespondedAt, w.CompletedAt, w.EstimatedHours,
-                    Assignees = w.Assignees.Select(a => new { a.EmployeeId, a.PlannedHours }).ToList(),
-                }).ToListAsync(ct);
+            // Three bounded reads: the range, the newest leftovers before it, and work without a date (not every open job there is).
+            var leftoverBefore = from < today ? from : today;
+            var rows = (await Project(q.Where(w => (w.PlannedStart ?? w.DueDate) >= from && (w.PlannedStart ?? w.DueDate) <= to)).ToListAsync(ct))
+                .Concat(await Project(q.Where(w => (w.PlannedStart ?? w.DueDate) < leftoverBefore).OrderByDescending(w => w.PlannedStart ?? w.DueDate).Take(MaxTray)).ToListAsync(ct))
+                .Concat(await Project(q.Where(w => w.PlannedStart == null && w.DueDate == null).OrderByDescending(w => w.Priority).Take(MaxTray)).ToListAsync(ct))
+                .ToList();
             var jobs = rows.Select(w => new BoardJob(w.Id, w.Number, w.Title, w.Priority, w.Status, w.SiteId, w.AssetId, w.AssetNumber, w.AssetName, w.Day, w.PlannedStart, w.DueAt,
                 SlaQueries.Work(settings, w.Priority, w.Status, w.StartBy, w.RespondedAt, w.DueAt, w.DueFromTarget, w.CompletedAt, now), w.EstimatedHours,
                 // Each person's share: their own planned hours, else the estimate split between the people on it.

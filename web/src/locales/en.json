@@ -151,7 +151,7 @@
     "workByStatus": "Work orders by status",
     "lateWork": "Late work",
     "dueSoon": "Due soon",
-    "responseLate": "Waiting for a response"
+    "responseLate": "Not started in time"
   },
   "locations": {
     "title": "Locations",
@@ -1353,7 +1353,9 @@
     "startBy": "Start by",
     "requestAnswered": "Request answered by",
     "respondedAt": "responded {{when}}",
-    "respondedLate": "responded late, {{when}}"
+    "respondedLate": "responded late, {{when}}",
+    "dueSoonFilter": "Due soon",
+    "notStartedFilter": "Not started"
   },
   "planning": {
     "title": "Planning",

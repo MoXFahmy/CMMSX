@@ -357,5 +357,146 @@ public class SlaWorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
         // Completion: the completed job (met), the overdue one (missed); the PM job and pending deadlines aren't counted.
         Assert.Equal((1, 2), (urgent.GetProperty("completionMet").GetInt32(), urgent.GetProperty("completionTotal").GetInt32()));
     }
+
+    // ---- Final review fixes ----
+
+    private static async Task PutAsync(HttpClient c, Guid id, Org o, string priority, string? dueDate = null, DateTimeOffset? dueAt = null)
+    {
+        var d = await DetailAsync(c, id);
+        await Ok(await c.PutAsJsonAsync($"/api/work-orders/{id}", new
+        {
+            title = "Pump leak", siteId = o.Site, type = "Corrective", priority, dueDate, dueAt, rowVersion = d.GetProperty("rowVersion").GetString(),
+        }));
+    }
+    private static DateTimeOffset Created(JsonElement d) => DateTimeOffset.Parse(d.GetProperty("createdAt").GetString()!);
+
+    [SkippableFact]
+    public async Task Bulk_priority_change_follows_the_target_rules()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var id = await CreateAsync(o.C, Wo(o.Site, priority: "Medium"));
+        await Ok(await o.C.PostAsJsonAsync("/api/work-orders/bulk", new { ids = new[] { id }, priority = "Urgent" }));
+        var d = await DetailAsync(o.C, id);
+        Near(Created(d).AddHours(4), At(d, "dueAt"));
+        Near(Created(d).AddHours(1), At(d, "startBy"));
+    }
+
+    [SkippableFact]
+    public async Task Changing_priority_and_due_together_still_sets_the_start_by()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var id = await CreateAsync(o.C, Wo(o.Site, priority: "Medium")); // Medium: no response target
+        var typed = DateTimeOffset.Parse("2027-01-10T13:00:00Z");
+        await PutAsync(o.C, id, o, "Urgent", dueAt: typed);
+        var d = await DetailAsync(o.C, id);
+        Assert.Equal(typed, At(d, "dueAt"));
+        Assert.False(d.GetProperty("dueFromTarget").GetBoolean());
+        Near(Created(d).AddHours(1), At(d, "startBy"));
+    }
+
+    [SkippableFact]
+    public async Task Clearing_the_due_time_goes_back_to_the_target()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var id = await CreateAsync(o.C, Wo(o.Site, dueDate: "2027-03-01"));
+        await PutAsync(o.C, id, o, "Urgent"); // the form sends no due date and no due time
+        var d = await DetailAsync(o.C, id);
+        Near(Created(d).AddHours(4), At(d, "dueAt"));
+        Assert.True(d.GetProperty("dueFromTarget").GetBoolean());
+        var low = await CreateAsync(o.C, Wo(o.Site, priority: "Low", dueDate: "2027-03-01"));
+        await PutAsync(o.C, low, o, "Low");
+        Assert.Null(At(await DetailAsync(o.C, low), "dueAt")); // no target to go back to
+    }
+
+    [SkippableFact]
+    public async Task Approved_requests_show_their_work_orders_deadline()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var rid = Id(await Ok(await o.C.PostAsJsonAsync("/api/work-requests", new { title = "Fan", siteId = o.Site, priority = "Medium", type = "Corrective" })));
+        var wo = (await Ok(await o.C.PostAsJsonAsync($"/api/work-requests/{rid}/approve", new { priority = "Urgent" }))).GetProperty("workOrderId").GetGuid();
+        var row = (await Ok(await o.C.GetAsync("/api/work-requests"))).GetProperty("items").EnumerateArray().Single(r => Id(r) == rid);
+        Assert.Equal(At(await DetailAsync(o.C, wo), "dueAt"), At(row, "dueAt"));
+    }
+
+    [SkippableFact]
+    public async Task Approving_into_a_priority_without_a_target_uses_needed_by()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var rid = Id(await Ok(await o.C.PostAsJsonAsync("/api/work-requests", new { title = "Fan", siteId = o.Site, priority = "Urgent", type = "Corrective", requiredBy = "2027-02-10" })));
+        var wo = (await Ok(await o.C.PostAsJsonAsync($"/api/work-requests/{rid}/approve", new { priority = "Low" }))).GetProperty("workOrderId").GetGuid();
+        var d = await DetailAsync(o.C, wo);
+        Assert.Equal(DateTimeOffset.Parse("2027-02-10T21:59:59Z"), At(d, "dueAt"));
+        Assert.False(d.GetProperty("dueFromTarget").GetBoolean());
+    }
+
+    [SkippableFact]
+    public async Task A_due_time_early_in_the_local_day_is_not_before_the_planned_start()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        // 01:00 on 2 December in Cairo is 23:00 UTC on 1 December: not before a planned start of 2 December.
+        var r = await o.C.PostAsJsonAsync("/api/work-orders", new
+        {
+            title = "Night job", siteId = o.Site, type = "Corrective", priority = "Medium", plannedStart = "2026-12-02", dueAt = DateTimeOffset.Parse("2026-12-01T23:00:00Z"),
+        });
+        Assert.True(r.IsSuccessStatusCode, await r.Content.ReadAsStringAsync());
+    }
+
+    [SkippableFact]
+    public async Task Dashboard_cards_count_what_their_lists_show()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var both = await CreateAsync(o.C, Wo(o.Site));
+        await ShiftAsync(both, TimeSpan.FromHours(-5)); // completion and response late
+        var notStarted = await CreateAsync(o.C, Wo(o.Site));
+        await ShiftAsync(notStarted, TimeSpan.FromHours(-2)); // only the response is late
+        var soon = await CreateAsync(o.C, Wo(o.Site, dueAt: DateTimeOffset.UtcNow.AddMinutes(30)));
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{soon}/status", new { status = "InProgress" }));
+
+        var work = (await Ok(await o.C.GetAsync("/api/dashboard"))).GetProperty("work");
+        Assert.Equal((await LateIdsAsync(o.C, "/api/work-orders?late=true")).Count, work.GetProperty("late").GetInt32());
+        Assert.Equal((await LateIdsAsync(o.C, "/api/work-orders?responseLate=true")).Count, work.GetProperty("responseLate").GetInt32());
+        Assert.Equal([soon], await LateIdsAsync(o.C, "/api/work-orders?dueSoon=true"));
+        Assert.Equal(1, work.GetProperty("dueSoon").GetInt32());
+        Assert.Equal(2, work.GetProperty("late").GetInt32());
+        Assert.Equal(2, work.GetProperty("responseLate").GetInt32());
+    }
+
+    [SkippableFact]
+    public async Task Requests_raised_offline_count_from_when_they_were_raised()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var raised = DateTimeOffset.UtcNow.AddHours(-3);
+        await Ok(await o.C.PostAsJsonAsync("/api/tech/actions", new
+        {
+            clientId = Guid.NewGuid(), at = raised, type = "request.create", payload = new { title = "Leak by the pump", priority = "Urgent", siteId = o.Site },
+        }));
+        var row = (await Ok(await o.C.GetAsync("/api/work-requests"))).GetProperty("items").EnumerateArray().Single(r => r.GetProperty("title").GetString() == "Leak by the pump");
+        Near(raised.AddHours(1), At(row, "respondBy"));
+        Assert.Equal("Late", row.GetProperty("responseState").GetString());
+    }
+
+    [SkippableFact]
+    public async Task Back_fill_uses_each_days_own_offset()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync(targets: false);
+        var summer = await CreateAsync(o.C, Wo(o.Site, dueDate: "2026-07-15")); // Cairo summer time, UTC+3
+        var winter = await CreateAsync(o.C, Wo(o.Site, dueDate: "2026-12-15")); // UTC+2
+        await WithDbAsync(async db =>
+        {
+            await db.WorkOrders.IgnoreQueryFilters().Where(w => w.Id == summer || w.Id == winter).ExecuteUpdateAsync(s => s.SetProperty(w => w.DueAt, (DateTimeOffset?)null));
+            await DueBackfill.RunAsync(db);
+        });
+        Assert.Equal(DateTimeOffset.Parse("2026-07-15T20:59:59Z"), At(await DetailAsync(o.C, summer), "dueAt"));
+        Assert.Equal(DateTimeOffset.Parse("2026-12-15T21:59:59Z"), At(await DetailAsync(o.C, winter), "dueAt"));
+    }
 }
 

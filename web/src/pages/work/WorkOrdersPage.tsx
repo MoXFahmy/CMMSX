@@ -47,6 +47,7 @@ export function WorkOrdersPage() {
   const base = {
     search: p('search'), siteId: p('siteId'), priority: p('priority'), type: p('type'), tradeId: p('tradeId'), assetId: p('assetId'),
     mine: view === 'mine' ? 'true' : '', overdue: view === 'overdue' ? 'true' : '',
+    dueSoon: view === 'dueSoon' ? 'true' : '', responseLate: view === 'responseLate' ? 'true' : '',
     locationId: p('locationId'), assigneeId: p('assigneeId'), createdFrom: p('createdFrom'), createdTo: p('createdTo'),
     dueFrom: p('dueFrom'), dueTo: p('dueTo'), source: p('source'),
   };
@@ -147,6 +148,7 @@ export function WorkOrdersPage() {
           <SegmentedControl value={view} onChange={(v) => set({ view: v === 'everyone' ? null : v })} data={[
             { value: 'everyone', label: t('wo.all') }, { value: 'mine', label: t('wo.mine') },
             { value: 'overdue', label: `${t('sla.lateFilter')}${summary?.overdue ? ` (${summary.overdue})` : ''}` },
+            { value: 'dueSoon', label: t('sla.dueSoonFilter') }, { value: 'responseLate', label: t('sla.notStartedFilter') },
           ]} />
           <TextInput placeholder={t('wo.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 240 }} />
           <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v, locationId: null })} clearable searchable w={{ base: '100%', xs: 180 }} />
