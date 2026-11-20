@@ -173,6 +173,8 @@ function ProposalTab() {
             { accessor: 'storeCode', title: t('inv.store'), noWrap: true },
             { accessor: 'quantityOnHand', title: t('inv.onHand'), textAlign: 'right', noWrap: true,
               render: (r) => <Text fz="sm" fw={600} c={r.quantityOnHand <= 0 ? 'red' : r.belowMinimum ? 'orange' : undefined}>{fmtQty(r.quantityOnHand)} {r.unitOfMeasure}</Text> },
+            { accessor: 'reserved', title: t('plan.reserved'), textAlign: 'right', noWrap: true, render: (r) => r.reserved ? fmtQty(r.reserved) : '—' },
+            { accessor: 'available', title: t('plan.available'), textAlign: 'right', noWrap: true, render: (r) => <Text fz="sm" c={r.available < 0 ? 'red' : undefined}>{fmtQty(r.available)}</Text> },
             { accessor: 'levels', title: t('po.minReorderMax'), noWrap: true, render: (r) => <Text fz="sm" c="dimmed">{fmtQty(r.minLevel)} / {fmtQty(r.reorderLevel)} / {fmtQty(r.maxLevel)}</Text> },
             { accessor: 'onOrder', title: t('inv.onOrder'), textAlign: 'right', render: (r) => r.onOrder ? fmtQty(r.onOrder) : '—' },
             { accessor: 'qty', title: t('po.orderQty'), width: 120, render: (r) => <NumberInput size="xs" min={0} decimalScale={3} value={qty(r)} aria-label={`${t('po.orderQty')} ${r.partNumber}`}

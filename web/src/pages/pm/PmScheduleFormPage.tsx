@@ -18,7 +18,7 @@ import { EmployeePicker } from '@/components/EmployeePicker';
 import { WoStatusBadge } from '@/components/WorkBadges';
 import { confirmDelete } from '@/components/confirm';
 import { generateNow } from './generateNow';
-import { fmtDate, fmtDateTime, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { fmtDate, fmtDateTime, fmtMoney, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 
 type V = {
   code: string; name: string; description: string; siteId: string | null; locationId: string | null; assetId: string | null; tradeId: string | null; priority: string;
@@ -54,7 +54,8 @@ export function PmScheduleFormPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { can } = useAuth();
+  const { can, me } = useAuth();
+  const currency = me?.tenant.settings.currency ?? 'USD';
   const editing = !!id;
   const editable = can(P.pmManage);
   const { data: s, isLoading } = useQuery({ queryKey: ['pm-schedule', id], queryFn: () => get<PmScheduleDetail>(`/pm-schedules/${id}`), enabled: editing });
@@ -239,6 +240,17 @@ export function PmScheduleFormPage() {
                 )}
               <Checkbox mt="md" label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
             </Card>
+            {editing && s && (
+              <Card p={0}>
+                <Title order={5} p="md" pb="xs">{t('pm.visitCost')}</Title>
+                <Table verticalSpacing={6}><Table.Tbody>
+                  <Table.Tr><Table.Td>{t('plan.parts')}</Table.Td><Table.Td ta="right">{fmtMoney(s.visitCost.parts, currency)}</Table.Td></Table.Tr>
+                  <Table.Tr><Table.Td>{t('plan.laborCost')}</Table.Td><Table.Td ta="right">{fmtMoney(s.visitCost.labour, currency)}</Table.Td></Table.Tr>
+                  <Table.Tr><Table.Td fw={700}>{t('plan.total')}</Table.Td><Table.Td ta="right" fw={700}>{fmtMoney(s.visitCost.total, currency)}</Table.Td></Table.Tr>
+                </Table.Tbody></Table>
+                <Text fz="xs" c="dimmed" px="md" pb="md">{t('pm.visitCostHint')}</Text>
+              </Card>
+            )}
             {editing && s && (
               <Card p={0}>
                 <Title order={5} p="md" pb="xs">{t('pm.recentWos')}</Title>

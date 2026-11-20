@@ -549,6 +549,12 @@
     "searchPlaceholder": "Search number, title or requester"
   },
   "pm": {
+    "parts": "Parts",
+    "partsHint": "Every work order generated from this task plans and reserves these parts (per asset on a round).",
+    "addPart": "Add a part…",
+    "visitCost": "Estimated cost per visit",
+    "visitCostHint": "The routine task's parts at current average cost, plus its estimated hours at the technicians' average rate.",
+    "forecastCost": "Estimated cost: {{cost}}",
     "title": "Preventive maintenance",
     "subtitle": "Planned maintenance schedules, checklists and meters",
     "schedules": "Schedules",
@@ -712,6 +718,8 @@
     "Cancelled": "Cancelled"
   },
   "inv": {
+    "reservedFor": "Reserved for open work",
+    "reservedSub": "{{qty}} reserved for open work",
     "title": "Inventory",
     "subtitle": "Spare parts, stores and stock movements",
     "newPart": "New part",
