@@ -1,0 +1,91 @@
+import type { QueuedChange, SendResult } from './outbox';
+import type { TechBundle, TechPlaces } from './types';
+
+/** Thrown when the server can't be reached, doesn't answer in time, or answers 5xx (the phone keeps working from its copy). */
+export class Offline extends Error {}
+/** A 5xx answer: there is signal, the server failed. */
+export class ServerError extends Offline {}
+/** Thrown on 401: the sign-in ended, or (revoked) this device was signed out. */
+export class SignedOut extends Error { constructor(public revoked: boolean) { super('Signed out'); } }
+
+/** How long to wait for an answer: with one bar of signal a request can hang for minutes; the phone's copy is better. */
+const QUICK_MS = 5_000;
+const SEND_MS = 20_000;
+const LOAD_MS = 30_000;
+const UPLOAD_MS = 60_000;
+
+async function call(path: string, init: RequestInit | undefined, timeoutMs: number): Promise<Response> {
+  let res: Response;
+  const abort = new AbortController();
+  const timer = setTimeout(() => abort.abort(), timeoutMs);
+  try { res = await fetch(`/api${path}`, { credentials: 'same-origin', ...init, signal: abort.signal, headers: { Accept: 'application/json', ...(init?.headers ?? {}) } }); }
+  catch { throw new Offline(); }
+  finally { clearTimeout(timer); }
+  if (res.status === 401) throw new SignedOut(res.headers.get('X-Session-Revoked') === '1');
+  if (res.status >= 500) throw new ServerError();
+  return res;
+}
+
+const title = async (res: Response) => { try { return ((await res.json()) as { title?: string }).title ?? `Request failed (${res.status})`; } catch { return `Request failed (${res.status})`; } };
+
+/** Who is signed in (throws Offline or SignedOut). */
+export async function fetchMe(): Promise<{ userId: string; employeeId?: string | null; fullName: string }> {
+  const res = await call('/auth/me', undefined, QUICK_MS);
+  if (!res.ok) throw new Error(await title(res));
+  const me = (await res.json()) as { user: { id: string; fullName: string }; employeeId?: string | null };
+  return { userId: me.user.id, employeeId: me.employeeId, fullName: me.user.fullName };
+}
+
+export async function fetchBundle(): Promise<TechBundle> {
+  const res = await call('/tech/bundle', undefined, LOAD_MS);
+  if (!res.ok) throw new Error(await title(res));
+  return res.json();
+}
+
+/** The places of my sites, or null when the phone's copy (etag) is still current. */
+export async function fetchPlaces(etag?: string): Promise<{ data: TechPlaces; etag?: string } | null> {
+  const res = await call('/tech/places', { headers: etag ? { 'If-None-Match': etag } : {} }, LOAD_MS);
+  if (res.status === 304) return null;
+  if (!res.ok) throw new Error(await title(res));
+  return { data: await res.json(), etag: res.headers.get('ETag') ?? undefined };
+}
+
+/** Sends one queued change (and its photo); maps the answer for the sync loop. */
+export async function sendChange(c: QueuedChange, file?: Blob): Promise<SendResult> {
+  try {
+    let res: Response;
+    if (c.fileKey) {
+      const form = new FormData();
+      form.set('clientId', c.clientId);
+      form.set('userId', c.userId);
+      form.set('at', c.at);
+      if (c.workOrderId) form.set('workOrderId', c.workOrderId);
+      const p = c.payload as { kind: 'photo' | 'signature'; signedBy?: string; fileName?: string };
+      form.set('kind', p.kind);
+      if (p.signedBy) form.set('signedBy', p.signedBy);
+      if (!file) return { kind: 'rejected', message: 'The photo is no longer on this phone.' };
+      form.set('file', file, p.fileName ?? `${p.kind}.jpg`);
+      res = await call('/tech/files', { method: 'POST', body: form }, UPLOAD_MS);
+    } else {
+      res = await call('/tech/actions', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ clientId: c.clientId, at: c.at, type: c.type, workOrderId: c.workOrderId, payload: c.payload, userId: c.userId }),
+      }, SEND_MS);
+    }
+    if (res.status === 409) {
+      const a = (await res.clone().json().catch(() => ({}))) as { code?: string };
+      if (a.code === 'otherUser') return { kind: 'otherUser' };
+    }
+    if (!res.ok) return { kind: 'rejected', message: await title(res) };
+    const a = (await res.json()) as { status: 'done' | 'rejected'; message?: string; code?: string };
+    return a.status === 'done' ? { kind: 'done', message: a.message } : { kind: 'rejected', message: a.message ?? 'Not accepted.', code: a.code };
+  } catch (e) {
+    if (e instanceof SignedOut) return { kind: 'signedOut', revoked: e.revoked };
+    return e instanceof ServerError ? { kind: 'retry', serverError: true } : { kind: 'retry' };
+  }
+}
+
+/** Signs this device out on the server (throws Offline when that can't be done now). */
+export async function logout(): Promise<void> {
+  await call('/auth/logout', { method: 'POST' }, SEND_MS);
+}

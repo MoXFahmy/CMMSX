@@ -89,23 +89,9 @@ public static class WorkRequestEndpoints
 
         g.MapPost("/", async (RequestInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
-            var v = await ValidateAsync(input, db, ct);
+            var (v, r) = await CreateAsync(db, ctx, mail, input, ct);
             if (!v.IsValid) return v.Problem();
-            var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
-            var number = await Numbering.NextAsync(db, "WorkRequest", settings.WorkRequestNumberPrefix, 5,
-                n => db.WorkRequests.AnyAsync(r => r.Number == n, ct), p => db.WorkRequests.Where(r => r.Number.StartsWith(p)).Select(r => r.Number).ToListAsync(ct), ct);
-            var me = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == ctx.UserId, ct);
-            var r = new WorkRequest
-            {
-                Number = number, Title = input.Title.Trim(), Description = input.Description.Clean(), SiteId = input.SiteId, LocationId = input.LocationId, AssetId = input.AssetId,
-                Priority = input.Priority, Type = input.Type, RequiredBy = input.RequiredBy,
-                RequesterName = input.RequesterName.Clean() ?? me?.FullName, RequesterEmail = input.RequesterEmail.Clean() ?? me?.Email, RequesterPhone = input.RequesterPhone.Clean() ?? me?.Phone,
-            };
-            if (r.AssetId is not null && r.LocationId is null) r.LocationId = await db.Assets.Where(a => a.Id == r.AssetId).Select(a => a.LocationId).FirstOrDefaultAsync(ct);
-            db.WorkRequests.Add(r);
-            await mail.RequestSubmittedAsync(db, ctx, r, ct);
-            await db.SaveChangesAsync(ct);
-            return Results.Created($"/api/work-requests/{r.Id}", new { r.Id, r.Number });
+            return Results.Created($"/api/work-requests/{r!.Id}", new { r.Id, r.Number });
         }).RequirePermission(Permissions.RequestsCreate);
 
         g.MapPost("/{id:guid}/approve", async (Guid id, ApproveInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
@@ -162,6 +148,29 @@ public static class WorkRequestEndpoints
         var p = await perms.GetAsync(UserId(http));
         var q = db.WorkRequests.AsNoTracking();
         return p.Contains(Permissions.RequestsView) || p.Contains(Permissions.RequestsManage) ? q : q.Where(r => r.CreatedById == ctx.UserId);
+    }
+
+    /// <summary>Raises a work request (numbered, requester defaulted from the signed-in user, reviewers e-mailed).</summary>
+    internal static async Task<(Validator V, WorkRequest? Request)> CreateAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, RequestInput input, CancellationToken ct)
+    {
+        var v = await ValidateAsync(input, db, ct);
+        if (!v.IsValid) return (v, null);
+
+        var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+        var number = await Numbering.NextAsync(db, "WorkRequest", settings.WorkRequestNumberPrefix, 5,
+            n => db.WorkRequests.AnyAsync(r => r.Number == n, ct), p => db.WorkRequests.Where(r => r.Number.StartsWith(p)).Select(r => r.Number).ToListAsync(ct), ct);
+        var me = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == ctx.UserId, ct);
+        var r = new WorkRequest
+        {
+            Number = number, Title = input.Title.Trim(), Description = input.Description.Clean(), SiteId = input.SiteId, LocationId = input.LocationId, AssetId = input.AssetId,
+            Priority = input.Priority, Type = input.Type, RequiredBy = input.RequiredBy,
+            RequesterName = input.RequesterName.Clean() ?? me?.FullName, RequesterEmail = input.RequesterEmail.Clean() ?? me?.Email, RequesterPhone = input.RequesterPhone.Clean() ?? me?.Phone,
+        };
+        if (r.AssetId is not null && r.LocationId is null) r.LocationId = await db.Assets.Where(a => a.Id == r.AssetId).Select(a => a.LocationId).FirstOrDefaultAsync(ct);
+        db.WorkRequests.Add(r);
+        await mail.RequestSubmittedAsync(db, ctx, r, ct);
+        await db.SaveChangesAsync(ct);
+        return (v, r);
     }
 
     private static async Task<Validator> ValidateAsync(RequestInput i, CmmsDbContext db, CancellationToken ct)

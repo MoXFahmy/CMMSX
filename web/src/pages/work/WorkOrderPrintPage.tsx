@@ -20,7 +20,16 @@ export function WorkOrderPrintPage() {
   const { id = '' } = useParams();
   const { me, terms } = useAuth();
   const { data: w } = useQuery({ queryKey: ['work-order', id], queryFn: () => get<WorkOrderDetail>(`/work-orders/${id}`) });
-  useEffect(() => { if (w) { document.title = w.number; const h = setTimeout(() => window.print(), 400); return () => clearTimeout(h); } }, [w]);
+  useEffect(() => {
+    if (!w) return;
+    document.title = w.number;
+    // Signature images must be loaded before the print dialog takes its snapshot.
+    const h = setTimeout(() => {
+      const pending = Array.from(document.images).filter((i) => !i.complete);
+      void Promise.all(pending.map((i) => new Promise((r) => { i.onload = i.onerror = r; }))).then(() => window.print());
+    }, 400);
+    return () => clearTimeout(h);
+  }, [w]);
   if (!w) return <Center h={300}><Loader /></Center>;
 
   const location = w.locationTrail.map((l) => l.name).join(' › ');
@@ -142,6 +151,16 @@ export function WorkOrderPrintPage() {
         </SimpleGrid>
       </Stack>
 
+      {w.signatures.length > 0 && (
+        <Group mt="lg" gap="xl" align="flex-end">
+          {w.signatures.map((s) => (
+            <Stack key={s.id} gap={2}>
+              <img src={`/api/attachments/${s.id}/content`} alt="" style={{ height: 60, maxWidth: 200, objectFit: 'contain' }} />
+              <Text fz="xs">{s.signedBy ?? ''} · {fmtDate(s.createdAt)}</Text>
+            </Stack>
+          ))}
+        </Group>
+      )}
       <Group mt={48} grow>
         {[t('jobCard.technician'), t('jobCard.supervisor'), t('jobCard.signDate')].map((label) => (
           <Stack key={label} gap={2}><div style={{ borderTop: '1px solid #000' }} /><Text fz="xs">{label}</Text></Stack>

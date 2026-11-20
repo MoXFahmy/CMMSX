@@ -44,10 +44,16 @@ services.ConfigureApplicationCookie(o =>
     o.Cookie.HttpOnly = true;
     o.Cookie.SameSite = SameSiteMode.Lax;
     o.Cookie.SecurePolicy = CookieSecurePolicy.SameAsRequest;
-    o.ExpireTimeSpan = TimeSpan.FromHours(12);
+    o.ExpireTimeSpan = Sessions.DefaultLifetime;
     o.SlidingExpiration = true;
     o.Events.OnRedirectToLogin = ctx => { ctx.Response.StatusCode = 401; return Task.CompletedTask; };
     o.Events.OnRedirectToAccessDenied = ctx => { ctx.Response.StatusCode = 403; return Task.CompletedTask; };
+    // The security-stamp check (Identity's default), then the device session (signed-out devices stop working).
+    o.Events.OnValidatePrincipal = async ctx =>
+    {
+        await SecurityStampValidator.ValidatePrincipalAsync(ctx);
+        if (ctx.Principal is not null) await Sessions.ValidateAsync(ctx);
+    };
 });
 services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = TimeSpan.FromMinutes(5));
 
@@ -134,6 +140,10 @@ api.MapDashboardEndpoints();
 api.MapAlertEndpoints();
 api.MapEmailEndpoints();
 api.MapViewEndpoints();
+api.MapDeviceEndpoints();
+api.MapTechEndpoints();
+api.MapTechActions();
+api.MapLabelEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();

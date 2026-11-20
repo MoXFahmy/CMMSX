@@ -4,13 +4,13 @@ import { useForm } from '@mantine/form';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { DevicesModal } from './DevicesModal';
 import { appVersionLabel } from '@/components/utils';
 import { AlertBell } from '@/components/AlertBell';
 import { EmailPreferences } from '@/components/EmailPreferences';
 import {
   IconLayoutDashboard, IconMapPin, IconBox, IconClipboardText, IconTool, IconCalendarRepeat, IconPackage, IconShoppingCart,
-  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail,
-} from '@tabler/icons-react';
+  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices } from '@tabler/icons-react';
 import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { handleFormError, notifySuccess } from './utils';
@@ -23,6 +23,7 @@ export function AppLayout() {
   const [opened, { toggle, close }] = useDisclosure();
   const [pwOpen, pw] = useDisclosure();
   const [mailOpen, mailPrefs] = useDisclosure();
+  const [devicesOpen, devices] = useDisclosure();
   const { pathname } = useLocation();
   const navigate = useNavigate();
   const qc = useQueryClient();
@@ -55,6 +56,11 @@ export function AppLayout() {
   const isActive = (to: string) => (to === '/' ? pathname === '/' : pathname.startsWith(to));
   const logout = async () => {
     await post('/auth/logout');
+    // A shared phone keeps nothing of this person's jobs (the technician view's copy); their unsent changes stay for them.
+    try {
+      const [{ forgetUser }, store] = await Promise.all([import('@/tech/identity'), import('@/tech/store')]);
+      await forgetUser(store);
+    } catch { /* no IndexedDB here: nothing to forget */ }
     qc.clear();
     navigate('/login');
     window.location.reload();
@@ -91,6 +97,11 @@ export function AppLayout() {
                 <Menu.Label>{me?.user.email}</Menu.Label>
                 <Menu.Item leftSection={<IconKey size={16} />} onClick={pw.open}>{t('common.changePassword')}</Menu.Item>
                 <Menu.Item leftSection={<IconMail size={16} />} onClick={mailPrefs.open}>{t('email.myTitle')}</Menu.Item>
+                <Menu.Item leftSection={<IconDevices size={16} />} onClick={devices.open}>{t('devices.title')}</Menu.Item>
+                {me?.employeeId && (
+                  <Menu.Item leftSection={<IconDeviceMobile size={16} />} component="a" href="/tech/"
+                    onClick={() => { try { localStorage.removeItem('cmms.tech.mode'); } catch { /* private mode */ } }}>{t('tech.title')}</Menu.Item>
+                )}
                 <Menu.Divider />
                 <Menu.Item color="red" leftSection={<IconLogout size={16} />} onClick={logout}>{t('common.logout')}</Menu.Item>
                 <Menu.Divider />
@@ -123,6 +134,7 @@ export function AppLayout() {
       </AppShell.Main>
       <ChangePasswordModal opened={pwOpen} onClose={pw.close} />
       <EmailPreferences opened={mailOpen} onClose={mailPrefs.close} />
+      <DevicesModal opened={devicesOpen} onClose={devices.close} />
     </AppShell>
   );
 }

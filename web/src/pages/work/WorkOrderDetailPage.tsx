@@ -134,7 +134,7 @@ export function WorkOrderDetailPage() {
                   )}
                   <Field label={t('wo.description')}>{w.description}</Field>
                 </Card>
-                {(w.completedAt || w.completionNotes) && (
+                {(w.completedAt || w.completionNotes || w.signatures.length > 0) && (
                   <Card>
                     <Title order={5} mb="sm">{t('wo.completed')}</Title>
                     <SimpleGrid cols={{ base: 1, sm: 2 }} spacing="md">
@@ -144,6 +144,16 @@ export function WorkOrderDetailPage() {
                       <Field label={t('wo.failureCode')}>{w.failureCode ? `${w.failureCode.code} · ${w.failureCode.name}` : null}</Field>
                       <Field label={t('wo.downtimeHours')}>{w.assetWasDown ? `${w.downtimeHours ?? 0} h` : t('common.no')}</Field>
                     </SimpleGrid>
+                    {w.signatures.length > 0 && (
+                      <Group mt="md" gap="lg" align="flex-end">
+                        {w.signatures.map((s) => (
+                          <Stack key={s.id} gap={2}>
+                            <img src={`/api/attachments/${s.id}/content`} alt={t('wo.signature')} style={{ height: 70, maxWidth: 220, objectFit: 'contain', background: '#fff', borderBottom: '1px solid var(--mantine-color-gray-5)' }} />
+                            <Text fz="xs" c="dimmed">{s.signedBy ? `${s.signedBy} · ` : ''}{fmtDateTime(s.createdAt)}</Text>
+                          </Stack>
+                        ))}
+                      </Group>
+                    )}
                   </Card>
                 )}
               </Stack>

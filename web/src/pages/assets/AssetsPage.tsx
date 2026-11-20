@@ -4,7 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
-import { IconFilterOff, IconPlus, IconSearch, IconEdit } from '@tabler/icons-react';
+import { IconFilterOff, IconPlus, IconSearch, IconEdit, IconQrcode } from '@tabler/icons-react';
+import { openLabels } from '@/pages/labels/LabelsPage';
 import { get, post } from '@/api/client';
 import { ASSET_STATUSES, CRITICALITIES, type AssetListItem, type Category, type CustomField, type Paged } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -125,6 +126,7 @@ export function AssetsPage() {
               <Menu.Dropdown>{CRITICALITIES.map((s) => <Menu.Item key={s} onClick={() => bulk.mutate({ criticality: s })}>{t(`criticality.${s}`)}</Menu.Item>)}</Menu.Dropdown></Menu>
             <Menu><Menu.Target><Button size="xs" variant="white">{t('assets.setCategory')}</Button></Menu.Target>
               <Menu.Dropdown mah={300} style={{ overflowY: 'auto' }}>{(cats ?? []).map((c) => <Menu.Item key={c.id} onClick={() => bulk.mutate({ categoryId: c.id })}>{c.name}</Menu.Item>)}</Menu.Dropdown></Menu>
+            <Button size="xs" variant="white" leftSection={<IconQrcode size={14} />} onClick={() => openLabels('asset', selected.map((s) => s.id))}>{t('labels.printLabels')}</Button>
             <Button size="xs" variant="subtle" onClick={() => setSelected([])}>{t('common.clear')}</Button>
           </Group>
         </Card>

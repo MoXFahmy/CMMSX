@@ -26,12 +26,14 @@ import { PoDetailPage, PoPrintPage } from './pages/purchasing/PoDetailPage';
 import { WorkOrderPrintPage } from './pages/work/WorkOrderPrintPage';
 import { ReportsPage, ReportViewPage } from './pages/reports/ReportsPage';
 
-import { TechCheckPage } from './tech/TechCheckPage';
+import { TechApp } from './tech/TechApp';
+import { LabelsPage } from './pages/labels/LabelsPage';
+import { QrRedirect } from './pages/QrRedirect';
 export function App() {
   const { me, loading } = useAuth();
   const location = useLocation();
   // The technician view's start page works without a connection or a sign-in check (the Android app opens here).
-  if (location.pathname === '/tech' || location.pathname.startsWith('/tech/')) return <TechCheckPage />;
+  if (location.pathname === '/tech' || location.pathname.startsWith('/tech/')) return <TechApp />;
   if (loading) return <Center h="100vh"><Loader /></Center>;
   if (!me) {
     return (
@@ -46,6 +48,8 @@ export function App() {
     <Routes>
       <Route path="purchasing/orders/:id/print" element={<PoPrintPage />} />
       <Route path="work-orders/:id/print" element={<WorkOrderPrintPage />} />
+      <Route path="labels" element={<LabelsPage />} />
+      <Route path="q/:type/:id" element={<QrRedirect />} />
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path="locations" element={<LocationsPage />} />

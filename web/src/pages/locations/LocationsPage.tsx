@@ -4,7 +4,8 @@ import { useDisclosure } from '@mantine/hooks';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { IconChevronRight, IconDots, IconEdit, IconFolderPlus, IconPlus, IconSearch, IconTrash, IconBox, IconArrowsMaximize, IconArrowsMinimize, IconMapPin } from '@tabler/icons-react';
+import { IconChevronRight, IconDots, IconEdit, IconFolderPlus, IconPlus, IconSearch, IconTrash, IconBox, IconArrowsMaximize, IconArrowsMinimize, IconMapPin, IconQrcode } from '@tabler/icons-react';
+import { openLabels } from '@/pages/labels/LabelsPage';
 import { DataTable } from 'mantine-datatable';
 import { del, get } from '@/api/client';
 import type { AssetListItem, HierarchyLocation, LocationDetail, Paged, Site } from '@/api/types';
@@ -246,6 +247,13 @@ function LocationPanel({ id, onSelect, onSelectSite, onEdit, onAddChild }: { id:
             <Stack gap={0}><Title order={3}>{l.name}</Title><Text c="dimmed" fz="sm">{t(`locationType.${l.type}`)} · {l.code}{!l.isActive && ` · ${t('common.inactive')}`}</Text></Stack></Group>
           <Group gap="xs" wrap="nowrap">
             <Button variant="default" component={Link} to={`/assets?locationId=${l.id}`} leftSection={<IconBox size={16} />}>{t('locations.viewAssets')}</Button>
+            <Menu position="bottom-end">
+              <Menu.Target><ActionIcon variant="default" size="lg" aria-label={t('labels.printLabels')}><IconQrcode size={16} /></ActionIcon></Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item onClick={() => openLabels('location', [l.id])}>{t('labels.printLabel')}</Menu.Item>
+                <Menu.Item onClick={() => openLabels('location', [l.id], true)}>{t('labels.withSubLocations')}</Menu.Item>
+              </Menu.Dropdown>
+            </Menu>
             {can(P.locationsManage) && (
               <Menu position="bottom-end">
                 <Menu.Target><ActionIcon variant="default" size="lg" aria-label={t('common.actions')}><IconDots size={16} /></ActionIcon></Menu.Target>

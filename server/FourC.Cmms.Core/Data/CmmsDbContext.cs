@@ -72,6 +72,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<StockLevel> StockLevels => Set<StockLevel>();
     /// <summary>Stock reserved for open work per part and store (a view; read-only).</summary>
     public DbSet<StockReservation> StockReservations => Set<StockReservation>();
+    public DbSet<UserSession> UserSessions => Set<UserSession>();
+    public DbSet<TechAction> TechActions => Set<TechAction>();
     public DbSet<StockTransaction> StockTransactions => Set<StockTransaction>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
@@ -233,6 +235,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.EntityType).HasMaxLength(50);
             e.Property(x => x.FileName).HasMaxLength(260);
             e.Property(x => x.ContentType).HasMaxLength(200);
+            e.Property(x => x.SignedBy).HasMaxLength(200);
             e.Property(x => x.StorageKey).HasMaxLength(400);
             e.HasIndex(x => new { x.TenantId, x.EntityType, x.EntityId });
         });
@@ -309,6 +312,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         {
             e.Property(x => x.Description).HasMaxLength(1000); e.Property(x => x.DoneBy).HasMaxLength(200); e.HasIndex(x => new { x.TenantId, x.WorkOrderId });
             e.Property(x => x.Reading).HasMaxLength(100); e.Property(x => x.Remarks).HasMaxLength(2000); e.Property(x => x.LegacyRef).HasMaxLength(200);
+            e.Property(x => x.UpdatedByName).HasMaxLength(200);
             e.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.TenantId, x.LegacyRef }).HasFilter("[LegacyRef] IS NOT NULL");
         });
@@ -469,6 +473,17 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Ignore(x => x.NetUnitPrice); e.Ignore(x => x.LineTotal);
         });
 
+        b.Entity<TechAction>(e =>
+        {
+            e.Property(x => x.Type).HasMaxLength(40); e.Property(x => x.Status).HasMaxLength(20); e.Property(x => x.Code).HasMaxLength(40);
+            e.Property(x => x.Message).HasMaxLength(2000);
+            e.HasIndex(x => new { x.TenantId, x.UserId, x.ClientId }).IsUnique();
+        });
+        b.Entity<UserSession>(e =>
+        {
+            e.Property(x => x.DeviceName).HasMaxLength(120);
+            e.HasIndex(x => new { x.TenantId, x.UserId });
+        });
         b.Entity<StockReservation>(e => { e.HasNoKey(); e.ToView(Reservations.ViewName); e.Property(x => x.Reserved).HasPrecision(18, 3); });
 
         // Tenant isolation (+ soft delete) for every tenant-owned entity.

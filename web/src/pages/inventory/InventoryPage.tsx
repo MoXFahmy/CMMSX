@@ -7,7 +7,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
-import { IconAlertTriangle, IconArrowsExchange, IconClipboardCheck, IconDownload, IconEdit, IconFilterOff, IconPackageExport, IconPackageImport, IconPlus, IconSearch, IconTrash, IconAdjustments, IconArrowBackUp } from '@tabler/icons-react';
+import { IconAlertTriangle, IconArrowsExchange, IconClipboardCheck, IconDownload, IconEdit, IconFilterOff, IconPackageExport, IconPackageImport, IconPlus, IconSearch, IconTrash, IconAdjustments, IconArrowBackUp, IconQrcode } from '@tabler/icons-react';
+import { openLabels } from '@/pages/labels/LabelsPage';
 import { del, get, post, put } from '@/api/client';
 import type { Lookup, Paged, PartListItem, StockTransactionItem, StockTransactionType, StoreItem } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -138,6 +139,7 @@ function PartsTab() {
       <BulkBar count={selected.length} onClear={() => setSelected([])}>
         <Button size="xs" variant="white" loading={bulk.isPending} onClick={() => bulk.mutate(true)}>{t('list.markActive')}</Button>
         <Button size="xs" variant="white" loading={bulk.isPending} onClick={() => bulk.mutate(false)}>{t('list.markInactive')}</Button>
+        <Button size="xs" variant="white" leftSection={<IconQrcode size={14} />} onClick={() => openLabels('part', selected.map((x) => x.id))}>{t('labels.printLabels')}</Button>
       </BulkBar>
       <Card p={0}>
         <DataTable<PartListItem>

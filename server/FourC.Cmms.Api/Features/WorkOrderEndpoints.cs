@@ -111,6 +111,9 @@ public static class WorkOrderEndpoints
             var transitions = WorkOrderWorkflow.NextStatuses(w.Status)
                 .Where(s => mine.Contains(Permissions.WorkOrdersExecute) && (!WorkOrderWorkflow.RequiresClosePermission(w.Status, s) || mine.Contains(Permissions.WorkOrdersClose)));
             var locationNotes = w.Location?.NotesToTechnician;
+            // Signatures captured on completion (technician view), for the work order page and the job card.
+            var signatures = await db.Attachments.AsNoTracking().Where(a => a.EntityType == "WorkOrder" && a.EntityId == id && a.IsSignature).OrderBy(a => a.CreatedAt)
+                .Select(a => new { a.Id, a.SignedBy, a.CreatedAt }).ToListAsync(ct);
             var planned = await Planning.LinesAsync(db, w, ct);
             var labour = Planning.Labour(w.Assignees.Select(a => (a.PlannedHours, a.Employee?.HourlyRate)).ToList(), w.EstimatedHours);
             var plannedParts = planned.Sum(p => p.PlannedCost);
@@ -127,8 +130,8 @@ public static class WorkOrderEndpoints
                 w.PlannedStart, w.DueDate, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 LocationNotesToTechnician = locationNotes, Request = request, Pm = pm, w.PmDueDate,
                 Assets = roundAssets,
-                Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks }),
-                Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned,
+                Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName }),
+                Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned, Signatures = signatures,
                 Planned = new { LaborHours = labour.Hours, LaborCost = labour.Cost, PartsCost = plannedParts, TotalCost = labour.Cost + plannedParts },
                 Totals = new
                 {
@@ -280,13 +283,7 @@ public static class WorkOrderEndpoints
                 .When(input.Remarks is { Length: > 2000 }, "remarks", "Remarks can be at most 2000 characters.");
             if (!v.IsValid) return v.Problem();
             if (input.Description.Clean() is { } d) t.Description = d.Length > 1000 ? d[..1000] : d;
-            if (input.Reading is not null) t.Reading = input.Reading.Clean(); // an empty string clears it
-            if (input.Remarks is not null) t.Remarks = input.Remarks.Clean();
-            if (input.IsDone is { } done && done != t.IsDone)
-            {
-                t.IsDone = done; t.DoneAt = done ? DateTimeOffset.UtcNow : null; t.DoneBy = done ? ctx.UserName : null;
-                if (done) await AutoStartAsync(db, ctx, id, "Started automatically: checklist step done", ct);
-            }
+            await ApplyTaskChangeAsync(db, ctx, id, t, input.IsDone, input.Reading, input.Remarks, DateTimeOffset.UtcNow, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { t.Id, t.IsDone });
         }).RequirePermission(Permissions.WorkOrdersExecute);
@@ -302,14 +299,10 @@ public static class WorkOrderEndpoints
         g.MapPost("/{id:guid}/labor", async (Guid id, LaborInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             await RequireOpenAsync(db, id, ct);
-            var (v, emp) = await ValidateLaborAsync(input, db, ct);
+            var (v, l) = await AddLaborAsync(db, ctx, id, input, ct);
             if (!v.IsValid) return v.Problem();
-            var l = new WorkOrderLabor { WorkOrderId = id, EmployeeId = emp!.Id, WorkDate = input.WorkDate, Hours = input.Hours, OvertimeHours = input.OvertimeHours,
-                Rate = emp.HourlyRate ?? 0, OvertimeRate = emp.OvertimeRate ?? emp.HourlyRate ?? 0, Notes = input.Notes.Clean() };
-            db.WorkOrderLabor.Add(l);
-            await AutoStartAsync(db, ctx, id, "Started automatically: labour logged", ct);
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { l.Id });
+            return Results.Ok(new { l!.Id });
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
         g.MapPut("/{id:guid}/labor/{laborId:guid}", async (Guid id, Guid laborId, LaborInput input, CmmsDbContext db, CancellationToken ct) =>
@@ -364,9 +357,8 @@ public static class WorkOrderEndpoints
         g.MapPost("/{id:guid}/comments", async (Guid id, CommentInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             if (!await db.WorkOrders.AnyAsync(w => w.Id == id, ct)) return Results.NotFound();
-            var v = new Validator().Required("body", input.Body, "Comment", 4000);
+            var v = AddComment(db, ctx, id, input.Body, DateTimeOffset.UtcNow);
             if (!v.IsValid) return v.Problem();
-            db.WorkOrderComments.Add(new WorkOrderComment { WorkOrderId = id, Body = input.Body.Trim(), UserId = ctx.UserId, UserName = ctx.UserName, CreatedAt = DateTimeOffset.UtcNow });
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { ok = true });
         }).RequirePermission(Permissions.WorkOrdersView);
@@ -411,12 +403,13 @@ public static class WorkOrderEndpoints
         w.HoldReason = input.Status == WorkOrderStatus.OnHold ? input.HoldReason : null;
         switch (input.Status)
         {
-            case WorkOrderStatus.InProgress: w.StartedAt ??= now; w.CompletedAt = null; w.ClosedAt = null; break;
+            case WorkOrderStatus.InProgress: w.StartedAt ??= input.ActualStart ?? now; w.CompletedAt = null; w.ClosedAt = null; break;
             case WorkOrderStatus.Completed:
                 // Like 4CSQL's "Calculate Dates": default actual start to when work started, else the earliest labour entry.
                 var firstLabor = await db.WorkOrderLabor.Where(l => l.WorkOrderId == w.Id).OrderBy(l => l.WorkDate).Select(l => (DateOnly?)l.WorkDate).FirstOrDefaultAsync(ct);
-                w.StartedAt = input.ActualStart ?? w.StartedAt ?? (firstLabor is { } fl ? new DateTimeOffset(fl.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) : now);
+                w.StartedAt = input.ActualStart ?? w.StartedAt ?? (firstLabor is { } fl ? new DateTimeOffset(fl.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) : input.ActualEnd ?? now);
                 w.CompletedAt = input.ActualEnd ?? now;
+                if (w.StartedAt > w.CompletedAt) w.StartedAt = w.CompletedAt; // a derived start never comes after the end
                 w.PreventionNotes = input.PreventionNotes.Clean() ?? w.PreventionNotes;
                 w.CompletionNotes = input.CompletionNotes.Clean() ?? w.CompletionNotes;
                 w.CauseNotes = input.CauseNotes.Clean() ?? w.CauseNotes;
@@ -498,7 +491,7 @@ public static class WorkOrderEndpoints
     }
 
     /// <summary>"Start work automatically" setting: an Open work order moves to In progress when work is first recorded on it.</summary>
-    private static async Task AutoStartAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, string reason, CancellationToken ct)
+    private static async Task AutoStartAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, string reason, CancellationToken ct, DateTimeOffset? at = null)
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         if (!settings.AutoStartWork) return;
@@ -510,7 +503,7 @@ public static class WorkOrderEndpoints
             WorkOrderId = w.Id, FromStatus = w.Status, ToStatus = WorkOrderStatus.InProgress, Note = reason, ChangedAt = now, ChangedById = ctx.UserId, ChangedByName = ctx.UserName,
         });
         w.Status = WorkOrderStatus.InProgress;
-        w.StartedAt ??= now;
+        w.StartedAt ??= at ?? now; // work recorded offline started when it was done
     }
 
     public static async Task<Validator> ValidateAsync(WorkOrderInput i, CmmsDbContext db, CancellationToken ct)
@@ -564,6 +557,44 @@ public static class WorkOrderEndpoints
         var want = (ids ?? []).Distinct().ToHashSet();
         w.Assignees.RemoveAll(a => !want.Contains(a.EmployeeId));
         foreach (var id in want.Where(id => w.Assignees.All(a => a.EmployeeId != id))) w.Assignees.Add(new WorkOrderAssignee { WorkOrderId = w.Id, EmployeeId = id });
+    }
+
+    /// <summary>Logs labour on a work order at the employee's current rates (snapshotted); logging labour starts open work.</summary>
+    internal static async Task<(Validator V, WorkOrderLabor? Labor)> AddLaborAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, LaborInput input, CancellationToken ct,
+        DateTimeOffset? at = null)
+    {
+        var (v, emp) = await ValidateLaborAsync(input, db, ct);
+        if (!v.IsValid) return (v, null);
+        var l = new WorkOrderLabor { WorkOrderId = workOrderId, EmployeeId = emp!.Id, WorkDate = input.WorkDate, Hours = input.Hours, OvertimeHours = input.OvertimeHours,
+            Rate = emp.HourlyRate ?? 0, OvertimeRate = emp.OvertimeRate ?? emp.HourlyRate ?? 0, Notes = input.Notes.Clean() };
+        db.WorkOrderLabor.Add(l);
+        await AutoStartAsync(db, ctx, workOrderId, "Started automatically: labour logged", ct, at);
+        return (v, l);
+    }
+
+    internal static Validator AddComment(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, string? body, DateTimeOffset at)
+    {
+        var v = new Validator().Required("body", body, "Comment", 4000);
+        if (v.IsValid) db.WorkOrderComments.Add(new WorkOrderComment { WorkOrderId = workOrderId, Body = body!.Trim(), UserId = ctx.UserId, UserName = ctx.UserName, CreatedAt = at });
+        return v;
+    }
+
+    /// <summary>
+    /// Applies a tick, reading or remarks to a checklist step (the office page and the technician app's queued changes),
+    /// recording who changed it and when; ticking a step starts open work.
+    /// </summary>
+    internal static async Task ApplyTaskChangeAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, WorkOrderTask t, bool? isDone, string? reading, string? remarks,
+        DateTimeOffset at, CancellationToken ct)
+    {
+        var changed = false;
+        if (reading is not null && reading.Clean() != t.Reading) { t.Reading = reading.Clean(); changed = true; } // an empty string clears it
+        if (remarks is not null && remarks.Clean() != t.Remarks) { t.Remarks = remarks.Clean(); changed = true; }
+        if (isDone is { } done && done != t.IsDone)
+        {
+            t.IsDone = done; t.DoneAt = done ? at : null; t.DoneBy = done ? ctx.UserName : null; changed = true;
+            if (done) await AutoStartAsync(db, ctx, workOrderId, "Started automatically: checklist step done", ct, at);
+        }
+        if (changed) { t.UpdatedAt = at; t.UpdatedById = ctx.UserId; t.UpdatedByName = ctx.UserName; }
     }
 
     private static async Task RequireOpenAsync(CmmsDbContext db, Guid id, CancellationToken ct)

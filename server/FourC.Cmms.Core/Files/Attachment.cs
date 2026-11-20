@@ -13,6 +13,10 @@ public class Attachment : Entity, ITenantOwned, IAuditable
     public required string StorageKey { get; set; }
     public string? Description { get; set; }
     public bool IsPrimaryImage { get; set; }
+    /// <summary>A signature captured on completion (shown on the work order and printed on the job card).</summary>
+    public bool IsSignature { get; set; }
+    /// <summary>Who signed (the technician, or the customer/supervisor's name).</summary>
+    public string? SignedBy { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public Guid? CreatedById { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
