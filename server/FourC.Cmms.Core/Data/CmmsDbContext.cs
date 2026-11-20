@@ -73,6 +73,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     /// <summary>Stock reserved for open work per part and store (a view; read-only).</summary>
     public DbSet<StockReservation> StockReservations => Set<StockReservation>();
     public DbSet<UserSession> UserSessions => Set<UserSession>();
+    public DbSet<TechAction> TechActions => Set<TechAction>();
     public DbSet<StockTransaction> StockTransactions => Set<StockTransaction>();
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
@@ -472,6 +473,12 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Ignore(x => x.NetUnitPrice); e.Ignore(x => x.LineTotal);
         });
 
+        b.Entity<TechAction>(e =>
+        {
+            e.Property(x => x.Type).HasMaxLength(40); e.Property(x => x.Status).HasMaxLength(20); e.Property(x => x.Code).HasMaxLength(40);
+            e.Property(x => x.Message).HasMaxLength(2000);
+            e.HasIndex(x => new { x.TenantId, x.UserId, x.ClientId }).IsUnique();
+        });
         b.Entity<UserSession>(e =>
         {
             e.Property(x => x.DeviceName).HasMaxLength(120);

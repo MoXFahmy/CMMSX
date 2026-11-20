@@ -51,6 +51,26 @@ namespace FourC.Cmms.Core.Data.Migrations
                 nullable: true);
 
             migrationBuilder.CreateTable(
+                name: "TechActions",
+                columns: table => new
+                {
+                    Id = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    TenantId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    UserId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    ClientId = table.Column<Guid>(type: "uniqueidentifier", nullable: false),
+                    Type = table.Column<string>(type: "nvarchar(40)", maxLength: 40, nullable: false),
+                    Status = table.Column<string>(type: "nvarchar(20)", maxLength: 20, nullable: false),
+                    Code = table.Column<string>(type: "nvarchar(40)", maxLength: 40, nullable: true),
+                    Message = table.Column<string>(type: "nvarchar(2000)", maxLength: 2000, nullable: true),
+                    At = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
+                    ReceivedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false)
+                },
+                constraints: table =>
+                {
+                    table.PrimaryKey("PK_TechActions", x => x.Id);
+                });
+
+            migrationBuilder.CreateTable(
                 name: "UserSessions",
                 columns: table => new
                 {
@@ -68,6 +88,12 @@ namespace FourC.Cmms.Core.Data.Migrations
                 });
 
             migrationBuilder.CreateIndex(
+                name: "IX_TechActions_TenantId_UserId_ClientId",
+                table: "TechActions",
+                columns: new[] { "TenantId", "UserId", "ClientId" },
+                unique: true);
+
+            migrationBuilder.CreateIndex(
                 name: "IX_UserSessions_TenantId_UserId",
                 table: "UserSessions",
                 columns: new[] { "TenantId", "UserId" });
@@ -76,6 +102,9 @@ namespace FourC.Cmms.Core.Data.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
+            migrationBuilder.DropTable(
+                name: "TechActions");
+
             migrationBuilder.DropTable(
                 name: "UserSessions");
 

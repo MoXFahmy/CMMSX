@@ -296,14 +296,10 @@ public static class WorkOrderEndpoints
         g.MapPost("/{id:guid}/labor", async (Guid id, LaborInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             await RequireOpenAsync(db, id, ct);
-            var (v, emp) = await ValidateLaborAsync(input, db, ct);
+            var (v, l) = await AddLaborAsync(db, ctx, id, input, ct);
             if (!v.IsValid) return v.Problem();
-            var l = new WorkOrderLabor { WorkOrderId = id, EmployeeId = emp!.Id, WorkDate = input.WorkDate, Hours = input.Hours, OvertimeHours = input.OvertimeHours,
-                Rate = emp.HourlyRate ?? 0, OvertimeRate = emp.OvertimeRate ?? emp.HourlyRate ?? 0, Notes = input.Notes.Clean() };
-            db.WorkOrderLabor.Add(l);
-            await AutoStartAsync(db, ctx, id, "Started automatically: labour logged", ct);
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { l.Id });
+            return Results.Ok(new { l!.Id });
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
         g.MapPut("/{id:guid}/labor/{laborId:guid}", async (Guid id, Guid laborId, LaborInput input, CmmsDbContext db, CancellationToken ct) =>
@@ -358,9 +354,8 @@ public static class WorkOrderEndpoints
         g.MapPost("/{id:guid}/comments", async (Guid id, CommentInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             if (!await db.WorkOrders.AnyAsync(w => w.Id == id, ct)) return Results.NotFound();
-            var v = new Validator().Required("body", input.Body, "Comment", 4000);
+            var v = AddComment(db, ctx, id, input.Body, DateTimeOffset.UtcNow);
             if (!v.IsValid) return v.Problem();
-            db.WorkOrderComments.Add(new WorkOrderComment { WorkOrderId = id, Body = input.Body.Trim(), UserId = ctx.UserId, UserName = ctx.UserName, CreatedAt = DateTimeOffset.UtcNow });
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { ok = true });
         }).RequirePermission(Permissions.WorkOrdersView);
@@ -558,6 +553,25 @@ public static class WorkOrderEndpoints
         var want = (ids ?? []).Distinct().ToHashSet();
         w.Assignees.RemoveAll(a => !want.Contains(a.EmployeeId));
         foreach (var id in want.Where(id => w.Assignees.All(a => a.EmployeeId != id))) w.Assignees.Add(new WorkOrderAssignee { WorkOrderId = w.Id, EmployeeId = id });
+    }
+
+    /// <summary>Logs labour on a work order at the employee's current rates (snapshotted); logging labour starts open work.</summary>
+    internal static async Task<(Validator V, WorkOrderLabor? Labor)> AddLaborAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, LaborInput input, CancellationToken ct)
+    {
+        var (v, emp) = await ValidateLaborAsync(input, db, ct);
+        if (!v.IsValid) return (v, null);
+        var l = new WorkOrderLabor { WorkOrderId = workOrderId, EmployeeId = emp!.Id, WorkDate = input.WorkDate, Hours = input.Hours, OvertimeHours = input.OvertimeHours,
+            Rate = emp.HourlyRate ?? 0, OvertimeRate = emp.OvertimeRate ?? emp.HourlyRate ?? 0, Notes = input.Notes.Clean() };
+        db.WorkOrderLabor.Add(l);
+        await AutoStartAsync(db, ctx, workOrderId, "Started automatically: labour logged", ct);
+        return (v, l);
+    }
+
+    internal static Validator AddComment(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, string? body, DateTimeOffset at)
+    {
+        var v = new Validator().Required("body", body, "Comment", 4000);
+        if (v.IsValid) db.WorkOrderComments.Add(new WorkOrderComment { WorkOrderId = workOrderId, Body = body!.Trim(), UserId = ctx.UserId, UserName = ctx.UserName, CreatedAt = at });
+        return v;
     }
 
     /// <summary>

@@ -339,6 +339,17 @@ public static class PmEndpoints
         {
             var meter = await db.Meters.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (meter is null) return Results.NotFound();
+            var (v, generated) = await RecordReadingAsync(db, ctx, mail, meter, input, ct);
+            return v.IsValid ? Results.Ok(new { ok = true, generated }) : v.Problem();
+        }).RequirePermission(Permissions.MetersRecord);
+    }
+
+    /// <summary>Records a meter reading (with the spike guard unless confirmed) and runs the meter's PM schedules.</summary>
+    internal static async Task<(Validator V, List<PmGenerator.Result> Generated)> RecordReadingAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, Meter meter,
+        ReadingInput input, CancellationToken ct)
+    {
+        {
+            var id = meter.Id;
             var at = input.ReadAt ?? DateTimeOffset.UtcNow;
             var v = new Validator().When(at > DateTimeOffset.UtcNow.AddMinutes(10), "readAt", "A reading cannot be in the future.").MaxLength("note", input.Note, "Note", 1000);
             // Spike guard (legacy "Max Daily Increment"): ask for confirmation instead of silently accepting a probable typo.
@@ -349,13 +360,12 @@ public static class PmEndpoints
                 if (meter.MaxDailyIncrement is { } max && input.Value - last > max * days)
                     v.Add("value", $"An increase of {input.Value - last:0.###} {meter.Unit} in {days:0.#} day(s) exceeds the expected maximum ({max:0.###}/day). Confirm to save it anyway.");
             }
-            if (!v.IsValid) return v.Problem();
+            if (!v.IsValid) return (v, []);
             db.MeterReadings.Add(new MeterReading { MeterId = id, Value = input.Value, ReadAt = at, Note = input.Note.Clean(), ByName = ctx.UserName });
             if (meter.LastReadAt is null || at >= meter.LastReadAt) { meter.CurrentReading = input.Value; meter.LastReadAt = at; }
             await db.SaveChangesAsync(ct);
-            var generated = meter.IsActive ? await PmGenerator.OnReadingAsync(db, ctx, meter, input.Value, ct, mail) : [];
-            return Results.Ok(new { ok = true, generated });
-        }).RequirePermission(Permissions.MetersRecord);
+            return (v, meter.IsActive ? await PmGenerator.OnReadingAsync(db, ctx, meter, input.Value, ct, mail) : []);
+        }
     }
 
     private static async Task<Validator> ValidateTaskAsync(TaskInput i, Guid? id, CmmsDbContext db, CancellationToken ct)

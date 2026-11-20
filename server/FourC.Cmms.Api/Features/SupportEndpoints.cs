@@ -179,7 +179,21 @@ public static class AttachmentEndpoints
 
     /// <summary>The stored type comes from the file's extension, not from the browser; failing that, the browser's
     /// type is kept only when it is safe to show in place.</summary>
-    private static string ContentTypeOf(string fileName, string? claimed)
+    /// <summary>Stores an uploaded file and adds its attachment record (not yet saved). The type follows the file's extension.</summary>
+    internal static async Task<Attachment> SaveAttachmentAsync(CmmsDbContext db, IFileStorage storage, string entityType, Guid entityId, IFormFile file, CancellationToken ct)
+    {
+        var fileName = Path.GetFileName(file.FileName);
+        var att = new Attachment
+        {
+            EntityType = entityType, EntityId = entityId, FileName = fileName, ContentType = ContentTypeOf(fileName, file.ContentType), Size = file.Length, StorageKey = "",
+        };
+        att.StorageKey = $"{db.CurrentTenantId:N}/{entityType.ToLowerInvariant()}/{entityId:N}/{att.Id:N}";
+        await using (var s = file.OpenReadStream()) await storage.SaveAsync(att.StorageKey, s, ct);
+        db.Attachments.Add(att);
+        return att;
+    }
+
+    internal static string ContentTypeOf(string fileName, string? claimed)
     {
         if (TypesByExtension.TryGetContentType(fileName, out var type)) return type;
         var media = MediaType(claimed);
@@ -225,15 +239,7 @@ public static class AttachmentEndpoints
             {
                 if (file.Length == 0) continue;
                 if (file.Length > MaxSize) throw new DomainException($"{file.FileName} is larger than 25 MB.");
-                var fileName = Path.GetFileName(file.FileName);
-                var att = new Attachment
-                {
-                    EntityType = entityType, EntityId = entityId, FileName = fileName, ContentType = ContentTypeOf(fileName, file.ContentType),
-                    Size = file.Length, StorageKey = "",
-                };
-                att.StorageKey = $"{db.CurrentTenantId:N}/{entityType.ToLowerInvariant()}/{entityId:N}/{att.Id:N}";
-                await using (var s = file.OpenReadStream()) await storage.SaveAsync(att.StorageKey, s, ct);
-                db.Attachments.Add(att);
+                var att = await SaveAttachmentAsync(db, storage, entityType, entityId, file, ct);
                 saved.Add(new { att.Id, att.FileName });
             }
             await db.SaveChangesAsync(ct);

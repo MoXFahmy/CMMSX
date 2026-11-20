@@ -142,6 +142,7 @@ api.MapEmailEndpoints();
 api.MapViewEndpoints();
 api.MapDeviceEndpoints();
 api.MapTechEndpoints();
+api.MapTechActions();
 
 app.MapFallbackToFile("index.html");
 app.Run();
