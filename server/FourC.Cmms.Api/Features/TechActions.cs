@@ -259,7 +259,7 @@ public static partial class TechEndpoints
         var completed = p.Status == WorkOrderStatus.Completed;
         var input = new WorkOrderEndpoints.StatusInput(p.Status, p.HoldReason, p.Note, p.CompletionNotes, p.CauseNotes, p.FailureCodeId, p.AssetWasDown, p.DowntimeHours,
             // When the technician started (offline) or, on completion, never later than when they finished.
-            ActualStart: p.Status == WorkOrderStatus.InProgress || (completed && w.StartedAt > at) ? at : null, ActualEnd: completed ? at : null);
+            ActualStart: p.Status == WorkOrderStatus.InProgress || (completed && w.StartedAt > at) ? at : null, ActualEnd: completed ? at : null, At: at);
         Ensure(await WorkOrderEndpoints.ChangeStatusAsync(db, ctx, mail, settings, w, input, ct));
         await db.SaveChangesAsync(ct);
         return new Answer("done");

@@ -15,9 +15,10 @@ public static class WorkOrderEndpoints
 {
     public sealed record WorkOrderInput(string Title, string? Description, WorkType Type, WorkPriority Priority, Guid SiteId, Guid? LocationId, Guid? AssetId,
         Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? PlannedStart, DateOnly? DueDate, decimal? EstimatedHours, List<string>? Tasks, string? RowVersion = null,
-        string? RequestedBy = null, Guid? CopyPlanFromId = null);
+        string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
-        Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null);
+        Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
+        DateTimeOffset? At = null);
     public sealed record BulkInput(Guid[]? Ids, StatusInput? Status, WorkPriority? Priority, Guid[]? AddAssigneeIds);
     public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null);
     public sealed record LaborInput(Guid EmployeeId, DateOnly WorkDate, decimal Hours, decimal OvertimeHours, string? Notes);
@@ -127,7 +128,7 @@ public static class WorkOrderEndpoints
                 w.RequestedBy, w.PreventionNotes,
                 w.TradeId, TradeName = w.Trade?.Name, w.FailureCodeId, FailureCode = w.FailureCode is null ? null : new { w.FailureCode.Code, w.FailureCode.Name },
                 Assignees = w.Assignees.Select(a => new { a.EmployeeId, a.Employee!.FullName, a.Employee.Code, a.PlannedHours, a.Employee.HourlyRate }),
-                w.PlannedStart, w.DueDate, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
+                w.PlannedStart, w.DueDate, w.DueAt, w.DueFromTarget, w.StartBy, w.RespondedAt, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 LocationNotesToTechnician = locationNotes, Request = request, Pm = pm, w.PmDueDate,
                 Assets = roundAssets,
                 Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName }),
@@ -166,7 +167,11 @@ public static class WorkOrderEndpoints
             var v = await ValidateAsync(input, db, ct);
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(w).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
+            var priorityBefore = w.Priority;
             Apply(w, input);
+            var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+            var raisedAt = w.WorkRequestId is { } rid ? await db.WorkRequests.Where(r => r.Id == rid).Select(r => (DateTimeOffset?)r.CreatedAt).FirstOrDefaultAsync(ct) ?? w.CreatedAt : w.CreatedAt;
+            Deadlines.OnUpdate(w, input.DueAt, input.DueDate, priorityBefore, settings, raisedAt);
             var before = w.Assignees.Select(a => a.EmployeeId).ToHashSet();
             SyncAssignees(w, input.AssigneeIds);
             await mail.AssigneesAddedAsync(db, ctx, w, w.Assignees.Select(a => a.EmployeeId).Where(e => !before.Contains(e)).ToList(), ct);
@@ -399,6 +404,8 @@ public static class WorkOrderEndpoints
             WorkOrderId = w.Id, FromStatus = w.Status, ToStatus = input.Status, HoldReason = input.Status == WorkOrderStatus.OnHold ? input.HoldReason : null,
             Note = input.Note.Clean(), ChangedAt = now, ChangedById = ctx.UserId, ChangedByName = ctx.UserName,
         });
+        // Leaving Open (start, hold or straight to completed) is the response; the phone's time for offline work.
+        if (input.Status != WorkOrderStatus.Open) w.RespondedAt ??= input.At ?? now;
         w.Status = input.Status;
         w.HoldReason = input.Status == WorkOrderStatus.OnHold ? input.HoldReason : null;
         switch (input.Status)
@@ -490,6 +497,13 @@ public static class WorkOrderEndpoints
         return q;
     }
 
+    /// <summary>The work order's first action (a tick or hours) is its response: the earliest one counts.</summary>
+    internal static async Task MarkRespondedAsync(CmmsDbContext db, Guid workOrderId, DateTimeOffset? at, CancellationToken ct)
+    {
+        var w = await db.WorkOrders.FirstOrDefaultAsync(x => x.Id == workOrderId, ct);
+        if (w is not null) w.RespondedAt ??= at ?? DateTimeOffset.UtcNow;
+    }
+
     /// <summary>"Start work automatically" setting: an Open work order moves to In progress when work is first recorded on it.</summary>
     private static async Task AutoStartAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, string reason, CancellationToken ct, DateTimeOffset? at = null)
     {
@@ -511,7 +525,7 @@ public static class WorkOrderEndpoints
         var v = new Validator().Required("title", i.Title, "Title", 300)
             .When(!Enum.IsDefined(i.Type), "type", "Choose a work type.").When(!Enum.IsDefined(i.Priority), "priority", "Choose a priority.")
             .When(i.EstimatedHours < 0, "estimatedHours", "Estimate cannot be negative.")
-            .When(i.PlannedStart is not null && i.DueDate is not null && i.DueDate < i.PlannedStart, "dueDate", "Due date cannot be before the planned start.");
+            .When(i.PlannedStart is { } ps && (i.DueAt is { } da ? DateOnly.FromDateTime(da.UtcDateTime) : i.DueDate) is { } dd && dd < ps, "dueDate", "Due date cannot be before the planned start.");
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct)) v.Add("locationId", "Location must belong to the selected site.");
         if (i.AssetId is not null && !await db.Assets.AnyAsync(a => a.Id == i.AssetId && a.SiteId == i.SiteId, ct)) v.Add("assetId", "Asset must belong to the selected site.");
@@ -522,7 +536,7 @@ public static class WorkOrderEndpoints
     }
 
     public static async Task<WorkOrder> CreateAsync(CmmsDbContext db, ITenantContext ctx, WorkOrderInput input, Guid? requestId, CancellationToken ct,
-        Action<WorkOrder>? configure = null, string? note = null, EmailOutbox? mail = null)
+        Action<WorkOrder>? configure = null, string? note = null, EmailOutbox? mail = null, bool applyTargets = true, DateTimeOffset? raisedAt = null)
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var number = await Numbering.NextAsync(db, "WorkOrder", settings.WorkOrderNumberPrefix, 5,
@@ -532,6 +546,7 @@ public static class WorkOrderEndpoints
         if (input.AssetId is not null && input.LocationId is null)
             input = input with { LocationId = await db.Assets.Where(a => a.Id == input.AssetId).Select(a => a.LocationId).FirstOrDefaultAsync(ct) };
         Apply(w, input);
+        Deadlines.OnCreate(w, input.DueAt, input.DueDate, settings, raisedAt ?? DateTimeOffset.UtcNow, requestId is not null, applyTargets);
         SyncAssignees(w, input.AssigneeIds);
         configure?.Invoke(w);
         db.WorkOrders.Add(w);
@@ -548,7 +563,7 @@ public static class WorkOrderEndpoints
     private static void Apply(WorkOrder w, WorkOrderInput i)
     {
         w.Title = i.Title.Trim(); w.Description = i.Description.Clean(); w.Type = i.Type; w.Priority = i.Priority; w.SiteId = i.SiteId; w.LocationId = i.LocationId;
-        w.AssetId = i.AssetId; w.TradeId = i.TradeId; w.PlannedStart = i.PlannedStart; w.DueDate = i.DueDate; w.EstimatedHours = i.EstimatedHours;
+        w.AssetId = i.AssetId; w.TradeId = i.TradeId; w.PlannedStart = i.PlannedStart; w.EstimatedHours = i.EstimatedHours; // deadlines: Deadlines
         w.RequestedBy = i.RequestedBy.Clean() is { } rb && rb.Length > 200 ? rb[..200] : i.RequestedBy.Clean();
     }
 
@@ -569,6 +584,7 @@ public static class WorkOrderEndpoints
             Rate = emp.HourlyRate ?? 0, OvertimeRate = emp.OvertimeRate ?? emp.HourlyRate ?? 0, Notes = input.Notes.Clean() };
         db.WorkOrderLabor.Add(l);
         await AutoStartAsync(db, ctx, workOrderId, "Started automatically: labour logged", ct, at);
+        await MarkRespondedAsync(db, workOrderId, at, ct);
         return (v, l);
     }
 
@@ -592,7 +608,11 @@ public static class WorkOrderEndpoints
         if (isDone is { } done && done != t.IsDone)
         {
             t.IsDone = done; t.DoneAt = done ? at : null; t.DoneBy = done ? ctx.UserName : null; changed = true;
-            if (done) await AutoStartAsync(db, ctx, workOrderId, "Started automatically: checklist step done", ct, at);
+            if (done)
+            {
+                await AutoStartAsync(db, ctx, workOrderId, "Started automatically: checklist step done", ct, at);
+                await MarkRespondedAsync(db, workOrderId, at, ct);
+            }
         }
         if (changed) { t.UpdatedAt = at; t.UpdatedById = ctx.UserId; t.UpdatedByName = ctx.UserName; }
     }

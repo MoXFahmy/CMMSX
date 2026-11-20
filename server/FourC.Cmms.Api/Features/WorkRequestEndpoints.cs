@@ -14,7 +14,7 @@ public static class WorkRequestEndpoints
 {
     public sealed record RequestInput(string Title, string? Description, Guid SiteId, Guid? LocationId, Guid? AssetId, WorkPriority Priority, WorkType Type,
         string? RequesterName, string? RequesterEmail, string? RequesterPhone, DateOnly? RequiredBy);
-    public sealed record ApproveInput(WorkType? Type, WorkPriority? Priority, Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? DueDate, string? Note);
+    public sealed record ApproveInput(WorkType? Type, WorkPriority? Priority, Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? DueDate, string? Note, DateTimeOffset? DueAt = null);
     public sealed record DecisionInput(string? Note);
 
     private static readonly Dictionary<string, Expression<Func<WorkRequest, object?>>> SortMap = new(StringComparer.OrdinalIgnoreCase)
@@ -82,7 +82,7 @@ public static class WorkRequestEndpoints
             {
                 r.Id, r.Number, r.Title, r.Description, r.Status, r.Priority, r.Type, r.SiteId, Site = new { r.Site!.Id, r.Site.Name }, r.LocationId, LocationName = r.Location?.Name,
                 r.AssetId, Asset = r.Asset is null ? null : new { r.Asset.Id, r.Asset.AssetNumber, r.Asset.Name }, r.RequesterName, r.RequesterEmail, r.RequesterPhone,
-                r.RequiredBy, r.DecisionNote, r.DecidedAt, DecidedBy = r.DecidedById is { } d ? users.GetValueOrDefault(d) : null, WorkOrder = wo,
+                r.RequiredBy, r.RespondBy, r.DueAt, r.DueFromTarget, r.DecisionNote, r.DecidedAt, DecidedBy = r.DecidedById is { } d ? users.GetValueOrDefault(d) : null, WorkOrder = wo,
                 r.CreatedAt, CreatedBy = r.CreatedById is { } c ? users.GetValueOrDefault(c) : null, CanCancel = r.Status == WorkRequestStatus.New && r.CreatedById == ctx.UserId,
             });
         }).RequireAuthorization();
@@ -99,13 +99,17 @@ public static class WorkRequestEndpoints
             var r = await db.WorkRequests.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) return Results.NotFound();
             if (r.Status != WorkRequestStatus.New) throw new DomainException("Only new requests can be approved.");
-            var woInput = new WorkOrderEndpoints.WorkOrderInput(r.Title, r.Description, input.Type ?? r.Type, input.Priority ?? r.Priority, r.SiteId, r.LocationId, r.AssetId,
-                input.TradeId, input.AssigneeIds, null, input.DueDate ?? r.RequiredBy, null, null);
+            var priority = input.Priority ?? r.Priority;
+            var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+            // The clock started when the requester asked: the deadline counts from the request, even with a new priority.
+            var (dueAt, fromTarget) = Deadlines.OnApprove(r, priority, input.DueAt, input.DueDate, settings);
+            var woInput = new WorkOrderEndpoints.WorkOrderInput(r.Title, r.Description, input.Type ?? r.Type, priority, r.SiteId, r.LocationId, r.AssetId,
+                input.TradeId, input.AssigneeIds, null, null, null, null, DueAt: dueAt);
             var v = await WorkOrderEndpoints.ValidateAsync(woInput, db, ct);
             if (!v.IsValid) return v.Problem();
             var wo = await db.InTransactionAsync(async token =>
             {
-                var created = await WorkOrderEndpoints.CreateAsync(db, ctx, woInput, r.Id, token, mail: mail);
+                var created = await WorkOrderEndpoints.CreateAsync(db, ctx, woInput, r.Id, token, w => w.DueFromTarget = fromTarget, mail: mail, raisedAt: r.CreatedAt);
                 r.Status = WorkRequestStatus.Approved; r.WorkOrderId = created.Id; r.DecisionNote = input.Note.Clean(); r.DecidedAt = DateTimeOffset.UtcNow; r.DecidedById = ctx.UserId;
                 await mail.RequestDecidedAsync(db, ctx, r, created.Number, token);
                 await db.SaveChangesAsync(token);
@@ -167,6 +171,8 @@ public static class WorkRequestEndpoints
             RequesterName = input.RequesterName.Clean() ?? me?.FullName, RequesterEmail = input.RequesterEmail.Clean() ?? me?.Email, RequesterPhone = input.RequesterPhone.Clean() ?? me?.Phone,
         };
         if (r.AssetId is not null && r.LocationId is null) r.LocationId = await db.Assets.Where(a => a.Id == r.AssetId).Select(a => a.LocationId).FirstOrDefaultAsync(ct);
+        r.CreatedAt = DateTimeOffset.UtcNow;
+        Deadlines.OnCreate(r, settings, r.CreatedAt);
         db.WorkRequests.Add(r);
         await mail.RequestSubmittedAsync(db, ctx, r, ct);
         await db.SaveChangesAsync(ct);

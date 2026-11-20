@@ -38,6 +38,11 @@ public class WorkRequest : TenantEntity
     public string? RequesterEmail { get; set; }
     public string? RequesterPhone { get; set; }
     public DateOnly? RequiredBy { get; set; }
+    /// <summary>Response deadline (from the priority's target); responded = <see cref="DecidedAt"/>.</summary>
+    public DateTimeOffset? RespondBy { get; set; }
+    /// <summary>Completion deadline: the target, else the end of the <see cref="RequiredBy"/> day. Carried to the work order on approval.</summary>
+    public DateTimeOffset? DueAt { get; set; }
+    public bool DueFromTarget { get; set; }
     public string? DecisionNote { get; set; }
     public DateTimeOffset? DecidedAt { get; set; }
     public Guid? DecidedById { get; set; }
@@ -70,7 +75,16 @@ public class WorkOrder : TenantEntity
     public FailureCode? FailureCode { get; set; }
 
     public DateOnly? PlannedStart { get; set; }
+    /// <summary>The local day of <see cref="DueAt"/> (organization's time zone), for everything that works by date.</summary>
     public DateOnly? DueDate { get; set; }
+    /// <summary>Completion deadline. A date-only due date means the end of that day.</summary>
+    public DateTimeOffset? DueAt { get; set; }
+    /// <summary>The deadline came from the priority's target (a priority change recomputes it); false when set by hand or by PM.</summary>
+    public bool DueFromTarget { get; set; }
+    /// <summary>Response deadline for work not raised as a request.</summary>
+    public DateTimeOffset? StartBy { get; set; }
+    /// <summary>First action: left Open, a step ticked or hours logged (the phone's time for offline work).</summary>
+    public DateTimeOffset? RespondedAt { get; set; }
     public decimal? EstimatedHours { get; set; }
     public DateTimeOffset? StartedAt { get; set; }
     public DateTimeOffset? CompletedAt { get; set; }

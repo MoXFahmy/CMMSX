@@ -266,6 +266,7 @@ Console.WriteLine($"Legacy work: {work.Employees.Count} employees, {work.Request
 await WorkImport.RunAsync(db, tenantId, work, report, SiteFor, locByCode, assetByNumber);
 Console.WriteLine($"Legacy PM: {work.Checklists.Count} tasks, {work.PmSchedules.Count} schedules, {work.Meters.Count} meters, {work.Readings.Count} readings");
 await PmImport.RunAsync(db, tenantId, work, report, SiteFor, locByCode, assetByNumber, Dept);
+await DueBackfill.RunAsync(db); // imported due dates get their due time (end of that day)
 Console.WriteLine("PM steps and round work orders…");
 await StepImport.RunAsync(db, tenantId, legacy, report, assetByNumber);
 var materials = await Legacy.LoadMaterialsAsync(legacy);

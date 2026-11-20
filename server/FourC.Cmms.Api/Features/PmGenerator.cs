@@ -156,7 +156,7 @@ public static class PmGenerator
             for (var n = 0; n < round.Count; n++) w.Assets.Add(new WorkOrderAsset { WorkOrderId = w.Id, AssetId = round[n].Id, Sequence = n + 1 });
             foreach (var st in PmRound.Steps(round, steps))
                 db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = st.Sequence, AssetId = st.AssetId, Description = st.Description.Length > 1000 ? st.Description[..1000] : st.Description });
-        }, $"Generated from PM {s.Code}", mail);
+        }, $"Generated from PM {s.Code}", mail, applyTargets: false);
     }
 
     /// <summary>The assets a round's next work order covers (deleted assets drop out through the query filter).</summary>

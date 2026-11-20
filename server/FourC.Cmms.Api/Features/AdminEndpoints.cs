@@ -162,6 +162,7 @@ public static class AdminEndpoints
             var ct = CancellationToken.None;
             var created = await SampleData.SeedAsync(db, ct: ct);
             var history = await db.InTransactionAsync(tk => SampleOperations.SeedAsync(db, ct: tk), ct);
+            await DueBackfill.RunAsync(db, ct);
             return Results.Ok(new { created, history });
         }).RequirePermission(Permissions.SettingsManage);
     }
