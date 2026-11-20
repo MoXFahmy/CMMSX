@@ -5,8 +5,8 @@ import { join } from 'node:path';
 // The release number lives in the repository's VERSION file (see docs/VERSIONING.md).
 const version = readFileSync(join(__dirname, '..', 'VERSION'), 'utf8').trim();
 
-// The app is a shell around the live cloud app. When it moves to its own domain, change this and www/offline.html.
-const cloudUrl = 'https://dxvjhwlc6echh.cloudfront.net';
+// The app is a shell around the live cloud app. When its address changes, change this, www/index.html and www/offline.html.
+const cloudUrl = 'https://cmx.cworks.com.eg';
 
 const config: CapacitorConfig = {
   appId: 'com.fourcsystems.cmms',

@@ -43,7 +43,19 @@ Parameters:
       Organizations (short names, comma-separated, or * for all) allowed to send e-mail. While sign-up is open, only
       these can; empty with sign-up closed means every organization.
 
+  Domain:
+    Type: String
+    Default: ""
+    Description: >-
+      The app's own web address, e.g. cmms.example.com. Needs DomainCertificateArn. Point a DNS CNAME for it at the
+      DistributionDomain output. The dxxxxxxxx.cloudfront.net address keeps working. Leave empty to use only that one.
+  DomainCertificateArn:
+    Type: String
+    Default: ""
+    Description: ARN of an issued ACM certificate for Domain, requested in us-east-1 (CloudFront only uses certificates from there).
+
 Conditions:
+  HasDomain: !And [!Not [!Equals [!Ref Domain, ""]], !Not [!Equals [!Ref DomainCertificateArn, ""]]]
   HasMailDomain: !Not [!Equals [!Ref MailDomain, ""]]
   HasMailFrom: !Not [!Equals [!Ref MailFromAddress, ""]]
 
@@ -355,7 +367,8 @@ Resources:
             - { Name: Storage__Region, Value: !Ref AWS::Region }
             - { Name: Auth__AllowRegistration, Value: !Ref AllowRegistration }
             # Links in e-mails point here.
-            - { Name: App__PublicUrl, Value: !Sub "https://${Distribution.DomainName}" }
+            - Name: App__PublicUrl
+              Value: !If [HasDomain, !Sub "https://${Domain}", !Sub "https://${Distribution.DomainName}"]
             - !If [HasMailFrom, { Name: Email__Provider, Value: Ses }, !Ref AWS::NoValue]
             - !If [HasMailFrom, { Name: Email__From, Value: !Ref MailFromAddress }, !Ref AWS::NoValue]
             - !If [HasMailFrom, { Name: Email__Region, Value: !Ref AWS::Region }, !Ref AWS::NoValue]
@@ -454,6 +467,11 @@ Resources:
         Comment: !Sub "4C CMMS (${AWS::StackName}, ${AWS::Region})"
         HttpVersion: http2and3
         PriceClass: PriceClass_All
+        Aliases: !If [HasDomain, [!Ref Domain], !Ref AWS::NoValue]
+        ViewerCertificate: !If
+          - HasDomain
+          - { AcmCertificateArn: !Ref DomainCertificateArn, SslSupportMethod: sni-only, MinimumProtocolVersion: TLSv1.2_2021 }
+          - { CloudFrontDefaultCertificate: true }
         Origins:
           - Id: app
             DomainName: !GetAtt LoadBalancer.DNSName
@@ -481,7 +499,10 @@ Resources:
 Outputs:
   Url:
     Description: Web address of the app
-    Value: !Sub "https://${Distribution.DomainName}"
+    Value: !If [HasDomain, !Sub "https://${Domain}", !Sub "https://${Distribution.DomainName}"]
+  DistributionDomain:
+    Description: The CloudFront address; with your own Domain, its DNS CNAME points here
+    Value: !GetAtt Distribution.DomainName
   ClusterName:
     Value: !Ref Cluster
   ServiceName:
