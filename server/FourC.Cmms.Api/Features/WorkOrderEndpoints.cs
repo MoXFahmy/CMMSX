@@ -5,6 +5,7 @@ using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Services;
+using FourC.Cmms.Core.Tenancy;
 using FourC.Cmms.Core.Work;
 using Microsoft.EntityFrameworkCore;
 
@@ -17,6 +18,10 @@ public static class WorkOrderEndpoints
         string? RequestedBy = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null);
+    public sealed record BulkInput(Guid[]? Ids, StatusInput? Status, WorkPriority? Priority, Guid[]? AddAssigneeIds);
+    public sealed record BulkSkip(Guid Id, string Number, string Reason);
+    public sealed record BulkResult(int Updated, List<BulkSkip> Skipped);
+    private const int MaxBulk = 500;
     public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null);
     public sealed record LaborInput(Guid EmployeeId, DateOnly WorkDate, decimal Hours, decimal OvertimeHours, string? Notes);
     public sealed record CostInput(string Description, decimal Quantity, decimal UnitCost, string? Vendor, string? Reference = null);
@@ -178,57 +183,56 @@ public static class WorkOrderEndpoints
             if (WorkOrderWorkflow.RequiresClosePermission(w.Status, input.Status) && !(await perms.GetAsync(UserId(http))).Contains(Permissions.WorkOrdersClose))
                 return Results.Forbid();
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
-            var v = new Validator().MaxLength("note", input.Note, "Note", 2000)
-                .When(input.Status == WorkOrderStatus.OnHold && input.HoldReason is null, "holdReason", "Choose why the work is on hold.")
-                .When(input.DowntimeHours < 0, "downtimeHours", "Downtime cannot be negative.");
-            if (input.Status == WorkOrderStatus.Completed)
-            {
-                var notes = input.CompletionNotes.Clean() ?? w.CompletionNotes;
-                if (settings.RequireCompletionNotes && notes is null) v.Add("completionNotes", "Describe the work that was done.");
-                if (settings.RequireLaborToComplete && !await db.WorkOrderLabor.AnyAsync(l => l.WorkOrderId == id, ct))
-                    v.Add("labor", "Log the labour before completing the work.");
-                if (settings.RequireAllTasksDone && await db.WorkOrderTasks.AnyAsync(t => t.WorkOrderId == id && !t.IsDone, ct))
-                    v.Add("tasks", "Tick every checklist step before completing the work.");
-                if (settings.RequireFailureCodeForBreakdowns && w.Type == WorkType.Breakdown && (input.FailureCodeId ?? w.FailureCodeId) is null)
-                    v.Add("failureCodeId", "Choose a failure code for breakdown work.");
-                if (input.FailureCodeId is { } fc && !await db.FailureCodes.AnyAsync(f => f.Id == fc, ct)) v.Add("failureCodeId", "Unknown failure code.");
-                if (input.ActualStart is { } st && input.ActualEnd is { } en && en < st) v.Add("actualEnd", "Actual end cannot be before the actual start.");
-                if (input.ActualEnd > DateTimeOffset.UtcNow.AddHours(1)) v.Add("actualEnd", "Actual end cannot be in the future.");
-            }
+            var v = await ChangeStatusAsync(db, ctx, mail, settings, w, input, ct);
             if (!v.IsValid) return v.Problem();
-
-            var now = DateTimeOffset.UtcNow;
-            db.WorkOrderStatusChanges.Add(new WorkOrderStatusChange
-            {
-                WorkOrderId = id, FromStatus = w.Status, ToStatus = input.Status, HoldReason = input.Status == WorkOrderStatus.OnHold ? input.HoldReason : null,
-                Note = input.Note.Clean(), ChangedAt = now, ChangedById = ctx.UserId, ChangedByName = ctx.UserName,
-            });
-            w.Status = input.Status;
-            w.HoldReason = input.Status == WorkOrderStatus.OnHold ? input.HoldReason : null;
-            switch (input.Status)
-            {
-                case WorkOrderStatus.InProgress: w.StartedAt ??= now; w.CompletedAt = null; w.ClosedAt = null; break;
-                case WorkOrderStatus.Completed:
-                    // Like 4CSQL's "Calculate Dates": default actual start to when work started, else the earliest labour entry.
-                    var firstLabor = await db.WorkOrderLabor.Where(l => l.WorkOrderId == id).OrderBy(l => l.WorkDate).Select(l => (DateOnly?)l.WorkDate).FirstOrDefaultAsync(ct);
-                    w.StartedAt = input.ActualStart ?? w.StartedAt ?? (firstLabor is { } fl ? new DateTimeOffset(fl.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) : now);
-                    w.CompletedAt = input.ActualEnd ?? now;
-                    w.PreventionNotes = input.PreventionNotes.Clean() ?? w.PreventionNotes;
-                    w.CompletionNotes = input.CompletionNotes.Clean() ?? w.CompletionNotes;
-                    w.CauseNotes = input.CauseNotes.Clean() ?? w.CauseNotes;
-                    w.FailureCodeId = input.FailureCodeId ?? w.FailureCodeId;
-                    w.AssetWasDown = input.AssetWasDown ?? w.AssetWasDown;
-                    w.DowntimeHours = input.DowntimeHours ?? w.DowntimeHours;
-                    break;
-                case WorkOrderStatus.Closed: w.ClosedAt = now; w.CompletedAt ??= now; break;
-                case WorkOrderStatus.Open: w.CompletedAt = null; w.ClosedAt = null; break;
-            }
-            if (input.Status == WorkOrderStatus.Completed) await mail.WorkOrderCompletedAsync(db, ctx, w, ct);
-            if (w.PmScheduleId is not null && input.Status is WorkOrderStatus.Completed or WorkOrderStatus.Cancelled)
-                await PmGenerator.OnWorkOrderFinishedAsync(db, w, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { w.Id, w.Status });
         }).RequirePermission(Permissions.WorkOrdersExecute);
+
+        // Many work orders at once: one change (status, priority or more technicians), the same rules as one at a time.
+        // Rows that can't change are skipped with the reason; the rest are saved together.
+        g.MapPost("/bulk", async (BulkInput input, CmmsDbContext db, ITenantContext ctx, HttpContext http, PermissionService perms, EmailOutbox mail,
+            CancellationToken ct) =>
+        {
+            var ids = (input.Ids ?? []).Distinct().ToList();
+            if (ids.Count is 0 or > MaxBulk) throw new DomainException($"Select between 1 and {MaxBulk} work orders.");
+            var add = (input.AddAssigneeIds ?? []).Distinct().ToList();
+            if ((input.Status is null ? 0 : 1) + (input.Priority is null ? 0 : 1) + (add.Count > 0 ? 1 : 0) != 1) throw new DomainException("Choose one change to make.");
+            var mine = await perms.GetAsync(UserId(http));
+            if (!mine.Contains(input.Status is null ? Permissions.WorkOrdersEdit : Permissions.WorkOrdersExecute)) return Results.Forbid();
+            if (input.Status is { Status: WorkOrderStatus.OnHold, HoldReason: null })
+                return new Validator().When(true, "holdReason", "Choose why the work is on hold.").Problem();
+            if (add.Count > 0 && await db.Employees.CountAsync(e => add.Contains(e.Id), ct) != add.Count) throw new DomainException("A chosen technician wasn't found.");
+
+            var rows = await db.WorkOrders.Include(x => x.Assignees).Where(w => ids.Contains(w.Id)).OrderBy(w => w.Number).ToListAsync(ct);
+            var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+            var canClose = mine.Contains(Permissions.WorkOrdersClose);
+            var skipped = new List<BulkSkip>();
+            var updated = 0;
+            foreach (var w in rows)
+            {
+                string? reason = null;
+                if (input.Status is { } st)
+                {
+                    if (!WorkOrderWorkflow.CanTransition(w.Status, st.Status))
+                        reason = $"It can't go from {TableExport.Words(w.Status.ToString()).ToLowerInvariant()} to {TableExport.Words(st.Status.ToString()).ToLowerInvariant()}.";
+                    else if (WorkOrderWorkflow.RequiresClosePermission(w.Status, st.Status) && !canClose) reason = "You can't close, cancel or reopen closed work orders.";
+                    else if (await ChangeStatusAsync(db, ctx, mail, settings, w, st, ct) is { IsValid: false } v) reason = v.Messages.First();
+                }
+                else if (w.Status is WorkOrderStatus.Closed or WorkOrderStatus.Cancelled) reason = "Reopen it first.";
+                else if (input.Priority is { } priority) w.Priority = priority;
+                else
+                {
+                    var before = w.Assignees.Select(a => a.EmployeeId).ToHashSet();
+                    SyncAssignees(w, [.. before, .. add]);
+                    await mail.AssigneesAddedAsync(db, ctx, w, add.Where(e => !before.Contains(e)).ToList(), ct);
+                }
+                if (reason is null) updated++; else skipped.Add(new BulkSkip(w.Id, w.Number, reason));
+            }
+            skipped.AddRange(ids.Except(rows.Select(r => r.Id)).Select(missing => new BulkSkip(missing, "", "Not found.")));
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new BulkResult(updated, skipped));
+        }).RequirePermission(Permissions.WorkOrdersView);
 
         // "Check Warranty/WO" (4CSQL): warranty status plus open requests and work on an asset, to avoid duplicate jobs.
         api.MapGet("/assets/{assetId:guid}/open-work", async (Guid assetId, CmmsDbContext db, CancellationToken ct) =>
@@ -363,6 +367,64 @@ public static class WorkOrderEndpoints
     // ---------------- helpers ----------------
 
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
+    /// <summary>
+    /// Checks and applies a status change to a loaded work order (the move itself and the close permission are the caller's
+    /// to check). Returns the problems; nothing changes unless it is valid. The caller saves.
+    /// </summary>
+    internal static async Task<Validator> ChangeStatusAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, TenantSettings settings, WorkOrder w,
+        StatusInput input, CancellationToken ct)
+    {
+        var v = new Validator().MaxLength("note", input.Note, "Note", 2000)
+            .When(input.Status == WorkOrderStatus.OnHold && input.HoldReason is null, "holdReason", "Choose why the work is on hold.")
+            .When(input.DowntimeHours < 0, "downtimeHours", "Downtime cannot be negative.");
+        if (input.Status == WorkOrderStatus.Completed)
+        {
+            var notes = input.CompletionNotes.Clean() ?? w.CompletionNotes;
+            if (settings.RequireCompletionNotes && notes is null) v.Add("completionNotes", "Describe the work that was done.");
+            if (settings.RequireLaborToComplete && !await db.WorkOrderLabor.AnyAsync(l => l.WorkOrderId == w.Id, ct))
+                v.Add("labor", "Log the labour before completing the work.");
+            if (settings.RequireAllTasksDone && await db.WorkOrderTasks.AnyAsync(t => t.WorkOrderId == w.Id && !t.IsDone, ct))
+                v.Add("tasks", "Tick every checklist step before completing the work.");
+            if (settings.RequireFailureCodeForBreakdowns && w.Type == WorkType.Breakdown && (input.FailureCodeId ?? w.FailureCodeId) is null)
+                v.Add("failureCodeId", "Choose a failure code for breakdown work.");
+            if (input.FailureCodeId is { } fc && !await db.FailureCodes.AnyAsync(f => f.Id == fc, ct)) v.Add("failureCodeId", "Unknown failure code.");
+            if (input.ActualStart is { } st && input.ActualEnd is { } en && en < st) v.Add("actualEnd", "Actual end cannot be before the actual start.");
+            if (input.ActualEnd > DateTimeOffset.UtcNow.AddHours(1)) v.Add("actualEnd", "Actual end cannot be in the future.");
+        }
+        if (!v.IsValid) return v;
+
+            var now = DateTimeOffset.UtcNow;
+        db.WorkOrderStatusChanges.Add(new WorkOrderStatusChange
+        {
+            WorkOrderId = w.Id, FromStatus = w.Status, ToStatus = input.Status, HoldReason = input.Status == WorkOrderStatus.OnHold ? input.HoldReason : null,
+            Note = input.Note.Clean(), ChangedAt = now, ChangedById = ctx.UserId, ChangedByName = ctx.UserName,
+        });
+        w.Status = input.Status;
+        w.HoldReason = input.Status == WorkOrderStatus.OnHold ? input.HoldReason : null;
+        switch (input.Status)
+        {
+            case WorkOrderStatus.InProgress: w.StartedAt ??= now; w.CompletedAt = null; w.ClosedAt = null; break;
+            case WorkOrderStatus.Completed:
+                // Like 4CSQL's "Calculate Dates": default actual start to when work started, else the earliest labour entry.
+                var firstLabor = await db.WorkOrderLabor.Where(l => l.WorkOrderId == w.Id).OrderBy(l => l.WorkDate).Select(l => (DateOnly?)l.WorkDate).FirstOrDefaultAsync(ct);
+                w.StartedAt = input.ActualStart ?? w.StartedAt ?? (firstLabor is { } fl ? new DateTimeOffset(fl.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) : now);
+                w.CompletedAt = input.ActualEnd ?? now;
+                w.PreventionNotes = input.PreventionNotes.Clean() ?? w.PreventionNotes;
+                w.CompletionNotes = input.CompletionNotes.Clean() ?? w.CompletionNotes;
+                w.CauseNotes = input.CauseNotes.Clean() ?? w.CauseNotes;
+                w.FailureCodeId = input.FailureCodeId ?? w.FailureCodeId;
+                w.AssetWasDown = input.AssetWasDown ?? w.AssetWasDown;
+                w.DowntimeHours = input.DowntimeHours ?? w.DowntimeHours;
+                break;
+            case WorkOrderStatus.Closed: w.ClosedAt = now; w.CompletedAt ??= now; break;
+            case WorkOrderStatus.Open: w.CompletedAt = null; w.ClosedAt = null; break;
+        }
+        if (input.Status == WorkOrderStatus.Completed) await mail.WorkOrderCompletedAsync(db, ctx, w, ct);
+        if (w.PmScheduleId is not null && input.Status is WorkOrderStatus.Completed or WorkOrderStatus.Cancelled)
+            await PmGenerator.OnWorkOrderFinishedAsync(db, w, ct);
+        return v;
+    }
+
     private static Guid UserId(HttpContext http) => Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     private static List<T> ParseEnums<T>(string? csv) where T : struct, Enum =>

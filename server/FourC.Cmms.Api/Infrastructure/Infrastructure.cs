@@ -301,6 +301,8 @@ public sealed class Validator
 {
     private readonly Dictionary<string, List<string>> _errors = [];
     public bool IsValid => _errors.Count == 0;
+    /// <summary>Every message, in the order they were added.</summary>
+    public IEnumerable<string> Messages => _errors.Values.SelectMany(m => m);
 
     public Validator Required(string field, string? value, string label, int max = 0)
     {
