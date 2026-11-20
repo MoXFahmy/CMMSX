@@ -28,6 +28,8 @@ export type Me = {
   user: { id: string; fullName: string; email: string; jobTitle?: string };
   tenant: { id: string; name: string; slug: string; settings: TenantSettings };
   permissions: string[];
+  /** Set when the account is linked to an employee: the technician view is for them. */
+  employeeId?: string | null;
 };
 
 export type Site = {
@@ -129,6 +131,8 @@ export type WorkOrderDetail = {
   costs: { id: string; description: string; quantity: number; unitCost: number; vendor?: string; reference?: string; total: number; createdAt: string }[];
   parts: WoPartItem[];
   plannedParts: PlannedPart[];
+  /** Signatures captured on completion (attachments): shown on the page and printed on the job card. */
+  signatures: { id: string; signedBy?: string | null; createdAt: string }[];
   totals: { laborHours: number; laborCost: number; partsCost: number; otherCost: number; totalCost: number };
   planned: { laborHours: number; laborCost: number; partsCost: number; totalCost: number };
   allowedTransitions: WorkOrderStatus[]; isOverdue: boolean; createdAt: string; updatedAt?: string; legacyRef?: string; rowVersion: string;

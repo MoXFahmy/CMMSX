@@ -111,6 +111,9 @@ public static class WorkOrderEndpoints
             var transitions = WorkOrderWorkflow.NextStatuses(w.Status)
                 .Where(s => mine.Contains(Permissions.WorkOrdersExecute) && (!WorkOrderWorkflow.RequiresClosePermission(w.Status, s) || mine.Contains(Permissions.WorkOrdersClose)));
             var locationNotes = w.Location?.NotesToTechnician;
+            // Signatures captured on completion (technician view), for the work order page and the job card.
+            var signatures = await db.Attachments.AsNoTracking().Where(a => a.EntityType == "WorkOrder" && a.EntityId == id && a.IsSignature).OrderBy(a => a.CreatedAt)
+                .Select(a => new { a.Id, a.SignedBy, a.CreatedAt }).ToListAsync(ct);
             var planned = await Planning.LinesAsync(db, w, ct);
             var labour = Planning.Labour(w.Assignees.Select(a => (a.PlannedHours, a.Employee?.HourlyRate)).ToList(), w.EstimatedHours);
             var plannedParts = planned.Sum(p => p.PlannedCost);
@@ -128,7 +131,7 @@ public static class WorkOrderEndpoints
                 LocationNotesToTechnician = locationNotes, Request = request, Pm = pm, w.PmDueDate,
                 Assets = roundAssets,
                 Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName }),
-                Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned,
+                Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned, Signatures = signatures,
                 Planned = new { LaborHours = labour.Hours, LaborCost = labour.Cost, PartsCost = plannedParts, TotalCost = labour.Cost + plannedParts },
                 Totals = new
                 {

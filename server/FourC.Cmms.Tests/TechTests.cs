@@ -272,5 +272,45 @@ public class TechTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(2, files.Count);
         var sig = Assert.Single(files, f => f.GetProperty("isSignature").GetBoolean());
         Assert.Equal("Mr. Customer", sig.GetProperty("signedBy").GetString());
+        var shown = Assert.Single((await Ok(await o.C.GetAsync($"/api/work-orders/{wo}"))).GetProperty("signatures").EnumerateArray());
+        Assert.Equal("Mr. Customer", shown.GetProperty("signedBy").GetString());
+    }
+
+    // ---- Labels (Task 7) ----
+
+    [SkippableFact]
+    public async Task Labels_carry_the_public_link_and_respect_the_limit()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var hall = Id(await Ok(await o.C.PostAsJsonAsync("/api/locations", new { siteId = o.SiteA, code = "H1", name = "Hall 1", type = "Space", criticality = "Medium" })));
+        var pump = Id(await Ok(await o.C.PostAsJsonAsync("/api/assets", new { name = "Pump", siteId = o.SiteA, locationId = hall, status = "Active", criticality = "High", warrantyType = "None" })));
+        var fan = await AssetAsync(o.C, o.SiteA, "Fan");
+        var labels = (await Ok(await o.C.PostAsJsonAsync("/api/labels", new { type = "asset", ids = new[] { pump, fan } }))).EnumerateArray().ToList();
+        Assert.Equal(2, labels.Count);
+        var p = labels.Single(l => Id(l) == pump);
+        Assert.Equal($"https://cmms.test/q/asset/{pump}", p.GetProperty("url").GetString());
+        Assert.Equal("Pump", p.GetProperty("name").GetString());
+        Assert.StartsWith("AST-", p.GetProperty("number").GetString());
+        Assert.Contains("Hall 1", p.GetProperty("detail").GetString());
+        var tooMany = await o.C.PostAsJsonAsync("/api/labels", new { type = "asset", ids = Enumerable.Range(0, 501).Select(_ => Guid.NewGuid()).ToArray() });
+        Assert.Equal(HttpStatusCode.BadRequest, tooMany.StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task Location_labels_can_include_everything_below()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        async Task<Guid> Loc(string code, Guid? parent) =>
+            Id(await Ok(await o.C.PostAsJsonAsync("/api/locations", new { siteId = o.SiteA, parentId = parent, code, name = $"Loc {code}", type = "Space", criticality = "Medium" })));
+        var top = await Loc("L1", null);
+        var mid = await Loc("L2", top);
+        await Loc("L3", mid);
+        await Loc("OTHER", null);
+        Assert.Single((await Ok(await o.C.PostAsJsonAsync("/api/labels", new { type = "location", ids = new[] { top } }))).EnumerateArray());
+        var all = (await Ok(await o.C.PostAsJsonAsync("/api/labels", new { type = "location", ids = new[] { top }, includeChildren = true }))).EnumerateArray().ToList();
+        Assert.Equal(3, all.Count);
+        Assert.All(all, l => Assert.StartsWith("https://cmms.test/q/location/", l.GetProperty("url").GetString()));
     }
 }

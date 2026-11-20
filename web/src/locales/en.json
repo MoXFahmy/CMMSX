@@ -521,7 +521,8 @@
     "duplicateTitle": "New work order (copy of {{number}})",
     "printJobCard": "Print job card",
     "completedOn": "Completed",
-    "assetFilterHint": "Work on the asset’s components is included."
+    "assetFilterHint": "Work on the asset’s components is included.",
+    "signature": "Signature"
   },
   "wr": {
     "title": "Work requests",
@@ -1288,5 +1289,27 @@
     "meterReset": "The meter was reset or replaced (accept an unusual reading)",
     "raiseRequest": "Raise a request",
     "whatsWrong": "What's wrong?"
+  },
+  "labels": {
+    "title": "QR labels",
+    "printLabels": "Print labels",
+    "printLabel": "Print label",
+    "withSubLocations": "Print labels incl. sub-locations",
+    "nothing": "Nothing to print. Choose records and use \"Print labels\" again.",
+    "count_one": "{{count}} label",
+    "count_other": "{{count}} labels",
+    "print": "Print"
+  },
+  "devices": {
+    "title": "Signed-in devices",
+    "titleFor": "Signed-in devices · {{name}}",
+    "hint": "Phones and browsers signed in to this account. Signing one out stops it within a minute; changes still waiting on that phone stay there until someone signs in on it again.",
+    "none": "No devices.",
+    "thisDevice": "This device",
+    "seen": "Last used {{last}} · signed in {{first}}",
+    "signOut": "Sign out",
+    "signedOut": "{{name}} signed out.",
+    "othersSignedOut": "All other devices signed out.",
+    "signOutOthers": "Sign out all other devices"
   }
 }

@@ -210,7 +210,7 @@ public static class AttachmentEndpoints
             var rows = await db.Attachments.AsNoTracking().Where(a => a.EntityType == entityType && a.EntityId == entityId).OrderByDescending(a => a.CreatedAt).ToListAsync(ct);
             var userIds = rows.Select(r => r.CreatedById).OfType<Guid>().Distinct().ToList();
             var users = await db.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
-            return Results.Ok(rows.Select(a => new { a.Id, a.FileName, a.ContentType, a.Size, a.Description, a.IsPrimaryImage, a.CreatedAt, CreatedBy = a.CreatedById is { } c ? users.GetValueOrDefault(c) : null }));
+            return Results.Ok(rows.Select(a => new { a.Id, a.FileName, a.ContentType, a.Size, a.Description, a.IsPrimaryImage, a.IsSignature, a.SignedBy, a.CreatedAt, CreatedBy = a.CreatedById is { } c ? users.GetValueOrDefault(c) : null }));
         });
 
         g.MapPost("/", async (HttpRequest req, CmmsDbContext db, IFileStorage storage, PermissionService perms, CancellationToken ct) =>

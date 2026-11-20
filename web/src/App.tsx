@@ -27,6 +27,8 @@ import { WorkOrderPrintPage } from './pages/work/WorkOrderPrintPage';
 import { ReportsPage, ReportViewPage } from './pages/reports/ReportsPage';
 
 import { TechApp } from './tech/TechApp';
+import { LabelsPage } from './pages/labels/LabelsPage';
+import { QrRedirect } from './pages/QrRedirect';
 export function App() {
   const { me, loading } = useAuth();
   const location = useLocation();
@@ -46,6 +48,8 @@ export function App() {
     <Routes>
       <Route path="purchasing/orders/:id/print" element={<PoPrintPage />} />
       <Route path="work-orders/:id/print" element={<WorkOrderPrintPage />} />
+      <Route path="labels" element={<LabelsPage />} />
+      <Route path="q/:type/:id" element={<QrRedirect />} />
       <Route element={<AppLayout />}>
         <Route index element={<DashboardPage />} />
         <Route path="locations" element={<LocationsPage />} />

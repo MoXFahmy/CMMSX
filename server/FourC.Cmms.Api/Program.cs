@@ -143,6 +143,7 @@ api.MapViewEndpoints();
 api.MapDeviceEndpoints();
 api.MapTechEndpoints();
 api.MapTechActions();
+api.MapLabelEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();

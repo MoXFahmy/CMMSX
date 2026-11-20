@@ -6,7 +6,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
-import { IconEdit, IconKey, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconDevices, IconEdit, IconKey, IconPlus, IconTrash } from '@tabler/icons-react';
+import { DevicesModal } from '@/components/DevicesModal';
 import { del, get, post, put } from '@/api/client';
 import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -243,6 +244,7 @@ function UserSettings() {
   const [opened, m] = useDisclosure();
   const [pwUser, setPwUser] = useState<User | null>(null);
   const [editing, setEditing] = useState<User | null>(null);
+  const [devicesUser, setDevicesUser] = useState<User | null>(null);
   const blank = { fullName: '', email: '', jobTitle: '', phone: '', isActive: true, roleIds: [] as string[], password: '', purchaseApprovalLimit: '' as number | '' };
   const form = useForm({ initialValues: blank });
   const pwForm = useForm({ initialValues: { password: '' } });
@@ -268,10 +270,11 @@ function UserSettings() {
         { accessor: 'roles', title: t('settings.rolesLabel'), render: (u) => <Group gap={4}>{u.roles.map((r) => <Badge key={r.roleId} variant="default">{r.name}</Badge>)}</Group> },
         { accessor: 'lastLoginAt', title: t('settings.lastLogin'), render: (u) => (u.lastLoginAt ? fromNow(u.lastLoginAt) : t('settings.never')) },
         { accessor: 'isActive', title: t('common.status'), render: (u) => <Badge color={u.isActive ? 'teal' : 'gray'}>{u.isActive ? t('common.active') : t('common.inactive')}</Badge> },
-        { accessor: 'actions', title: '', width: 90, render: (u) => (
+        { accessor: 'actions', title: '', width: 120, render: (u) => (
           <Group gap={4} justify="flex-end" wrap="nowrap">
             <ActionIcon variant="subtle" onClick={() => open(u)} aria-label={t('common.edit')}><IconEdit size={16} /></ActionIcon>
             <ActionIcon variant="subtle" color="gray" onClick={() => setPwUser(u)} aria-label={t('settings.resetPassword')}><IconKey size={16} /></ActionIcon>
+            <ActionIcon variant="subtle" color="gray" onClick={() => setDevicesUser(u)} aria-label={t('devices.title')}><IconDevices size={16} /></ActionIcon>
           </Group>) },
       ]} />
       <Modal opened={opened} onClose={m.close} title={editing ? t('settings.editUser') : t('settings.newUser')} size="lg">
@@ -295,6 +298,7 @@ function UserSettings() {
           <Group justify="flex-end"><Button variant="default" onClick={() => setPwUser(null)}>{t('common.cancel')}</Button><Button type="submit">{t('common.save')}</Button></Group>
         </Stack></form>
       </Modal>
+      <DevicesModal opened={!!devicesUser} onClose={() => setDevicesUser(null)} user={devicesUser ?? undefined} />
     </Card>
   );
 }
