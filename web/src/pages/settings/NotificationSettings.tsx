@@ -1,5 +1,7 @@
+import { useRef } from 'react';
 import { Alert, Badge, Button, Card, Group, Stack, Switch, Table, Text, Title, Tooltip } from '@mantine/core';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
+import { withEmail } from './notifications';
 import { useTranslation } from 'react-i18next';
 import { IconMail, IconRefresh, IconSend } from '@tabler/icons-react';
 import { get, post, put } from '@/api/client';
@@ -18,19 +20,25 @@ export function NotificationSettings() {
   const { data: status } = useQuery({ queryKey: ['email-status'], queryFn: () => get<EmailStatusInfo>('/email/status') });
   const { data: org } = useQuery({ queryKey: ['settings'], queryFn: () => get<{ name: string; slug: string; settings: TenantSettings }>('/settings') });
   const { data: log, refetch, isFetching } = useQuery({ queryKey: ['email-log'], queryFn: () => get<EmailLogItem[]>('/email/log') });
+  const queue = useRef<Promise<void>>(Promise.resolve());
   if (!status || !org) return null;
   const s = org.settings;
 
-  const save = async (patch: Partial<TenantSettings>) => {
-    try {
-      await put('/settings', { name: org.name, settings: { ...s, ...patch } });
-      notifySuccess(t('common.saved'));
-      await qc.invalidateQueries({ queryKey: ['settings'] });
-      await qc.invalidateQueries({ queryKey: ['email-status'] });
-    } catch (e) { notifyError(e); }
+  /** Applies a change to the settings as saved now (not as this page last loaded them), one change after another. */
+  const save = (change: Partial<TenantSettings> | ((now: TenantSettings) => Partial<TenantSettings>)) => {
+    queue.current = queue.current.then(async () => {
+      try {
+        const now = await get<{ name: string; settings: TenantSettings }>('/settings');
+        const patch = typeof change === 'function' ? change(now.settings) : change;
+        await put('/settings', { name: now.name, settings: { ...now.settings, ...patch } });
+        notifySuccess(t('common.saved'));
+        await qc.invalidateQueries({ queryKey: ['settings'] });
+        await qc.invalidateQueries({ queryKey: ['email-status'] });
+      } catch (e) { notifyError(e); }
+    });
+    return queue.current;
   };
-  const toggleEvent = (key: string, on: boolean) =>
-    save({ disabledEmails: on ? (s.disabledEmails ?? []).filter((k) => k !== key) : [...(s.disabledEmails ?? []), key] });
+  const toggleEvent = (key: string, on: boolean) => save((now) => ({ disabledEmails: withEmail(now.disabledEmails, key, on) }));
   const sendTest = async () => {
     try { await post('/email/test'); notifySuccess(t('email.testQueued')); setTimeout(() => void refetch(), 3000); } catch (e) { notifyError(e); }
   };

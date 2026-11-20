@@ -214,9 +214,9 @@ public static class AssetEndpoints
 
         g.MapPost("/bulk", async (BulkInput input, CmmsDbContext db, CancellationToken ct) =>
         {
-            if (input.Ids is not { Length: > 0 and <= 1000 }) throw new DomainException("Select between 1 and 1000 assets.");
+            var ids = Bulk.Ids(input.Ids, "assets"); // the same limit as the other lists (500)
             if (input.CategoryId is not null && !await db.AssetCategories.AnyAsync(c => c.Id == input.CategoryId, ct)) throw new DomainException("Category not found.");
-            var assets = await db.Assets.Where(a => input.Ids.Contains(a.Id)).ToListAsync(ct);
+            var assets = await db.Assets.Where(a => ids.Contains(a.Id)).ToListAsync(ct);
             foreach (var a in assets)
             {
                 if (input.Status is { } s) a.Status = s;

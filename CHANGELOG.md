@@ -4,6 +4,29 @@ All notable changes to 4C CMMS — the cloud app and the Android app share one v
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.5.1] - 2026-11-20
+
+Small fixes left over from 0.0.2–0.5.0.
+
+### Fixed
+- **Planning board**: Undo after moving a person off a job puts back their planned hours, and the Undo button can only
+  be clicked once. Cards show the job's status.
+- **Targets editor**: choosing days before typing a number no longer jumps back to hours, and decimals such as 1.5 days
+  can be typed (1.5 days used to show as 36 h).
+- **Exports**: the work order and request deadline columns come out as separately named columns (Due, Due date and
+  time, Completion, Response) instead of several columns all called "Due".
+- **Technician app**: a hold note sent for a job that is already on hold is kept as a comment. Completing a job that was
+  already completed no longer claims notes were added, and completing again after a refusal doesn't send the same
+  signatures twice.
+- **Assets**: bulk changes use the same bar as the other lists, with the same limit of 500.
+- **Settings › Notifications**: quick clicks on several switches no longer undo each other, saving the Organization tab
+  no longer puts back old e-mail settings, and Cancel in your own e-mail settings throws away unsaved changes.
+- **Alert bell**: the low-stock count leaves out inactive parts.
+- **Work order filters**: changing the site clears the asset and person filters, and an asset in the page address
+  shows its name in the asset filter.
+- "1 work order created" (was "1 work orders created").
+- A very far "created to" date in the work order filter no longer gives a server error.
+
 ## [0.5.0] - 2026-11-20
 
 Response and completion targets per priority, and a planning board. Nothing changes for an organization until someone sets

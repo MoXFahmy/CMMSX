@@ -1,6 +1,7 @@
 import type { PmScheduleType, SlaView, WorkOrderStatus, WorkPriority } from '@/api/types';
 
-export type BoardAssignee = { employeeId: string; hours?: number | null };
+/** hours: the person's planned hours, else their share of the estimate; plannedHours: their own planned hours only. */
+export type BoardAssignee = { employeeId: string; hours?: number | null; plannedHours?: number | null };
 export type BoardJob = {
   id: string; number: string; title: string; priority: WorkPriority; status: WorkOrderStatus; siteId: string;
   assetId?: string | null; assetNumber?: string | null; assetName?: string | null;
@@ -24,7 +25,7 @@ export const NO_ASSET = 'none';
 /** Where a card dragged from a tray (earlier days, no date) comes from. */
 export const TRAY = 'tray';
 
-export type Move = { workOrderId: string; day?: string; fromEmployeeId?: string; toEmployeeId?: string };
+export type Move = { workOrderId: string; day?: string; fromEmployeeId?: string; toEmployeeId?: string; plannedHours?: number | null };
 
 /**
  * What dropping a card does, and how to undo it. By person: a new day re-plans it; another row hands that person's part
@@ -45,7 +46,12 @@ export function planMove(job: BoardJob, sourceRow: string, targetRow: string, ta
     const from = fromTray ? (people.length === 1 ? people[0] : undefined) : sourceRow !== UNASSIGNED ? sourceRow : undefined;
     const to = targetRow !== UNASSIGNED && (!fromTray || people.length <= 1) ? targetRow : undefined;
     if (from === undefined || from !== to) {
-      if (from) { move.fromEmployeeId = from; undo.toEmployeeId = from; }
+      if (from) {
+        move.fromEmployeeId = from;
+        undo.toEmployeeId = from;
+        const hours = job.assignees.find((a) => a.employeeId === from)?.plannedHours;
+        if (hours != null) undo.plannedHours = hours; // putting the person back puts back their planned hours
+      }
       if (to && !people.includes(to)) { move.toEmployeeId = to; undo.fromEmployeeId = to; }
     }
   }

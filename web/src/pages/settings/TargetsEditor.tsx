@@ -1,14 +1,11 @@
+import { useState } from 'react';
 import { Group, NumberInput, Select, Table, Text } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 import type { SlaTarget, WorkPriority } from '@/api/types';
+import { inUnit, toMinutes, unitOf, type Unit } from './targets';
 
 const PRIORITIES: WorkPriority[] = ['Urgent', 'High', 'Medium', 'Low'];
-type Unit = 'h' | 'd';
 type Field = 'respondMinutes' | 'completeMinutes';
-
-/** Minutes shown as days when they are whole days, else hours. */
-const split = (minutes?: number | null): { value: number | ''; unit: Unit } =>
-  !minutes ? { value: '', unit: 'h' } : minutes % 1440 === 0 ? { value: minutes / 1440, unit: 'd' } : { value: Math.round((minutes / 60) * 100) / 100, unit: 'h' };
 
 /** Respond within / complete within per priority, in hours or days (stored as minutes; empty = no target). */
 export function TargetsEditor({ value, onChange, disabled }: { value: SlaTarget[]; onChange: (v: SlaTarget[]) => void; disabled?: boolean }) {
@@ -19,18 +16,10 @@ export function TargetsEditor({ value, onChange, disabled }: { value: SlaTarget[
     const others = value.filter((x) => x.priority !== p);
     onChange(next.respondMinutes || next.completeMinutes ? [...others, next] : others);
   };
-  const cell = (p: WorkPriority, field: Field) => {
-    const { value: v, unit } = split(row(p)[field]);
-    const save = (n: number | '', u: Unit) => set(p, field, n === '' || n <= 0 ? null : Math.round(n * (u === 'd' ? 1440 : 60)));
-    return (
-      <Group gap={4} wrap="nowrap">
-        <NumberInput w={90} min={0} decimalScale={2} disabled={disabled} value={v} placeholder="—" aria-label={`${t(`priority.${p}`)} ${t(`settings.${field}`)}`}
-          onChange={(n) => save(typeof n === 'number' ? n : n === '' ? '' : Number(n), unit)} />
-        <Select w={90} disabled={disabled} allowDeselect={false} value={unit} data={[{ value: 'h', label: t('settings.hours') }, { value: 'd', label: t('settings.days') }]}
-          onChange={(u) => save(v, (u as Unit) ?? 'h')} />
-      </Group>
-    );
-  };
+  const cell = (p: WorkPriority, field: Field) => (
+    <TargetCell key={`${p}-${field}`} minutes={row(p)[field]} disabled={disabled} label={`${t(`priority.${p}`)} ${t(`settings.${field}`)}`}
+      onChange={(m) => set(p, field, m)} />
+  );
   return (
     <Table withRowBorders={false} verticalSpacing={4}>
       <Table.Thead><Table.Tr><Table.Th>{t('priority.label')}</Table.Th><Table.Th>{t('settings.respondMinutes')}</Table.Th><Table.Th>{t('settings.completeMinutes')}</Table.Th></Table.Tr></Table.Thead>
@@ -47,4 +36,21 @@ export function TargetsEditor({ value, onChange, disabled }: { value: SlaTarget[
 export function timeZones(current?: string): string[] {
   const all = (Intl as unknown as { supportedValuesOf?: (k: string) => string[] }).supportedValuesOf?.('timeZone') ?? [];
   return Array.from(new Set(['UTC', ...(current ? [current] : []), ...all]));
+}
+
+/** One target: a number and its unit. The unit stays as chosen, even before a number is typed. */
+function TargetCell({ minutes, disabled, label, onChange }: { minutes?: number | null; disabled?: boolean; label: string; onChange: (m: number | null) => void }) {
+  const { t } = useTranslation();
+  const [unit, setUnit] = useState<Unit>(unitOf(minutes));
+  // What is typed is kept as typed ("1." on the way to "1.5"); the minutes follow it.
+  const [text, setText] = useState<number | string>(inUnit(minutes, unit));
+  const number = (v: number | string): number | '' => (typeof v === 'number' ? v : v.trim() === '' || Number.isNaN(Number(v)) ? '' : Number(v));
+  return (
+    <Group gap={4} wrap="nowrap">
+      <NumberInput w={90} min={0} decimalScale={2} disabled={disabled} value={text} placeholder="—" aria-label={label}
+        onChange={(n) => { setText(n); onChange(toMinutes(number(n), unit)); }} />
+      <Select w={90} disabled={disabled} allowDeselect={false} value={unit} data={[{ value: 'h', label: t('settings.hours') }, { value: 'd', label: t('settings.days') }]}
+        onChange={(u) => { const next = (u as Unit) ?? 'h'; setUnit(next); onChange(toMinutes(number(text), next)); }} />
+    </Group>
+  );
 }

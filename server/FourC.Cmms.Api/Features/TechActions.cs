@@ -244,13 +244,24 @@ public static partial class TechEndpoints
         if (p.Status == WorkOrderStatus.Completed && w.Status is WorkOrderStatus.Completed or WorkOrderStatus.Closed)
         {
             // Two technicians completed it offline: keep what the second one wrote instead of making them type it again.
-            if (p.CompletionNotes.Clean() is { } notes) Ensure(WorkOrderEndpoints.AddComment(db, ctx, w.Id, $"Completion notes from {ctx.UserName}: {notes}", at));
+            if (p.CompletionNotes.Clean() is not { } notes) return new Answer("done", "This job was already completed.");
+            Ensure(WorkOrderEndpoints.AddComment(db, ctx, w.Id, $"Completion notes from {ctx.UserName}: {notes}", at));
             await db.SaveChangesAsync(ct);
             return new Answer("done", "This job was already completed; your notes were added as a comment.");
         }
         if (p.Status is WorkOrderStatus.InProgress or WorkOrderStatus.OnHold && w.Status is WorkOrderStatus.Completed or WorkOrderStatus.Closed)
             throw new Rejected($"This work order was already {Words(w.Status)}, so it wasn't reopened. Ask the office if it needs more work.");
-        if (w.Status == p.Status) return new Answer("done");
+        if (w.Status == p.Status)
+        {
+            // Already so (another phone or the office did it): keep the note the technician typed instead of dropping it.
+            if (p.Status == WorkOrderStatus.OnHold && p.Note.Clean() is { } note)
+            {
+                var why = p.HoldReason is { } hr ? $" ({Words(hr)})" : "";
+                Ensure(WorkOrderEndpoints.AddComment(db, ctx, w.Id, $"Hold note from {ctx.UserName}{why}: {note}", at));
+                await db.SaveChangesAsync(ct);
+            }
+            return new Answer("done");
+        }
         if (WorkOrderWorkflow.RequiresClosePermission(w.Status, p.Status) && !allowed.Contains(Permissions.WorkOrdersClose))
             throw new Rejected("You can't reopen closed or cancelled work orders.");
         if (!WorkOrderWorkflow.CanTransition(w.Status, p.Status))
@@ -264,6 +275,8 @@ public static partial class TechEndpoints
         await db.SaveChangesAsync(ct);
         return new Answer("done");
     }
+
+    private static string Words(HoldReason r) => System.Text.RegularExpressions.Regex.Replace(r.ToString(), "(?<=[a-z])(?=[A-Z])", " ").ToLowerInvariant();
 
     private static string Words(WorkOrderStatus s) => s switch
     {

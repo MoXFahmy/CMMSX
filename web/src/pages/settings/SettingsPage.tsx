@@ -66,7 +66,12 @@ function OrganizationSettings() {
   if (!data || !form.values.settings.terminology) return null;
   const s = form.values.settings;
   const submit = form.onSubmit(async (v) => {
-    try { await put('/settings', v); notifySuccess(t('common.saved')); await refresh(); await qc.invalidateQueries({ queryKey: ['settings'] }); } catch (e) { handleFormError(form, e); }
+    try {
+      // E-mail settings belong to the Notifications tab: keep what is saved now, not what this form loaded.
+      const now = await get<{ settings: TenantSettings }>('/settings');
+      await put('/settings', { ...v, settings: { ...v.settings, emailEnabled: now.settings.emailEnabled, disabledEmails: now.settings.disabledEmails } });
+      notifySuccess(t('common.saved')); await refresh(); await qc.invalidateQueries({ queryKey: ['settings'] });
+    } catch (e) { handleFormError(form, e); }
   });
   const termRow = (key: 'site' | 'location' | 'asset', plural: 'sites' | 'locations' | 'assets') => (
     <SimpleGrid cols={2} key={key}>
