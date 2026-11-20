@@ -1288,7 +1288,14 @@
     "enterReading": "Enter reading",
     "meterReset": "The meter was reset or replaced (accept an unusual reading)",
     "raiseRequest": "Raise a request",
-    "whatsWrong": "What's wrong?"
+    "whatsWrong": "What's wrong?",
+    "signOut": "Sign out",
+    "signOutHint": "Your jobs are removed from this phone. Sign in again to get them back.",
+    "signOutWaiting_one": "Your jobs are removed from this phone. {{count}} change has not been sent yet: it stays on this phone and is sent when you sign in here again.",
+    "signOutWaiting_other": "Your jobs are removed from this phone. {{count}} changes have not been sent yet: they stay on this phone and are sent when you sign in here again.",
+    "signOutNeedsSignal": "Signing out needs a connection. Try again when you have signal.",
+    "takePhoto": "Camera",
+    "pickPhoto": "Gallery"
   },
   "labels": {
     "title": "QR labels",

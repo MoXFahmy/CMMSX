@@ -4,7 +4,7 @@ import { DateInput } from '@mantine/dates';
 import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
-import { IconCamera, IconCheck, IconChevronLeft, IconClock, IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react';
+import { IconCamera, IconPhoto, IconCheck, IconChevronLeft, IconClock, IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react';
 import { HOLD_REASONS, type HoldReason } from '@/api/types';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, fmtDateTime, fmtQty, notifyError } from '@/components/utils';
@@ -27,6 +27,7 @@ export function JobPage() {
   const [completeOpen, setCompleteOpen] = useState(false);
   const [comment, setComment] = useState('');
   const photoInput = useRef<HTMLInputElement>(null);
+  const galleryInput = useRef<HTMLInputElement>(null);
 
   if (!job) return <Stack><Anchor onClick={() => navigate('/tech')}>{t('tech.back')}</Anchor><Text c="dimmed">{t('tech.jobGone')}</Text></Stack>;
   const change = (type: string, payload: unknown) => add({ type, workOrderId: job.id, payload });
@@ -43,7 +44,7 @@ export function JobPage() {
       try { await add({ type: 'photo.add', workOrderId: job.id, payload: { kind: 'photo' } }, { blob: await shrink(f), fileName: f.name.replace(/\.\w+$/, '') + '.jpg' }); }
       catch (e) { notifyError(e); }
     }
-    if (photoInput.current) photoInput.current.value = '';
+    for (const input of [photoInput.current, galleryInput.current]) if (input) input.value = '';
   };
 
   return (
@@ -104,8 +105,13 @@ export function JobPage() {
       <Card withBorder p="sm">
         <Group justify="space-between" mb={6}>
           <Text fw={600}>{t('tech.photos')}</Text>
-          <Button size="compact-xs" variant="light" leftSection={<IconCamera size={12} />} onClick={() => photoInput.current?.click()}>{t('tech.addPhoto')}</Button>
-          <input ref={photoInput} type="file" accept="image/*" capture="environment" multiple hidden onChange={(e) => void addPhoto(e.currentTarget.files)} />
+          <Group gap={6}>
+            {/* The camera, or photos already on the phone (capture alone opens only the camera on Android). */}
+            <Button size="compact-xs" variant="light" leftSection={<IconCamera size={12} />} onClick={() => photoInput.current?.click()}>{t('tech.takePhoto')}</Button>
+            <Button size="compact-xs" variant="default" leftSection={<IconPhoto size={12} />} onClick={() => galleryInput.current?.click()}>{t('tech.pickPhoto')}</Button>
+          </Group>
+          <input ref={photoInput} type="file" accept="image/*" capture="environment" hidden onChange={(e) => void addPhoto(e.currentTarget.files)} />
+          <input ref={galleryInput} type="file" accept="image/*" multiple hidden onChange={(e) => void addPhoto(e.currentTarget.files)} />
         </Group>
         {job.files.map((f) => <Text key={f.id} fz="sm">{f.isSignature ? `✍ ${f.signedBy ?? ''}` : f.fileName}</Text>)}
         {job.pendingPhotos + job.pendingSignatures > 0 && <Badge color="orange" variant="light">{t('tech.photosWaiting', { count: job.pendingPhotos + job.pendingSignatures })}</Badge>}

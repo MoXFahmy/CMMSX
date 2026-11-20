@@ -121,3 +121,35 @@ describe('retryNow', () => {
     expect((retryNow(failed, true, 'a3').payload as { force?: boolean }).force).toBe(true);
   });
 });
+
+describe('drain: who is signed in, and server errors', () => {
+  it('stops and keeps the change when someone else is signed in now', async () => {
+    const store = memoryStore([change('a', 1), change('b', 2)]);
+    const { sent, send } = answers({ a: { kind: 'otherUser' } });
+    const r = await drain(store, 'u1', send, () => 0);
+    expect(sent).toEqual(['a']);
+    expect(r.stoppedBy).toBe('otherUser');
+    expect(store.items.get('a')).toMatchObject({ state: 'waiting', tries: 0 });
+    expect(store.items.size).toBe(2);
+  });
+
+  it('a server error waits and tries again, without counting as no signal', async () => {
+    const store = memoryStore([change('a', 1), change('b', 2)]);
+    const { sent, send } = answers({ a: { kind: 'retry', serverError: true } });
+    const r = await drain(store, 'u1', send, () => 1000);
+    expect(sent).toEqual(['a']);
+    expect(r.stoppedBy).toBe('serverError');
+    expect(store.items.get('a')).toMatchObject({ state: 'waiting', tries: 1, nextTryAt: 1000 + backoffMs(0) });
+  });
+
+  it('sets a change aside after the server fails on it 5 times, and sends the rest', async () => {
+    const store = memoryStore([change('a', 1, 'u1', { tries: 4 }), change('b', 2)]);
+    const { sent, send } = answers({ a: { kind: 'retry', serverError: true } });
+    const r = await drain(store, 'u1', send, () => 0);
+    expect(sent).toEqual(['a', 'b']);
+    expect(r).toEqual({ sent: 1, failed: 1 });
+    expect(store.items.get('a')).toMatchObject({ state: 'failed' });
+    expect(store.items.get('a')!.message).toMatch(/server/i);
+  });
+});
+

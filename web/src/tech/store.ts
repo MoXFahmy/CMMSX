@@ -35,10 +35,14 @@ export async function wipeCopy(userId: string) {
   const db = await techDb();
   await db.delete('bundle', userId);
   await db.delete('places', userId);
+  await db.delete('meta', `notes:${userId}`);
 }
 
 export async function getMeta<T>(key: string): Promise<T | undefined> { return (await (await techDb()).get('meta', key)) as T | undefined; }
-export async function setMeta(key: string, value: unknown) { await (await techDb()).put('meta', value, key); }
+export async function setMeta(key: string, value: unknown) {
+  const db = await techDb();
+  if (value === undefined) await db.delete('meta', key); else await db.put('meta', value, key);
+}
 
 /** Adds a change to the queue (with its photo, if any), numbered after everything already queued. */
 export async function enqueue(c: Omit<QueuedChange, 'seq' | 'state' | 'tries'>, file?: Blob) {

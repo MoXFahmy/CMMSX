@@ -10,28 +10,31 @@ The technician app. Technicians on plant floors, in basements and at remote site
 signal; everything they do is sent when the phone is back online. See [docs/TECHNICIAN_APP.md](docs/TECHNICIAN_APP.md).
 
 ### Added
-- **Technician view** at `/tech` (the Android app opens it). *My jobs* shows the open work orders assigned to me, kept on
-  the phone. On a job: tick checklist steps and enter readings, log hours, add photos and comments, start, put on hold,
-  and complete it with my signature and, if wanted, the customer's or supervisor's. Works the same with or without a
-  connection.
-- **Sync** page: what is waiting to be sent, what was refused and why, *Send now*, and *Apply mine anyway* when an
+- **Technician view** at `/tech` (the Android app opens it). *My jobs* shows the open work orders assigned to me, kept
+  on the phone. On a job: tick checklist steps and enter readings, log hours, add photos (camera or gallery) and
+  comments, start, put on hold, and complete it with my signature and, if wanted, the customer's or supervisor's.
+  Works the same with or without a connection.
+- **Sync** page: what is waiting to be sent, what was refused and why, *Refresh now*, and *Apply mine anyway* when an
   office user changed the same checklist step in the meantime. A change is never sent twice, and a phone that stays
   offline keeps its changes (even if the app is closed) until it reconnects.
 - **QR scanning** in the technician view: scan an asset or location label (or type its number) to see its open jobs,
   enter a meter reading or raise a request, also offline.
-- **QR labels** for assets, locations and parts: *Print labels* on the asset and parts lists (select rows first) and on a
-  location (with or without everything below it). An A4 sheet of 3 × 8 labels with the QR code, number and name. A
-  label scanned with any phone camera opens the record after signing in.
-- **Signed-in devices**: *Signed-in devices* in the user menu lists my phones and browsers, with *Sign out* and *Sign out
-  all other devices*; administrators can do the same for any user (Settings › Users). A signed-out device stops working
-  within a minute.
+- **QR labels** for assets, locations and parts: *Print labels* on the asset and parts lists (select rows first; needs
+  edit permission) and on a location (with or without everything below it). An A4 sheet of 3 × 8 labels with the QR
+  code, number and name. A label scanned with any phone camera opens the record after signing in.
+- **Signed-in devices**: *Signed-in devices* in the user menu lists my phones and browsers, with *Sign out* and *Sign
+  out all other devices*; administrators can do the same for any user (Settings › Users). A signed-out device stops
+  working within a minute.
 - **Signatures** captured on completion are shown on the work order and printed on the job card.
 - *Technician view* in the user menu for accounts linked to an employee.
+- **Sign out** in the technician view. Signing out (there or in the full app) removes that person's jobs from the
+  phone; their unsent changes stay on it until they sign in there again, and are never sent under someone else's name.
 
 ### Changed
 - On the Android app and in the technician view, *Remember me* keeps you signed in for 30 days, so a phone that is
   offline for days can still send its changes. Office browsers are unchanged.
 - A technician view that has had no contact with the server for 30 days locks until you sign in again.
+- Phones signed in before 0.4.0 keep their 12-hour sign-in: sign out and in again once to get 30 days.
 
 ## [0.3.1] - 2026-11-20
 

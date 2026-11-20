@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { fetchBundle, fetchMe, fetchPlaces, Offline, sendChange, SignedOut } from './api';
+import { fetchBundle, fetchMe, fetchPlaces, logout, Offline, sendChange, SignedOut } from './api';
+import { confirmUser, forgetUser, type IdentityDeps } from './identity';
 import { drain, retryNow, type QueuedChange, type SendResult } from './outbox';
 import { enqueue, getMeta, idbOutboxStore, loadBundle, loadPlaces, queued, saveBundle, savePlaces, setMeta, techDb, wipeCopy } from './store';
 import type { TechBundle, TechPlaces } from './types';
@@ -9,6 +10,7 @@ import { registerTechWorker } from './worker';
 export type Phase = 'starting' | 'ready' | 'signedOut' | 'revoked' | 'locked' | 'noCopy';
 
 const LOCK_AFTER_MS = 30 * 24 * 3600_000;
+const identity: IdentityDeps = { fetchMe, getMeta, setMeta, wipeCopy };
 const REFRESH_EVERY_MS = 15 * 60_000;
 const DRAIN_EVERY_MS = 30_000;
 /** "full" when this device last chose the full app over the technician view (the Android app opens /tech). */
@@ -21,6 +23,8 @@ type TechState = {
   refresh(): Promise<void>; drainNow(now?: boolean): Promise<void>;
   add(change: { type: string; workOrderId?: string; payload: unknown }, file?: { blob: Blob; fileName: string }): Promise<void>;
   retry(c: QueuedChange, force?: boolean): Promise<void>; discard(c: QueuedChange): Promise<void>;
+  /** Signs this device out and wipes the jobs on it (the queue waits for its owner); false when there is no signal. */
+  signOut(): Promise<boolean>;
 };
 
 const Ctx = createContext<TechState | null>(null);
@@ -39,6 +43,8 @@ export function TechProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false);
   const draining = useRef(false);
   const user = useRef<string | undefined>(undefined);
+  /** Whether the server has confirmed who is signed in since the view opened (not yet after an offline start). */
+  const confirmed = useRef(false);
 
   const reloadQueue = useCallback(async () => { if (user.current) setQueue(await queued(user.current)); }, []);
 
@@ -50,7 +56,33 @@ export function TechProvider({ children }: { children: ReactNode }) {
 
   const contact = useCallback(async () => { setOnline(true); await setMeta('lastContactAt', Date.now()); }, []);
 
+  /**
+   * Before anything is sent or fetched: is the person whose copy this is still the one signed in? After an offline start
+   * the phone only knows who used it last; if someone else signs in, it switches to them (wiping the other copy).
+   */
+  const ensureUser = useCallback(async (): Promise<boolean> => {
+    if (confirmed.current) return true;
+    try {
+      const { me } = await confirmUser(identity);
+      confirmed.current = true;
+      if (!me.employeeId) { window.location.replace('/'); return false; }
+      if (me.userId !== user.current) {
+        user.current = me.userId; setUserId(me.userId); setFullName(me.fullName);
+        setBundle(undefined); setPlaces(undefined);
+        setNotes((await getMeta<Note[]>(`notes:${me.userId}`)) ?? []);
+        await reloadQueue();
+      }
+      await contact();
+      return true;
+    } catch (e) {
+      if (e instanceof Offline) setOnline(false);
+      else if (e instanceof SignedOut) { if (e.revoked) await revoked(); else setPhase('signedOut'); }
+      return false;
+    }
+  }, [contact, reloadQueue, revoked]);
+
   const refresh = useCallback(async () => {
+    if (!(await ensureUser())) return;
     const id = user.current;
     if (!id) return;
     setBusy(true);
@@ -67,10 +99,11 @@ export function TechProvider({ children }: { children: ReactNode }) {
       if (e instanceof Offline) setOnline(false);
       else if (e instanceof SignedOut) { if (e.revoked) await revoked(); else setPhase('signedOut'); }
     } finally { setBusy(false); }
-  }, [contact, revoked]);
+  }, [contact, ensureUser, revoked]);
 
   /** Sends the queue; `now` skips the wait between tries (start, signal back, "Refresh now", a new change). */
   const drainNow = useCallback(async (now = false) => {
+    if (draining.current || !(await ensureUser())) return;
     const id = user.current;
     if (!id || draining.current) return;
     draining.current = true;
@@ -81,22 +114,25 @@ export function TechProvider({ children }: { children: ReactNode }) {
       }, { ignoreBackoff: now });
       if (r.sent > 0) { await contact(); void refresh(); }
       if (r.stoppedBy === 'retry') setOnline(false);
+      if (r.stoppedBy === 'serverError') await contact(); // there is signal; the server failed
       if (r.stoppedBy === 'signedOut' && last?.kind === 'signedOut') { if (last.revoked) await revoked(); else setPhase('signedOut'); }
+      if (r.stoppedBy === 'otherUser') confirmed.current = false; // someone else signed in meanwhile: check again next time
     } finally {
       draining.current = false;
       await reloadQueue();
     }
-  }, [contact, refresh, reloadQueue, revoked]);
+  }, [contact, ensureUser, refresh, reloadQueue, revoked]);
 
   // Start: who is signed in (with signal) or who used this phone last (without).
   useEffect(() => {
     void registerTechWorker();
     (async () => {
       try {
-        const me = await fetchMe();
+        // Records who is signed in before anything else (wiping someone else's copy), even if this goes on to the full app.
+        const { me } = await confirmUser(identity);
+        confirmed.current = true;
         if (!me.employeeId || localStorage.getItem(MODE_KEY) === 'full') { window.location.replace('/'); return; }
         user.current = me.userId; setUserId(me.userId); setFullName(me.fullName);
-        await setMeta('userId', me.userId); await setMeta('fullName', me.fullName);
         await contact();
         const cached = await loadBundle(me.userId);
         if (cached) setBundle(cached.data);
@@ -159,8 +195,15 @@ export function TechProvider({ children }: { children: ReactNode }) {
     await reloadQueue();
   }, [reloadQueue]);
 
-  const value = useMemo<TechState>(() => ({ phase, userId, fullName, bundle, places, queue, online, lastRefresh, notes, busy, refresh, drainNow, add, retry, discard }),
-    [phase, userId, fullName, bundle, places, queue, online, lastRefresh, notes, busy, refresh, drainNow, add, retry, discard]);
+  const signOut = useCallback(async () => {
+    try { await logout(); } catch (e) { if (!(e instanceof SignedOut)) return false; }
+    await forgetUser(identity);
+    window.location.replace('/login?next=%2Ftech%2F');
+    return true;
+  }, []);
+
+  const value = useMemo<TechState>(() => ({ phase, userId, fullName, bundle, places, queue, online, lastRefresh, notes, busy, refresh, drainNow, add, retry, discard, signOut }),
+    [phase, userId, fullName, bundle, places, queue, online, lastRefresh, notes, busy, refresh, drainNow, add, retry, discard, signOut]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

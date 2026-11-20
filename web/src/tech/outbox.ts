@@ -3,7 +3,8 @@
  * storage and the network are passed in, so it is unit-tested (outbox.test.ts) and IndexedDB lives in store.ts.
  *
  * Rules: oldest first; a change the server took is removed; one it refused stays as "failed" with the reason until the
- * technician retries or discards it; a network or server error stops the loop and backs off; a signed-out answer stops
+ * technician retries or discards it; a network or server error stops the loop and backs off (a change the server fails on
+ * 5 times is set aside as failed, so it can't hold up the rest); a signed-out or "someone else is signed in" answer stops
  * the loop and touches nothing; only the signed-in user's changes are ever sent.
  */
 
@@ -39,11 +40,19 @@ export interface OutboxStore {
 export type SendResult =
   | { kind: 'done'; message?: string }
   | { kind: 'rejected'; message: string; code?: string }
-  | { kind: 'retry' }
-  | { kind: 'signedOut'; revoked: boolean };
+  | { kind: 'retry'; serverError?: boolean }
+  | { kind: 'signedOut'; revoked: boolean }
+  /** The change was made by someone other than who is signed in now: keep it for its owner. */
+  | { kind: 'otherUser' };
 
-/** stoppedBy: 'retry' = a send just failed (no signal); 'backoff' = only waiting for the next try; 'signedOut' = sign in again. */
-export type DrainResult = { sent: number; failed: number; stoppedBy?: 'retry' | 'backoff' | 'signedOut' };
+/**
+ * stoppedBy: 'retry' = a send just failed (no signal); 'serverError' = the server failed (there is signal); 'backoff' = only
+ * waiting for the next try; 'signedOut' = sign in again; 'otherUser' = someone else is signed in now.
+ */
+export type DrainResult = { sent: number; failed: number; stoppedBy?: 'retry' | 'serverError' | 'backoff' | 'signedOut' | 'otherUser' };
+
+/** A change the server fails on this many times in a row is set aside as failed (Retry or Discard on the Sync page). */
+export const SERVER_TRIES = 5;
 
 /** Wait before the next try: 5 s, 10 s, 20 s … at most 5 minutes. */
 export const backoffMs = (tries: number) => Math.min(5_000 * 2 ** tries, 300_000);
@@ -78,11 +87,18 @@ export async function drain(
         failed++;
         break;
       case 'retry':
+        if (r.serverError && c.tries + 1 >= SERVER_TRIES) {
+          await store.put({ ...c, state: 'failed', tries: c.tries + 1, nextTryAt: undefined, code: 'serverError',
+            message: `The server couldn't save this change (it failed ${SERVER_TRIES} times). Retry later, or discard it.` });
+          failed++;
+          break;
+        }
         await store.put({ ...c, state: 'waiting', tries: c.tries + 1, nextTryAt: now() + backoffMs(c.tries) });
-        return { sent, failed, stoppedBy: 'retry' };
+        return { sent, failed, stoppedBy: r.serverError ? 'serverError' : 'retry' };
       case 'signedOut':
+      case 'otherUser':
         await store.put({ ...c, state: 'waiting' });
-        return { sent, failed, stoppedBy: 'signedOut' };
+        return { sent, failed, stoppedBy: r.kind };
     }
   }
   return { sent, failed };

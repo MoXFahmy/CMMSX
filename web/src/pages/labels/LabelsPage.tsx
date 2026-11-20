@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import QRCode from 'qrcode';
 import { IconPrinter } from '@tabler/icons-react';
 import { ApiError, post } from '@/api/client';
+import { SHEET, sheets } from './sheet';
 
 type LabelType = 'asset' | 'location' | 'part';
 type Label = { id: string; number: string; name: string; detail?: string | null; url: string };
@@ -15,7 +16,7 @@ export function openLabels(type: LabelType, ids: string[], includeChildren = fal
   window.open('/labels', '_blank');
 }
 
-/** An A4 sheet of 3 × 8 labels (70 × 37 mm): QR code, number and name (assets also show their location). */
+/** A4 sheets of 3 × 8 labels (70 × 37 mm, edge to edge): QR code, number and name (assets also show their location). */
 export function LabelsPage() {
   const { t } = useTranslation();
   const [labels, setLabels] = useState<(Label & { qr: string })[] | null>(null);
@@ -39,8 +40,9 @@ export function LabelsPage() {
   return (
     <div>
       <style>{`
-        @page { size: A4; margin: 10mm 0 0 0; }
-        .label-sheet { display: grid; grid-template-columns: repeat(3, 70mm); grid-auto-rows: 37mm; width: 210mm; margin: 0 auto; }
+        @page { size: A4; margin: ${SHEET.marginTopMm}mm 0 0 0; }
+        .label-sheet { display: grid; grid-template-columns: repeat(${SHEET.columns}, ${SHEET.labelWidthMm}mm); grid-auto-rows: ${SHEET.labelHeightMm}mm; width: 210mm; margin: 0 auto 8mm; }
+        @media print { .label-sheet { margin: 0; break-after: page; } .label-sheet:last-child { break-after: auto; } }
         .label { box-sizing: border-box; padding: 3mm; display: flex; gap: 3mm; align-items: center; overflow: hidden; break-inside: avoid; border: 0.2mm dashed #ccc; }
         .label img { width: 27mm; height: 27mm; flex: none; }
         @media print { .no-print { display: none !important; } .label { border: none; } }
@@ -49,8 +51,9 @@ export function LabelsPage() {
         <Text fz="sm" c="dimmed">{t('labels.count', { count: labels.length })}</Text>
         <Button leftSection={<IconPrinter size={16} />} onClick={() => window.print()}>{t('labels.print')}</Button>
       </Group>
-      <div className="label-sheet">
-        {labels.map((l) => (
+      {sheets(labels).map((page, n) => (
+      <div className="label-sheet" key={n}>
+        {page.map((l) => (
           <div className="label" key={l.id}>
             <img src={l.qr} alt="" />
             <div style={{ minWidth: 0 }}>
@@ -61,6 +64,7 @@ export function LabelsPage() {
           </div>
         ))}
       </div>
+      ))}
     </div>
   );
 }

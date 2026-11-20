@@ -4,7 +4,8 @@ import { modals } from '@mantine/modals';
 import { Link, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
-import { IconCloudOff, IconCloudCheck, IconList, IconRefresh, IconScan, IconSearch, IconTransferVertical } from '@tabler/icons-react';
+import { notifications } from '@mantine/notifications';
+import { IconCloudOff, IconCloudCheck, IconList, IconLogout, IconRefresh, IconScan, IconSearch, IconTransferVertical } from '@tabler/icons-react';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, fmtDateTime, fromNow } from '@/components/utils';
 import { JobPage } from './JobPage';
@@ -46,8 +47,15 @@ function TechShell() {
 
 function Header() {
   const { t } = useTranslation();
-  const { fullName, online, queue } = useTech();
+  const { fullName, online, queue, signOut } = useTech();
   const waiting = queue.length;
+  const confirmSignOut = () => modals.openConfirmModal({
+    title: t('tech.signOut'),
+    children: <Text fz="sm">{waiting > 0 ? t('tech.signOutWaiting', { count: waiting }) : t('tech.signOutHint')}</Text>,
+    labels: { confirm: t('tech.signOut'), cancel: t('common.cancel') },
+    confirmProps: { color: 'red' },
+    onConfirm: () => { void signOut().then((ok) => { if (!ok) notifications.show({ color: 'orange', message: t('tech.signOutNeedsSignal') }); }); },
+  });
   return (
     <Group justify="space-between" px="sm" py={8} bg="white" style={{ borderBottom: '1px solid var(--mantine-color-gray-3)', position: 'sticky', top: 0, zIndex: 10 }}>
       <div>
@@ -62,6 +70,7 @@ function Header() {
           <ActionIcon component={Link} to="/tech/sync" variant="default" aria-label={t('tech.sync')}><IconTransferVertical size={16} /></ActionIcon>
         </Indicator>
         <Anchor fz="xs" href="/" onClick={() => { try { localStorage.setItem(MODE_KEY, 'full'); } catch { /* private mode */ } }}>{t('tech.fullApp')}</Anchor>
+        <ActionIcon variant="subtle" color="gray" onClick={confirmSignOut} aria-label={t('tech.signOut')}><IconLogout size={16} /></ActionIcon>
       </Group>
     </Group>
   );

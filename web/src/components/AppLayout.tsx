@@ -56,6 +56,11 @@ export function AppLayout() {
   const isActive = (to: string) => (to === '/' ? pathname === '/' : pathname.startsWith(to));
   const logout = async () => {
     await post('/auth/logout');
+    // A shared phone keeps nothing of this person's jobs (the technician view's copy); their unsent changes stay for them.
+    try {
+      const [{ forgetUser }, store] = await Promise.all([import('@/tech/identity'), import('@/tech/store')]);
+      await forgetUser(store);
+    } catch { /* no IndexedDB here: nothing to forget */ }
     qc.clear();
     navigate('/login');
     window.location.reload();
