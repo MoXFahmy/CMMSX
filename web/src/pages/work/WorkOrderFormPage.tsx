@@ -66,6 +66,8 @@ export function WorkOrderFormPage() {
     const body = {
       ...v, plannedStart: toIsoDate(v.plannedStart), dueDate: toIsoDate(v.dueDate), estimatedHours: v.estimatedHours === '' ? null : v.estimatedHours,
       tasks: v.tasks.filter((x) => x.trim()), rowVersion: wo?.rowVersion,
+      // Duplicate: the source's planned parts and hours come along (server side).
+      copyPlanFromId: !editing && source ? source.id : undefined,
     };
     try {
       const r = editing ? await put<{ id: string }>(`/work-orders/${id}`, body) : await post<{ id: string; number: string }>('/work-orders', body);

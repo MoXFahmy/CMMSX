@@ -118,7 +118,7 @@ export type WorkOrderDetail = {
   assetId?: string; asset?: { id: string; assetNumber: string; name: string; serialNumber?: string; status: AssetStatus; criticality: Criticality; notesToTechnician?: string; warrantyType: WarrantyType; warrantyExpiresOn?: string; underWarranty: boolean };
   requestedBy?: string; preventionNotes?: string;
   tradeId?: string; tradeName?: string; failureCodeId?: string; failureCode?: { code: string; name: string };
-  assignees: { employeeId: string; fullName: string; code: string }[]; plannedStart?: string; dueDate?: string; estimatedHours?: number;
+  assignees: { employeeId: string; fullName: string; code: string; plannedHours?: number | null; hourlyRate?: number | null }[]; plannedStart?: string; dueDate?: string; estimatedHours?: number;
   startedAt?: string; completedAt?: string; closedAt?: string; completionNotes?: string; causeNotes?: string; assetWasDown: boolean; downtimeHours?: number;
   locationNotesToTechnician?: string; request?: { id: string; number: string; requesterName?: string };
   pm?: { id: string; code: string; name: string }; pmDueDate?: string;
@@ -128,9 +128,18 @@ export type WorkOrderDetail = {
   labor: { id: string; employeeId: string; employeeName: string; workDate: string; createdAt: string; hours: number; overtimeHours: number; rate: number; overtimeRate: number; notes?: string; cost: number }[];
   costs: { id: string; description: string; quantity: number; unitCost: number; vendor?: string; reference?: string; total: number; createdAt: string }[];
   parts: WoPartItem[];
+  plannedParts: PlannedPart[];
   totals: { laborHours: number; laborCost: number; partsCost: number; otherCost: number; totalCost: number };
+  planned: { laborHours: number; laborCost: number; partsCost: number; totalCost: number };
   allowedTransitions: WorkOrderStatus[]; isOverdue: boolean; createdAt: string; updatedAt?: string; legacyRef?: string; rowVersion: string;
 };
+/** A part planned on a work order: what is still reserved for it and how short its store is (stock goes to the earliest due job first). */
+export type PlannedPart = {
+  id: string; partId: string; partNumber: string; partName: string; unitOfMeasure: string; storeId?: string | null; storeCode?: string | null;
+  quantity: number; issued: number; reserved: number; short: number; unitCost: number; plannedCost: number; notes?: string | null;
+};
+/** The 409 answer when a stock move would take stock reserved for other work. */
+export type ReservedConflict = { title: string; reserved: { workOrderId: string; workOrderNumber: string; title?: string; moreShort: number }[] };
 export type ActivityItem = { id: string; kind: 'comment' | 'status'; body?: string; from?: WorkOrderStatus; to?: WorkOrderStatus; holdReason?: HoldReason; by?: string; at: string };
 export type WorkRequestListItem = {
   id: string; number: string; title: string; status: WorkRequestStatus; priority: WorkPriority; type: WorkType; siteId: string; siteName: string;
