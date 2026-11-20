@@ -107,6 +107,9 @@ function PartsTab() {
   ];
   const canManage = can(P.inventoryManage);
   const [selected, setSelected] = useState<PartListItem[]>([]);
+  // Ticked rows belong to the list on screen: changing its filters, tab or sort starts a new selection.
+  const selectionKey = JSON.stringify(listQuery);
+  useEffect(() => setSelected([]), [selectionKey]);
   const bulk = useMutation({
     mutationFn: (active: boolean) => post<BulkResult>('/parts/bulk', { ids: selected.map((x) => x.id), active }),
     onSuccess: (r) => { showBulkResult(t, r); setSelected([]); void qc.invalidateQueries({ queryKey: ['parts'] }); },

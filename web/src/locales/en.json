@@ -1132,6 +1132,7 @@
     "pause": "Pause",
     "resume": "Resume",
     "markActive": "Mark active",
-    "markInactive": "Mark inactive"
+    "markInactive": "Mark inactive",
+    "statusConfirm": "This marks {{count}} work orders {{status}}. Reopening them later needs the close permission."
   }
 }

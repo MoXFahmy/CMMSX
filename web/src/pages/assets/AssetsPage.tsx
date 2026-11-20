@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActionIcon, Anchor, Badge, Button, Card, Group, Menu, MultiSelect, Select, Stack, Switch, Text, TextInput, Tooltip } from '@mantine/core';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
@@ -37,6 +37,9 @@ export function AssetsPage() {
   const { data: cats } = useQuery({ queryKey: ['categories'], queryFn: () => get<Category[]>('/asset-categories') });
   const { data: fields } = useQuery({ queryKey: ['custom-fields', 'Asset'], queryFn: () => get<CustomField[]>('/custom-fields', { entityType: 'Asset' }) });
   const [selected, setSelected] = useState<AssetListItem[]>([]);
+  // Ticked rows belong to the list on screen: changing its filters, tab or sort starts a new selection.
+  const selectionKey = JSON.stringify(filters);
+  useEffect(() => setSelected([]), [selectionKey]);
 
   // If filtering by location only, infer the site so the location dropdown has options.
   const siteForLocations = p('siteId') || h?.locations.find((l) => l.id === p('locationId'))?.siteId || null;

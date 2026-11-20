@@ -20,7 +20,12 @@ export function useListColumns<T>(list: ListKey, all: ListColumn<T>[],
   const isDefaultHidden = (acc: string) => (opts.defaultHidden ?? []).includes(acc) || (opts.hiddenByDefault?.(acc) ?? false);
   const isVisible = (acc: string) => (tokens.includes(acc) ? false : tokens.includes(`+${acc}`) ? true : !isDefaultHidden(acc));
 
-  const save = useMutation({ mutationFn: (next: string[]) => put(`/auth/me/list-settings/${list}`, { hiddenColumns: next }), onError: notifyError });
+  // Saves run one at a time, in the order the person ticked; if one fails, show what the server really has.
+  const save = useMutation({
+    mutationFn: (next: string[]) => put(`/auth/me/list-settings/${list}`, { hiddenColumns: next }),
+    scope: { id: `list-settings-${list}` },
+    onError: (e) => { notifyError(e); void qc.invalidateQueries({ queryKey: ['list-settings'] }); },
+  });
   const setTokens = (next: string[]) => {
     qc.setQueryData<Settings>(['list-settings'], (cur) => ({ ...(cur ?? {}), [list]: { hiddenColumns: next } }));
     save.mutate(next);
@@ -38,7 +43,11 @@ export function useListColumns<T>(list: ListKey, all: ListColumn<T>[],
       const raw = localStorage.getItem(opts.legacyKey);
       if (!raw) return;
       const old: unknown = JSON.parse(raw);
-      if (Array.isArray(old)) setTokens(old.filter((x): x is string => typeof x === 'string'));
+      if (Array.isArray(old)) {
+        // The old list named every hidden column, defaults included: a default-hidden column missing from it was shown.
+        const hidden = old.filter((x): x is string => typeof x === 'string');
+        setTokens([...hidden, ...(opts.defaultHidden ?? []).filter((acc) => !hidden.includes(acc)).map((acc) => `+${acc}`)]);
+      }
       localStorage.removeItem(opts.legacyKey);
     } catch { /* storage blocked or unreadable: keep the defaults */ }
     // eslint-disable-next-line react-hooks/exhaustive-deps

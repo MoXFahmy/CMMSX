@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Anchor, Badge, Button, Card, Collapse, Group, Menu, Modal, MultiSelect, SegmentedControl, Select, SimpleGrid, Stack, Tabs, Text, Textarea, TextInput, ActionIcon, Tooltip } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { useDisclosure } from '@mantine/hooks';
@@ -111,6 +111,9 @@ export function WorkOrdersPage() {
   const canBulkStatus = can(P.woExecute);
   const canBulkEdit = can(P.woEdit);
   const [selected, setSelected] = useState<WorkOrderListItem[]>([]);
+  // Ticked rows belong to the list on screen: changing its filters, tab or sort starts a new selection.
+  const selectionKey = JSON.stringify(listQuery);
+  useEffect(() => setSelected([]), [selectionKey]);
   const [statusTarget, setStatusTarget] = useState<WorkOrderStatus | null>(null);
   const [holdReason, setHoldReason] = useState<HoldReason | null>(null);
   const [notes, setNotes] = useState('');
@@ -125,7 +128,8 @@ export function WorkOrdersPage() {
     },
     onError: notifyError,
   });
-  const pickStatus = (s: WorkOrderStatus) => (s === 'OnHold' || s === 'Completed' ? setStatusTarget(s) : bulk.mutate({ status: { status: s } }));
+  // Statuses that need more (a reason, notes) or can't be taken back lightly (closing, cancelling) ask first.
+  const pickStatus = (s: WorkOrderStatus) => (['OnHold', 'Completed', 'Closed', 'Cancelled'].includes(s) ? setStatusTarget(s) : bulk.mutate({ status: { status: s } }));
   const statusOptions = BULK_STATUSES.filter((s) => can(P.woClose) || (s !== 'Closed' && s !== 'Cancelled'));
 
   return (
@@ -210,6 +214,7 @@ export function WorkOrdersPage() {
           <Text fz="sm" c="dimmed">{t('list.statusHint')}</Text>
           {statusTarget === 'OnHold' && <Select label={t('wo.holdReason')} required data={HOLD_REASONS.map((r) => ({ value: r, label: t(`holdReason.${r}`) }))}
             value={holdReason} onChange={(v) => setHoldReason(v as HoldReason | null)} />}
+          {(statusTarget === 'Closed' || statusTarget === 'Cancelled') && <Text fz="sm" c="orange">{t('list.statusConfirm', { count: selected.length, status: t(`woStatus.${statusTarget}`).toLowerCase() })}</Text>}
           {statusTarget === 'Completed' && <Textarea label={t('list.completionNotesShared')} autosize minRows={3} value={notes} onChange={(e) => setNotes(e.currentTarget.value)} />}
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setStatusTarget(null)}>{t('common.cancel')}</Button>

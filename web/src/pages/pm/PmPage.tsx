@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActionIcon, Alert, Anchor, Badge, Button, Card, Checkbox, Drawer, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Table, Tabs, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useDisclosure } from '@mantine/hooks';
@@ -81,6 +81,9 @@ function SchedulesTab() {
   ];
   const canManage = can(P.pmManage);
   const [selected, setSelected] = useState<PmScheduleListItem[]>([]);
+  // Ticked rows belong to the list on screen: changing its filters, tab or sort starts a new selection.
+  const selectionKey = JSON.stringify(listQuery);
+  useEffect(() => setSelected([]), [selectionKey]);
   const bulk = useMutation({
     mutationFn: (active: boolean) => post<BulkResult>('/pm-schedules/bulk', { ids: selected.map((x) => x.id), active }),
     onSuccess: (r) => { showBulkResult(t, r); setSelected([]); void qc.invalidateQueries({ queryKey: ['pm-schedules'] }); },

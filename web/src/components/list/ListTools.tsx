@@ -50,7 +50,13 @@ export function ListTools<T>({ list, lp, cols, exportPath, exportQuery, total }:
   const [makeDefault, setMakeDefault] = useState(false);
 
   const active = (views ?? []).find((v) => normalizeQuery(v.query) === lp.query && sameSet(v.hiddenColumns, cols.tokens));
-  const apply = (v: SavedView) => { lp.replaceAll(v.query); cols.setTokens(v.hiddenColumns); };
+  /** Applies a view; `keep` names address keys to carry over (a request opened from an e-mail link, the page). */
+  const apply = (v: SavedView, keep: string[] = []) => {
+    const q = new URLSearchParams(v.query);
+    for (const k of keep) { const value = lp.p(k); if (value) q.set(k, value); }
+    lp.replaceAll(q.toString());
+    cols.setTokens(v.hiddenColumns);
+  };
 
   // The default view, once, when the list opens with an empty address (a link or bookmark with filters wins).
   const openedEmpty = useRef(lp.isEmpty);
@@ -59,7 +65,7 @@ export function ListTools<T>({ list, lp, cols, exportPath, exportQuery, total }:
     if (appliedDefault.current || !views) return;
     appliedDefault.current = true;
     const d = views.find((v) => v.isDefault);
-    if (openedEmpty.current && d) apply(d);
+    if (openedEmpty.current && d) apply(d, ['open', 'new', 'page']);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [views]);
 

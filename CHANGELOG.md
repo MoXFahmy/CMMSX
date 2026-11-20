@@ -31,6 +31,7 @@ The list toolkit: work orders, work requests, PM schedules, parts, purchase orde
 - The PM schedule list keeps its filters in the address, like the other lists, so it can be bookmarked and saved.
 - The asset export follows the columns on screen. Called without columns (for example from a script), it now lists
   every field under its field name instead of the old fixed headings.
+- Exports hold up to 10,000 rows; the asset export used to go up to 50,000. The export menu says when more rows match.
 - The asset list's column choice moves from the browser to your account (carried over automatically the first time).
 
 ## [0.1.0] - 2026-11-19
