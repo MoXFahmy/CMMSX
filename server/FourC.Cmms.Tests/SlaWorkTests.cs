@@ -253,4 +253,109 @@ public class SlaWorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(DateTimeOffset.Parse("2026-11-30T21:59:59Z"), At(await DetailAsync(o.C, wid), "dueAt"));
         Assert.Equal(DateTimeOffset.Parse("2026-12-05T21:59:59Z"), At(await RequestAsync(o.C, rid), "dueAt"));
     }
+
+    // ---- Task 3: late and due soon everywhere, and the "Targets met" report ----
+
+    /// <summary>Moves a work order's creation and deadlines back (or on) in time, as if raised earlier.</summary>
+    private async Task ShiftAsync(Guid workOrderId, TimeSpan by)
+    {
+        var h = by.TotalHours;
+        await WithDbAsync(db => db.WorkOrders.IgnoreQueryFilters().Where(w => w.Id == workOrderId).ExecuteUpdateAsync(s => s
+            .SetProperty(w => w.CreatedAt, w => w.CreatedAt.AddHours(h))
+            .SetProperty(w => w.DueAt, w => w.DueAt == null ? null : w.DueAt.Value.AddHours(h))
+            .SetProperty(w => w.StartBy, w => w.StartBy == null ? null : w.StartBy.Value.AddHours(h))));
+    }
+
+    private static async Task<List<Guid>> LateIdsAsync(HttpClient c, string path) =>
+        (await Ok(await c.GetAsync(path))).GetProperty("items").EnumerateArray().Select(Id).ToList();
+
+    [SkippableFact]
+    public async Task Late_means_past_the_due_time_not_past_the_due_day()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var late = await CreateAsync(o.C, Wo(o.Site));
+        await ShiftAsync(late, TimeSpan.FromHours(-5)); // raised 5 h ago: due 1 h ago, the same day or not
+        var later = await CreateAsync(o.C, Wo(o.Site, dueAt: DateTimeOffset.UtcNow.AddMinutes(30)));
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{later}/status", new { status = "InProgress" })); // responded: only its deadline counts
+
+        var ids = await LateIdsAsync(o.C, "/api/work-orders?late=true");
+        Assert.Contains(late, ids);
+        Assert.DoesNotContain(later, ids);
+        Assert.Equal(ids, await LateIdsAsync(o.C, "/api/work-orders?overdue=true")); // old clients' filter means the same
+        var row = (await Ok(await o.C.GetAsync("/api/work-orders"))).GetProperty("items").EnumerateArray().Single(r => Id(r) == late);
+        Assert.Equal("Late", row.GetProperty("completionState").GetString());
+        Assert.Equal("DueSoon", (await Ok(await o.C.GetAsync("/api/work-orders"))).GetProperty("items").EnumerateArray().Single(r => Id(r) == later).GetProperty("completionState").GetString());
+        var work = (await Ok(await o.C.GetAsync("/api/dashboard"))).GetProperty("work");
+        Assert.Equal(1, work.GetProperty("late").GetInt32());
+        Assert.Equal(1, work.GetProperty("dueSoon").GetInt32());
+        Assert.Equal(1, (await Ok(await o.C.GetAsync("/api/alerts"))).GetProperty("overdueWorkOrders").GetInt32());
+    }
+
+    [SkippableFact]
+    public async Task Response_late_counts_until_someone_acts()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var id = await CreateAsync(o.C, Wo(o.Site));
+        await ShiftAsync(id, TimeSpan.FromHours(-2)); // start-by passed an hour ago, due in 2 h
+        Assert.Contains(id, await LateIdsAsync(o.C, "/api/work-orders?late=true"));
+        var d = await DetailAsync(o.C, id);
+        Assert.Equal("Late", d.GetProperty("sla").GetProperty("response").GetString());
+        Assert.Equal(1, (await Ok(await o.C.GetAsync("/api/dashboard"))).GetProperty("work").GetProperty("responseLate").GetInt32());
+
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{id}/status", new { status = "OnHold", holdReason = "WaitingForParts" }));
+        Assert.DoesNotContain(id, await LateIdsAsync(o.C, "/api/work-orders?late=true"));
+        Assert.Equal("Missed", (await DetailAsync(o.C, id)).GetProperty("sla").GetProperty("response").GetString());
+    }
+
+    [SkippableFact]
+    public async Task Requests_are_late_while_waiting()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var rid = Id(await Ok(await o.C.PostAsJsonAsync("/api/work-requests", new { title = "Leak", siteId = o.Site, priority = "Urgent", type = "Corrective" })));
+        await WithDbAsync(db => db.WorkRequests.IgnoreQueryFilters().Where(r => r.Id == rid)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.CreatedAt, r => r.CreatedAt.AddHours(-2)).SetProperty(r => r.RespondBy, r => r.RespondBy!.Value.AddHours(-2))));
+        Assert.Contains(rid, await LateIdsAsync(o.C, "/api/work-requests?late=true"));
+        var row = (await Ok(await o.C.GetAsync("/api/work-requests"))).GetProperty("items").EnumerateArray().Single(r => Id(r) == rid);
+        Assert.Equal("Late", row.GetProperty("responseState").GetString());
+
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-requests/{rid}/approve", new { }));
+        Assert.DoesNotContain(rid, await LateIdsAsync(o.C, "/api/work-requests?late=true"));
+    }
+
+    [SkippableFact]
+    public async Task Targets_met_report_counts_each_thing_once()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        // Requests: one answered in time, one still waiting an hour after its response deadline.
+        var inTime = Id(await Ok(await o.C.PostAsJsonAsync("/api/work-requests", new { title = "A", siteId = o.Site, priority = "Urgent", type = "Corrective" })));
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-requests/{inTime}/approve", new { }));
+        var waiting = Id(await Ok(await o.C.PostAsJsonAsync("/api/work-requests", new { title = "B", siteId = o.Site, priority = "Urgent", type = "Corrective" })));
+        await WithDbAsync(db => db.WorkRequests.IgnoreQueryFilters().Where(r => r.Id == waiting)
+            .ExecuteUpdateAsync(s => s.SetProperty(r => r.CreatedAt, r => r.CreatedAt.AddHours(-2)).SetProperty(r => r.RespondBy, r => r.RespondBy!.Value.AddHours(-2))));
+        // Work orders: one completed in time (also responded in time), one an hour past its deadline.
+        var done = await CreateAsync(o.C, Wo(o.Site));
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{done}/status", new { status = "Completed", completionNotes = "Fixed" }));
+        var overdue = await CreateAsync(o.C, Wo(o.Site));
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{overdue}/status", new { status = "InProgress" }));
+        await ShiftAsync(overdue, TimeSpan.FromHours(-5));
+        // PM work an hour past its date: PM compliance has its own report, so it isn't counted here.
+        var pm = await CreateAsync(o.C, Wo(o.Site));
+        await WithDbAsync(db => db.WorkOrders.IgnoreQueryFilters().Where(w => w.Id == pm).ExecuteUpdateAsync(s => s
+            .SetProperty(w => w.PmDueDate, DateOnly.FromDateTime(DateTime.UtcNow)).SetProperty(w => w.PmScheduleId, Guid.NewGuid())
+            .SetProperty(w => w.DueAt, DateTimeOffset.UtcNow.AddHours(-1)).SetProperty(w => w.StartBy, (DateTimeOffset?)null)));
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var report = await Ok(await o.C.GetAsync($"/api/reports/targets-met?from={today.AddDays(-2):yyyy-MM-dd}&to={today.AddDays(2):yyyy-MM-dd}&groupBy=priority"));
+        var urgent = report.GetProperty("rows").EnumerateArray().Single(r => r.GetProperty("priority").GetString() == "Urgent");
+        // Response: request in time (met), request still waiting (missed), the completed job (met), the overdue job started 4 h after its
+        // start-by (missed). The approved request's work order isn't counted again: its response was the request's decision.
+        Assert.Equal((2, 4), (urgent.GetProperty("responseMet").GetInt32(), urgent.GetProperty("responseTotal").GetInt32()));
+        // Completion: the completed job (met), the overdue one (missed); the PM job and pending deadlines aren't counted.
+        Assert.Equal((1, 2), (urgent.GetProperty("completionMet").GetInt32(), urgent.GetProperty("completionTotal").GetInt32()));
+    }
 }
+

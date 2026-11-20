@@ -221,7 +221,13 @@ public static class DashboardEndpoints
             var work = new
             {
                 Open = woByStatus.Where(x => active.Contains(x.Status)).Sum(x => x.Count),
-                Overdue = await db.WorkOrders.CountAsync(w => w.DueDate < today && active.Contains(w.Status), ct),
+                // Late: past the due time; old clients read it as "Overdue".
+                Overdue = await SlaQueries.LateCompletion(db.WorkOrders, DateTimeOffset.UtcNow).CountAsync(ct),
+                Late = await SlaQueries.LateCompletion(db.WorkOrders, DateTimeOffset.UtcNow).CountAsync(ct),
+                DueSoon = await SlaQueries.DueSoonAsync(db.WorkOrders, await SlaQueries.SettingsAsync(db, ct), DateTimeOffset.UtcNow, ct),
+                // Nobody has acted yet: work orders past their start-by and requests past their response deadline.
+                ResponseLate = await SlaQueries.LateResponse(db.WorkOrders, DateTimeOffset.UtcNow).CountAsync(ct)
+                    + await db.WorkRequests.CountAsync(r => r.Status == FourC.Cmms.Core.Work.WorkRequestStatus.New && r.RespondBy < DateTimeOffset.UtcNow, ct),
                 CompletedLast30 = await db.WorkOrders.CountAsync(w => w.CompletedAt >= since, ct),
                 RequestsAwaiting = await db.WorkRequests.CountAsync(r => r.Status == FourC.Cmms.Core.Work.WorkRequestStatus.New, ct),
                 ByStatus = woByStatus, ByPriority = woByPriority,

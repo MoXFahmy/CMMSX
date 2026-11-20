@@ -59,6 +59,8 @@ public class TechTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(o.Me, b.GetProperty("employeeId").GetGuid());
         var job = Assert.Single(b.GetProperty("jobs").EnumerateArray());
         Assert.Equal(mine, Id(job));
+        // 0.5.0: the due time travels with the job (a date-only due date = the end of that day), so the phone can show "due 14:00".
+        Assert.Equal(FourC.Cmms.Core.Work.Sla.EndOfDay(DateOnly.Parse(job.GetProperty("dueDate").GetString()!), TimeZoneInfo.Utc), job.GetProperty("dueAt").GetDateTimeOffset());
         Assert.Equal("Pump", job.GetProperty("asset").GetProperty("name").GetString());
         Assert.Equal(2, job.GetProperty("tasks").GetArrayLength());
         Assert.Equal(JsonValueKind.Null, job.GetProperty("tasks")[0].GetProperty("updatedAt").ValueKind);

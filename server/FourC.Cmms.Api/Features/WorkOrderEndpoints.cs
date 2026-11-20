@@ -37,7 +37,10 @@ public static class WorkOrderEndpoints
         public Guid? TradeId { get; set; }
         public Guid? AssigneeId { get; set; }
         public bool? Mine { get; set; }
+        /// <summary>Old name of <see cref="Late"/> (phones and bookmarks).</summary>
         public bool? Overdue { get; set; }
+        /// <summary>Past the due time, or past the start-by with nobody having acted on it.</summary>
+        public bool? Late { get; set; }
         public bool? ActiveOnly { get; set; }
         public DateOnly? CreatedFrom { get; set; }
         public DateOnly? CreatedTo { get; set; }
@@ -60,7 +63,8 @@ public static class WorkOrderEndpoints
 
     public sealed record WorkOrderListItem(Guid Id, string Number, string Title, WorkType Type, WorkPriority Priority, WorkOrderStatus Status, HoldReason? HoldReason,
         Guid SiteId, string SiteName, Guid? LocationId, string? LocationPath, Guid? AssetId, string? AssetNumber, string? AssetName, string? TradeName,
-        List<string> Assignees, DateOnly? DueDate, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, bool IsOverdue);
+        List<string> Assignees, DateOnly? DueDate, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, bool IsOverdue,
+        DateTimeOffset? DueAt, DateTimeOffset? StartBy, DateTimeOffset? RespondedAt, SlaState ResponseState, SlaState CompletionState);
 
     public static void MapWorkOrderEndpoints(this RouteGroupBuilder api)
     {
@@ -77,9 +81,8 @@ public static class WorkOrderEndpoints
         g.MapGet("/summary", async ([AsParameters] WorkOrderFilter f, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             var q = await FilterAsync(db, f, ctx, includeStatus: false, ct);
-            var today = Today;
             var byStatus = await q.GroupBy(w => w.Status).Select(x => new { Status = x.Key, Count = x.Count() }).ToListAsync(ct);
-            var overdue = await q.CountAsync(w => w.DueDate < today && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold), ct);
+            var overdue = await SlaQueries.LateWork(q, DateTimeOffset.UtcNow).CountAsync(ct);
             return new { byStatus, overdue };
         }).RequirePermission(Permissions.WorkOrdersView);
 
@@ -107,7 +110,16 @@ public static class WorkOrderEndpoints
                 .OrderByDescending(t => t.Date).ThenByDescending(t => t.CreatedAt)
                 .Select(t => new { t.Id, t.Type, t.Date, t.PartId, t.Part!.PartNumber, PartName = t.Part.Name, t.Part.UnitOfMeasure, t.StoreId, StoreCode = t.Store!.Code,
                     Quantity = -t.Quantity, t.UnitCost, Total = Math.Round(-t.Quantity * t.UnitCost, 2), t.BatchNumber, t.Notes, t.CreatedByName }).ToListAsync(ct);
-            var request = w.WorkRequestId is { } rid ? await db.WorkRequests.AsNoTracking().Where(r => r.Id == rid).Select(r => new { r.Id, r.Number, r.RequesterName }).FirstOrDefaultAsync(ct) : null;
+            var request = w.WorkRequestId is { } rid ? await db.WorkRequests.AsNoTracking().Where(r => r.Id == rid).Select(r => new { r.Id, r.Number, r.RequesterName, r.RespondBy, r.DecidedAt }).FirstOrDefaultAsync(ct) : null;
+            var settings = await SlaQueries.SettingsAsync(db, ct);
+            var now = DateTimeOffset.UtcNow;
+            var sla = SlaQueries.Work(settings, w.Priority, w.Status, w.StartBy, w.RespondedAt, w.DueAt, w.DueFromTarget, w.CompletedAt, now);
+            // Raised as a request: its response was the request's decision.
+            if (request is not null) sla = sla with
+            {
+                Response = Sla.State(request.RespondBy, request.DecidedAt, now, Sla.For(settings, w.Priority)?.RespondMinutes is { } m ? TimeSpan.FromMinutes(m) : null),
+                RespondBy = request.RespondBy, RespondedAt = request.DecidedAt,
+            };
             var mine = await perms.GetAsync(UserId(http));
             var transitions = WorkOrderWorkflow.NextStatuses(w.Status)
                 .Where(s => mine.Contains(Permissions.WorkOrdersExecute) && (!WorkOrderWorkflow.RequiresClosePermission(w.Status, s) || mine.Contains(Permissions.WorkOrdersClose)));
@@ -139,7 +151,7 @@ public static class WorkOrderEndpoints
                     LaborHours = labor.Sum(l => l.Hours + l.OvertimeHours), LaborCost = labor.Sum(l => l.Cost), PartsCost = parts.Sum(p => p.Total), OtherCost = costs.Sum(c => c.Total),
                     TotalCost = labor.Sum(l => l.Cost) + parts.Sum(p => p.Total) + costs.Sum(c => c.Total),
                 },
-                AllowedTransitions = transitions, IsOverdue = w.DueDate < Today && WorkOrderWorkflow.IsActive(w.Status),
+                AllowedTransitions = transitions, IsOverdue = sla.Completion == SlaState.Late || sla.Response == SlaState.Late, Sla = sla,
                 w.CreatedAt, w.UpdatedAt, w.LegacyRef, RowVersion = Convert.ToBase64String(w.RowVersion),
             });
         }).RequirePermission(Permissions.WorkOrdersView);
@@ -443,17 +455,24 @@ public static class WorkOrderEndpoints
         CancellationToken ct, int maxPageSize = 500)
     {
         var q = await FilterAsync(db, f, ctx, includeStatus: true, ct);
-        var today = Today;
+        var settings = await SlaQueries.SettingsAsync(db, ct);
+        var now = DateTimeOffset.UtcNow;
         var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "createdAt").Select(w => new
         {
             w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason, w.SiteId, SiteName = w.Site!.Name, w.LocationId, LocationPath = w.Location!.Path,
             w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, TradeName = w.Trade!.Name,
             Assignees = w.Assignees.Select(a => a.Employee!.FullName).ToList(), w.DueDate, w.CreatedAt, w.CompletedAt,
+            w.DueAt, w.StartBy, w.RespondedAt, w.DueFromTarget,
         }).ToPagedAsync(page, pageSize, ct, maxPageSize);
         var names = await LocationEndpoints.ResolvePathNamesAsync(db, paged.Items.Select(i => i.LocationPath), ct);
-        return new PagedResult<WorkOrderListItem>(paged.Items.Select(w => new WorkOrderListItem(w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason,
-            w.SiteId, w.SiteName, w.LocationId, w.LocationPath is null ? null : names(w.LocationPath), w.AssetId, w.AssetNumber, w.AssetName, w.TradeName,
-            w.Assignees, w.DueDate, w.CreatedAt, w.CompletedAt, w.DueDate < today && WorkOrderWorkflow.IsActive(w.Status))).ToList(), paged.Total, paged.Page, paged.PageSize);
+        return new PagedResult<WorkOrderListItem>(paged.Items.Select(w =>
+        {
+            var sla = SlaQueries.Work(settings, w.Priority, w.Status, w.StartBy, w.RespondedAt, w.DueAt, w.DueFromTarget, w.CompletedAt, now);
+            return new WorkOrderListItem(w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason,
+                w.SiteId, w.SiteName, w.LocationId, w.LocationPath is null ? null : names(w.LocationPath), w.AssetId, w.AssetNumber, w.AssetName, w.TradeName,
+                w.Assignees, w.DueDate, w.CreatedAt, w.CompletedAt, sla.Completion == SlaState.Late || sla.Response == SlaState.Late,
+                w.DueAt, w.StartBy, w.RespondedAt, sla.Response, sla.Completion);
+        }).ToList(), paged.Total, paged.Page, paged.PageSize);
     }
 
     private static async Task<IQueryable<WorkOrder>> FilterAsync(CmmsDbContext db, WorkOrderFilter f, ITenantContext ctx, bool includeStatus, CancellationToken ct)
@@ -489,11 +508,7 @@ public static class WorkOrderEndpoints
             var me = await db.Employees.Where(e => e.UserId == ctx.UserId).Select(e => (Guid?)e.Id).FirstOrDefaultAsync(ct);
             q = q.Where(w => me != null && w.Assignees.Any(a => a.EmployeeId == me));
         }
-        if (f.Overdue == true)
-        {
-            var today = Today;
-            q = q.Where(w => w.DueDate < today && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold));
-        }
+        if (f.Late == true || f.Overdue == true) q = SlaQueries.LateWork(q, DateTimeOffset.UtcNow);
         return q;
     }
 
