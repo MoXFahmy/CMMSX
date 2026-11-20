@@ -15,7 +15,7 @@ public static class WorkOrderEndpoints
 {
     public sealed record WorkOrderInput(string Title, string? Description, WorkType Type, WorkPriority Priority, Guid SiteId, Guid? LocationId, Guid? AssetId,
         Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? PlannedStart, DateOnly? DueDate, decimal? EstimatedHours, List<string>? Tasks, string? RowVersion = null,
-        string? RequestedBy = null);
+        string? RequestedBy = null, Guid? CopyPlanFromId = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null);
     public sealed record BulkInput(Guid[]? Ids, StatusInput? Status, WorkPriority? Priority, Guid[]? AddAssigneeIds);
@@ -111,6 +111,9 @@ public static class WorkOrderEndpoints
             var transitions = WorkOrderWorkflow.NextStatuses(w.Status)
                 .Where(s => mine.Contains(Permissions.WorkOrdersExecute) && (!WorkOrderWorkflow.RequiresClosePermission(w.Status, s) || mine.Contains(Permissions.WorkOrdersClose)));
             var locationNotes = w.Location?.NotesToTechnician;
+            var planned = await Planning.LinesAsync(db, w, ct);
+            var labour = Planning.Labour(w.Assignees.Select(a => (a.PlannedHours, a.Employee?.HourlyRate)).ToList(), w.EstimatedHours);
+            var plannedParts = planned.Sum(p => p.PlannedCost);
             var pm = w.PmScheduleId is { } pmId ? await db.PmSchedules.AsNoTracking().Where(p => p.Id == pmId).Select(p => new { p.Id, p.Code, p.Name }).FirstOrDefaultAsync(ct) : null;
             return Results.Ok(new
             {
@@ -120,12 +123,13 @@ public static class WorkOrderEndpoints
                     w.Asset.WarrantyType, w.Asset.WarrantyExpiresOn, UnderWarranty = w.Asset.WarrantyType != FourC.Cmms.Core.Assets.WarrantyType.None && w.Asset.WarrantyExpiresOn >= Today },
                 w.RequestedBy, w.PreventionNotes,
                 w.TradeId, TradeName = w.Trade?.Name, w.FailureCodeId, FailureCode = w.FailureCode is null ? null : new { w.FailureCode.Code, w.FailureCode.Name },
-                Assignees = w.Assignees.Select(a => new { a.EmployeeId, a.Employee!.FullName, a.Employee.Code }),
+                Assignees = w.Assignees.Select(a => new { a.EmployeeId, a.Employee!.FullName, a.Employee.Code, a.PlannedHours, a.Employee.HourlyRate }),
                 w.PlannedStart, w.DueDate, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 LocationNotesToTechnician = locationNotes, Request = request, Pm = pm, w.PmDueDate,
                 Assets = roundAssets,
                 Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks }),
-                Labor = labor, Costs = costs, Parts = parts,
+                Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned,
+                Planned = new { LaborHours = labour.Hours, LaborCost = labour.Cost, PartsCost = plannedParts, TotalCost = labour.Cost + plannedParts },
                 Totals = new
                 {
                     LaborHours = labor.Sum(l => l.Hours + l.OvertimeHours), LaborCost = labor.Sum(l => l.Cost), PartsCost = parts.Sum(p => p.Total), OtherCost = costs.Sum(c => c.Total),
@@ -139,8 +143,15 @@ public static class WorkOrderEndpoints
         g.MapPost("/", async (WorkOrderInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             var v = await ValidateAsync(input, db, ct);
+            if (input.CopyPlanFromId is { } from && !await db.WorkOrders.AnyAsync(x => x.Id == from, ct)) v.Add("copyPlanFromId", "The work order to copy was not found.");
             if (!v.IsValid) return v.Problem();
             var w = await CreateAsync(db, ctx, input, requestId: null, ct, mail: mail);
+            if (input.CopyPlanFromId is { } source)
+            {
+                // Duplicate: the plan comes along (planned parts with stores re-picked, planned hours of technicians on both).
+                await Planning.CopyPlanAsync(db, source, w, ct);
+                await db.SaveChangesAsync(ct);
+            }
             return Results.Created($"/api/work-orders/{w.Id}", new { w.Id, w.Number });
         }).RequirePermission(Permissions.WorkOrdersCreate);
 

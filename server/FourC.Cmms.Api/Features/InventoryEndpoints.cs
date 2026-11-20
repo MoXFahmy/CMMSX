@@ -213,6 +213,8 @@ public static class InventoryEndpoints
             if (p is null) return Results.NotFound();
             if (await db.StockTransactions.AnyAsync(t => t.PartId == id, ct) || await db.PurchaseOrderLines.AnyAsync(l => l.PartId == id, ct))
                 throw new DomainException("This part has stock or purchasing history. Mark it inactive instead.");
+            if (await db.WorkOrderParts.AnyAsync(l => l.PartId == id, ct) || await db.PmTaskParts.AnyAsync(l => l.PartId == id, ct))
+                throw new DomainException("This part is planned on work orders or PM tasks. Remove it from them, or mark it inactive instead.");
             await db.StockLevels.Where(l => l.PartId == id).ExecuteDeleteAsync(ct);
             db.Parts.Remove(p);
             await db.SaveChangesAsync(ct);

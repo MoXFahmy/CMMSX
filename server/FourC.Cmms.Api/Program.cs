@@ -125,6 +125,7 @@ api.MapAdminEndpoints();
 api.MapPeopleEndpoints();
 api.MapWorkRequestEndpoints();
 api.MapWorkOrderEndpoints();
+api.MapPlanningEndpoints();
 api.MapPmEndpoints();
 api.MapInventoryEndpoints();
 api.MapPurchasingEndpoints();
