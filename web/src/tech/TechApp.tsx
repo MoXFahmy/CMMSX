@@ -8,6 +8,8 @@ import { IconCloudOff, IconCloudCheck, IconList, IconRefresh, IconScan, IconSear
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, fmtDateTime, fromNow } from '@/components/utils';
 import { JobPage } from './JobPage';
+import { PlacePage } from './PlacePage';
+import { ScanPage } from './ScanPage';
 import { MODE_KEY, TechProvider, useTech, type Phase } from './useTech';
 import type { QueuedChange } from './outbox';
 import type { TechJob } from './types';
@@ -32,6 +34,8 @@ function TechShell() {
           <Route path="/tech" element={<MyJobsPage />} />
           <Route path="/tech/jobs/:id" element={<JobPage />} />
           <Route path="/tech/sync" element={<SyncPage />} />
+          <Route path="/tech/scan" element={<ScanPage />} />
+          <Route path="/tech/place/:kind/:id" element={<PlacePage />} />
           <Route path="*" element={<MyJobsPage />} />
         </Routes>
       </Box>

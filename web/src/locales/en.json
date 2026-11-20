@@ -1269,6 +1269,24 @@
       "failureCode": "Choose a failure code for breakdown work.",
       "labour": "Log your hours before completing.",
       "allSteps": "Tick every checklist step before completing."
-    }
+    },
+    "notOnPhone": "This isn't on your phone's list (it may be on another site). Try again with a connection.",
+    "partOnline": "Parts open when you have a connection.",
+    "unknownCode": "No asset found for \"{{code}}\".",
+    "cameraProblem": "The camera couldn't start. Allow camera access, or type the number instead.",
+    "scanLabel": "Scan a label",
+    "stopCamera": "Stop the camera",
+    "typeCode": "Or type an asset number or barcode",
+    "open": "Open",
+    "scanHint": "Scan the QR label on a machine or location, or any barcode the asset has.",
+    "location": "Location",
+    "openJobsHere": "My open jobs here",
+    "noJobsHere": "None of your open jobs is here.",
+    "meters": "Meters",
+    "noReading": "No reading yet",
+    "enterReading": "Enter reading",
+    "meterReset": "The meter was reset or replaced (accept an unusual reading)",
+    "raiseRequest": "Raise a request",
+    "whatsWrong": "What's wrong?"
   }
 }

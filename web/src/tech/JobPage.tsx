@@ -159,7 +159,7 @@ function HoursModal({ opened, onClose, onSave }: { opened: boolean; onClose: () 
       <Stack>
         <DateInput label={t('tech.date')} value={date} onChange={(v) => setDate(v ? new Date(v) : null)} maxDate={new Date()} valueFormat="DD MMM YYYY" />
         <Group grow>
-          <NumberInput label={t('tech.hours')} min={0} max={24} step={0.25} decimalScale={2} value={hours} onChange={setHours} />
+          <NumberInput label={t('tech.hours')} min={0} max={24} step={0.25} decimalScale={2} value={hours} onChange={setHours} data-autofocus />
           <NumberInput label={t('tech.overtime')} min={0} max={24} step={0.25} decimalScale={2} value={ot} onChange={setOt} />
         </Group>
         <Textarea label={t('common.notes')} autosize value={notes} onChange={(e) => setNotes(e.currentTarget.value)} />
@@ -179,7 +179,7 @@ function HoldModal({ opened, onClose, onSave }: { opened: boolean; onClose: () =
   return (
     <Modal opened={opened} onClose={onClose} title={t('tech.hold')}>
       <Stack>
-        <Select label={t('tech.holdReason')} data={HOLD_REASONS.map((r) => ({ value: r, label: t(`holdReason.${r}`) }))} value={reason} onChange={(v) => setReason(v as HoldReason)} />
+        <Select data-autofocus label={t('tech.holdReason')} data={HOLD_REASONS.map((r) => ({ value: r, label: t(`holdReason.${r}`) }))} value={reason} onChange={(v) => setReason(v as HoldReason)} />
         <Textarea label={t('common.notes')} autosize value={note} onChange={(e) => setNote(e.currentTarget.value)} />
         <Button disabled={!reason} onClick={() => { onSave({ holdReason: reason!, note: note.trim() || null }); setNote(''); onClose(); }}>{t('tech.hold')}</Button>
       </Stack>
