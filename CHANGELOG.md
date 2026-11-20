@@ -4,6 +4,16 @@ All notable changes to 4C CMMS — the cloud app and the Android app share one v
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.5.2] - 2026-11-20
+
+### Changed
+- **New web address: https://cmx.cworks.com.eg.** E-mail links and newly printed QR labels use it. The old
+  `dxvjhwlc6echh.cloudfront.net` address keeps working, so bookmarks and labels already printed still open.
+- **Android app** opens the new address. Before updating, technicians should let the app finish sending any changes
+  still waiting; after updating, they sign in once more.
+- Deployment: the AWS stack takes the app's own domain and its certificate from the repository variables
+  `CMMS_DOMAIN` and `CMMS_DOMAIN_CERTIFICATE_ARN` (see docs/DEPLOY_AWS.md).
+
 ## [0.5.1] - 2026-11-20
 
 Small fixes left over from 0.0.2–0.5.0.

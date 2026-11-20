@@ -107,6 +107,8 @@ Repository variables read by the deployment workflow:
 | `CMMS_MAIL_DOMAIN` | empty | Domain notification e-mails are sent from, e.g. `example.com` (see *Sending e-mail* below) |
 | `CMMS_MAIL_FROM_ADDRESS` | empty | Address they are sent from, on that domain, e.g. `notifications@example.com` |
 | `CMMS_MAIL_ALLOWED_ORGS` | empty | Organizations allowed to send e-mail while sign-up is open: short names, comma-separated (`*` = all) |
+| `CMMS_DOMAIN` | empty | The app's own web address, e.g. `cmms.example.com` (see *Own domain* below) |
+| `CMMS_DOMAIN_CERTIFICATE_ARN` | empty | ARN of the ACM certificate for `CMMS_DOMAIN`, requested in **us-east-1** |
 
 ## Sending e-mail
 
@@ -144,8 +146,16 @@ verified while in the sandbox). Failed messages are retried after 1, 5, 30 and 1
   `cmms-app` → Actions → Restore to point in time). The database login is in Secrets Manager (stack output `DatabaseSecretArn`).
 - **Deleted attachments** stay recoverable for 14 days. In S3, open the bucket from the stack output `FilesBucketName`
   and turn on **Show versions**.
-- **Own domain** (e.g. `cmms.4c.com`): request a certificate for it in **ACM in us-east-1**, add it to the CloudFront
-  distribution as an alternate domain name, and point a DNS CNAME at the `dxxxxxxxx.cloudfront.net` address.
+- **Own domain** (e.g. `cmms.example.com`):
+  1. In **ACM, region us-east-1** (CloudFront only uses certificates from there), request a public certificate for the
+     name with DNS validation, add the validation CNAME it shows at your DNS host, and wait until it is *Issued*.
+  2. At your DNS host, add a CNAME for the name pointing at the `dxxxxxxxx.cloudfront.net` address (stack output
+     `DistributionDomain`).
+  3. Set the repository variables `CMMS_DOMAIN` and `CMMS_DOMAIN_CERTIFICATE_ARN`, then deploy. E-mail links and new QR
+     labels use the new address; the `dxxxxxxxx.cloudfront.net` address keeps working, so old labels still open.
+  4. The Android app opens a fixed address (`mobile/capacitor.config.ts`, `mobile/www/*.html`): change it and release a
+     new version. Sign-ins and offline data on a phone belong to one address, so technicians send their waiting changes
+     before updating and sign in once more after.
 - **Roll back**: re-run an earlier successful run of *Deploy to AWS* from the Actions tab. Each image is tagged with its
   commit. If a newer version changed the database, restore the database to a point before that deployment too.
 

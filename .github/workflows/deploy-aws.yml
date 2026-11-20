@@ -40,6 +40,8 @@ jobs:
       MAIL_DOMAIN: ${{ vars.CMMS_MAIL_DOMAIN }}
       MAIL_FROM_ADDRESS: ${{ vars.CMMS_MAIL_FROM_ADDRESS }}
       MAIL_ALLOWED_ORGS: ${{ vars.CMMS_MAIL_ALLOWED_ORGS }}
+      DOMAIN: ${{ vars.CMMS_DOMAIN }}
+      DOMAIN_CERTIFICATE_ARN: ${{ vars.CMMS_DOMAIN_CERTIFICATE_ARN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -98,7 +100,9 @@ jobs:
               DbInstanceClass="$DB_INSTANCE_CLASS" \
               MailDomain="$MAIL_DOMAIN" \
               MailFromAddress="$MAIL_FROM_ADDRESS" \
-              MailAllowedOrganizations="$MAIL_ALLOWED_ORGS"
+              MailAllowedOrganizations="$MAIL_ALLOWED_ORGS" \
+              Domain="$DOMAIN" \
+              DomainCertificateArn="$DOMAIN_CERTIFICATE_ARN"
 
           url=$(aws cloudformation describe-stacks --stack-name "$STACK" \
             --query "Stacks[0].Outputs[?OutputKey=='Url'].OutputValue" --output text)

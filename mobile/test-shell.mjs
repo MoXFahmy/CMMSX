@@ -44,9 +44,9 @@ const tests = {
   },
   'ordinary links keep their normal click': async () => {
     const p = page();
-    new p.HTMLAnchorElement('https://dxvjhwlc6echh.cloudfront.net/work-orders', null).click();
+    new p.HTMLAnchorElement('https://cmx.cworks.com.eg/work-orders', null).click();
     new p.HTMLAnchorElement('blob:https://x/9', null).click();
-    assert.deepEqual(p.calls, [['nativeClick', 'https://dxvjhwlc6echh.cloudfront.net/work-orders'], ['nativeClick', 'blob:https://x/9']]);
+    assert.deepEqual(p.calls, [['nativeClick', 'https://cmx.cworks.com.eg/work-orders'], ['nativeClick', 'blob:https://x/9']]);
   },
   'a blob download with an empty name is still saved (the app names it)': async () => {
     const p = page();
