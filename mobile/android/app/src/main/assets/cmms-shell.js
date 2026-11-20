@@ -1,4 +1,4 @@
-// Injected by the 4C CMMS Android app into every page it shows (see MainActivity). It routes what a web view cannot
+// Injected by the CMX Android app into every page it shows (see MainActivity). It routes what a web view cannot
 // do by itself to the app (window.CmmsAndroid, see AppBridge.java): printing, and saving files the web app creates in
 // the browser (e.g. the stock-take CSV, a "blob:" link). Tested by mobile/test-shell.mjs.
 (function () {
@@ -9,7 +9,7 @@
 
   // Purchase orders, reports and stock sheets call window.print(): open Android's print dialog (printer or PDF).
   window.print = function () {
-    app.print(document.title || '4C CMMS');
+    app.print(document.title || 'CMX');
   };
 
   // A link with a download attribute (even an empty one: the app then picks a name) to a file built in the page.

@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  4C CMMS - one-time setup that lets GitHub Actions deploy the app into this account and region:
+  CMX - one-time setup that lets GitHub Actions deploy the app into this account and region:
   GitHub OIDC sign-in (no stored keys), the image repository, and the role CloudFormation uses for the app stack.
   Deploy with deploy/aws/setup.sh (see docs/DEPLOY_AWS.md).
 

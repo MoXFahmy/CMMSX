@@ -10,7 +10,7 @@ const cloudUrl = 'https://cmx.cworks.com.eg';
 
 const config: CapacitorConfig = {
   appId: 'com.fourcsystems.cmms',
-  appName: '4C CMMS',
+  appName: 'CMX',
   webDir: 'www',
   server: {
     // The technician view's start page: kept on the phone by a service worker, so the app opens with no connection.

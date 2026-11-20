@@ -60,7 +60,7 @@ function Header() {
   return (
     <Group justify="space-between" px="sm" py={8} bg="white" style={{ borderBottom: '1px solid var(--mantine-color-gray-3)', position: 'sticky', top: 0, zIndex: 10 }}>
       <div>
-        <Text fw={700} fz="sm">4C CMMS</Text>
+        <Text fw={700} fz="sm">{t('app.name')}</Text>
         <Text fz="xs" c="dimmed">{fullName}</Text>
       </div>
       <Group gap="xs">

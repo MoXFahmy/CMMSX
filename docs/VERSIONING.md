@@ -1,6 +1,6 @@
 # Versions and releases
 
-4C CMMS has **one version number** for the cloud app and the Android app. Every feature, task or bug fix that reaches
+CMX has **one version number** for the cloud app and the Android app. Every feature, task or bug fix that reaches
 users ships as a new version of both.
 
 ## Where the number lives
@@ -43,7 +43,7 @@ major × 1,000,000 + minor × 1,000 + patch + 1. For 0.0.0 it is 1, for 0.1.0 it
    It refuses to run with uncommitted changes, a version that isn't higher, a version already tagged (here or on
    GitHub) or a missing changelog section. It writes `VERSION`, builds and signs the APK in Docker, commits
    "Release v0.1.0", and copies to the Drive folder **01 CMMS › 1000 CMX › Releases › v0.1.0**:
-   - `4C-CMMS-0.1.0.apk`
+   - `CMX-0.1.0.apk`
    - `RELEASE-NOTES.md` (the changelog section and install steps)
 4. Push `main` from GitHub Desktop. GitHub Actions tests the code, deploys the cloud app (about 10 minutes) and then
    tags the release commit `v0.1.0`; `/api/health` reports the new `release`. **Fetch origin** in GitHub Desktop
@@ -82,7 +82,7 @@ git and never shared with testers.
 offline message. Build a test APK without releasing:
 
 ```bash
-mobile/build-apk.sh debug      # → mobile/out/4C-CMMS-<version>-debug.apk
+mobile/build-apk.sh debug      # → mobile/out/CMX-<version>-debug.apk
 ```
 
 When the cloud app moves to its own domain, change `server.url` and make a new release.

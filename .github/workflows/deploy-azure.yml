@@ -97,7 +97,7 @@ jobs:
         if: always() && steps.deploy.outputs.url != ''
         run: |
           {
-            echo "### 4C CMMS on Azure"
+            echo "### CMX on Azure"
             echo ""
             echo "**${{ steps.deploy.outputs.url }}**"
             echo ""

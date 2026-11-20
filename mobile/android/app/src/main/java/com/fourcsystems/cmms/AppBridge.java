@@ -35,7 +35,7 @@ final class AppBridge {
     /** Opens Android's print dialog for the current page (a printer, or "Save as PDF"). */
     @JavascriptInterface
     public void print(String jobName) {
-        final String name = jobName == null || jobName.trim().isEmpty() ? "4C CMMS" : jobName.trim();
+        final String name = jobName == null || jobName.trim().isEmpty() ? "CMX" : jobName.trim();
         activity.runOnUiThread(() -> {
             PrintManager printManager = (PrintManager) activity.getSystemService(Context.PRINT_SERVICE);
             printManager.print(name, webView.createPrintDocumentAdapter(name), new PrintAttributes.Builder().build());
@@ -45,7 +45,7 @@ final class AppBridge {
     /** Saves a file built in the browser (base64) to Downloads and says so. */
     @JavascriptInterface
     public void saveFile(String fileName, String mimeType, String base64) {
-        String name = FileNames.safe(fileName, "4C-CMMS-file");
+        String name = FileNames.safe(fileName, "CMX-file");
         String mime = mimeType == null || mimeType.trim().isEmpty() ? "application/octet-stream" : mimeType;
         try {
             byte[] data = Base64.decode(base64, Base64.DEFAULT);
@@ -81,7 +81,7 @@ final class AppBridge {
     /** A file built in the page could not be read (assets/cmms-shell.js): say so rather than do nothing. */
     @JavascriptInterface
     public void couldNotSave(String fileName) {
-        toast(activity.getString(R.string.could_not_save, FileNames.safe(fileName, "4C-CMMS-file")));
+        toast(activity.getString(R.string.could_not_save, FileNames.safe(fileName, "CMX-file")));
     }
 
     private void toast(String message) {

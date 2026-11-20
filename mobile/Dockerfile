@@ -1,4 +1,4 @@
-# Build environment for the 4C CMMS Android app: JDK 21, Node 22 and the Android SDK (platform 36, build-tools 36.0.0).
+# Build environment for the CMX Android app: JDK 21, Node 22 and the Android SDK (platform 36, build-tools 36.0.0).
 # Android's build tools exist only for x86-64 Linux, so this image is built and run as linux/amd64 (Rosetta on Apple
 # silicon). Used by mobile/build-apk.sh; nothing is installed on the Mac itself.
 FROM eclipse-temurin:21-jdk-noble

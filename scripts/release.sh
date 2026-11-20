@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Release 4C CMMS: one version number for the cloud app and the Android app. See docs/VERSIONING.md.
+# Release CMX: one version number for the cloud app and the Android app. See docs/VERSIONING.md.
 #
 #   scripts/release.sh 0.1.0            new version: writes VERSION, builds the signed APK, commits "Release v0.1.0"
 #   scripts/release.sh 0.0.0 --no-bump  release the version already in VERSION (first release)
@@ -59,9 +59,9 @@ if [ "$MODE" != "--no-bump" ]; then
   trap 'echo "release: failed; undo the version change with: git checkout VERSION" >&2' ERR
 fi
 mobile/build-apk.sh release
-APK="mobile/out/4C-CMMS-$NEW.apk"
+APK="mobile/out/CMX-$NEW.apk"
 [ -f "$APK" ] || die "the build did not produce $APK"
-BUILT_CODE=$(docker run --rm -v "$ROOT/mobile/out":/out:ro cmms-android-build sh -c "aapt2 dump badging /out/4C-CMMS-$NEW.apk" \
+BUILT_CODE=$(docker run --rm -v "$ROOT/mobile/out":/out:ro cmms-android-build sh -c "aapt2 dump badging /out/CMX-$NEW.apk" \
   | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" | head -1)
 [ "$BUILT_CODE" = "$(version_code "$NEW")" ] || die "APK versionCode $BUILT_CODE, expected $(version_code "$NEW")."
 trap - ERR
@@ -75,7 +75,7 @@ OUT="$DRIVE/Releases/v$NEW"
 mkdir -p "$OUT"
 cp "$APK" "$OUT/"
 {
-  echo "# 4C CMMS $NEW"
+  echo "# CMX $NEW"
   echo
   echo "Released $(date +%Y-%m-%d) · commit $(git rev-parse --short HEAD) · Android versionCode $BUILT_CODE"
   echo
@@ -83,13 +83,13 @@ cp "$APK" "$OUT/"
   echo
   echo "## Install the Android app"
   echo
-  echo "1. Open \`4C-CMMS-$NEW.apk\` on the phone (from Google Drive or a shared link)."
+  echo "1. Open \`CMX-$NEW.apk\` on the phone (from Google Drive or a shared link)."
   echo "2. If asked, allow *Install unknown apps* for Drive or Files, then tap **Install**."
   echo "   Google Play Protect may warn about an app from outside the Play Store; choose to install anyway."
-  echo "3. Open **4C CMMS** and sign in with your usual account. A newer version installs over this one and keeps you signed in."
+  echo "3. Open **CMX** and sign in with your usual account. A newer version installs over this one and keeps you signed in."
 } > "$OUT/RELEASE-NOTES.md"
 
 echo
-echo "Released 4C CMMS $NEW"
+echo "Released CMX $NEW"
 echo "  APK and notes: Drive > 01 CMMS > 1000 CMX > Releases > v$NEW"
 echo "  Next: push main from GitHub Desktop. The cloud app deploys itself, then GitHub tags the commit v$NEW."

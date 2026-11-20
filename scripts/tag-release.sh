@@ -28,7 +28,7 @@ elif [ -n "$tagged" ]; then
   echo "::warning::This deploy is not a release: $tag is already on ${tagged:0:7} and VERSION was not raised." \
     "Ship changes as a new version with scripts/release.sh (docs/VERSIONING.md)."
 else
-  git tag -a "$tag" -m "4C CMMS $version" "$commit"
+  git tag -a "$tag" -m "CMX $version" "$commit"
   git push origin "refs/tags/$tag"
   echo "Tagged ${commit:0:7} as $tag."
 fi

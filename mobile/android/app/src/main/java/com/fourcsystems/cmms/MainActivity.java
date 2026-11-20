@@ -36,7 +36,7 @@ import java.util.Arrays;
 import java.util.List;
 
 /**
- * The 4C CMMS Android app: Capacitor shows the live cloud app (capacitor.config.ts); this adds what a web view lacks.
+ * The CMX Android app: Capacitor shows the live cloud app (capacitor.config.ts); this adds what a web view lacks.
  * Downloads go to Android's download manager with the user's sign-in, files built in the page and printing go through
  * {@link AppBridge}, file inputs offer the camera, Back goes back in the app (see {@link OfflineHistory} for the offline
  * page), and the sign-in survives closing the app.
@@ -128,7 +128,7 @@ public class MainActivity extends BridgeActivity {
     private void download(String url, String userAgent, String contentDisposition, String mimeType, long contentLength) {
         String name = FileNames.fromContentDisposition(contentDisposition);
         if (name == null) name = URLUtil.guessFileName(url, null, mimeType);
-        name = FileNames.safe(name, "4C-CMMS-file");
+        name = FileNames.safe(name, "CMX-file");
         if (url.startsWith("blob:") || url.startsWith("data:")) {
             // Files built in the page are saved by assets/cmms-shell.js; one that got past it is not lost silently.
             Toast.makeText(this, getString(R.string.could_not_download, name), Toast.LENGTH_LONG).show();

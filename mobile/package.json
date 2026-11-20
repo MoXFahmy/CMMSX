@@ -1,7 +1,7 @@
 {
   "name": "cmms-mobile",
   "private": true,
-  "description": "4C CMMS Android app (Capacitor). The version comes from ../VERSION.",
+  "description": "CMX Android app (Capacitor). The version comes from ../VERSION.",
   "scripts": {
     "test": "node test-config.mjs"
   },

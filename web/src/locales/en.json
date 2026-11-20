@@ -1,6 +1,6 @@
 {
   "app": {
-    "name": "4C CMMS",
+    "name": "CMX",
     "tagline": "Maintenance management for modern operations"
   },
   "nav": {
@@ -83,7 +83,7 @@
     "email": "Email",
     "password": "Password",
     "rememberMe": "Keep me signed in",
-    "noAccount": "New to 4C CMMS?",
+    "noAccount": "New to CMX?",
     "createOrg": "Create an organization",
     "haveAccount": "Already have an account?",
     "registerTitle": "Create your organization",
@@ -1042,7 +1042,7 @@
   },
   "email": {
     "title": "E-mail notifications",
-    "hint": "4C CMMS e-mails people when work and orders need them. Nobody gets an e-mail about something they did themselves.",
+    "hint": "CMX e-mails people when work and orders need them. Nobody gets an e-mail about something they did themselves.",
     "enabled": "Send e-mail notifications for this organization",
     "enabledHint": "Off until you switch it on. Turning it off stops every notification e-mail.",
     "which": "Which e-mails go out",

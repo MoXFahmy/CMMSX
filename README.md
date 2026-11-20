@@ -1,4 +1,4 @@
-# 4C CMMS — cloud edition
+# CMX — cloud edition
 
 The web-based, multi-tenant successor to **4CSQL** (4C Systems LLC's Windows CMMS).
 One cloud service shared by all customers; each customer is an isolated *organization* (tenant).

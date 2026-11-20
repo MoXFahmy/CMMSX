@@ -1,7 +1,7 @@
 <?xml version='1.0' encoding='utf-8'?>
 <resources>
-    <string name="app_name">4C CMMS</string>
-    <string name="title_activity_main">4C CMMS</string>
+    <string name="app_name">CMX</string>
+    <string name="title_activity_main">CMX</string>
     <string name="package_name">com.fourcsystems.cmms</string>
     <string name="custom_url_scheme">com.fourcsystems.cmms</string>
     <string name="add_file">Add a photo or file</string>

@@ -1,4 +1,4 @@
-// 4CSQL → 4C CMMS cloud importer.
+// 4CSQL → CMX cloud importer.
 // Reads a legacy 4CSQL (SQL Server) database and upserts sites, departments, locations, asset categories,
 // assets (incl. nameplate fields, parent/child links) and transfer history into a tenant.
 // Idempotent: every imported record carries a LegacyRef, so re-running updates instead of duplicating.

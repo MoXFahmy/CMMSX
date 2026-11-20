@@ -119,7 +119,7 @@ public static class EmailTemplates
         if (extraHtml is not null) h.Append(extraHtml);
         if (link is not null)
             h.Append($"<p style=\"margin:8px 0 0\"><a href=\"{EmailText.Html(link)}\" style=\"display:inline-block;background:#0b6b88;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px\">{EmailText.Html(linkText)}</a></p>");
-        h.Append($"</td></tr></table><p style=\"max-width:600px;margin:12px auto 0;font-size:12px;color:#56636f\">{EmailText.Html(org)} · Change your e-mail settings in 4C CMMS.</p></body></html>");
+        h.Append($"</td></tr></table><p style=\"max-width:600px;margin:12px auto 0;font-size:12px;color:#56636f\">{EmailText.Html(org)} · Change your e-mail settings in CMX.</p></body></html>");
 
         var t = new StringBuilder();
         t.AppendLine(heading).AppendLine();
@@ -127,7 +127,7 @@ public static class EmailTemplates
         if (paragraph is { Length: > 0 }) t.AppendLine().AppendLine(paragraph);
         if (extraText is not null) t.AppendLine().AppendLine(extraText);
         if (link is not null) t.AppendLine().AppendLine($"{linkText}: {link}");
-        t.AppendLine().AppendLine($"{org} · Change your e-mail settings in 4C CMMS.");
+        t.AppendLine().AppendLine($"{org} · Change your e-mail settings in CMX.");
         return new EmailContent(EmailText.OneLine(subject), h.ToString(), t.ToString());
     }
 }

@@ -1,4 +1,4 @@
-// 4C CMMS on Azure: one container app (web + API), Azure SQL Database and Blob Storage for attachments.
+// CMX on Azure: one container app (web + API), Azure SQL Database and Blob Storage for attachments.
 // The app signs in to SQL and Storage with its own managed identity, so there are no passwords or keys to manage.
 // Deployed by .github/workflows/deploy-azure.yml; see docs/DEPLOY_AZURE.md.
 targetScope = 'resourceGroup'
