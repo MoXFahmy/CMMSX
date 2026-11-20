@@ -671,7 +671,8 @@
     "viewPm": "View PM",
     "createWos": "Create work orders",
     "previewTitle": "Due for generation",
-    "generated": "{{count}} work orders created",
+    "generated_one": "{{count}} work order created",
+    "generated_other": "{{count}} work orders created",
     "nothingDue": "Nothing is due in this period",
     "alreadyGenerated": "Already generated",
     "autoInfo": "Automatic generation is {{state}}: work orders are created each day once they come within a schedule's lead time.",
@@ -1355,7 +1356,9 @@
     "respondedAt": "responded {{when}}",
     "respondedLate": "responded late, {{when}}",
     "dueSoonFilter": "Due soon",
-    "notStartedFilter": "Not started"
+    "notStartedFilter": "Not started",
+    "completionState": "Completion",
+    "responseState": "Response"
   },
   "planning": {
     "title": "Planning",

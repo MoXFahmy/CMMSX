@@ -59,7 +59,7 @@ export function WorkRequestsPage() {
       render: (r) => (r.assetNumber ? `${r.assetNumber} · ${r.assetName}` : '—') },
     { accessor: 'requesterName', title: t('wr.requester') },
     { accessor: 'requiredBy', title: t('wr.requiredBy'), sortable: true, noWrap: true, render: (r) => fmtDate(r.requiredBy) },
-    { accessor: 'deadline', title: t('wo.due'), noWrap: true, export: [{ key: 'respondBy' }, { key: 'dueAt' }, { key: 'responseState' }, { key: 'completionState' }],
+    { accessor: 'deadline', title: t('wo.due'), noWrap: true, export: [{ key: 'respondBy', title: t('sla.respondBy') }, { key: 'dueAt', title: t('wo.dueAt') }, { key: 'responseState', title: t('sla.responseState') }, { key: 'completionState', title: t('sla.completionState') }],
       render: (r) => (
         <Stack gap={0}>
           {r.status === 'New' && r.respondBy && <Group gap={4} wrap="nowrap"><Text fz="xs" c="dimmed">{t('sla.respond')}</Text><SlaText fz="xs" deadline={r.respondBy} state={r.responseState} /></Group>}

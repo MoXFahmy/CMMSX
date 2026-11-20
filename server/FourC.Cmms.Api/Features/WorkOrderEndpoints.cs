@@ -505,7 +505,7 @@ public static class WorkOrderEndpoints
         if (f.AssetId is not null) q = q.Where(w => w.AssetId == f.AssetId || (w.Asset != null && w.Asset.ParentAssetId == f.AssetId) || w.Assets.Any(a => a.AssetId == f.AssetId));
         if (f.TradeId is not null) q = q.Where(w => w.TradeId == f.TradeId);
         if (f.CreatedFrom is { } cf) { var from = new DateTimeOffset(cf.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt >= from); }
-        if (f.CreatedTo is { } ctd) { var before = new DateTimeOffset(ctd.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt < before); }
+        if (f.CreatedTo is { } ctd && ctd < DateOnly.MaxValue) { var before = new DateTimeOffset(ctd.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt < before); }
         if (f.DueFrom is { } df) q = q.Where(w => w.DueDate >= df);
         if (f.DueTo is { } dt) q = q.Where(w => w.DueDate <= dt);
         q = f.Source?.ToLowerInvariant() switch

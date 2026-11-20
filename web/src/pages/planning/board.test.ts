@@ -95,3 +95,11 @@ describe('what a drop does', () => {
   });
 });
 
+describe('undo puts back what was there', () => {
+  it('a person taken off gets their planned hours back', () => {
+    const j: BoardJob = { ...job('h', '2026-11-24', []), assignees: [{ employeeId: 'lee', hours: 4, plannedHours: 4 }] };
+    expect(planMove(j, 'lee', UNASSIGNED, '2026-11-24', 'person')?.undo).toEqual({ workOrderId: 'h', toEmployeeId: 'lee', plannedHours: 4 });
+    expect(planMove(j, 'lee', 'sam', '2026-11-24', 'person')?.undo).toEqual({ workOrderId: 'h', fromEmployeeId: 'sam', toEmployeeId: 'lee', plannedHours: 4 });
+  });
+});
+

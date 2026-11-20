@@ -56,11 +56,12 @@ export function PlanningPage() {
     try {
       const r = await post<{ warning?: string | null }>('/planning/move', m);
       await refetch();
-      notifications.show({
+      const id = `move-${Date.now()}`;
+      notifications.show({ id,
         color: r.warning ? 'orange' : 'teal', message: (
           <Group gap="xs" justify="space-between" wrap="nowrap">
             <Text fz="sm">{r.warning ?? t('planning.moved')}</Text>
-            {undo && <Button size="compact-xs" variant="subtle" onClick={() => void send(undo)}>{t('planning.undo')}</Button>}
+            {undo && <Button size="compact-xs" variant="subtle" onClick={() => { notifications.hide(id); void send(undo); }}>{t('planning.undo')}</Button>}
           </Group>
         ), autoClose: 6000,
       });
@@ -181,6 +182,7 @@ function Cell({ id, items, rowKey, capacity, hours, canEdit, canGenerate, onGene
 }
 
 function JobCard({ job, row, canEdit }: { job: BoardJob; row: string; canEdit: boolean }) {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: `${job.id}|${row}`, data: { job, row } satisfies Dragged, disabled: !canEdit });
   const late = job.sla.completion === 'Late' || job.sla.response === 'Late';
@@ -191,7 +193,10 @@ function JobCard({ job, row, canEdit }: { job: BoardJob; row: string; canEdit: b
       style={{ borderLeft: `3px solid var(--mantine-color-${priorityColors[job.priority]}-6)`, cursor: canEdit ? 'grab' : 'pointer', opacity: isDragging ? 0.8 : 1,
         touchAction: canEdit ? 'none' : undefined,
         transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined, zIndex: isDragging ? 10 : undefined, background: 'var(--mantine-color-body)' }}>
-      <Text fz={11} fw={700} c={late ? 'red' : 'brand'}>{job.number}</Text>
+      <Group justify="space-between" gap={4} wrap="nowrap">
+        <Text fz={11} fw={700} c={late ? 'red' : 'brand'}>{job.number}</Text>
+        <Text fz={9} c="dimmed" tt="uppercase">{t(`woStatus.${job.status}`)}</Text>
+      </Group>
       <Text fz={11} lineClamp={2}>{job.title}</Text>
       {(job.sla.completion === 'Late' || job.sla.completion === 'DueSoon') && <SlaText fz="10px" deadline={job.dueAt} state={job.sla.completion} />}
     </Paper>

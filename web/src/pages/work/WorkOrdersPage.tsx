@@ -88,7 +88,7 @@ export function WorkOrdersPage() {
     { accessor: 'site', title: terms.site, sortable: true, noWrap: true, export: [{ key: 'siteName' }], render: (w) => w.siteName },
     { accessor: 'location', title: terms.location, width: 220, ellipsis: true, export: [{ key: 'locationPath' }], render: (w) => <span title={w.locationPath}>{w.locationPath ?? '—'}</span> },
     { accessor: 'assignees', title: t('wo.assignees'), width: 180, render: (w) => <Text fz="sm" lineClamp={1} c={w.assignees.length ? undefined : 'dimmed'}>{w.assignees.join(', ') || t('wo.noAssignees')}</Text> },
-    { accessor: 'dueDate', title: t('wo.due'), sortable: true, noWrap: true, export: [{ key: 'dueAt' }, { key: 'completionState' }, { key: 'responseState' }],
+    { accessor: 'dueDate', title: t('wo.due'), sortable: true, noWrap: true, export: [{ key: 'dueDate', title: t('wo.dueDate') }, { key: 'dueAt', title: t('wo.dueAt') }, { key: 'completionState', title: t('sla.completionState') }, { key: 'responseState', title: t('sla.responseState') }],
       render: (w) => (
         <Stack gap={0}>
           <SlaText deadline={w.dueAt ?? w.dueDate} state={w.completionState} />
@@ -151,7 +151,7 @@ export function WorkOrdersPage() {
             { value: 'dueSoon', label: t('sla.dueSoonFilter') }, { value: 'responseLate', label: t('sla.notStartedFilter') },
           ]} />
           <TextInput placeholder={t('wo.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 240 }} />
-          <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v, locationId: null })} clearable searchable w={{ base: '100%', xs: 180 }} />
+          <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v, locationId: null, assetId: null, assigneeId: null })} clearable searchable w={{ base: '100%', xs: 180 }} />
           <MultiSelect placeholder={p('priority') ? undefined : t('priority.label')} data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))}
             value={p('priority') ? p('priority').split(',') : []} onChange={(v) => set({ priority: v.join(',') || null })} clearable w={{ base: '100%', xs: 170 }} />
           <MultiSelect placeholder={p('type') ? undefined : t('workType.label')} data={WORK_TYPES.map((x) => ({ value: x, label: t(`workType.${x}`) }))}
@@ -170,7 +170,8 @@ export function WorkOrdersPage() {
           <SimpleGrid cols={{ base: 1, sm: 2, lg: 4 }} mt="sm" spacing="xs">
             <Select label={terms.location} placeholder={p('siteId') ? t('common.all') : t('wo.pickSiteFirst')} disabled={!p('siteId')} data={locOpts}
               value={p('locationId') || null} onChange={(v) => set({ locationId: v })} clearable searchable comboboxProps={{ width: 'max-content', position: 'bottom-start' }} />
-            <AssetPicker label={terms.asset} siteId={p('siteId') || null} value={p('assetId') || null} onChange={(v) => set({ assetId: v })} />
+            <AssetPicker label={terms.asset} siteId={p('siteId') || null} value={p('assetId') || null} onChange={(v) => set({ assetId: v })}
+              initial={filterAsset && p('assetId') ? { id: p('assetId'), assetNumber: filterAsset.assetNumber, name: filterAsset.name } : null} />
             <Select label={t('wo.filterAssignee')} placeholder={t('common.all')} data={empOpts} value={p('assigneeId') || null} onChange={(v) => set({ assigneeId: v })} clearable searchable />
             <Select label={t('wo.source')} placeholder={t('common.all')} value={p('source') || null} onChange={(v) => set({ source: v })} clearable
               data={[{ value: 'pm', label: t('wo.sourcePm') }, { value: 'request', label: t('wo.sourceRequest') }, { value: 'direct', label: t('wo.sourceDirect') }]} />

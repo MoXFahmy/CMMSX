@@ -6,6 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
 import { IconFilterOff, IconPlus, IconSearch, IconEdit, IconQrcode } from '@tabler/icons-react';
 import { openLabels } from '@/pages/labels/LabelsPage';
+import { BulkBar } from '@/components/list';
 import { get, post } from '@/api/client';
 import { ASSET_STATUSES, CRITICALITIES, type AssetListItem, type Category, type CustomField, type Paged } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -116,10 +117,8 @@ export function AssetsPage() {
         </Group>
         <FilterChips defs={chips} p={p} set={set} />
       </Card>
-      {selected.length > 0 && can(P.assetsEdit) && (
-        <Card p="xs" mb="sm" bg="var(--mantine-color-brand-light)">
-          <Group gap="xs">
-            <Text fz="sm" fw={600} ml="xs">{t('common.selected', { count: selected.length })}</Text>
+      {can(P.assetsEdit) && (
+        <BulkBar count={selected.length} onClear={() => setSelected([])}>
             <Menu><Menu.Target><Button size="xs" variant="white" leftSection={<IconEdit size={14} />}>{t('assets.setStatus')}</Button></Menu.Target>
               <Menu.Dropdown>{ASSET_STATUSES.map((s) => <Menu.Item key={s} onClick={() => bulk.mutate({ status: s })}>{t(`status.${s}`)}</Menu.Item>)}</Menu.Dropdown></Menu>
             <Menu><Menu.Target><Button size="xs" variant="white">{t('assets.setCriticality')}</Button></Menu.Target>
@@ -127,9 +126,7 @@ export function AssetsPage() {
             <Menu><Menu.Target><Button size="xs" variant="white">{t('assets.setCategory')}</Button></Menu.Target>
               <Menu.Dropdown mah={300} style={{ overflowY: 'auto' }}>{(cats ?? []).map((c) => <Menu.Item key={c.id} onClick={() => bulk.mutate({ categoryId: c.id })}>{c.name}</Menu.Item>)}</Menu.Dropdown></Menu>
             <Button size="xs" variant="white" leftSection={<IconQrcode size={14} />} onClick={() => openLabels('asset', selected.map((s) => s.id))}>{t('labels.printLabels')}</Button>
-            <Button size="xs" variant="subtle" onClick={() => setSelected([])}>{t('common.clear')}</Button>
-          </Group>
-        </Card>
+        </BulkBar>
       )}
       <Card p={0}>
         <DataTable<AssetListItem>

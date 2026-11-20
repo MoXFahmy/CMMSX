@@ -11,6 +11,7 @@ import { fmtDate, fmtDateTime, fmtQty, notifyError } from '@/components/utils';
 import { withQueued } from './overlay';
 import { shrink } from './photos';
 import { dueLabel } from './due';
+import { alreadySigned, staleCompletions } from './complete';
 import { SignaturePad, type SignatureHandle } from './SignaturePad';
 import { useTech } from './useTech';
 import type { TechJob } from './types';
@@ -197,7 +198,7 @@ function HoldModal({ opened, onClose, onSave }: { opened: boolean; onClose: () =
 /** Completion: notes, cause, failure code, downtime, and up to two signatures. Signatures are queued first, then the completion. */
 function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job: TechJob; onClose: () => void; onDone: () => void }) {
   const { t } = useTranslation();
-  const { bundle, add } = useTech();
+  const { bundle, add, queue, discard, fullName } = useTech();
   const rules = bundle?.completionRules;
   const [notes, setNotes] = useState('');
   const [cause, setCause] = useState('');
@@ -218,9 +219,11 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
   const submit = async () => {
     setSaving(true);
     try {
-      const a = await mine.current?.toBlob();
+      // Completing again after a refusal: drop the refused completion, and don't send signatures already given.
+      for (const old of staleCompletions(queue, job.id)) await discard(old);
+      const a = alreadySigned(fullName ?? '', job.files, queue, job.id, fullName) ? null : await mine.current?.toBlob();
       if (a) await add({ type: 'photo.add', workOrderId: job.id, payload: { kind: 'signature' } }, { blob: a, fileName: 'signature-technician.png' });
-      const b = await theirs.current?.toBlob();
+      const b = alreadySigned(signer.trim(), job.files, queue, job.id, fullName) ? null : await theirs.current?.toBlob();
       if (b) await add({ type: 'photo.add', workOrderId: job.id, payload: { kind: 'signature', signedBy: signer.trim() || null } }, { blob: b, fileName: 'signature.png' });
       await add({ type: 'status.change', workOrderId: job.id, payload: {
         status: 'Completed', completionNotes: notes.trim() || null, causeNotes: cause.trim() || null, failureCodeId: failure,

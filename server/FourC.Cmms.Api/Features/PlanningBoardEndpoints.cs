@@ -13,12 +13,15 @@ namespace FourC.Cmms.Api.Features;
 /// </summary>
 public static class PlanningBoardEndpoints
 {
-    public sealed record BoardAssignee(Guid EmployeeId, decimal? Hours);
+    /// <param name="Hours">The person's planned hours, else their share of the estimate.</param>
+    /// <param name="PlannedHours">Their own planned hours only (Undo puts these back).</param>
+    public sealed record BoardAssignee(Guid EmployeeId, decimal? Hours, decimal? PlannedHours);
     public sealed record BoardJob(Guid Id, string Number, string Title, WorkPriority Priority, WorkOrderStatus Status, Guid SiteId, Guid? AssetId, string? AssetNumber,
         string? AssetName, DateOnly? Day, DateOnly? PlannedStart, DateTimeOffset? DueAt, SlaView Sla, decimal? EstimatedHours, List<BoardAssignee> Assignees);
     public sealed record BoardPerson(Guid Id, string Name, List<Guid> TradeIds);
     /// <summary>Day: the new planned start. From → To: move that person's assignment; To alone adds a person; From alone removes one.</summary>
-    public sealed record MoveInput(Guid WorkOrderId, DateOnly? Day, Guid? FromEmployeeId, Guid? ToEmployeeId);
+    /// <param name="PlannedHours">With To alone: the person's planned hours on the job (Undo puts back what they had).</param>
+    public sealed record MoveInput(Guid WorkOrderId, DateOnly? Day, Guid? FromEmployeeId, Guid? ToEmployeeId, decimal? PlannedHours = null);
 
     /// <summary>The trays show at most this many cards (newest first).</summary>
     private const int MaxTray = 200;
@@ -87,7 +90,7 @@ public static class PlanningBoardEndpoints
                 SlaQueries.Work(settings, w.Priority, w.Status, w.StartBy, w.RespondedAt, w.DueAt, w.DueFromTarget, w.CompletedAt, now), w.EstimatedHours,
                 // Each person's share: their own planned hours, else the estimate split between the people on it.
                 w.Assignees.Select(a => new BoardAssignee(a.EmployeeId, a.PlannedHours
-                    ?? (w.EstimatedHours is { } est && w.Assignees.Count > 0 ? Math.Round(est / w.Assignees.Count, 2) : null))).ToList())).ToList();
+                    ?? (w.EstimatedHours is { } est && w.Assignees.Count > 0 ? Math.Round(est / w.Assignees.Count, 2) : null), a.PlannedHours)).ToList())).ToList();
 
             var pms = (await perms.GetAsync(ctx.UserId!.Value)).Contains(Permissions.PmView)
                 ? (await PmEndpoints.ForecastAsync(db, from, to, siteId, ct)).Where(x => x.Date >= from && x.Date <= to).ToList()
@@ -131,7 +134,7 @@ public static class PlanningBoardEndpoints
                     w.Assignees.Add(new WorkOrderAssignee { WorkOrderId = w.Id, EmployeeId = target, PlannedHours = moving.PlannedHours });
             }
             else if (input.ToEmployeeId is { } added && w.Assignees.All(a => a.EmployeeId != added))
-                w.Assignees.Add(new WorkOrderAssignee { WorkOrderId = w.Id, EmployeeId = added });
+                w.Assignees.Add(new WorkOrderAssignee { WorkOrderId = w.Id, EmployeeId = added, PlannedHours = input.PlannedHours is >= 0 ? input.PlannedHours : null });
             await mail.AssigneesAddedAsync(db, ctx, w, w.Assignees.Select(a => a.EmployeeId).Where(e => !before.Contains(e)).ToList(), ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { warning });

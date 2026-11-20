@@ -15,7 +15,7 @@ export function EmailPreferences({ opened, onClose }: { opened: boolean; onClose
   const { data: saved } = useQuery({ queryKey: ['email-opt-outs'], queryFn: () => get<string[]>('/auth/me/email-opt-outs'), enabled: opened });
   const [optOuts, setOptOuts] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
-  useEffect(() => { if (saved) setOptOuts(saved); }, [saved]);
+  useEffect(() => { if (opened && saved) setOptOuts(saved); }, [opened, saved]);
   const events = (status?.events ?? []).filter((k) => k !== 'po.sent');
 
   const save = async () => {
