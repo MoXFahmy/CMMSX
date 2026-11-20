@@ -19,6 +19,10 @@ phone out.
 - **What works offline and what stays online**, as played back and accepted ("seems good start, go ahead") — see
   *Scope* §2 and §3.
 - The user left the building approach to the builder: **approach A** (below).
+- **Approach A is confirmed on a real phone:** release 0.3.1 shipped its foundation (the Android app opens at `/tech/`,
+  a service worker scoped to `/tech` keeps the release's files on the phone, camera permission), and the user's check
+  passed: with airplane mode on, the Android app opened from the phone's copy. 0.4.0 builds on `web/public/tech-sw.js`,
+  the precache list written by the Vite build and `web/src/tech/TechCheckPage.tsx` (which the technician view replaces).
 
 ## Scope
 
