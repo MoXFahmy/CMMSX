@@ -132,6 +132,7 @@ api.MapReportEndpoints();
 api.MapDashboardEndpoints();
 api.MapAlertEndpoints();
 api.MapEmailEndpoints();
+api.MapViewEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();
