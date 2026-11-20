@@ -4,6 +4,24 @@ All notable changes to 4C CMMS — the cloud app and the Android app share one v
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.3.1] - 2026-11-20
+
+The first step of the technician app (0.4.0): the Android app can open without a connection.
+
+### Changed
+- **The Android app opens through a technician start page** that is kept on the phone. With a connection it goes
+  straight on to the full app, as before. With no connection it opens from the phone's copy and says
+  "Offline check passed" instead of "You're offline". Office browsers are not affected: only pages under `/tech` are
+  kept on the device.
+- **The Android app can use the camera** (asked the first time it's needed), for QR scanning and photos in 0.4.0. The
+  start page has a *Test the camera* button.
+
+### How to check on a phone
+1. Install this APK and open it once with a connection (it goes on to the full app).
+2. Turn on airplane mode, close the app completely and open it again: it should show *Offline check passed* within a
+   few seconds.
+3. Tap *Test the camera* and allow it: the camera picture should appear.
+
 ## [0.3.0] - 2026-11-20
 
 Planned parts. List the parts a job needs before anyone goes to the store, keep that stock for the job, and see what is
