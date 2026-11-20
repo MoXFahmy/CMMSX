@@ -1,0 +1,28 @@
+import type { HoldReason, WorkOrderStatus, WorkPriority, WorkType } from '@/api/types';
+
+/** A job as the phone keeps it (GET /api/tech/bundle). */
+export type TechJob = {
+  id: string; number: string; title: string; description?: string | null; type: WorkType; priority: WorkPriority; status: WorkOrderStatus;
+  holdReason?: HoldReason | null; dueDate?: string | null; plannedStart?: string | null; siteId: string;
+  asset?: { id: string; assetNumber: string; name: string; notesToTechnician?: string | null } | null;
+  location?: { id: string; path?: string | null; notesToTechnician?: string | null } | null;
+  roundAssets: { id: string; assetNumber: string; name: string }[];
+  tasks: { id: string; sequence: number; description: string; isDone: boolean; reading?: string | null; remarks?: string | null; assetId?: string | null; updatedAt?: string | null; updatedByName?: string | null }[];
+  plannedParts: { partNumber: string; partName: string; unitOfMeasure: string; quantity: number; storeCode?: string | null }[];
+  files: { id: string; fileName: string; contentType: string; isSignature: boolean; signedBy?: string | null }[];
+  comments: { body: string; userName?: string | null; createdAt: string }[];
+  myLabor: { workDate: string; hours: number; overtimeHours: number; notes?: string | null }[];
+};
+
+export type TechBundle = {
+  employeeId: string; userId: string; generatedAt: string; jobs: TechJob[];
+  failureCodes: { id: string; code: string; name: string }[];
+  completionRules: { notes: boolean; labour: boolean; allSteps: boolean; failureCodeOnBreakdown: boolean };
+};
+
+/** The assets, locations and meters of my sites (GET /api/tech/places), for scanning offline. */
+export type TechPlaces = {
+  assets: { id: string; assetNumber: string; name: string; barcode?: string | null; siteId: string; locationId?: string | null; notesToTechnician?: string | null }[];
+  locations: { id: string; name: string; path?: string | null; siteId: string; notesToTechnician?: string | null }[];
+  meters: { id: string; assetId: string; name: string; unit: string; currentReading?: number | null; lastReadAt?: string | null }[];
+};
