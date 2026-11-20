@@ -1135,6 +1135,17 @@
     "issueAnyway": "Issue anyway",
     "transferAnyway": "Transfer anyway"
   },
+  "techCheck": {
+    "title": "4C CMMS technician view",
+    "version": "Release {{version}}",
+    "passed": "Offline check passed",
+    "passedBody": "This page opened with no connection, from the copy kept on this phone. The technician app in 0.4.0 builds on this.",
+    "onlineBody": "This phone is connected. The app is kept on it for opening without a connection.",
+    "testCamera": "Test the camera",
+    "cameraWorks": "The camera works.",
+    "tryAgain": "Try again",
+    "openApp": "Open 4C CMMS"
+  },
   "list": {
     "views": "Views",
     "noViews": "No saved views yet. Set up the list, then save it here.",
