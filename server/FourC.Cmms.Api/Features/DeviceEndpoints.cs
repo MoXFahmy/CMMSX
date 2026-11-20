@@ -46,7 +46,12 @@ public static class DeviceEndpoints
         });
     }
 
-    private static async Task<List<object>> ListAsync(CmmsDbContext db, Guid userId, Guid? current, CancellationToken ct) =>
-        (await db.UserSessions.AsNoTracking().Where(s => s.UserId == userId && s.RevokedAt == null).OrderByDescending(s => s.LastSeenAt).ToListAsync(ct))
-        .Select(s => (object)new { s.Id, s.DeviceName, s.CreatedAt, s.LastSeenAt, Current = s.Id == current }).ToList();
+    /// <summary>Devices still signed in: not signed out, and not past when their sign-in runs out.</summary>
+    private static async Task<List<object>> ListAsync(CmmsDbContext db, Guid userId, Guid? current, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        return (await db.UserSessions.AsNoTracking().Where(s => s.UserId == userId && s.RevokedAt == null && (s.ExpiresAt == null || s.ExpiresAt > now))
+                .OrderByDescending(s => s.LastSeenAt).ToListAsync(ct))
+            .Select(s => (object)new { s.Id, s.DeviceName, s.CreatedAt, s.LastSeenAt, Current = s.Id == current }).ToList();
+    }
 }

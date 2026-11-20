@@ -660,6 +660,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(120)
                         .HasColumnType("nvarchar(120)");
 
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<DateTimeOffset>("LastSeenAt")
                         .HasColumnType("datetimeoffset");
 

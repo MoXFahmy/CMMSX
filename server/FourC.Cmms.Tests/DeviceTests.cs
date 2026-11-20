@@ -1,3 +1,6 @@
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.EntityFrameworkCore;
+using FourC.Cmms.Core.Data;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -138,5 +141,44 @@ public class DeviceTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Ok(await admin.PostAsync($"/api/users/{user}/devices/{d.GetProperty("id").GetGuid()}/sign-out", null));
         Assert.Equal(HttpStatusCode.Unauthorized, (await phone.GetAsync("/api/auth/me")).StatusCode);
         Assert.Equal(HttpStatusCode.Forbidden, (await (await SignInAsync(email, DesktopUa)).GetAsync($"/api/users/{user}/devices")).StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task A_signed_out_device_keeps_being_told_so_on_every_request()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (_, email) = await RegisterAsync();
+        var a = await SignInAsync(email, DesktopUa);
+        var b = await SignInAsync(email, AndroidUa);
+        var bDevice = (await DevicesAsync(a)).Single(d => d.GetProperty("deviceName").GetString() == "Android app 0.4.0");
+        await Ok(await a.PostAsync($"/api/auth/me/devices/{bDevice.GetProperty("id").GetGuid()}/sign-out", null));
+
+        // The phone's first request is usually its own page load; the API calls after it must still hear "signed out".
+        Assert.True((await b.GetAsync("/api/health")).Headers.Contains("X-Session-Revoked"));
+        var me = await b.GetAsync("/api/auth/me");
+        Assert.Equal(HttpStatusCode.Unauthorized, me.StatusCode);
+        Assert.True(me.Headers.Contains("X-Session-Revoked"));
+    }
+
+    [SkippableFact]
+    public async Task Devices_whose_sign_in_has_run_out_drop_off_the_list()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (_, email) = await RegisterAsync();
+        var office = await SignInAsync(email, DesktopUa, rememberMe: false);
+        var phone = await SignInAsync(email, AndroidUa);
+        var ids = (await DevicesAsync(office)).ToDictionary(d => d.GetProperty("deviceName").GetString()!, d => d.GetProperty("id").GetGuid());
+        var now = DateTimeOffset.UtcNow;
+        using (var scope = fx.Factory!.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CmmsDbContext>();
+            var expires = await db.UserSessions.IgnoreQueryFilters().Where(s => ids.Values.Contains(s.Id)).ToDictionaryAsync(s => s.Id, s => s.ExpiresAt);
+            Assert.InRange(expires[ids["Android app 0.4.0"]]!.Value, now.AddDays(30), now.AddDays(30).AddHours(1));
+            Assert.InRange(expires[ids["Chrome on Windows"]]!.Value, now.AddHours(12), now.AddHours(13));
+            // The phone hasn't been used for longer than its sign-in lasts.
+            await db.UserSessions.IgnoreQueryFilters().Where(s => s.Id == ids["Android app 0.4.0"])
+                .ExecuteUpdateAsync(x => x.SetProperty(s => s.LastSeenAt, now.AddDays(-40)).SetProperty(s => s.ExpiresAt, now.AddDays(-10)));
+        }
+        Assert.DoesNotContain(await DevicesAsync(office), d => d.GetProperty("deviceName").GetString() == "Android app 0.4.0");
     }
 }

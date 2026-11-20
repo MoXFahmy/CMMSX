@@ -19,6 +19,14 @@ public static class Sessions
     public const string RevokedHeader = "X-Session-Revoked";
     private static readonly TimeSpan CacheFor = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan TouchEvery = TimeSpan.FromMinutes(10);
+    /// <summary>How long an ordinary sign-in lasts without use (sliding); the Android app and technician view get 30 days.</summary>
+    public static readonly TimeSpan DefaultLifetime = TimeSpan.FromHours(12);
+
+    /// <summary>The latest the sign-in can run out: last use (known to within <see cref="TouchEvery"/>) plus its lifetime.</summary>
+    private static DateTimeOffset ExpiresAt(DateTimeOffset seen, TimeSpan lifetime) => seen + lifetime + TouchEvery;
+
+    private static TimeSpan LifetimeOf(AuthenticationProperties p) =>
+        p.ExpiresUtc is { } e && p.IssuedUtc is { } i && e > i ? e - i : DefaultLifetime;
 
     private sealed record State(bool Active, DateTimeOffset LastSeenAt);
     private static string CacheKey(Guid id) => $"session:{id}";
@@ -38,10 +46,13 @@ public static class Sessions
         return name.Length > 120 ? name[..120] : name;
     }
 
-    public static async Task<UserSession> StartAsync(CmmsDbContext db, Guid userId, Guid tenantId, string? userAgent, CancellationToken ct = default)
+    public static async Task<UserSession> StartAsync(CmmsDbContext db, Guid userId, Guid tenantId, string? userAgent, TimeSpan lifetime, CancellationToken ct = default)
     {
         var now = DateTimeOffset.UtcNow;
-        var s = new UserSession { TenantId = tenantId, UserId = userId, DeviceName = DeviceName(userAgent), CreatedAt = now, LastSeenAt = now };
+        var s = new UserSession
+        {
+            TenantId = tenantId, UserId = userId, DeviceName = DeviceName(userAgent), CreatedAt = now, LastSeenAt = now, ExpiresAt = ExpiresAt(now, lifetime),
+        };
         db.UserSessions.Add(s);
         await db.SaveChangesAsync(ct);
         return s;
@@ -64,11 +75,16 @@ public static class Sessions
         foreach (var id in ids) cache.Remove(CacheKey(id));
     }
 
-    private static async Task RejectAsync(CookieValidatePrincipalContext ctx)
+    /// <summary>
+    /// Refuses the request and says the device was signed out. The cookie is left in place so every later request (not
+    /// just the first, which is usually the page load) carries the signal and the phone wipes its copy; signing in again
+    /// replaces it.
+    /// </summary>
+    private static Task RejectAsync(CookieValidatePrincipalContext ctx)
     {
         ctx.RejectPrincipal();
-        await ctx.HttpContext.SignOutAsync(IdentityConstants.ApplicationScheme);
         ctx.HttpContext.Response.Headers[RevokedHeader] = "1";
+        return Task.CompletedTask;
     }
 
     /// <summary>
@@ -92,7 +108,7 @@ public static class Sessions
                 await RejectAsync(ctx);
                 return;
             }
-            var adopted = await StartAsync(db, userId, tenantId, http.Request.Headers.UserAgent.ToString(), ct);
+            var adopted = await StartAsync(db, userId, tenantId, http.Request.Headers.UserAgent.ToString(), LifetimeOf(ctx.Properties), ct);
             ctx.Properties.Items[Key] = adopted.Id.ToString();
             ctx.ShouldRenew = true;
             return;
@@ -111,7 +127,9 @@ public static class Sessions
         var now = DateTimeOffset.UtcNow;
         if (now - state.LastSeenAt > TouchEvery)
         {
-            await db.UserSessions.IgnoreQueryFilters().Where(s => s.Id == sid).ExecuteUpdateAsync(x => x.SetProperty(s => s.LastSeenAt, now), ct);
+            var expires = ExpiresAt(now, LifetimeOf(ctx.Properties));
+            await db.UserSessions.IgnoreQueryFilters().Where(s => s.Id == sid)
+                .ExecuteUpdateAsync(x => x.SetProperty(s => s.LastSeenAt, now).SetProperty(s => s.ExpiresAt, expires), ct);
             cache.Remove(CacheKey(sid));
         }
     }

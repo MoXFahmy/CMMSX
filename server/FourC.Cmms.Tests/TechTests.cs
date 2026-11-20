@@ -313,4 +313,81 @@ public class TechTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(3, all.Count);
         Assert.All(all, l => Assert.StartsWith("https://cmms.test/q/location/", l.GetProperty("url").GetString()));
     }
+
+    // ---- Final review fixes ----
+
+    [SkippableFact]
+    public async Task A_change_queued_by_someone_else_on_the_phone_is_not_applied_under_my_name()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var admin = (await Ok(await o.C.GetAsync("/api/auth/me"))).GetProperty("user").GetProperty("id").GetGuid();
+        var other = await SecondUserAsync(o.C, "Administrator");
+        var wo = await WorkOrderAsync(o.C, o.SiteA, [o.Me]);
+        var id = Guid.NewGuid();
+        var body = new { clientId = id, at = DateTimeOffset.UtcNow, type = "comment.add", workOrderId = wo, userId = admin, payload = new { body = "Queued by Tess" } };
+
+        var r = await other.PostAsJsonAsync("/api/tech/actions", body);
+        Assert.Equal(HttpStatusCode.Conflict, r.StatusCode);
+        Assert.Equal("otherUser", (await Ok2(r)).GetProperty("code").GetString());
+
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(Guid.NewGuid().ToString()), "clientId" }, { new StringContent(wo.ToString()), "workOrderId" },
+            { new StringContent("photo"), "kind" }, { new StringContent(admin.ToString()), "userId" },
+        };
+        var file = new ByteArrayContent(Png); file.Headers.ContentType = new MediaTypeHeaderValue("image/png"); form.Add(file, "file", "p.png");
+        Assert.Equal(HttpStatusCode.Conflict, (await other.PostAsync("/api/tech/files", form)).StatusCode);
+
+        // Nothing was applied or recorded: the right person sending it later gets it applied.
+        Assert.Equal("done", Status(await Ok(await o.C.PostAsJsonAsync("/api/tech/actions", body))));
+        var activity = await Ok(await o.C.GetAsync($"/api/work-orders/{wo}/activity"));
+        Assert.Single(activity.EnumerateArray(), a => a.TryGetProperty("body", out var b) && b.GetString() == "Queued by Tess");
+        Assert.Equal(0, (await Ok(await o.C.GetAsync($"/api/attachments?entityType=WorkOrder&entityId={wo}"))).GetArrayLength());
+    }
+
+    private static async Task<JsonElement> Ok2(HttpResponseMessage r) => JsonDocument.Parse(await r.Content.ReadAsStringAsync()).RootElement.Clone();
+
+    [SkippableFact]
+    public async Task A_stale_start_from_the_phone_never_reopens_completed_or_closed_work()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var done = await WorkOrderAsync(o.C, o.SiteA, [o.Me]);
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{done}/status", new { status = "Completed", completionNotes = "Fixed" }));
+        var closed = await WorkOrderAsync(o.C, o.SiteA, [o.Me]);
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{closed}/status", new { status = "Completed", completionNotes = "Fixed" }));
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{closed}/status", new { status = "Closed" }));
+
+        foreach (var (wo, expected) in new[] { (done, "Completed"), (closed, "Closed") })
+        foreach (var move in new[] { "InProgress", "OnHold" })
+        {
+            var a = await SendAsync(o.C, Guid.NewGuid(), DateTimeOffset.UtcNow.AddHours(-1), "status.change", wo,
+                move == "OnHold" ? new { status = move, holdReason = "WaitingForParts" } : (object)new { status = move });
+            Assert.Equal("rejected", Status(a));
+            Assert.Contains("already", a.GetProperty("message").GetString());
+            Assert.Equal(expected, (await Ok(await o.C.GetAsync($"/api/work-orders/{wo}"))).GetProperty("status").GetString());
+        }
+    }
+
+    [SkippableFact]
+    public async Task Offline_start_and_completion_keep_the_times_they_happened()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var now = DateTimeOffset.UtcNow;
+        var wo = await WorkOrderAsync(o.C, o.SiteA, [o.Me]);
+        Assert.Equal("done", Status(await SendAsync(o.C, Guid.NewGuid(), now.AddHours(-8), "status.change", wo, new { status = "InProgress" })));
+        Assert.Equal("done", Status(await SendAsync(o.C, Guid.NewGuid(), now.AddHours(-1), "status.change", wo, new { status = "Completed", completionNotes = "Done" })));
+        var d = await Ok(await o.C.GetAsync($"/api/work-orders/{wo}"));
+        Assert.InRange(d.GetProperty("startedAt").GetDateTimeOffset(), now.AddHours(-8).AddMinutes(-1), now.AddHours(-8).AddMinutes(1));
+        Assert.InRange(d.GetProperty("completedAt").GetDateTimeOffset(), now.AddHours(-1).AddMinutes(-1), now.AddHours(-1).AddMinutes(1));
+
+        // Completed offline straight from Open: it never starts after it ended.
+        var open = await WorkOrderAsync(o.C, o.SiteA, [o.Me]);
+        Assert.Equal("done", Status(await SendAsync(o.C, Guid.NewGuid(), now.AddHours(-2), "status.change", open, new { status = "Completed", completionNotes = "Done" })));
+        var e = await Ok(await o.C.GetAsync($"/api/work-orders/{open}"));
+        Assert.True(e.GetProperty("startedAt").GetDateTimeOffset() <= e.GetProperty("completedAt").GetDateTimeOffset());
+        Assert.InRange(e.GetProperty("completedAt").GetDateTimeOffset(), now.AddHours(-2).AddMinutes(-1), now.AddHours(-2).AddMinutes(1));
+    }
 }

@@ -80,7 +80,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                     DeviceName = table.Column<string>(type: "nvarchar(120)", maxLength: 120, nullable: false),
                     CreatedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
                     LastSeenAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: false),
-                    RevokedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
+                    RevokedAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true),
+                    ExpiresAt = table.Column<DateTimeOffset>(type: "datetimeoffset", nullable: true)
                 },
                 constraints: table =>
                 {

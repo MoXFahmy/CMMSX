@@ -18,7 +18,8 @@ namespace FourC.Cmms.Api.Features;
 /// </summary>
 public static partial class TechEndpoints
 {
-    public sealed record ActionInput(Guid ClientId, DateTimeOffset? At, string? Type, Guid? WorkOrderId, JsonElement Payload);
+    /// <param name="UserId">Who queued the change on the phone. When someone else is signed in now, it is neither applied nor recorded.</param>
+    public sealed record ActionInput(Guid ClientId, DateTimeOffset? At, string? Type, Guid? WorkOrderId, JsonElement Payload, Guid? UserId = null);
     public sealed record Answer(string Status, string? Message = null, string? Code = null);
 
     private sealed record TaskPayload(Guid TaskId, bool? IsDone, string? Reading, string? Remarks, bool Force = false);
@@ -36,6 +37,12 @@ public static partial class TechEndpoints
     private const long MaxImageBytes = 10 * 1024 * 1024;
     private static readonly TimeSpan OldestChange = TimeSpan.FromDays(30);
 
+    /// <summary>409 "otherUser": the change was queued by another person; the phone keeps it until they sign in again.</summary>
+    private static IResult? OtherUser(Guid? queuedBy, ITenantContext ctx) =>
+        queuedBy is { } q && q != ctx.UserId
+            ? Results.Json(new Answer("otherUser", "This change was made by someone else on this phone. It waits until they sign in again.", "otherUser"), statusCode: 409)
+            : null;
+
     /// <summary>When the technician made the change, never later than now and never more than 30 days back.</summary>
     internal static DateTimeOffset Clamp(DateTimeOffset? at, DateTimeOffset now) =>
         at is not { } a || a > now ? now : a < now - OldestChange ? now - OldestChange : a;
@@ -48,6 +55,7 @@ public static partial class TechEndpoints
             CancellationToken ct) =>
         {
             if (input.ClientId == Guid.Empty || string.IsNullOrWhiteSpace(input.Type)) return Results.Problem(title: "A change needs an id and a type.", statusCode: 400);
+            if (OtherUser(input.UserId, ctx) is { } other) return other;
             var at = Clamp(input.At, DateTimeOffset.UtcNow);
             var allowed = await perms.GetAsync(ctx.UserId!.Value);
             return Results.Ok(await RunAsync(db, ctx, input.ClientId, input.Type!, at, () => ApplyAsync(db, ctx, mail, allowed, json.Value.SerializerOptions, input, at, ct), ct));
@@ -58,6 +66,7 @@ public static partial class TechEndpoints
             if (!req.HasFormContentType) return Results.Problem(title: "Upload must be multipart/form-data.", statusCode: 400);
             var form = await req.ReadFormAsync(ct);
             if (!Guid.TryParse(form["clientId"], out var clientId) || clientId == Guid.Empty) return Results.Problem(title: "A file needs an id.", statusCode: 400);
+            if (OtherUser(Guid.TryParse(form["userId"], out var by) ? by : null, ctx) is { } other) return other;
             var at = Clamp(DateTimeOffset.TryParse(form["at"], out var a) ? a : null, DateTimeOffset.UtcNow);
             var signature = form["kind"].ToString() == "signature";
             var allowed = await perms.GetAsync(ctx.UserId!.Value);
@@ -179,7 +188,7 @@ public static partial class TechEndpoints
                 var p = Read<LaborPayload>(input.Payload, options);
                 var me = await EmployeeAsync(db, ctx, ct) ?? throw new Rejected("Your account isn't linked to an employee.");
                 var (v, _) = await WorkOrderEndpoints.AddLaborAsync(db, ctx, w.Id,
-                    new WorkOrderEndpoints.LaborInput(me.EmployeeId, p.WorkDate ?? DateOnly.FromDateTime(at.UtcDateTime), p.Hours, p.OvertimeHours, p.Notes), ct);
+                    new WorkOrderEndpoints.LaborInput(me.EmployeeId, p.WorkDate ?? DateOnly.FromDateTime(at.UtcDateTime), p.Hours, p.OvertimeHours, p.Notes), ct, at);
                 Ensure(v);
                 await db.SaveChangesAsync(ct);
                 return new Answer("done");
@@ -239,13 +248,18 @@ public static partial class TechEndpoints
             await db.SaveChangesAsync(ct);
             return new Answer("done", "This job was already completed; your notes were added as a comment.");
         }
+        if (p.Status is WorkOrderStatus.InProgress or WorkOrderStatus.OnHold && w.Status is WorkOrderStatus.Completed or WorkOrderStatus.Closed)
+            throw new Rejected($"This work order was already {Words(w.Status)}, so it wasn't reopened. Ask the office if it needs more work.");
         if (w.Status == p.Status) return new Answer("done");
+        if (WorkOrderWorkflow.RequiresClosePermission(w.Status, p.Status) && !allowed.Contains(Permissions.WorkOrdersClose))
+            throw new Rejected("You can't reopen closed or cancelled work orders.");
         if (!WorkOrderWorkflow.CanTransition(w.Status, p.Status))
             throw new Rejected($"This work order is now {Words(w.Status)}, so it can't be {Words(p.Status)}.");
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var completed = p.Status == WorkOrderStatus.Completed;
         var input = new WorkOrderEndpoints.StatusInput(p.Status, p.HoldReason, p.Note, p.CompletionNotes, p.CauseNotes, p.FailureCodeId, p.AssetWasDown, p.DowntimeHours,
-            ActualStart: completed && w.StartedAt > at ? at : null, ActualEnd: completed ? at : null);
+            // When the technician started (offline) or, on completion, never later than when they finished.
+            ActualStart: p.Status == WorkOrderStatus.InProgress || (completed && w.StartedAt > at) ? at : null, ActualEnd: completed ? at : null);
         Ensure(await WorkOrderEndpoints.ChangeStatusAsync(db, ctx, mail, settings, w, input, ct));
         await db.SaveChangesAsync(ct);
         return new Answer("done");

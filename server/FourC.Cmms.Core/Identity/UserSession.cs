@@ -15,4 +15,9 @@ public class UserSession : Entity, ITenantOwned
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset LastSeenAt { get; set; }
     public DateTimeOffset? RevokedAt { get; set; }
+    /// <summary>
+    /// When the sign-in runs out if the device isn't used again (last use + how long its sign-in lasts). Past this, the
+    /// device is no longer listed; null for rows written before this was kept.
+    /// </summary>
+    public DateTimeOffset? ExpiresAt { get; set; }
 }

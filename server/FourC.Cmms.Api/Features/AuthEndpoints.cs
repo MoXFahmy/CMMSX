@@ -65,10 +65,11 @@ public static class AuthEndpoints
             if (!result.Succeeded) return Results.Problem(title: "Invalid email or password.", statusCode: 401);
             // Every sign-in is a device the user (or an administrator) can sign out later.
             var userAgent = http.Request.Headers.UserAgent.ToString();
-            var session = await Sessions.StartAsync(db, user.Id, user.TenantId, userAgent, ct);
+            var longSignIn = req.RememberMe && (req.Technician || Sessions.IsAndroidApp(userAgent));
+            var session = await Sessions.StartAsync(db, user.Id, user.TenantId, userAgent, longSignIn ? TechnicianSignIn : Sessions.DefaultLifetime, ct);
             var props = new AuthenticationProperties { IsPersistent = req.RememberMe };
             props.Items[Sessions.Key] = session.Id.ToString();
-            if (req.RememberMe && (req.Technician || Sessions.IsAndroidApp(userAgent))) props.ExpiresUtc = DateTimeOffset.UtcNow.Add(TechnicianSignIn);
+            if (longSignIn) props.ExpiresUtc = DateTimeOffset.UtcNow.Add(TechnicianSignIn);
             await signIn.SignInWithClaimsAsync(user, props, []);
             user.LastLoginAt = DateTimeOffset.UtcNow;
             await users.UpdateAsync(user);

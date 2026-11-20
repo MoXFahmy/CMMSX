@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FourC.Cmms.Core.Data.Migrations
 {
     [DbContext(typeof(CmmsDbContext))]
-    [Migration("20261120113025_TechnicianApp")]
+    [Migration("20261120172838_TechnicianApp")]
     partial class TechnicianApp
     {
         /// <inheritdoc />
@@ -662,6 +662,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(120)
                         .HasColumnType("nvarchar(120)");
+
+                    b.Property<DateTimeOffset?>("ExpiresAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset>("LastSeenAt")
                         .HasColumnType("datetimeoffset");

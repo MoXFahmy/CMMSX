@@ -403,12 +403,13 @@ public static class WorkOrderEndpoints
         w.HoldReason = input.Status == WorkOrderStatus.OnHold ? input.HoldReason : null;
         switch (input.Status)
         {
-            case WorkOrderStatus.InProgress: w.StartedAt ??= now; w.CompletedAt = null; w.ClosedAt = null; break;
+            case WorkOrderStatus.InProgress: w.StartedAt ??= input.ActualStart ?? now; w.CompletedAt = null; w.ClosedAt = null; break;
             case WorkOrderStatus.Completed:
                 // Like 4CSQL's "Calculate Dates": default actual start to when work started, else the earliest labour entry.
                 var firstLabor = await db.WorkOrderLabor.Where(l => l.WorkOrderId == w.Id).OrderBy(l => l.WorkDate).Select(l => (DateOnly?)l.WorkDate).FirstOrDefaultAsync(ct);
-                w.StartedAt = input.ActualStart ?? w.StartedAt ?? (firstLabor is { } fl ? new DateTimeOffset(fl.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) : now);
+                w.StartedAt = input.ActualStart ?? w.StartedAt ?? (firstLabor is { } fl ? new DateTimeOffset(fl.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero) : input.ActualEnd ?? now);
                 w.CompletedAt = input.ActualEnd ?? now;
+                if (w.StartedAt > w.CompletedAt) w.StartedAt = w.CompletedAt; // a derived start never comes after the end
                 w.PreventionNotes = input.PreventionNotes.Clean() ?? w.PreventionNotes;
                 w.CompletionNotes = input.CompletionNotes.Clean() ?? w.CompletionNotes;
                 w.CauseNotes = input.CauseNotes.Clean() ?? w.CauseNotes;
@@ -490,7 +491,7 @@ public static class WorkOrderEndpoints
     }
 
     /// <summary>"Start work automatically" setting: an Open work order moves to In progress when work is first recorded on it.</summary>
-    private static async Task AutoStartAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, string reason, CancellationToken ct)
+    private static async Task AutoStartAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, string reason, CancellationToken ct, DateTimeOffset? at = null)
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         if (!settings.AutoStartWork) return;
@@ -502,7 +503,7 @@ public static class WorkOrderEndpoints
             WorkOrderId = w.Id, FromStatus = w.Status, ToStatus = WorkOrderStatus.InProgress, Note = reason, ChangedAt = now, ChangedById = ctx.UserId, ChangedByName = ctx.UserName,
         });
         w.Status = WorkOrderStatus.InProgress;
-        w.StartedAt ??= now;
+        w.StartedAt ??= at ?? now; // work recorded offline started when it was done
     }
 
     public static async Task<Validator> ValidateAsync(WorkOrderInput i, CmmsDbContext db, CancellationToken ct)
@@ -559,14 +560,15 @@ public static class WorkOrderEndpoints
     }
 
     /// <summary>Logs labour on a work order at the employee's current rates (snapshotted); logging labour starts open work.</summary>
-    internal static async Task<(Validator V, WorkOrderLabor? Labor)> AddLaborAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, LaborInput input, CancellationToken ct)
+    internal static async Task<(Validator V, WorkOrderLabor? Labor)> AddLaborAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, LaborInput input, CancellationToken ct,
+        DateTimeOffset? at = null)
     {
         var (v, emp) = await ValidateLaborAsync(input, db, ct);
         if (!v.IsValid) return (v, null);
         var l = new WorkOrderLabor { WorkOrderId = workOrderId, EmployeeId = emp!.Id, WorkDate = input.WorkDate, Hours = input.Hours, OvertimeHours = input.OvertimeHours,
             Rate = emp.HourlyRate ?? 0, OvertimeRate = emp.OvertimeRate ?? emp.HourlyRate ?? 0, Notes = input.Notes.Clean() };
         db.WorkOrderLabor.Add(l);
-        await AutoStartAsync(db, ctx, workOrderId, "Started automatically: labour logged", ct);
+        await AutoStartAsync(db, ctx, workOrderId, "Started automatically: labour logged", ct, at);
         return (v, l);
     }
 
@@ -590,7 +592,7 @@ public static class WorkOrderEndpoints
         if (isDone is { } done && done != t.IsDone)
         {
             t.IsDone = done; t.DoneAt = done ? at : null; t.DoneBy = done ? ctx.UserName : null; changed = true;
-            if (done) await AutoStartAsync(db, ctx, workOrderId, "Started automatically: checklist step done", ct);
+            if (done) await AutoStartAsync(db, ctx, workOrderId, "Started automatically: checklist step done", ct, at);
         }
         if (changed) { t.UpdatedAt = at; t.UpdatedById = ctx.UserId; t.UpdatedByName = ctx.UserName; }
     }
