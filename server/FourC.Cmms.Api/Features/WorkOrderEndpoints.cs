@@ -127,7 +127,7 @@ public static class WorkOrderEndpoints
                 w.PlannedStart, w.DueDate, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 LocationNotesToTechnician = locationNotes, Request = request, Pm = pm, w.PmDueDate,
                 Assets = roundAssets,
-                Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks }),
+                Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName }),
                 Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned,
                 Planned = new { LaborHours = labour.Hours, LaborCost = labour.Cost, PartsCost = plannedParts, TotalCost = labour.Cost + plannedParts },
                 Totals = new
@@ -280,13 +280,7 @@ public static class WorkOrderEndpoints
                 .When(input.Remarks is { Length: > 2000 }, "remarks", "Remarks can be at most 2000 characters.");
             if (!v.IsValid) return v.Problem();
             if (input.Description.Clean() is { } d) t.Description = d.Length > 1000 ? d[..1000] : d;
-            if (input.Reading is not null) t.Reading = input.Reading.Clean(); // an empty string clears it
-            if (input.Remarks is not null) t.Remarks = input.Remarks.Clean();
-            if (input.IsDone is { } done && done != t.IsDone)
-            {
-                t.IsDone = done; t.DoneAt = done ? DateTimeOffset.UtcNow : null; t.DoneBy = done ? ctx.UserName : null;
-                if (done) await AutoStartAsync(db, ctx, id, "Started automatically: checklist step done", ct);
-            }
+            await ApplyTaskChangeAsync(db, ctx, id, t, input.IsDone, input.Reading, input.Remarks, DateTimeOffset.UtcNow, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { t.Id, t.IsDone });
         }).RequirePermission(Permissions.WorkOrdersExecute);
@@ -564,6 +558,24 @@ public static class WorkOrderEndpoints
         var want = (ids ?? []).Distinct().ToHashSet();
         w.Assignees.RemoveAll(a => !want.Contains(a.EmployeeId));
         foreach (var id in want.Where(id => w.Assignees.All(a => a.EmployeeId != id))) w.Assignees.Add(new WorkOrderAssignee { WorkOrderId = w.Id, EmployeeId = id });
+    }
+
+    /// <summary>
+    /// Applies a tick, reading or remarks to a checklist step (the office page and the technician app's queued changes),
+    /// recording who changed it and when; ticking a step starts open work.
+    /// </summary>
+    internal static async Task ApplyTaskChangeAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, WorkOrderTask t, bool? isDone, string? reading, string? remarks,
+        DateTimeOffset at, CancellationToken ct)
+    {
+        var changed = false;
+        if (reading is not null && reading.Clean() != t.Reading) { t.Reading = reading.Clean(); changed = true; } // an empty string clears it
+        if (remarks is not null && remarks.Clean() != t.Remarks) { t.Remarks = remarks.Clean(); changed = true; }
+        if (isDone is { } done && done != t.IsDone)
+        {
+            t.IsDone = done; t.DoneAt = done ? at : null; t.DoneBy = done ? ctx.UserName : null; changed = true;
+            if (done) await AutoStartAsync(db, ctx, workOrderId, "Started automatically: checklist step done", ct);
+        }
+        if (changed) { t.UpdatedAt = at; t.UpdatedById = ctx.UserId; t.UpdatedByName = ctx.UserName; }
     }
 
     private static async Task RequireOpenAsync(CmmsDbContext db, Guid id, CancellationToken ct)

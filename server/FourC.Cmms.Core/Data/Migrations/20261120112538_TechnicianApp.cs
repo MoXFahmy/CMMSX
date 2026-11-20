@@ -12,6 +12,39 @@ namespace FourC.Cmms.Core.Data.Migrations
         protected override void Up(MigrationBuilder migrationBuilder)
         {
             migrationBuilder.AddColumn<DateTimeOffset>(
+                name: "UpdatedAt",
+                table: "WorkOrderTasks",
+                type: "datetimeoffset",
+                nullable: true);
+
+            migrationBuilder.AddColumn<Guid>(
+                name: "UpdatedById",
+                table: "WorkOrderTasks",
+                type: "uniqueidentifier",
+                nullable: true);
+
+            migrationBuilder.AddColumn<string>(
+                name: "UpdatedByName",
+                table: "WorkOrderTasks",
+                type: "nvarchar(200)",
+                maxLength: 200,
+                nullable: true);
+
+            migrationBuilder.AddColumn<bool>(
+                name: "IsSignature",
+                table: "Attachments",
+                type: "bit",
+                nullable: false,
+                defaultValue: false);
+
+            migrationBuilder.AddColumn<string>(
+                name: "SignedBy",
+                table: "Attachments",
+                type: "nvarchar(200)",
+                maxLength: 200,
+                nullable: true);
+
+            migrationBuilder.AddColumn<DateTimeOffset>(
                 name: "SignedOutBefore",
                 table: "AspNetUsers",
                 type: "datetimeoffset",
@@ -45,6 +78,26 @@ namespace FourC.Cmms.Core.Data.Migrations
         {
             migrationBuilder.DropTable(
                 name: "UserSessions");
+
+            migrationBuilder.DropColumn(
+                name: "UpdatedAt",
+                table: "WorkOrderTasks");
+
+            migrationBuilder.DropColumn(
+                name: "UpdatedById",
+                table: "WorkOrderTasks");
+
+            migrationBuilder.DropColumn(
+                name: "UpdatedByName",
+                table: "WorkOrderTasks");
+
+            migrationBuilder.DropColumn(
+                name: "IsSignature",
+                table: "Attachments");
+
+            migrationBuilder.DropColumn(
+                name: "SignedBy",
+                table: "Attachments");
 
             migrationBuilder.DropColumn(
                 name: "SignedOutBefore",

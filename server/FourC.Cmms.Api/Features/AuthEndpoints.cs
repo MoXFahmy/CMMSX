@@ -91,6 +91,8 @@ public static class AuthEndpoints
             return Results.Ok(new
             {
                 user = new { user.Id, user.FullName, user.Email, user.JobTitle },
+                // The technician view is for people linked to an employee record.
+                employeeId = await db.Employees.AsNoTracking().Where(e => e.UserId == user.Id && e.IsActive).Select(e => (Guid?)e.Id).FirstOrDefaultAsync(),
                 tenant = new { tenant.Id, tenant.Name, tenant.Slug, tenant.Settings },
                 permissions = permissions.Order(),
             });

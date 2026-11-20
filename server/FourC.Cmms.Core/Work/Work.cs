@@ -144,6 +144,10 @@ public class WorkOrderTask : Entity, ITenantOwned
     public string? Reading { get; set; }
     public string? Remarks { get; set; }
     public string? LegacyRef { get; set; }
+    /// <summary>Last change to the tick, reading or remarks (a phone's queued change to the step loses to a later one).</summary>
+    public DateTimeOffset? UpdatedAt { get; set; }
+    public Guid? UpdatedById { get; set; }
+    public string? UpdatedByName { get; set; }
 }
 
 public class WorkOrderLabor : Entity, ITenantOwned, IAuditable

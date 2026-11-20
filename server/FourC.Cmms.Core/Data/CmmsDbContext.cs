@@ -234,6 +234,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.EntityType).HasMaxLength(50);
             e.Property(x => x.FileName).HasMaxLength(260);
             e.Property(x => x.ContentType).HasMaxLength(200);
+            e.Property(x => x.SignedBy).HasMaxLength(200);
             e.Property(x => x.StorageKey).HasMaxLength(400);
             e.HasIndex(x => new { x.TenantId, x.EntityType, x.EntityId });
         });
@@ -310,6 +311,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         {
             e.Property(x => x.Description).HasMaxLength(1000); e.Property(x => x.DoneBy).HasMaxLength(200); e.HasIndex(x => new { x.TenantId, x.WorkOrderId });
             e.Property(x => x.Reading).HasMaxLength(100); e.Property(x => x.Remarks).HasMaxLength(2000); e.Property(x => x.LegacyRef).HasMaxLength(200);
+            e.Property(x => x.UpdatedByName).HasMaxLength(200);
             e.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.TenantId, x.LegacyRef }).HasFilter("[LegacyRef] IS NOT NULL");
         });

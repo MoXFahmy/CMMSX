@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FourC.Cmms.Core.Data.Migrations
 {
     [DbContext(typeof(CmmsDbContext))]
-    [Migration("20261120112144_TechnicianApp")]
+    [Migration("20261120112538_TechnicianApp")]
     partial class TechnicianApp
     {
         /// <inheritdoc />
@@ -459,6 +459,13 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.Property<bool>("IsPrimaryImage")
                         .HasColumnType("bit");
+
+                    b.Property<bool>("IsSignature")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("SignedBy")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<long>("Size")
                         .HasColumnType("bigint");
@@ -2969,6 +2976,16 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("UpdatedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
 
                     b.Property<Guid>("WorkOrderId")
                         .HasColumnType("uniqueidentifier");

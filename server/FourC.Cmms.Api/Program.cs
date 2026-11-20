@@ -141,6 +141,7 @@ api.MapAlertEndpoints();
 api.MapEmailEndpoints();
 api.MapViewEndpoints();
 api.MapDeviceEndpoints();
+api.MapTechEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();
