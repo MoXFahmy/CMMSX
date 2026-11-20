@@ -17,6 +17,14 @@ async function call(path: string, init?: RequestInit): Promise<Response> {
 
 const title = async (res: Response) => { try { return ((await res.json()) as { title?: string }).title ?? `Request failed (${res.status})`; } catch { return `Request failed (${res.status})`; } };
 
+/** Who is signed in (throws Offline or SignedOut). */
+export async function fetchMe(): Promise<{ userId: string; employeeId?: string | null; fullName: string }> {
+  const res = await call('/auth/me');
+  if (!res.ok) throw new Error(await title(res));
+  const me = (await res.json()) as { user: { id: string; fullName: string }; employeeId?: string | null };
+  return { userId: me.user.id, employeeId: me.employeeId, fullName: me.user.fullName };
+}
+
 export async function fetchBundle(): Promise<TechBundle> {
   const res = await call('/tech/bundle');
   if (!res.ok) throw new Error(await title(res));

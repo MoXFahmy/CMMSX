@@ -58,11 +58,21 @@ describe('drain', () => {
     expect(store.items.get('a')).toMatchObject({ state: 'waiting', tries: 1, nextTryAt: 6_000 });
     // Too early: nothing is sent; once the time has come, it is.
     const early = answers({});
-    expect((await drain(store, 'u1', early.send, () => 5_999)).stoppedBy).toBe('retry');
+    expect((await drain(store, 'u1', early.send, () => 5_999)).stoppedBy).toBe('backoff');
     expect(early.sent).toEqual([]);
     const later = answers({});
     await drain(store, 'u1', later.send, () => 6_000);
     expect(later.sent).toEqual(['a', 'b']);
+  });
+
+  it('says it is only waiting (not offline) when the next try is not due, and can skip the wait', async () => {
+    const store = memoryStore([change('a', 1, 'u1', { tries: 2, nextTryAt: 60_000 })]);
+    const idle = answers({});
+    expect((await drain(store, 'u1', idle.send, () => 1_000)).stoppedBy).toBe('backoff');
+    expect(idle.sent).toEqual([]);
+    const now = answers({});
+    expect(await drain(store, 'u1', now.send, () => 1_000, undefined, { ignoreBackoff: true })).toEqual({ sent: 1, failed: 0 });
+    expect(now.sent).toEqual(['a']);
   });
 
   it("never sends another user's changes", async () => {
@@ -103,9 +113,11 @@ describe('drain', () => {
 describe('retryNow', () => {
   it('puts a failed change back in the queue, with force for a conflict', () => {
     const failed = change('a', 1, 'u1', { type: 'task.update', payload: { taskId: 't', reading: '7' }, state: 'failed', message: 'Changed by Olga', code: 'conflict', tries: 3, nextTryAt: 99 });
-    const plain = retryNow(failed);
+    const plain = retryNow(failed, false, 'a2');
     expect(plain).toMatchObject({ state: 'waiting', tries: 0, message: undefined, code: undefined, nextTryAt: undefined });
+    // The server keeps its answer per id, and nothing was applied: a retry goes out under a new id, keeping its place.
+    expect([plain.clientId, plain.seq]).toEqual(['a2', 1]);
     expect((plain.payload as { force?: boolean }).force).toBeUndefined();
-    expect((retryNow(failed, true).payload as { force?: boolean }).force).toBe(true);
+    expect((retryNow(failed, true, 'a3').payload as { force?: boolean }).force).toBe(true);
   });
 });

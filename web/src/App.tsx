@@ -26,12 +26,12 @@ import { PoDetailPage, PoPrintPage } from './pages/purchasing/PoDetailPage';
 import { WorkOrderPrintPage } from './pages/work/WorkOrderPrintPage';
 import { ReportsPage, ReportViewPage } from './pages/reports/ReportsPage';
 
-import { TechCheckPage } from './tech/TechCheckPage';
+import { TechApp } from './tech/TechApp';
 export function App() {
   const { me, loading } = useAuth();
   const location = useLocation();
   // The technician view's start page works without a connection or a sign-in check (the Android app opens here).
-  if (location.pathname === '/tech' || location.pathname.startsWith('/tech/')) return <TechCheckPage />;
+  if (location.pathname === '/tech' || location.pathname.startsWith('/tech/')) return <TechApp />;
   if (loading) return <Center h="100vh"><Loader /></Center>;
   if (!me) {
     return (

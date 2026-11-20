@@ -43,7 +43,9 @@ export function LoginPage() {
   const form = useForm({ initialValues: { email: '', password: '', rememberMe: true } });
   const submit = form.onSubmit(async (v) => {
     setBusy(true);
-    try { await post('/auth/login', v); await after(); } catch (e) { notifyError(e); } finally { setBusy(false); }
+    // Signing in for the technician view: "Keep me signed in" then lasts 30 days, like the Android app.
+    const technician = new URLSearchParams(window.location.search).get('next')?.startsWith('/tech') ?? false;
+    try { await post('/auth/login', { ...v, technician }); await after(); } catch (e) { notifyError(e); } finally { setBusy(false); }
   });
   return (
     <AuthFrame title={t('auth.signInTitle')} subtitle={t('auth.signInSubtitle')}>

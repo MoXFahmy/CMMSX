@@ -42,7 +42,8 @@ export type SendResult =
   | { kind: 'retry' }
   | { kind: 'signedOut'; revoked: boolean };
 
-export type DrainResult = { sent: number; failed: number; stoppedBy?: 'retry' | 'signedOut' };
+/** stoppedBy: 'retry' = a send just failed (no signal); 'backoff' = only waiting for the next try; 'signedOut' = sign in again. */
+export type DrainResult = { sent: number; failed: number; stoppedBy?: 'retry' | 'backoff' | 'signedOut' };
 
 /** Wait before the next try: 5 s, 10 s, 20 s … at most 5 minutes. */
 export const backoffMs = (tries: number) => Math.min(5_000 * 2 ** tries, 300_000);
@@ -53,13 +54,15 @@ export async function drain(
   send: (c: QueuedChange, file?: Blob) => Promise<SendResult>,
   now: () => number,
   onNote?: (c: QueuedChange, message: string) => void,
+  options: { ignoreBackoff?: boolean } = {},
 ): Promise<DrainResult> {
   const queue = (await store.list(userId)).filter((c) => c.userId === userId).sort((a, b) => a.seq - b.seq);
   let sent = 0;
   let failed = 0;
   for (const c of queue) {
     if (c.state === 'failed') { failed++; continue; }
-    if (c.nextTryAt !== undefined && c.nextTryAt > now()) return { sent, failed, stoppedBy: 'retry' };
+    // Signal came back, or the technician asked: send now instead of sitting out the wait.
+    if (!options.ignoreBackoff && c.nextTryAt !== undefined && c.nextTryAt > now()) return { sent, failed, stoppedBy: 'backoff' };
     const file = c.fileKey ? await store.file(c.fileKey) : undefined;
     await store.put({ ...c, state: 'sending' });
     const r = await send(c, file);
@@ -85,8 +88,12 @@ export async function drain(
   return { sent, failed };
 }
 
-/** Puts a change that couldn't be sent back in the queue; `force` applies it over a newer change (a checklist conflict). */
-export function retryNow(c: QueuedChange, force = false): QueuedChange {
+/**
+ * Puts a change that couldn't be sent back in the queue, in its place; `force` applies it over a newer change (a checklist
+ * conflict). It gets a new id: the server keeps its answer per id (so a repeat isn't applied twice), and the refused
+ * attempt applied nothing, so the old id would only get the old answer back.
+ */
+export function retryNow(c: QueuedChange, force: boolean, newClientId: string): QueuedChange {
   const payload = force ? { ...(c.payload as object), force: true } : c.payload;
-  return { ...c, payload, state: 'waiting', tries: 0, message: undefined, code: undefined, nextTryAt: undefined };
+  return { ...c, clientId: newClientId, payload, state: 'waiting', tries: 0, message: undefined, code: undefined, nextTryAt: undefined };
 }
