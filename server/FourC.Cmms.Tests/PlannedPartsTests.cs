@@ -1,6 +1,9 @@
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
+using FourC.Cmms.Core.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace FourC.Cmms.Tests;
 
@@ -478,5 +481,51 @@ public class PlannedPartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var part = await PartAsync(o.C, "P-1", o.Main);
         await TaskAsync(o.C, "T1", [new { partId = part, quantity = 1 }]);
         await Fails(await o.C.DeleteAsync($"/api/parts/{part}"), HttpStatusCode.BadRequest);
+    }
+
+    // ---- Final review fixes ----
+
+    [SkippableFact]
+    public async Task Reservation_view_reads_the_ledger_through_the_tenant_index()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        await SetupAsync(); // the app (and its database) exists once a request has run
+        using var scope = fx.Factory!.Services.CreateScope();
+        var db = scope.ServiceProvider.GetRequiredService<CmmsDbContext>();
+        var definition = await db.Database.SqlQueryRaw<string>("SELECT OBJECT_DEFINITION(OBJECT_ID('StockReservations')) AS Value").SingleAsync();
+        Assert.Contains("t.TenantId = wp.TenantId", definition); // StockTransactions' indexes start with TenantId
+    }
+
+    [SkippableFact]
+    public async Task Planning_into_a_store_without_a_stock_level_shows_on_every_screen()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        var wo = await WorkOrderAsync(o.C, o.SiteA);
+        await PlanAsync(o.C, wo, part, 5, o.Sat);
+        var p = await Ok(await o.C.GetAsync($"/api/parts/{part}"));
+        var sat = p.GetProperty("levels").EnumerateArray().Single(l => l.GetProperty("storeId").GetGuid() == o.Sat);
+        Assert.Equal((5m, -5m), (Dec(sat, "reserved"), Dec(sat, "available")));
+        Assert.Equal(5m, Dec(p, "reserved"));
+        Assert.Equal(wo, Assert.Single(p.GetProperty("reservedFor").EnumerateArray()).GetProperty("workOrderId").GetGuid());
+        Assert.Equal(5m, Dec(await ListRowAsync(o.C, part), "reserved"));
+    }
+
+    [SkippableFact]
+    public async Task Planned_hours_need_only_edit_work_orders()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var role = Id(await Ok(await o.C.PostAsJsonAsync("/api/roles", new { name = "Supervisor", description = "No inventory", permissions = new[] { "workorders.view", "workorders.edit" } })));
+        var email = $"{Guid.NewGuid():N}@test.local";
+        await Ok(await o.C.PostAsJsonAsync("/api/users", new { fullName = "Supervisor", email, isActive = true, roleIds = new[] { role }, password = "Passw0rd!u" }));
+        var sup = fx.Client();
+        await Ok(await sup.PostAsJsonAsync("/api/auth/login", new { email, password = "Passw0rd!u", rememberMe = false }));
+        var tech = await EmployeeAsync(o.C, "T1", 20);
+        var wo = await WorkOrderAsync(o.C, o.SiteA, assignees: [tech]);
+
+        await Ok(await sup.PutAsJsonAsync($"/api/work-orders/{wo}/planned-hours", new { lines = new[] { new { employeeId = tech, plannedHours = 2m } } }));
+        await Fails(await sup.PostAsJsonAsync($"/api/work-orders/{wo}/planned-parts", new { partId = await PartAsync(o.C, "P-1", o.Main), quantity = 1 }), HttpStatusCode.Forbidden);
     }
 }

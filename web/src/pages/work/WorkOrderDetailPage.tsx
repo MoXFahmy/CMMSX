@@ -51,7 +51,10 @@ export function WorkOrderDetailPage() {
   const locked = w.status === 'Closed' || w.status === 'Cancelled';
   const canExec = can(P.woExecute) && !locked;
   // The plan (parts and hours) can change while the work is open, by people who edit work orders and see inventory.
-  const canPlan = can(P.woEdit) && can(P.inventoryView) && (w.status === 'Open' || w.status === 'InProgress' || w.status === 'OnHold');
+  const isOpen = w.status === 'Open' || w.status === 'InProgress' || w.status === 'OnHold';
+  const canPlan = can(P.woEdit) && can(P.inventoryView) && isOpen;
+  // Planned hours are part of editing the work order and need no inventory permission.
+  const canPlanHours = can(P.woEdit) && isOpen;
   const move = async (to: WorkOrderStatus) => {
     if (to === 'Completed') return complete.open();
     if (to === 'OnHold') return hold.open();
@@ -174,7 +177,7 @@ export function WorkOrderDetailPage() {
           </Grid>
         </Tabs.Panel>
         <Tabs.Panel value="tasks"><TasksPanel w={w} canExec={canExec} onChange={refresh} /></Tabs.Panel>
-        <Tabs.Panel value="labor"><Stack><PlannedHoursCard w={w} canPlan={canPlan} onChange={refresh} currency={currency} /><LaborPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Stack></Tabs.Panel>
+        <Tabs.Panel value="labor"><Stack><PlannedHoursCard w={w} canPlan={canPlanHours} onChange={refresh} currency={currency} /><LaborPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Stack></Tabs.Panel>
         <Tabs.Panel value="parts"><WoPartsPanel w={w} canPlan={canPlan} canIssue={can(P.inventoryTransact) && !locked} canOrder={can(P.purchasingCreate) && !locked} onChange={refresh} currency={currency} /></Tabs.Panel>
         <Tabs.Panel value="costs"><Stack><PlanVsActualCard w={w} currency={currency} /><CostsPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Stack></Tabs.Panel>
         <Tabs.Panel value="activity"><ActivityPanel id={w.id} /></Tabs.Panel>

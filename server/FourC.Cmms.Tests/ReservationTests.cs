@@ -61,4 +61,11 @@ public class ReservationTests
         var c = Assert.Single(Reservations.WouldShort(6m, [a], 3m, null));
         Assert.Equal(("WO-A", 1m), (c.WorkOrderNumber, c.MoreShort));
     }
+
+    [Fact]
+    public void Visit_cost_adds_parts_per_asset_and_hours_at_the_average_known_rate()
+    {
+        var c = FourC.Cmms.Api.Features.PmCost.Visit([(2m, 5m), (1m, 3m)], multiplier: 3, estimatedHours: 2m, rates: [10m, 30m, null]);
+        Assert.Equal((39m, 40m, 79m), (c.Parts, c.Labour, c.Total));
+    }
 }

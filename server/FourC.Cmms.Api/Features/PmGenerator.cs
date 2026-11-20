@@ -262,17 +262,45 @@ public sealed record VisitCost(decimal Parts, decimal Labour, decimal Total);
 public static class PmCost
 {
     /// <summary>
-    /// A visit's estimated cost: the task's parts at current average cost (× covered assets on a round) plus the task's estimated
-    /// hours at the average rate of the schedule's active technicians (technicians without a rate are left out).
+    /// A visit's estimated cost: the task's parts at current average cost (× covered assets on a round) plus its estimated hours
+    /// at the average of the known hourly rates (technicians without a rate are left out).
     /// </summary>
-    public static async Task<VisitCost> ForScheduleAsync(CmmsDbContext db, PmSchedule s, Guid taskId, CancellationToken ct)
+    public static VisitCost Visit(IEnumerable<(decimal Quantity, decimal AverageCost)> parts, int multiplier, decimal? estimatedHours, IEnumerable<decimal?> rates)
     {
-        var parts = await db.PmTaskParts.AsNoTracking().Where(p => p.PmTaskId == taskId).Select(p => new { p.Quantity, p.Part!.AverageCost }).ToListAsync(ct);
-        var multiplier = s.Assets.Count > 0 ? (await PmGenerator.RoundAssetsAsync(db, s, ct)).Count : 1;
-        var hours = await db.PmTasks.AsNoTracking().Where(t => t.Id == taskId).Select(t => t.EstimatedHours).FirstOrDefaultAsync(ct) ?? 0;
-        var rates = s.AssigneeIds.Count == 0 ? [] : await db.Employees.AsNoTracking().Where(e => s.AssigneeIds.Contains(e.Id) && e.IsActive).Select(e => e.HourlyRate).ToListAsync(ct);
         var partsCost = Math.Round(parts.Sum(p => p.Quantity * p.AverageCost) * multiplier, 2);
-        var labour = Math.Round(hours * Planning.AverageRate(rates), 2);
+        var labour = Math.Round((estimatedHours ?? 0) * Planning.AverageRate(rates), 2);
         return new VisitCost(partsCost, labour, partsCost + labour);
+    }
+
+    /// <summary>
+    /// The visit cost of each schedule and task pair, with a fixed number of queries for the whole list (task parts, task hours,
+    /// technicians' rates and round assets are each read once). Schedules need their ExtraTasks and Assets loaded.
+    /// </summary>
+    public static async Task<Dictionary<(Guid ScheduleId, Guid TaskId), VisitCost>> ForSchedulesAsync(CmmsDbContext db, IReadOnlyCollection<PmSchedule> schedules, CancellationToken ct)
+    {
+        var pairs = schedules.SelectMany(s => s.ExtraTasks.Select(e => e.PmTaskId).Append(s.PmTaskId).Distinct().Select(t => (S: s, TaskId: t))).ToList();
+        var taskIds = pairs.Select(p => p.TaskId).Distinct().ToList();
+        var parts = (await db.PmTaskParts.AsNoTracking().Where(p => taskIds.Contains(p.PmTaskId)).Select(p => new { p.PmTaskId, p.Quantity, p.Part!.AverageCost }).ToListAsync(ct))
+            .ToLookup(p => p.PmTaskId, p => (p.Quantity, p.AverageCost));
+        var hours = await db.PmTasks.AsNoTracking().Where(t => taskIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.EstimatedHours, ct);
+        var people = schedules.SelectMany(s => s.AssigneeIds).Distinct().ToList();
+        var rates = people.Count == 0 ? [] : await db.Employees.AsNoTracking().Where(e => people.Contains(e.Id) && e.IsActive).ToDictionaryAsync(e => e.Id, e => e.HourlyRate, ct);
+        var covered = await CoveredCountsAsync(db, schedules.Where(s => s.Assets.Count > 0).ToList(), ct);
+        return pairs.ToDictionary(p => (p.S.Id, p.TaskId), p => Visit(parts[p.TaskId], covered.GetValueOrDefault(p.S.Id, 1), hours.GetValueOrDefault(p.TaskId),
+            p.S.AssigneeIds.Where(rates.ContainsKey).Select(id => rates[id])));
+    }
+
+    /// <summary>How many assets each round's next work order would cover (as generation counts them), from one query.</summary>
+    private static async Task<Dictionary<Guid, int>> CoveredCountsAsync(CmmsDbContext db, IReadOnlyList<PmSchedule> rounds, CancellationToken ct)
+    {
+        if (rounds.Count == 0) return [];
+        var ids = rounds.SelectMany(s => s.Assets.Select(a => a.AssetId)).Distinct().ToList();
+        var rows = await db.Assets.AsNoTracking().Where(a => ids.Contains(a.Id))
+            .Select(a => new { a.Id, a.SiteId, a.Status, a.LocationId, Path = a.Location != null ? a.Location.Path : null }).ToDictionaryAsync(a => a.Id, ct);
+        return rounds.ToDictionary(s => s.Id, s => PmRound.Covered(s.Assets.Where(a => rows.ContainsKey(a.AssetId)).Select(a =>
+        {
+            var r = rows[a.AssetId];
+            return new RoundAsset(r.Id, a.Sequence, r.SiteId, r.Path, r.LocationId, r.Status is not (Core.Assets.AssetStatus.Disposed or Core.Assets.AssetStatus.Inactive));
+        }), s.SiteId).Count);
     }
 }

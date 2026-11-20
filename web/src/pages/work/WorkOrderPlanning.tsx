@@ -106,15 +106,21 @@ export function PlannedPartsCard({ w, canPlan, canIssue, onChange, onIssue, curr
 /** Hours planned for each assigned technician; planned labour falls back to the estimate when none are set. */
 export function PlannedHoursCard({ w, canPlan, onChange, currency }: { w: WorkOrderDetail; canPlan: boolean; onChange: () => Promise<void>; currency: string }) {
   const { t } = useTranslation();
-  const [hours, setHours] = useState<Record<string, number | ''>>({});
+  // Raw input per technician (a half-typed "1." stays as typed); reset only when the saved hours change, so a refetch
+  // (window focus, another save on the page) doesn't wipe what someone is typing.
+  const [hours, setHours] = useState<Record<string, string | number>>({});
   const [saving, setSaving] = useState(false);
-  useEffect(() => { setHours(Object.fromEntries(w.assignees.map((a) => [a.employeeId, a.plannedHours ?? '']))); }, [w]);
+  const saved = w.assignees.map((a) => `${a.employeeId}:${a.plannedHours ?? ''}`).join('|');
+  useEffect(() => { setHours(Object.fromEntries(w.assignees.map((a) => [a.employeeId, a.plannedHours ?? '']))); }, [saved]); // eslint-disable-line react-hooks/exhaustive-deps
   if (w.assignees.length === 0) return null;
-  const dirty = w.assignees.some((a) => (a.plannedHours ?? '') !== (hours[a.employeeId] ?? ''));
+  const dirty = w.assignees.some((a) => String(a.plannedHours ?? '') !== String(hours[a.employeeId] ?? ''));
+  const parse = (v: string | number | undefined) => (v === undefined || v === '' ? null : Number(v));
   const save = async () => {
+    const lines = w.assignees.map((a) => ({ employeeId: a.employeeId, plannedHours: parse(hours[a.employeeId]) }));
+    if (lines.some((l) => l.plannedHours !== null && Number.isNaN(l.plannedHours))) { notifyError(new Error(t('plan.hoursInvalid'))); return; }
     setSaving(true);
     try {
-      await put(`/work-orders/${w.id}/planned-hours`, { lines: w.assignees.map((a) => ({ employeeId: a.employeeId, plannedHours: hours[a.employeeId] === '' ? null : hours[a.employeeId] })) });
+      await put(`/work-orders/${w.id}/planned-hours`, { lines });
       notifySuccess(t('common.saved'));
       await onChange();
     } catch (e) { notifyError(e); } finally { setSaving(false); }
@@ -136,7 +142,7 @@ export function PlannedHoursCard({ w, canPlan, onChange, currency }: { w: WorkOr
               <Table.Td w={160}>
                 {canPlan
                   ? <NumberInput size="xs" min={0} max={10000} step={0.5} decimalScale={2} suffix=" h" value={hours[a.employeeId] ?? ''} aria-label={t('plan.hours')}
-                      onChange={(x) => setHours((h) => ({ ...h, [a.employeeId]: typeof x === 'number' ? x : '' }))} />
+                      onChange={(x) => setHours((h) => ({ ...h, [a.employeeId]: x }))} />
                   : <Text fz="sm" ta="right">{a.plannedHours != null ? `${a.plannedHours} h` : '—'}</Text>}
               </Table.Td>
               <Table.Td ta="right" c="dimmed" fz="sm">{a.hourlyRate != null ? `${fmtMoney(a.hourlyRate, currency)}/h` : '—'}</Table.Td>

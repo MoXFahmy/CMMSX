@@ -171,7 +171,7 @@ public static class PmEndpoints
             if (s is null) return Results.NotFound();
             var recent = await db.WorkOrders.AsNoTracking().Where(w => w.PmScheduleId == id).OrderByDescending(w => w.CreatedAt).Take(10)
                 .Select(w => new { w.Id, w.Number, w.Title, w.Status, w.PmDueDate, w.CompletedAt }).ToListAsync(ct);
-            var visitCost = await PmCost.ForScheduleAsync(db, s, s.PmTaskId, ct);
+            var visitCost = (await PmCost.ForSchedulesAsync(db, [s], ct))[(s.Id, s.PmTaskId)];
             return Results.Ok(new
             {
                 s.Id, s.Code, s.Name, s.Description, s.SiteId, s.LocationId, s.AssetId, Asset = s.Asset is null ? null : new { s.Asset.Id, s.Asset.AssetNumber, s.Asset.Name },
@@ -282,10 +282,7 @@ public static class PmEndpoints
             var list = await q.Select(x => new { S = x, AssetNumber = x.Asset!.AssetNumber, TaskName = x.PmTask!.Name, SiteName = x.Site!.Name }).ToListAsync(ct);
             var taskNames = await db.PmTasks.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, ct);
             // Estimated cost per visit, worked out once per schedule and task (not per forecast row).
-            var costs = new Dictionary<(Guid, Guid), decimal>();
-            foreach (var i in list)
-                foreach (var taskId in i.S.ExtraTasks.Select(e => e.PmTaskId).Append(i.S.PmTaskId).Distinct())
-                    costs[(i.S.Id, taskId)] = (await PmCost.ForScheduleAsync(db, i.S, taskId, ct)).Total;
+            var costs = (await PmCost.ForSchedulesAsync(db, list.Select(i => i.S).ToList(), ct)).ToDictionary(x => x.Key, x => x.Value.Total);
             return list.SelectMany(i => PmCalendar.Forecast(i.S, to, 400).Select((d, k) => new
             {
                 Date = d, i.S.Id, i.S.Code, i.S.Name, i.AssetNumber, i.SiteName, i.S.Type,

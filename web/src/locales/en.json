@@ -1121,6 +1121,7 @@
     "hours": "Planned hours",
     "hoursHint": "Hours planned for each technician. Without them, planned labour uses the work order's estimate.",
     "saveHours": "Save hours",
+    "hoursInvalid": "Enter planned hours as a number.",
     "vsActual": "Planned and actual cost",
     "difference": "Difference",
     "laborHours": "Labour hours",

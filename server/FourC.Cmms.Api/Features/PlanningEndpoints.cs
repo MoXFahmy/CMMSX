@@ -2,6 +2,7 @@ using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Identity;
+using FourC.Cmms.Core.Inventory;
 using FourC.Cmms.Core.Work;
 using Microsoft.EntityFrameworkCore;
 
@@ -21,6 +22,8 @@ public static class PlanningEndpoints
     {
         var g = api.MapGroup("/work-orders/{id:guid}").WithTags("Work order planning")
             .RequirePermission(Permissions.WorkOrdersEdit).RequirePermission(Permissions.InventoryView);
+        // Planned hours are part of editing the work order; they don't touch inventory.
+        var hoursGroup = api.MapGroup("/work-orders/{id:guid}").WithTags("Work order planning").RequirePermission(Permissions.WorkOrdersEdit);
 
         g.MapPost("/planned-parts", async (Guid id, PlannedPartInput i, CmmsDbContext db, CancellationToken ct) =>
         {
@@ -37,6 +40,7 @@ public static class PlanningEndpoints
                 WorkOrderId = id, PartId = part.Id, Quantity = Math.Round(i.Quantity, 3), Notes = Notes(i.Notes),
                 StoreId = i.StoreId is { } sid ? await ActiveStoreAsync(db, sid, ct) : await Planning.DefaultStoreAsync(db, part.Id, w.SiteId, ct),
             };
+            if (line.StoreId is { } chosen) await EnsureLevelAsync(db, part.Id, chosen, ct);
             db.WorkOrderParts.Add(line);
             try { await db.SaveChangesAsync(ct); }
             catch (DbUpdateException) { throw new DomainException(already); } // two people planned it at the same moment
@@ -53,7 +57,11 @@ public static class PlanningEndpoints
             if (!v.IsValid) return v.Problem();
             line.Quantity = Math.Round(i.Quantity, 3);
             line.Notes = Notes(i.Notes);
-            if (i.StoreId is { } sid) line.StoreId = await ActiveStoreAsync(db, sid, ct);
+            if (i.StoreId is { } sid)
+            {
+                line.StoreId = await ActiveStoreAsync(db, sid, ct);
+                await EnsureLevelAsync(db, line.PartId, sid, ct);
+            }
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { line.Id });
         });
@@ -68,7 +76,7 @@ public static class PlanningEndpoints
             return Results.NoContent();
         });
 
-        g.MapPut("/planned-hours", async (Guid id, PlannedHoursInput input, CmmsDbContext db, CancellationToken ct) =>
+        hoursGroup.MapPut("/planned-hours", async (Guid id, PlannedHoursInput input, CmmsDbContext db, CancellationToken ct) =>
         {
             var w = await PlannableAsync(db, id, ct);
             if (w is null) return Results.NotFound();
@@ -100,6 +108,16 @@ public static class PlanningEndpoints
         .When(i.Notes?.Trim().Length > 500, "notes", "Keep the notes to 500 characters.");
 
     private static string? Notes(string? notes) => string.IsNullOrWhiteSpace(notes) ? null : notes.Trim();
+
+    /// <summary>
+    /// Gives the part a (zero) stock level in a store it is planned in, so every screen that lists store levels — the part page,
+    /// its "reserved for" list, the proposal — sees the reservation, as the parts list (which sums the view) does.
+    /// </summary>
+    private static async Task EnsureLevelAsync(CmmsDbContext db, Guid partId, Guid storeId, CancellationToken ct)
+    {
+        if (!await db.StockLevels.AnyAsync(l => l.PartId == partId && l.StoreId == storeId, ct))
+            db.StockLevels.Add(new StockLevel { PartId = partId, StoreId = storeId });
+    }
 
     private static async Task<Guid> ActiveStoreAsync(CmmsDbContext db, Guid storeId, CancellationToken ct) =>
         await db.Stores.AnyAsync(s => s.Id == storeId && s.IsActive, ct) ? storeId : throw new DomainException("Choose an active store.");

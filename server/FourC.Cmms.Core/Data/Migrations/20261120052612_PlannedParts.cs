@@ -112,6 +112,7 @@ namespace FourC.Cmms.Core.Data.Migrations
 
             // Stock reserved for open work per part and store: planned less net issued, never below 0 (Reservations.StillReserved).
             // Open = Open (1), InProgress (2), OnHold (3); issues (2) and returns (3) count against the plan.
+            // The ledger lookup names the tenant so it can use StockTransactions' (TenantId, WorkOrderId) index.
             migrationBuilder.Sql(@"
 CREATE VIEW StockReservations AS
 SELECT wp.TenantId, wp.PartId, wp.StoreId,
@@ -119,7 +120,7 @@ SELECT wp.TenantId, wp.PartId, wp.StoreId,
 FROM WorkOrderParts wp
 JOIN WorkOrders w ON w.Id = wp.WorkOrderId AND w.IsDeleted = 0 AND w.Status IN (1, 2, 3)
 OUTER APPLY (SELECT -SUM(t.Quantity) AS Net FROM StockTransactions t
-             WHERE t.WorkOrderId = wp.WorkOrderId AND t.PartId = wp.PartId AND t.Type IN (2, 3)) i
+             WHERE t.TenantId = wp.TenantId AND t.WorkOrderId = wp.WorkOrderId AND t.PartId = wp.PartId AND t.Type IN (2, 3)) i
 WHERE wp.StoreId IS NOT NULL
 GROUP BY wp.TenantId, wp.PartId, wp.StoreId");
         }
