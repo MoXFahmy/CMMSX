@@ -144,9 +144,14 @@ public static class PmGenerator
         var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description.Length == 0 ? null : description, WorkType.Preventive, s.Priority,
             s.SiteId, round is null ? s.LocationId : s.LocationId ?? PmRound.CommonLocationId(round), round is null ? s.AssetId : null, s.TradeId ?? task.TradeId, assignees,
             start, PmCalendar.DueDate(s, start), task.EstimatedHours, round is null ? steps : null);
+        // The task's parts come along as planned parts (× covered assets on a round), reserved in the default store for the site.
+        var planned = new List<WorkOrderPart>();
+        foreach (var tp in await db.PmTaskParts.AsNoTracking().Where(p => p.PmTaskId == task.Id).Select(p => new { p.PartId, p.Quantity }).ToListAsync(ct))
+            planned.Add(new WorkOrderPart { PartId = tp.PartId, Quantity = tp.Quantity * (round?.Count ?? 1), StoreId = await Planning.DefaultStoreAsync(db, tp.PartId, s.SiteId, ct) });
         return await WorkOrderEndpoints.CreateAsync(db, ctx, input, null, ct, w =>
         {
             w.PmScheduleId = s.Id; w.PmTaskId = task.Id; w.PmDueDate = due;
+            foreach (var p in planned) { p.WorkOrderId = w.Id; db.WorkOrderParts.Add(p); }
             if (round is null) return;
             for (var n = 0; n < round.Count; n++) w.Assets.Add(new WorkOrderAsset { WorkOrderId = w.Id, AssetId = round[n].Id, Sequence = n + 1 });
             foreach (var st in PmRound.Steps(round, steps))
@@ -155,7 +160,7 @@ public static class PmGenerator
     }
 
     /// <summary>The assets a round's next work order covers (deleted assets drop out through the query filter).</summary>
-    private static async Task<IReadOnlyList<RoundAsset>> RoundAssetsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct,
+    internal static async Task<IReadOnlyList<RoundAsset>> RoundAssetsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct,
         IReadOnlyCollection<Core.Assets.AssetStatus>? skipStatuses = null)
     {
         var sequence = s.Assets.ToDictionary(a => a.AssetId, a => a.Sequence);
@@ -248,5 +253,26 @@ public sealed class PmSchedulerService(IServiceScopeFactory scopes, IConfigurati
                 scope.ServiceProvider.GetService<EmailOutbox>())).Count(r => r.WorkOrderId is not null);
             if (created > 0) log.LogInformation("PM scheduler created {Count} work orders for tenant {Tenant}", created, tenantId);
         }
+    }
+}
+
+/// <summary>Estimated cost of one PM visit.</summary>
+public sealed record VisitCost(decimal Parts, decimal Labour, decimal Total);
+
+public static class PmCost
+{
+    /// <summary>
+    /// A visit's estimated cost: the task's parts at current average cost (× covered assets on a round) plus the task's estimated
+    /// hours at the average rate of the schedule's active technicians (technicians without a rate are left out).
+    /// </summary>
+    public static async Task<VisitCost> ForScheduleAsync(CmmsDbContext db, PmSchedule s, Guid taskId, CancellationToken ct)
+    {
+        var parts = await db.PmTaskParts.AsNoTracking().Where(p => p.PmTaskId == taskId).Select(p => new { p.Quantity, p.Part!.AverageCost }).ToListAsync(ct);
+        var multiplier = s.Assets.Count > 0 ? (await PmGenerator.RoundAssetsAsync(db, s, ct)).Count : 1;
+        var hours = await db.PmTasks.AsNoTracking().Where(t => t.Id == taskId).Select(t => t.EstimatedHours).FirstOrDefaultAsync(ct) ?? 0;
+        var rates = s.AssigneeIds.Count == 0 ? [] : await db.Employees.AsNoTracking().Where(e => s.AssigneeIds.Contains(e.Id) && e.IsActive).Select(e => e.HourlyRate).ToListAsync(ct);
+        var partsCost = Math.Round(parts.Sum(p => p.Quantity * p.AverageCost) * multiplier, 2);
+        var labour = Math.Round(hours * Planning.AverageRate(rates), 2);
+        return new VisitCost(partsCost, labour, partsCost + labour);
     }
 }

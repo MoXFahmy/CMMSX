@@ -14,7 +14,10 @@ namespace FourC.Cmms.Api.Features;
 
 public static class PmEndpoints
 {
-    public sealed record TaskInput(string Code, string Name, string? Description, Guid? TradeId, decimal? EstimatedHours, string? SafetyNotes, List<string>? Steps, bool IsActive = true, string? RowVersion = null);
+    /// <param name="Parts">The parts each generated work order needs; null on an update keeps the task's parts.</param>
+    public sealed record TaskInput(string Code, string Name, string? Description, Guid? TradeId, decimal? EstimatedHours, string? SafetyNotes, List<string>? Steps, bool IsActive = true,
+        string? RowVersion = null, List<TaskPartInput>? Parts = null);
+    public sealed record TaskPartInput(Guid PartId, decimal Quantity);
     public sealed record ExtraTaskInput(Guid PmTaskId, int EveryNth);
     public sealed record ScheduleInput(string? Code, string Name, string? Description, Guid SiteId, Guid? LocationId, Guid? AssetId, Guid? TradeId, WorkPriority Priority,
         List<Guid>? AssigneeIds, Guid PmTaskId, List<ExtraTaskInput>? ExtraTasks, PmScheduleType Type, PmBasis Basis, int Frequency, FrequencyUnit Unit,
@@ -89,22 +92,31 @@ public static class PmEndpoints
             return list.Select(x => new { x.Id, x.Code, x.Name, x.TradeId, x.EstimatedHours, x.IsActive, x.StepCount, ScheduleCount = used.GetValueOrDefault(x.Id) });
         }).RequirePermission(Permissions.PmView);
         t.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
-            await db.PmTasks.AsNoTracking().Include(x => x.Steps).FirstOrDefaultAsync(x => x.Id == id, ct) is { } x
-                ? Results.Ok(new { x.Id, x.Code, x.Name, x.Description, x.TradeId, x.EstimatedHours, x.SafetyNotes, x.IsActive, Steps = x.Steps.OrderBy(s => s.Sequence).Select(s => s.Description), RowVersion = Convert.ToBase64String(x.RowVersion) })
-                : Results.NotFound()).RequirePermission(Permissions.PmView);
+        {
+            var x = await db.PmTasks.AsNoTracking().Include(y => y.Steps).FirstOrDefaultAsync(y => y.Id == id, ct);
+            if (x is null) return Results.NotFound();
+            var parts = await db.PmTaskParts.AsNoTracking().Where(p => p.PmTaskId == id).OrderBy(p => p.Part!.PartNumber)
+                .Select(p => new { p.PartId, p.Part!.PartNumber, PartName = p.Part.Name, p.Part.UnitOfMeasure, p.Quantity, UnitCost = p.Part.AverageCost }).ToListAsync(ct);
+            return Results.Ok(new
+            {
+                x.Id, x.Code, x.Name, x.Description, x.TradeId, x.EstimatedHours, x.SafetyNotes, x.IsActive, Steps = x.Steps.OrderBy(s => s.Sequence).Select(s => s.Description),
+                Parts = parts, PartsCost = Math.Round(parts.Sum(p => p.Quantity * p.UnitCost), 2), RowVersion = Convert.ToBase64String(x.RowVersion),
+            });
+        }).RequirePermission(Permissions.PmView);
         t.MapPost("/", async (TaskInput input, CmmsDbContext db, CancellationToken ct) =>
         {
             var v = await ValidateTaskAsync(input, null, db, ct);
             if (!v.IsValid) return v.Problem();
             var x = new PmTask { Code = input.Code.Trim(), Name = input.Name.Trim() };
             ApplyTask(x, input);
+            SetParts(x, input.Parts);
             db.PmTasks.Add(x);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/pm-tasks/{x.Id}", new { x.Id });
         }).RequirePermission(Permissions.PmManage);
         t.MapPut("/{id:guid}", async (Guid id, TaskInput input, CmmsDbContext db, CancellationToken ct) =>
         {
-            var x = await db.PmTasks.Include(y => y.Steps).FirstOrDefaultAsync(y => y.Id == id, ct);
+            var x = await db.PmTasks.Include(y => y.Steps).Include(y => y.Parts).FirstOrDefaultAsync(y => y.Id == id, ct);
             if (x is null) return Results.NotFound();
             var v = await ValidateTaskAsync(input with { Code = x.Code }, id, db, ct); // task numbers are permanent (as in 4CSQL)
             if (!v.IsValid) return v.Problem();
@@ -113,6 +125,12 @@ public static class PmEndpoints
             db.PmTaskSteps.RemoveRange(x.Steps);
             x.Steps = [];
             ApplyTask(x, input);
+            if (input.Parts is not null)
+            {
+                db.PmTaskParts.RemoveRange(x.Parts);
+                x.Parts = [];
+                SetParts(x, input.Parts);
+            }
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { x.Id });
         }).RequirePermission(Permissions.PmManage);
@@ -153,6 +171,7 @@ public static class PmEndpoints
             if (s is null) return Results.NotFound();
             var recent = await db.WorkOrders.AsNoTracking().Where(w => w.PmScheduleId == id).OrderByDescending(w => w.CreatedAt).Take(10)
                 .Select(w => new { w.Id, w.Number, w.Title, w.Status, w.PmDueDate, w.CompletedAt }).ToListAsync(ct);
+            var visitCost = await PmCost.ForScheduleAsync(db, s, s.PmTaskId, ct);
             return Results.Ok(new
             {
                 s.Id, s.Code, s.Name, s.Description, s.SiteId, s.LocationId, s.AssetId, Asset = s.Asset is null ? null : new { s.Asset.Id, s.Asset.AssetNumber, s.Asset.Name },
@@ -162,7 +181,7 @@ public static class PmEndpoints
                 s.WorkPeriodDays, s.WholeMonth, s.LeadDays, s.StartDate, s.NextDueDate, s.LastDueDate, s.LastGeneratedAt, s.GenerationCount,
                 s.MeterId, Meter = s.Meter is null ? null : new { s.Meter.Id, s.Meter.Code, s.Meter.Name, s.Meter.Unit, s.Meter.CurrentReading },
                 s.MeterTrigger, s.MeterInterval, s.NextDueReading, s.LowerLimit, s.UpperLimit, s.LowerTaskId, s.UpperTaskId, s.TimeBased, s.IsActive,
-                Schedule = PmCalendar.Describe(s), Upcoming = PmCalendar.Forecast(s, Today.AddYears(2), 6), RecentWorkOrders = recent,
+                Schedule = PmCalendar.Describe(s), Upcoming = PmCalendar.Forecast(s, Today.AddYears(2), 6), RecentWorkOrders = recent, VisitCost = visitCost,
                 s.LegacyRef, RowVersion = Convert.ToBase64String(s.RowVersion),
             });
         }).RequirePermission(Permissions.PmView);
@@ -258,14 +277,20 @@ public static class PmEndpoints
         pm.MapGet("/forecast", async (DateOnly from, DateOnly to, Guid? siteId, CmmsDbContext db, CancellationToken ct) =>
         {
             if (to < from || to > from.AddYears(2)) throw new DomainException("Choose a range of up to two years.");
-            var q = db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= to);
+            var q = db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Assets).Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= to);
             if (siteId is not null) q = q.Where(x => x.SiteId == siteId);
             var list = await q.Select(x => new { S = x, AssetNumber = x.Asset!.AssetNumber, TaskName = x.PmTask!.Name, SiteName = x.Site!.Name }).ToListAsync(ct);
             var taskNames = await db.PmTasks.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+            // Estimated cost per visit, worked out once per schedule and task (not per forecast row).
+            var costs = new Dictionary<(Guid, Guid), decimal>();
+            foreach (var i in list)
+                foreach (var taskId in i.S.ExtraTasks.Select(e => e.PmTaskId).Append(i.S.PmTaskId).Distinct())
+                    costs[(i.S.Id, taskId)] = (await PmCost.ForScheduleAsync(db, i.S, taskId, ct)).Total;
             return list.SelectMany(i => PmCalendar.Forecast(i.S, to, 400).Select((d, k) => new
             {
                 Date = d, i.S.Id, i.S.Code, i.S.Name, i.AssetNumber, i.SiteName, i.S.Type,
                 TaskName = taskNames.GetValueOrDefault(PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + k)) ?? i.TaskName,
+                Cost = costs.GetValueOrDefault((i.S.Id, PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + k))),
                 Overdue = d < Today,
                 // The schedule's next occurrence: generating it creates no other work order.
                 IsNext = k == 0,
@@ -342,7 +367,18 @@ public static class PmEndpoints
             .When(i.EstimatedHours < 0, "estimatedHours", "Estimate cannot be negative.").When((i.Steps ?? []).Count > 300, "steps", "At most 300 steps.");
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.PmTasks.AnyAsync(x => x.Code == i.Code.Trim() && x.Id != id, ct)) v.Add("code", "Another task uses this number.");
         if (i.TradeId is not null && !await db.Trades.AnyAsync(x => x.Id == i.TradeId, ct)) v.Add("tradeId", "Unknown trade.");
+        var parts = i.Parts ?? [];
+        v.When(parts.Count > 200, "parts", "At most 200 parts.")
+            .When(parts.Any(p => p.Quantity is <= 0 or > 1_000_000_000m), "parts", "Each part needs a quantity above zero.")
+            .When(parts.GroupBy(p => p.PartId).Any(g => g.Count() > 1), "parts", "List each part once.");
+        var ids = parts.Select(p => p.PartId).Distinct().ToList();
+        if (ids.Count > 0 && await db.Parts.CountAsync(p => ids.Contains(p.Id), ct) != ids.Count) v.Add("parts", "Unknown part.");
         return v;
+    }
+
+    private static void SetParts(PmTask x, List<TaskPartInput>? parts)
+    {
+        foreach (var p in parts ?? []) x.Parts.Add(new PmTaskPart { PmTaskId = x.Id, PartId = p.PartId, Quantity = Math.Round(p.Quantity, 3) });
     }
 
     private static void ApplyTask(PmTask x, TaskInput i)

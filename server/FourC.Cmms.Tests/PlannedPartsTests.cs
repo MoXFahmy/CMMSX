@@ -373,4 +373,110 @@ public class PlannedPartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var report = (await Ok(await o.C.GetAsync("/api/reports/stock-reorder"))).GetProperty("rows").EnumerateArray().Single(r => r.GetProperty("partId").GetGuid() == part);
         Assert.Equal(16m, Dec(report, "suggested"));
     }
+
+    private static string Iso(DateOnly d) => d.ToString("yyyy-MM-dd");
+
+    private static async Task<Guid> AssetAsync(HttpClient c, Guid site, string name) =>
+        Id(await Ok(await c.PostAsJsonAsync("/api/assets", new { name, siteId = site, status = "Active", criticality = "High", warrantyType = "None" })));
+
+    private static async Task<Guid> TaskAsync(HttpClient c, string code, object[] parts, decimal? estimatedHours = null) =>
+        Id(await Ok(await c.PostAsJsonAsync("/api/pm-tasks", new { code, name = $"Task {code}", steps = new[] { "Check" }, estimatedHours, parts })));
+
+    private static async Task<Guid> ScheduleAsync(HttpClient c, Guid site, Guid task, DateOnly start, Guid? asset = null, Guid[]? assets = null, object[]? extra = null, Guid[]? assignees = null) =>
+        Id(await Ok(await c.PostAsJsonAsync("/api/pm-schedules", new
+        {
+            name = "PM", siteId = site, assetId = asset, assetIds = assets, priority = "Medium", pmTaskId = task, type = "FixedInterval", basis = "Scheduled", frequency = 1,
+            unit = "Week", workPeriodDays = 2, wholeMonth = false, leadDays = 0, startDate = Iso(start), timeBased = false, extraTasks = extra ?? [], assigneeIds = assignees ?? [],
+        })));
+
+    private static async Task<List<Guid>> GenerateAsync(HttpClient c, Guid schedule) =>
+        (await Ok(await c.PostAsJsonAsync("/api/pm/generate", new { until = Iso(Today), scheduleIds = new[] { schedule } }))).GetProperty("results").EnumerateArray()
+            .Where(r => r.GetProperty("workOrderId").ValueKind == JsonValueKind.String).Select(r => r.GetProperty("workOrderId").GetGuid()).ToList();
+
+    private static async Task<List<(Guid Part, decimal Qty, Guid? Store)>> PlannedAsync(HttpClient c, Guid wo) =>
+        (await DetailAsync(c, wo)).GetProperty("plannedParts").EnumerateArray()
+            .Select(l => (l.GetProperty("partId").GetGuid(), Dec(l, "quantity"), l.GetProperty("storeId").ValueKind == JsonValueKind.Null ? (Guid?)null : l.GetProperty("storeId").GetGuid())).ToList();
+
+    [SkippableFact]
+    public async Task Generated_pm_work_orders_arrive_with_their_parts_planned()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        var task = await TaskAsync(o.C, "T1", [new { partId = part, quantity = 2 }]);
+        var sched = await ScheduleAsync(o.C, o.SiteA, task, Today, asset: await AssetAsync(o.C, o.SiteA, "Pump"));
+        var wo = Assert.Single(await GenerateAsync(o.C, sched));
+        Assert.Equal([(part, 2m, (Guid?)o.Main)], await PlannedAsync(o.C, wo));
+        Assert.Equal(2m, Dec(await Ok(await o.C.GetAsync($"/api/parts/{part}")), "reserved"));
+        var detail = await Ok(await o.C.GetAsync($"/api/pm-tasks/{task}"));
+        Assert.Equal(part, Assert.Single(detail.GetProperty("parts").EnumerateArray()).GetProperty("partId").GetGuid());
+    }
+
+    [SkippableFact]
+    public async Task A_round_plans_parts_for_every_covered_asset()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        var task = await TaskAsync(o.C, "T1", [new { partId = part, quantity = 2 }]);
+        var assets = new[] { await AssetAsync(o.C, o.SiteA, "A1"), await AssetAsync(o.C, o.SiteA, "A2"), await AssetAsync(o.C, o.SiteA, "A3") };
+        var wo = Assert.Single(await GenerateAsync(o.C, await ScheduleAsync(o.C, o.SiteA, task, Today, assets: assets)));
+        Assert.Equal(6m, Assert.Single(await PlannedAsync(o.C, wo)).Qty);
+    }
+
+    [SkippableFact]
+    public async Task Multiple_pm_plans_the_parts_of_the_task_used_that_time()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var p1 = await PartAsync(o.C, "P-1", o.Main);
+        var p2 = await PartAsync(o.C, "P-2", o.Main);
+        var routine = await TaskAsync(o.C, "W", [new { partId = p1, quantity = 1 }]);
+        var bigger = await TaskAsync(o.C, "M", [new { partId = p2, quantity = 1 }]);
+        var sched = await ScheduleAsync(o.C, o.SiteA, routine, Today.AddDays(-7), asset: await AssetAsync(o.C, o.SiteA, "Pump"), extra: [new { pmTaskId = bigger, everyNth = 2 }]);
+        var wos = await GenerateAsync(o.C, sched);
+        Assert.Equal(2, wos.Count);
+        Assert.Equal([p1], (await PlannedAsync(o.C, wos[0])).Select(x => x.Part));
+        Assert.Equal([p2], (await PlannedAsync(o.C, wos[1])).Select(x => x.Part));
+    }
+
+    [SkippableFact]
+    public async Task Visit_cost_adds_parts_and_labour_for_schedule_and_forecast()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        await ReceiveAsync(o.C, part, o.Main, 10, cost: 5);
+        var task = await TaskAsync(o.C, "T1", [new { partId = part, quantity = 2 }], estimatedHours: 3);
+        var techs = new[] { await EmployeeAsync(o.C, "T1", 10), await EmployeeAsync(o.C, "T2", 30) };
+        var sched = await ScheduleAsync(o.C, o.SiteA, task, Today.AddDays(7), asset: await AssetAsync(o.C, o.SiteA, "Pump"), assignees: techs);
+
+        var cost = (await Ok(await o.C.GetAsync($"/api/pm-schedules/{sched}"))).GetProperty("visitCost");
+        Assert.Equal((10m, 60m, 70m), (Dec(cost, "parts"), Dec(cost, "labour"), Dec(cost, "total")));
+        var rows = (await Ok(await o.C.GetAsync($"/api/pm/forecast?from={Iso(Today)}&to={Iso(Today.AddDays(30))}"))).EnumerateArray()
+            .Where(r => r.GetProperty("id").GetGuid() == sched).ToList();
+        Assert.NotEmpty(rows);
+        Assert.All(rows, r => Assert.Equal(70m, Dec(r, "cost")));
+        Assert.Equal(10m, Dec(await Ok(await o.C.GetAsync($"/api/pm-tasks/{task}")), "partsCost"));
+    }
+
+    [SkippableFact]
+    public async Task Task_parts_reject_duplicates_and_non_positive_quantities()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        await Fails(await o.C.PostAsJsonAsync("/api/pm-tasks", new { code = "D", name = "Dup", parts = new[] { new { partId = part, quantity = 1 }, new { partId = part, quantity = 2 } } }), HttpStatusCode.BadRequest);
+        await Fails(await o.C.PostAsJsonAsync("/api/pm-tasks", new { code = "Z", name = "Zero", parts = new[] { new { partId = part, quantity = 0 } } }), HttpStatusCode.BadRequest);
+    }
+
+    [SkippableFact]
+    public async Task A_part_on_a_pm_task_cannot_be_deleted()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        await TaskAsync(o.C, "T1", [new { partId = part, quantity = 1 }]);
+        await Fails(await o.C.DeleteAsync($"/api/parts/{part}"), HttpStatusCode.BadRequest);
+    }
 }
