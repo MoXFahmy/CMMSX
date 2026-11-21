@@ -14,7 +14,7 @@ internal static class SheetImporters
     public static IEnumerable<ISheetImporter> All(IReadOnlyList<CustomFieldDefinition> customFields) =>
     [
         new SiteImporter(), new LocationImporter(), new CategoryImporter(), new TradeImporter(), new PartGroupImporter(),
-        new SupplierImporter(), new StoreImporter(), new AssetImporter(), new PeopleImporter(),
+        new SupplierImporter(), new StoreImporter(), new AssetImporter(), new PeopleImporter(), new PartImporter(), new StockImporter(),
     ];
 
     /// <summary>The Assets sheet with one more column per custom field, headed by the field's label.</summary>
@@ -560,4 +560,122 @@ internal sealed class PeopleImporter : RecordImporter<Employee>
     }
 
     protected override void Remember(ImportContext c, Employee e, Dictionary<string, object?> v) => c.Remember(c.Employees, e.Code, e.Id);
+}
+
+// ---------------- Parts, stock ----------------
+
+internal sealed class PartImporter : RecordImporter<Part>
+{
+    public override string Sheet => "Parts";
+    public override IReadOnlyList<string> KeyColumns => ["partNumber"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var numbers = Codes(rows, "partNumber");
+        Keep(await ByKey(c.Db.Parts.Where(p => numbers.Contains(p.PartNumber)), p => p.PartNumber, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, Part p) => new()
+    {
+        ["partNumber"] = p.PartNumber, ["name"] = p.Name, ["unit"] = p.UnitOfMeasure, ["groupCode"] = p.GroupId is { } g ? c.CodeOf.GetValueOrDefault(g) : null,
+        ["specification"] = p.Specification, ["manufacturer"] = p.Manufacturer, ["manufacturerPartNumber"] = p.ManufacturerPartNumber,
+        ["standardPrice"] = p.StandardPrice, ["leadTimeDays"] = p.LeadTimeDays, ["critical"] = p.IsCritical, ["shelfLife"] = p.IsShelfItem,
+        ["allowNegative"] = p.AllowNegativeStock, ["preferredSupplierCode"] = p.PreferredSupplierId is { } s ? c.CodeOf.GetValueOrDefault(s) : null,
+        ["barcode"] = p.Barcode, ["notes"] = p.Notes, ["active"] = p.IsActive,
+    };
+
+    protected override Dictionary<string, object?> Defaults() => new()
+    { ["standardPrice"] = 0m, ["critical"] = false, ["shelfLife"] = false, ["allowNegative"] = false, ["active"] = true };
+
+    protected override Task<Part?> SaveAsync(ImportContext c, ImportRow row, Part? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var supplierId = Ref(row, c.Suppliers, S(v, "preferredSupplierCode"), "Supplier");
+        var groupCode = S(v, "groupCode");
+        Guid? groupId = groupCode is not null && c.PartGroups.TryGetValue(groupCode, out var known) ? known : null;
+        var input = new InventoryEndpoints.PartInput(S(v, "partNumber")!, S(v, "name") ?? "", S(v, "specification"), S(v, "manufacturer"),
+            S(v, "manufacturerPartNumber"), S(v, "unit") ?? "", groupId, N(v, "standardPrice") ?? 0, I(v, "leadTimeDays"), B(v, "critical"), B(v, "shelfLife"),
+            B(v, "allowNegative"), supplierId, S(v, "barcode"), existing?.AlternatePartIds, S(v, "notes"), B(v, "active", true));
+        if (row.HasProblems || !Accept(row, InventoryEndpoints.PartRules(input))) return Task.FromResult<Part?>(null);
+        // A new group is added only once the row is known to be good.
+        if (groupCode is not null && groupId is null) input = input with { GroupId = c.EnsureLookup(c.PartGroups, groupCode, "PartGroups") };
+        if (existing is not null) { InventoryEndpoints.UpdatePart(existing, input); return Task.FromResult<Part?>(null); }
+        return Task.FromResult<Part?>(InventoryEndpoints.CreatePart(c.Db, input));
+    }
+
+    protected override void Remember(ImportContext c, Part p, Dictionary<string, object?> v) => c.Remember(c.Parts, p.PartNumber, p.Id);
+}
+
+/// <summary>
+/// Stock levels by part and store. The opening quantity goes in only for stock that is new in this run (posted to the
+/// ledger as an opening balance at the part's average cost), so an old export can't move quantities back.
+/// </summary>
+internal sealed class StockImporter : RecordImporter<StockLevel>
+{
+    public const string OpeningNote = "Opening balance (import)";
+    public const string IgnoredNote = "Opening quantity ignored for existing stock: use a stock take to change quantities.";
+
+    private readonly List<(Guid PartId, Guid StoreId, decimal Quantity, string? Batch, DateOnly? Expiry)> _opening = [];
+
+    public override string Sheet => "Stock";
+    public override IReadOnlyList<string> KeyColumns => ["partNumber", "storeCode"];
+    protected override string Shown(ImportRow row) => $"{row.Get<string>("partNumber")} · {row.Get<string>("storeCode")}";
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var partIds = Codes(rows, "partNumber").Select(n => c.Parts.GetValueOrDefault(n)).Where(id => id != Guid.Empty).ToList();
+        var storeIds = Codes(rows, "storeCode").Select(n => c.Stores.GetValueOrDefault(n)).Where(id => id != Guid.Empty).ToList();
+        foreach (var l in await c.Db.StockLevels.Where(l => partIds.Contains(l.PartId) && storeIds.Contains(l.StoreId)).ToListAsync(ct))
+            Existing[$"{c.CodeOf.GetValueOrDefault(l.PartId)}|{c.CodeOf.GetValueOrDefault(l.StoreId)}"] = l;
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, StockLevel l) => new()
+    {
+        ["partNumber"] = c.CodeOf.GetValueOrDefault(l.PartId), ["storeCode"] = c.CodeOf.GetValueOrDefault(l.StoreId), ["bin"] = l.Bin,
+        ["min"] = l.MinLevel, ["reorderLevel"] = l.ReorderLevel, ["max"] = l.MaxLevel, ["reorderQuantity"] = l.ReorderQuantity,
+    };
+
+    protected override Dictionary<string, object?> Defaults() => new() { ["min"] = 0m, ["reorderLevel"] = 0m, ["max"] = 0m, ["reorderQuantity"] = 0m };
+
+    public override Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        // On stock that exists, the opening quantity (and its batch) is set aside: quantities change through a stock take.
+        if (Existing.ContainsKey(KeyOf(row)) && (row.Has("openingQuantity") || row.Has("batch") || row.Has("expiry")))
+        {
+            if (row.Has("openingQuantity")) c.Note(Translator.T(IgnoredNote));
+            foreach (var k in new[] { "openingQuantity", "batch", "expiry" }) row.Set(k, null);
+        }
+        return base.ImportAsync(c, row, ct);
+    }
+
+    protected override async Task<StockLevel?> SaveAsync(ImportContext c, ImportRow row, StockLevel? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var partId = Ref(row, c.Parts, S(v, "partNumber"), "Part");
+        var storeId = Ref(row, c.Stores, S(v, "storeCode"), "Store");
+        if (row.HasProblems || partId is null || storeId is null) return null;
+        var level = new InventoryEndpoints.LevelInput(storeId.Value, S(v, "bin"), N(v, "min") ?? 0, N(v, "reorderLevel") ?? 0, N(v, "max") ?? 0, N(v, "reorderQuantity") ?? 0);
+        var rules = new Validator().MaxLength("bin", level.Bin, "Bin", 50);
+        InventoryEndpoints.LevelRules(rules, [level]);
+        var opening = existing is null ? N(v, "openingQuantity") : null;
+        if (opening < 0) rules.Add("levels", "Levels cannot be negative.");
+        if (opening > 0 && await c.Db.Parts.FindAsync([partId.Value], ct) is { IsShelfItem: true } part && (S(v, "batch") is null || D(v, "expiry") is null))
+            rules.Add("batch", $"{part.PartNumber} is a shelf-life item: enter the batch and expiry.");
+        if (!Accept(row, rules)) return null;
+
+        var target = existing ?? new StockLevel { PartId = partId.Value, StoreId = storeId.Value };
+        target.Bin = level.Bin.Clean(); target.MinLevel = level.MinLevel; target.ReorderLevel = level.ReorderLevel; target.MaxLevel = level.MaxLevel;
+        target.ReorderQuantity = level.ReorderQuantity;
+        if (existing is not null) return null;
+        c.Db.StockLevels.Add(target);
+        if (opening > 0) _opening.Add((partId.Value, storeId.Value, opening.Value, S(v, "batch"), D(v, "expiry")));
+        return target;
+    }
+
+    public override async Task FinishAsync(ImportContext c, CancellationToken ct)
+    {
+        if (_opening.Count == 0) return;
+        await c.Db.SaveChangesAsync(ct); // the ledger finds the new levels in the database
+        foreach (var (partId, storeId, quantity, batch, expiry) in _opening)
+            await StockLedger.PostAsync(c.Db, c.Tenant, new StockPost(StockTransactionType.Adjustment, partId, storeId, quantity, c.Today,
+                BatchNumber: batch, ExpiryDate: expiry, Notes: OpeningNote), ct);
+    }
 }

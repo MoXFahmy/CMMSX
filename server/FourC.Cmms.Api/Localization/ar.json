@@ -626,5 +626,8 @@
  "Part {0} not found.": "القطعة {0} غير موجودة.",
  "Person {0} not found.": "الشخص {0} غير موجود.",
  "Asset {0} not found.": "الأصل {0} غير موجود.",
- "PM task {0} not found.": "مهمة الصيانة الوقائية {0} غير موجودة."
+ "PM task {0} not found.": "مهمة الصيانة الوقائية {0} غير موجودة.",
+ "{0} is a shelf-life item: enter the batch and expiry.": "{0} صنف له صلاحية: أدخل الدفعة وتاريخ الانتهاء.",
+ "Opening quantity ignored for existing stock: use a stock take to change quantities.": "تم تجاهل الرصيد الافتتاحي للمخزون الموجود: استخدم الجرد لتغيير الكميات.",
+ "Opening balance (import)": "رصيد افتتاحي (استيراد)"
 }
