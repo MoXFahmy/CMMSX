@@ -28,7 +28,8 @@ public static partial class TechEndpoints
     private sealed record ReadingPayload(Guid MeterId, decimal Value, string? Note, bool Confirm = false);
     private sealed record StatusPayload(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes, Guid? FailureCodeId,
         bool? AssetWasDown, decimal? DowntimeHours);
-    private sealed record RequestPayload(string? Title, string? Description, WorkPriority? Priority, Guid? AssetId, Guid? LocationId, Guid? SiteId);
+    /// <summary>AssetIsDown: "The asset is down" (0.8.1); older app versions don't send it.</summary>
+    private sealed record RequestPayload(string? Title, string? Description, WorkPriority? Priority, Guid? AssetId, Guid? LocationId, Guid? SiteId, bool? AssetIsDown = null);
 
     /// <summary>A change that can't be applied; rolls back anything it did and is answered "rejected".</summary>
     private sealed class Rejected(string message, string? code = null) : Exception(message) { public string? Code { get; } = code; }
@@ -233,7 +234,7 @@ public static partial class TechEndpoints
                            ?? (p.LocationId is { } lid ? await db.Locations.Where(x => x.Id == lid).Select(x => (Guid?)x.SiteId).FirstOrDefaultAsync(ct) : null)
                            ?? throw new Rejected("Choose where the problem is.");
                 var (v, _) = await WorkRequestEndpoints.CreateAsync(db, ctx, mail, new WorkRequestEndpoints.RequestInput(p.Title ?? "", p.Description, site, p.LocationId, p.AssetId,
-                    p.Priority ?? WorkPriority.Medium, WorkType.Corrective, null, null, null, null), ct, raisedAt: at);
+                    p.Priority ?? WorkPriority.Medium, WorkType.Corrective, null, null, null, null, AssetIsDown: p.AssetIsDown == true), ct, raisedAt: at);
                 Ensure(v);
                 return new Answer("done");
             }

@@ -243,7 +243,8 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
       if (b) await add({ type: 'photo.add', workOrderId: job.id, payload: { kind: 'signature', signedBy: signer.trim() || null } }, { blob: b, fileName: 'signature.png' });
       await add({ type: 'status.change', workOrderId: job.id, payload: {
         status: 'Completed', completionNotes: notes.trim() || null, causeNotes: cause.trim() || null, failureCodeId: failure,
-        assetWasDown: down, downtimeHours: down && downtime !== '' ? Number(downtime) : null,
+        // With a stop on the asset's downtime log, the server fills the downtime from the stop.
+        ...(job.downtime ? {} : { assetWasDown: down, downtimeHours: down && downtime !== '' ? Number(downtime) : null }),
       } });
       onClose(); onDone();
     } finally { setSaving(false); }
@@ -256,8 +257,16 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
         <Textarea label={t('tech.cause')} autosize value={cause} onChange={(e) => setCause(e.currentTarget.value)} />
         <Select label={t('tech.failureCode')} clearable searchable data={(bundle?.failureCodes ?? []).map((f) => ({ value: f.id, label: `${f.code} · ${f.name}` }))}
           value={failure} onChange={setFailure} required={rules?.failureCodeOnBreakdown && job.type === 'Breakdown'} />
-        <Switch label={t('tech.assetWasDown')} checked={down} onChange={(e) => setDown(e.currentTarget.checked)} />
-        {down && <NumberInput label={t('tech.downtime')} min={0} decimalScale={2} value={downtime} onChange={setDowntime} />}
+        {job.downtime
+          ? <Alert color="blue" variant="light" title={t('tech.assetWasDown')}>
+              {job.downtime.endedAt
+                ? t('downtime.fromLogEnded', { start: fmtDateTime(job.downtime.startedAt), end: fmtDateTime(job.downtime.endedAt) })
+                : t('tech.stopFromLog', { start: fmtDateTime(job.downtime.startedAt) })}
+            </Alert>
+          : <>
+              <Switch label={t('tech.assetWasDown')} checked={down} onChange={(e) => setDown(e.currentTarget.checked)} />
+              {down && <NumberInput label={t('tech.downtime')} min={0} decimalScale={2} value={downtime} onChange={setDowntime} />}
+            </>}
         <Divider />
         <SignaturePad ref={mine} label={t('tech.mySignature')} />
         <TextInput label={t('tech.signerName')} value={signer} onChange={(e) => setSigner(e.currentTarget.value)} maxLength={200} />

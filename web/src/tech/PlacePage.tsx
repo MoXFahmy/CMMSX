@@ -70,7 +70,7 @@ export function PlacePage() {
 
       <ReadingModal meter={meters.find((m) => m.id === meter)} onClose={() => setMeter(null)}
         onSave={(p) => void add({ type: 'reading.add', payload: { meterId: meter, ...p } })} />
-      <RequestModal opened={requestOpen} onClose={() => setRequestOpen(false)}
+      <RequestModal opened={requestOpen} onClose={() => setRequestOpen(false)} withAsset={!!asset}
         onSave={(p) => void add({ type: 'request.create', payload: { ...p, siteId, assetId: asset?.id ?? null, locationId: location?.id ?? null } })} />
     </Stack>
   );
@@ -93,18 +93,25 @@ function ReadingModal({ meter, onClose, onSave }: { meter?: { name: string; unit
   );
 }
 
-function RequestModal({ opened, onClose, onSave }: { opened: boolean; onClose: () => void; onSave: (p: { title: string; description: string | null; priority: WorkPriority }) => void }) {
+/** A request about the scanned place; with an asset, it can say the asset is down (the stop starts when the request is made, even offline). */
+function RequestModal({ opened, onClose, onSave, withAsset }: { opened: boolean; onClose: () => void; withAsset: boolean;
+  onSave: (p: { title: string; description: string | null; priority: WorkPriority; assetIsDown?: boolean }) => void }) {
   const { t } = useTranslation();
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<WorkPriority>('Medium');
+  const [down, setDown] = useState(false);
   return (
     <Modal opened={opened} onClose={onClose} title={t('tech.raiseRequest')}>
       <Stack>
         <TextInput label={t('tech.whatsWrong')} required maxLength={300} value={title} onChange={(e) => setTitle(e.currentTarget.value)} data-autofocus />
         <Textarea label={t('common.description')} autosize minRows={2} value={description} onChange={(e) => setDescription(e.currentTarget.value)} />
         <Select label={t('priority.label')} data={PRIORITIES.map((p) => ({ value: p, label: t(`priority.${p}`) }))} value={priority} onChange={(v) => setPriority((v as WorkPriority) ?? 'Medium')} />
-        <Button disabled={!title.trim()} onClick={() => { onSave({ title: title.trim(), description: description.trim() || null, priority }); setTitle(''); setDescription(''); onClose(); }}>{t('tech.send')}</Button>
+        {withAsset && <Checkbox color="red" label={t('downtime.assetIsDown')} description={t('tech.assetIsDownHint')} checked={down} onChange={(e) => setDown(e.currentTarget.checked)} />}
+        <Button disabled={!title.trim()} onClick={() => {
+          onSave({ title: title.trim(), description: description.trim() || null, priority, ...(withAsset && down ? { assetIsDown: true } : {}) });
+          setTitle(''); setDescription(''); setDown(false); onClose();
+        }}>{t('tech.send')}</Button>
       </Stack>
     </Modal>
   );

@@ -1344,7 +1344,9 @@
     "signOutNeedsSignal": "Signing out needs a connection. Try again when you have signal.",
     "takePhoto": "Camera",
     "pickPhoto": "Gallery",
-    "refreshServerProblem": "The server couldn't send your jobs just now. Your phone keeps working from its copy; try again in a few minutes."
+    "refreshServerProblem": "The server couldn't send your jobs just now. Your phone keeps working from its copy; try again in a few minutes.",
+    "assetIsDownHint": "Starts a stop on the asset's downtime log at the time you send this, even without signal.",
+    "stopFromLog": "From the asset's downtime log: down since {{start}}. Completing the job ends the stop."
   },
   "labels": {
     "title": "QR labels",
