@@ -46,6 +46,20 @@ public class ImportAssetTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Numbers_set_aside_for_problem_rows_are_given_back()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        await RunAsync(c, Book(Places()));
+        string[] headings = ["Asset number", "Name", "Site code", "Location code"];
+        // The last row's location doesn't exist: it is a problem only once its row is checked.
+        await RunAsync(c, Book(new Sheet("Assets", headings, [null, "Fan", "CAI", null], [null, "Pump", "CAI", null], [null, "Ghost", "CAI", "NOPE"])));
+        await OkAsync(await c.PostAsJsonAsync("/api/assets", new { name = "Made on screen", siteId = (await OkAsync(await c.GetAsync("/api/sites")))[0].GetProperty("id"),
+            status = "Active", criticality = "Medium", warrantyType = "None" }));
+        Assert.Equal(["AST-00001", "AST-00002", "AST-00003"], (await Assets(c)).Select(a => a.GetProperty("assetNumber").GetString()).Order());
+    }
+
+    [SkippableFact]
     public async Task Moving_an_asset_records_a_transfer()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

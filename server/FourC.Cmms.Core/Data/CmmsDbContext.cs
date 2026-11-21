@@ -593,6 +593,17 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             return result;
         }, ct);
 
+    /// <summary>
+    /// Gives back the numbers from <paramref name="firstUnused"/> to the end of a block taken with <see cref="NextNumbersAsync"/>,
+    /// if nobody has taken a number since (the sequence still stands at <paramref name="end"/>).
+    /// </summary>
+    public Task ReturnNumbersAsync(string name, long firstUnused, long end, CancellationToken ct = default)
+    {
+        var tenantId = tenant.TenantId ?? throw new InvalidOperationException("No tenant in context.");
+        return Database.ExecuteSqlAsync(
+            $"UPDATE NumberSequences SET NextValue = {firstUnused} WHERE TenantId = {tenantId} AND Name = {name} AND NextValue = {end}", ct);
+    }
+
     /// <summary>Ensures a sequence exists and its next value is at least <paramref name="next"/>.</summary>
     public Task SetSequenceAtLeastAsync(string name, long next, CancellationToken ct = default)
     {
@@ -606,13 +617,17 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     }
 
     /// <summary>Atomically allocates the next number in a per-tenant sequence.</summary>
-    public async Task<long> NextNumberAsync(string name, CancellationToken ct = default)
+    public Task<long> NextNumberAsync(string name, CancellationToken ct = default) => NextNumbersAsync(name, 1, ct);
+
+    /// <summary>Atomically allocates <paramref name="count"/> consecutive numbers in a per-tenant sequence; returns the first.</summary>
+    public async Task<long> NextNumbersAsync(string name, int count, CancellationToken ct = default)
     {
+        if (count < 1) throw new ArgumentOutOfRangeException(nameof(count));
         var tenantId = tenant.TenantId ?? throw new InvalidOperationException("No tenant in context.");
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var values = await Database.SqlQuery<long>(
-                $"UPDATE NumberSequences SET NextValue = NextValue + 1 OUTPUT deleted.NextValue AS Value WHERE TenantId = {tenantId} AND Name = {name}")
+                $"UPDATE NumberSequences SET NextValue = NextValue + {count} OUTPUT deleted.NextValue AS Value WHERE TenantId = {tenantId} AND Name = {name}")
                 .ToListAsync(ct);
             if (values.Count == 1) return values[0];
             try

@@ -383,13 +383,16 @@ public static class AssetEndpoints
         Reason = reason, TransferredAt = DateTimeOffset.UtcNow, TransferredById = ctx.UserId,
     };
 
+    /// <summary>An asset number as the organization writes them: its prefix and the number padded ("AST-" + 42 → "AST-00042").</summary>
+    internal static string FormatAssetNumber(FourC.Cmms.Core.Tenancy.TenantSettings settings, long n) =>
+        (settings.AssetNumberPrefix ?? "") + n.ToString(new string('0', Math.Clamp(settings.AssetNumberPadding, 1, 12)));
+
     public static async Task<string> NextAssetNumberAsync(CmmsDbContext db, FourC.Cmms.Core.Tenancy.TenantSettings settings, CancellationToken ct)
     {
         var prefix = settings.AssetNumberPrefix ?? "";
-        var format = new string('0', Math.Clamp(settings.AssetNumberPadding, 1, 12));
         for (var attempt = 0; attempt < 5; attempt++)
         {
-            var number = prefix + (await db.NextNumberAsync("Asset", ct)).ToString(format);
+            var number = FormatAssetNumber(settings, await db.NextNumberAsync("Asset", ct));
             if (!await db.Assets.AnyAsync(a => a.AssetNumber == number, ct)) return number;
             // Collision (e.g. numbers entered manually or imported): jump past the highest existing number with this prefix.
             var existing = await db.Assets.Where(a => a.AssetNumber.StartsWith(prefix)).Select(a => a.AssetNumber).ToListAsync(ct);

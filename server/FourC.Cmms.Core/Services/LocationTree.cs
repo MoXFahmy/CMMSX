@@ -19,7 +19,7 @@ public static class LocationTree
             loc.Depth = 0;
             return;
         }
-        var parent = db.Locations.Local.FirstOrDefault(l => l.Id == loc.ParentId)
+        var parent = Tracked(db, loc.ParentId.Value)
                      ?? await db.Locations.AsNoTracking().FirstOrDefaultAsync(l => l.Id == loc.ParentId, ct)
                      ?? throw new DomainException("Parent location not found.");
         if (parent.SiteId != loc.SiteId) throw new DomainException("Parent location belongs to a different site.");
@@ -27,6 +27,19 @@ public static class LocationTree
         if (parent.Depth + 1 > MaxDepth) throw new DomainException($"Location tree cannot be deeper than {MaxDepth} levels.");
         loc.Path = parent.Path + Location.Segment(loc.Id);
         loc.Depth = parent.Depth + 1;
+    }
+
+    /// <summary>
+    /// A location this context already holds (a parent added a moment ago and not saved yet). Looked up without scanning
+    /// every tracked record for changes first: an import adding thousands of locations would otherwise slow down with the
+    /// square of their number.
+    /// </summary>
+    private static Location? Tracked(CmmsDbContext db, Guid id)
+    {
+        var auto = db.ChangeTracker.AutoDetectChangesEnabled;
+        db.ChangeTracker.AutoDetectChangesEnabled = false;
+        try { return db.Locations.Local.FirstOrDefault(l => l.Id == id); }
+        finally { db.ChangeTracker.AutoDetectChangesEnabled = auto; }
     }
 
     /// <summary>After moving a location, rewrite the paths (and site) of all its descendants in one statement.</summary>
