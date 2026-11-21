@@ -158,7 +158,8 @@ internal abstract class RecordImporter<TEntity> : ISheetImporter where TEntity :
             ordered.Add(r);
         }
         foreach (var r in rows) if (!r.HasProblems) Visit(r, []);
-        return [.. ordered, .. rows.Where(r => !ordered.Contains(r))];
+        var placed = ordered.ToHashSet();
+        return [.. ordered, .. rows.Where(r => !placed.Contains(r))];
     }
 
     protected static List<string> Codes(IReadOnlyList<ImportRow> rows, string key) =>
@@ -454,10 +455,39 @@ internal sealed class AssetImporter : RecordImporter<Asset>
     public override IReadOnlyList<ImportRow> Order(IReadOnlyList<ImportRow> rows, ImportContext c) =>
         ParentsFirst(rows, KeyOf, r => r.Get<string>("parentAssetNumber")?.Trim(), "assetNumber");
 
+    // Numbers for rows without one are taken from the organization's sequence in one block, not one round trip a row.
+    private int _toNumber;
+    private long _next, _end;
+
     public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
     {
         var numbers = Codes(rows, "assetNumber");
         Keep(await ByKey(c.Db.Assets.Where(a => numbers.Contains(a.AssetNumber)), a => a.AssetNumber, ct));
+        _toNumber = c.Settings.AutoNumberAssets ? rows.Count(r => !r.HasProblems && !r.Has("assetNumber")) : 0;
+    }
+
+    /// <summary>The next free number of the reserved block (taken on first use), skipping any already used.</summary>
+    private async Task<string?> ReservedNumberAsync(ImportContext c, CancellationToken ct)
+    {
+        if (_next == _end && _toNumber > 0)
+        {
+            _next = await c.Db.NextNumbersAsync("Asset", _toNumber, ct);
+            _end = _next + _toNumber;
+            _toNumber = 0;
+        }
+        while (_next < _end)
+        {
+            var number = AssetEndpoints.FormatAssetNumber(c.Settings, _next++);
+            if (!c.Assets.ContainsKey(number)) return number;
+        }
+        return null;
+    }
+
+    /// <summary>Numbers of the block that no row needed (rows that turned out to be problems) go back to the sequence.</summary>
+    public override async Task FinishAsync(ImportContext c, CancellationToken ct)
+    {
+        if (_next < _end) await c.Db.ReturnNumbersAsync("Asset", _next, _end, ct);
+        _next = _end = 0;
     }
 
     protected override Dictionary<string, object?> Values(ImportContext c, Asset a)
@@ -543,6 +573,8 @@ internal sealed class AssetImporter : RecordImporter<Asset>
             c.AssetSites[existing.Id] = existing.SiteId;
             return null;
         }
+        if (input.AssetNumber is null && c.Settings.AutoNumberAssets && await ReservedNumberAsync(c, ct) is { } reserved)
+            input = input with { AssetNumber = reserved };
         var asset = await AssetEndpoints.CreateAssetAsync(c.Db, input, values, c.Settings, ct);
         // A number given automatically may already be taken by a row of this sheet that isn't saved yet.
         for (var tries = 0; c.Assets.ContainsKey(asset.AssetNumber) && tries < 20; tries++)

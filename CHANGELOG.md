@@ -4,6 +4,16 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.7.2] - 2026-11-21
+
+0.7.1 was built but never went live: its automatic checks failed on a slow test machine (5,000 locations took 32 s
+against a 20-second target). 0.7.2 brings 0.7.1's change together with the fix.
+
+### Fixed
+- **Import speed**: a sheet of new locations no longer slows down with the square of its size (5,000 locations: about
+  10 s → under 2 s on the test machine), and automatic asset numbers for an import are taken in one go (5,000 assets:
+  about 5 s → 3 s). Numbers set aside for rows that turn out to be problems are given back, so numbering has no gaps.
+
 ## [0.7.1] - 2026-11-21
 
 ### Changed
