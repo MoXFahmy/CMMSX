@@ -3,6 +3,7 @@ import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { useState } from 'react';
 import { get, post } from '@/api/client';
 import { appVersionLabel, handleFormError, notifyError } from '@/components/utils';
@@ -17,6 +18,7 @@ function AuthFrame({ title, subtitle, children }: { title: string; subtitle: str
           <Stack gap={4} mb="lg"><Title order={3}>{title}</Title><Text c="dimmed" fz="sm">{subtitle}</Text></Stack>
           {children}
         </Paper>
+        <Group justify="center"><LanguageSwitch saveToAccount={false} /></Group>
         <Text c="dimmed" fz="xs" ta="center">{appVersionLabel(t)}</Text>
       </Stack>
     </Center>
@@ -85,7 +87,7 @@ export function RegisterPage() {
           <TextInput label={t('auth.organizationName')} required {...form.getInputProps('organizationName')} />
           <TextInput label={t('auth.fullName')} autoComplete="name" required {...form.getInputProps('fullName')} />
           <TextInput label={t('auth.email')} type="email" autoComplete="username" required {...form.getInputProps('email')} />
-          <PasswordInput label={t('auth.password')} autoComplete="new-password" required description="8+ characters with upper, lower case and a digit" {...form.getInputProps('password')} />
+          <PasswordInput label={t('auth.password')} autoComplete="new-password" required description={t('auth.passwordRule')} {...form.getInputProps('password')} />
           <Button type="submit" loading={busy} fullWidth>{t('auth.register')}</Button>
           <Text fz="sm" ta="center">{t('auth.haveAccount')} <Anchor component={Link} to="/login">{t('auth.signIn')}</Anchor></Text>
         </Stack>

@@ -99,6 +99,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.FullName).HasMaxLength(200);
             e.Property(x => x.JobTitle).HasMaxLength(200);
             e.Property(x => x.Phone).HasMaxLength(50);
+            e.Property(x => x.Language).HasMaxLength(5);
             e.Property(x => x.LegacyRef).HasMaxLength(200);
             e.HasIndex(x => x.TenantId);
             e.HasMany(x => x.Roles).WithOne().HasForeignKey(x => x.UserId);

@@ -59,7 +59,7 @@ export function Attachments({ entityType, entityId, canEdit, onChanged }: { enti
               <Anchor href={`/api/attachments/${a.id}/content`} target="_blank"><Image src={`/api/attachments/${a.id}/content`} h={140} fit="cover" alt={a.fileName} /></Anchor>
               <Group justify="space-between" px="xs" py={4} wrap="nowrap">
                 <Text fz="xs" lineClamp={1} style={{ flex: 1 }}>{a.fileName}</Text>
-                {a.isPrimaryImage && <Tooltip label="Main photo"><Badge size="xs" color="yellow">★</Badge></Tooltip>}
+                {a.isPrimaryImage && <Tooltip label={t('assets.mainPhoto')}><Badge size="xs" color="yellow">★</Badge></Tooltip>}
                 {actions(a)}
               </Group>
             </Card>

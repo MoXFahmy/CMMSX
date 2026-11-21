@@ -4,6 +4,30 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.6.0] - 2026-11-21
+
+CMX speaks Arabic, with screens that read right to left.
+
+### Added
+- **Arabic**: every screen of the cloud app and the technician app in Arabic, laid out right to left (menus, tables,
+  forms, the planning board, dialogs, arrows). Dates use Arabic month names; digits stay 0–9 and codes stay as they are.
+- **Each person picks their language**: from the menu under their name, on the sign-in page, or on the technician app's
+  Sync page. Whoever hasn't picked one uses the organization's language.
+- **Organization language** (Settings › Organization): the language for people who haven't picked one and for orders sent
+  to suppliers. An organization set up in Arabic starts in Arabic; someone who signs in in Arabic keeps it.
+- **Arabic names for renamed terms** (Settings › Terminology): the site, location and asset levels have an Arabic name
+  beside the English one.
+- **In Arabic from the server too**: error and check messages, report titles, columns and totals, PM schedule wording
+  ("كل 3 أشهر"), and e-mails, which each person gets in their own language (a supplier gets the order in the
+  organization's language).
+- **Android app**: the "no connection" page is in English and Arabic.
+
+### Notes
+- The Arabic wording is formal and follows the terms 4CSQL used. A native speaker should look it over; the text lives
+  in `web/src/locales/ar.json` and `server/FourC.Cmms.Api/Localization/ar.json`.
+- In Arabic, amounts show the currency code when its sign mixes Latin letters ("USD" rather than "US$"); Arabic signs
+  such as "ج.م." stay. Charts keep their usual direction.
+
 ## [0.5.6] - 2026-11-21
 
 Clean-ups under the hood, and one real fix found by the new tests.

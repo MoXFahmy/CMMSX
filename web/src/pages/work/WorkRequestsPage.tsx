@@ -20,7 +20,7 @@ import { EmployeePicker } from '@/components/EmployeePicker';
 import { Attachments } from '@/components/Attachments';
 import { AssetCheck } from '@/components/AssetCheck';
 import { PriorityBadge, WrStatusBadge } from '@/components/WorkBadges';
-import { fmtDate, fmtDateTime, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { dateTimeFormat, fmtDate, fmtDateTime, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
 
 const TABS: { key: string; status?: WorkRequestStatus; late?: boolean }[] = [{ key: 'New', status: 'New' }, { key: 'late', late: true }, { key: 'Approved', status: 'Approved' }, { key: 'Rejected', status: 'Rejected' }, { key: 'Cancelled', status: 'Cancelled' }, { key: 'all' }];
@@ -97,7 +97,7 @@ export function WorkRequestsPage() {
       <Card p={0}>
         <DataTable<WorkRequestListItem> minHeight={240} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching}
           records={data?.items ?? []} columns={cols.columns} noRecordsText={t('common.noRecords')} totalRecords={data?.total ?? 0} recordsPerPage={lp.pageSize} page={lp.page}
-          onPageChange={(n) => set({ page: String(n) })} recordsPerPageOptions={[25, 50, 100]} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
+          onPageChange={(n) => set({ page: String(n) })} recordsPerPageOptions={[25, 50, 100]} recordsPerPageLabel={t('common.perPage')} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
           sortStatus={lp.sort} onSortStatusChange={lp.setSort}
           rowClassName={() => 'clickable-row'} onRowClick={({ record }) => setKeep('open', record.id)}
           paginationText={({ from, to, totalRecords }) => `${from}–${to} / ${totalRecords}`} />
@@ -215,7 +215,7 @@ function RequestDrawer({ id, onClose }: { id: string | null; onClose: () => void
           </SimpleGrid>
           <EmployeePicker label={t('wo.assignees')} value={af.values.assigneeIds} onChange={(v) => af.setFieldValue('assigneeIds', v)} siteId={r?.siteId} tradeId={af.values.tradeId} />
           {/* Empty: the priority's target from when the request was raised (recomputed if the priority changes here). */}
-          <DateTimePicker label={t('wo.dueAt')} clearable valueFormat="DD MMM YYYY, HH:mm" {...af.getInputProps('dueAt')}
+          <DateTimePicker label={t('wo.dueAt')} clearable valueFormat={dateTimeFormat()} {...af.getInputProps('dueAt')}
             placeholder={r?.dueAt && af.values.priority === r.priority ? fmtDateTime(r.dueAt) : t('wo.dueAtHint')}
             description={r?.requiredBy && (
               <Anchor fz="xs" onClick={() => af.setFieldValue('dueAt', `${r.requiredBy} 23:59:00`)}>{t('wr.useNeededBy', { date: fmtDate(r.requiredBy) })}</Anchor>

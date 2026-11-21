@@ -98,9 +98,9 @@ export function PlanningPage() {
           <SegmentedControl size="xs" value={span} onChange={(v) => set({ span: v === 'month' ? 'month' : null })}
             data={[{ value: 'week', label: t('planning.week') }, { value: 'month', label: t('planning.month') }]} />
           <Group gap={4}>
-            <ActionIcon variant="default" onClick={() => shift(-1)} aria-label={t('planning.previous')}><IconChevronLeft size={16} /></ActionIcon>
+            <ActionIcon variant="default" onClick={() => shift(-1)} aria-label={t('planning.previous')}><IconChevronLeft size={16} className="mirror-rtl" /></ActionIcon>
             <Button size="xs" variant="default" onClick={() => set({ from: null })}>{t('planning.today')}</Button>
-            <ActionIcon variant="default" onClick={() => shift(1)} aria-label={t('planning.next')}><IconChevronRight size={16} /></ActionIcon>
+            <ActionIcon variant="default" onClick={() => shift(1)} aria-label={t('planning.next')}><IconChevronRight size={16} className="mirror-rtl" /></ActionIcon>
           </Group>
           <Text fw={600} fz="sm">{span === 'month' ? from.format('MMMM YYYY') : `${from.format('D MMM')} – ${to.format('D MMM YYYY')}`}</Text>
           <Select size="xs" w={180} placeholder={terms.site} clearable searchable data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))}

@@ -24,4 +24,8 @@
     <ImplicitUsings>enable</ImplicitUsings>
   </PropertyGroup>
 
+  <ItemGroup>
+    <!-- Server messages in other languages (Infrastructure/Translator.cs). -->
+    <EmbeddedResource Include="Localization\*.json" />
+  </ItemGroup>
 </Project>

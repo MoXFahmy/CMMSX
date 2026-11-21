@@ -106,6 +106,15 @@ if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
     await FourC.Cmms.Core.Services.DueBackfill.RunAsync(db);
 }
 
+// The app says which language it shows (Accept-Language); messages come back in it. Only the wording changes: numbers
+// and dates the server formats keep the invariant culture.
+app.UseRequestLocalization(o =>
+{
+    o.SetDefaultCulture("en");
+    o.SupportedCultures = [System.Globalization.CultureInfo.InvariantCulture, new System.Globalization.CultureInfo("en")];
+    o.SupportedUICultures = [new System.Globalization.CultureInfo("en"), new System.Globalization.CultureInfo("ar")];
+    o.FallBackToParentUICultures = true;
+});
 app.UseExceptionHandler();
 app.UseDefaultFiles();
 app.UseStaticFiles();

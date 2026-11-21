@@ -259,6 +259,52 @@ public static class PmCalendar
     public static Guid TaskFor(PmSchedule s, int generationNumber) =>
         s.ExtraTasks.Where(t => t.EveryNth > 1 && generationNumber % t.EveryNth == 0).OrderByDescending(t => t.EveryNth).Select(t => (Guid?)t.PmTaskId).FirstOrDefault() ?? s.PmTaskId;
 
+    /// <summary>The schedule in a few words ("Every 3 months"), in English or, for <paramref name="language"/> "ar", in Arabic.</summary>
+    public static string Describe(PmSchedule s, string? language)
+        => language == Languages.Arabic ? DescribeArabic(s) : Describe(s);
+
+    private static string DescribeArabic(PmSchedule s)
+    {
+        // Arabic counts things differently by number: 1 شهر, 2 شهرين, 3–10 أشهر, 11–99 شهرًا, 100 شهر.
+        static string Count(int n, FrequencyUnit unit)
+        {
+            var (one, two, few, many) = unit switch
+            {
+                FrequencyUnit.Day => ("يوم", "يومين", "أيام", "يومًا"),
+                FrequencyUnit.Week => ("أسبوع", "أسبوعين", "أسابيع", "أسبوعًا"),
+                FrequencyUnit.Year => ("سنة", "سنتين", "سنوات", "سنة"),
+                _ => ("شهر", "شهرين", "أشهر", "شهرًا"),
+            };
+            var rest = n % 100;
+            return n switch
+            {
+                1 => one,
+                2 => two,
+                _ when rest is >= 3 and <= 10 => $"{n} {few}",
+                _ when rest >= 11 => $"{n} {many}",
+                _ => $"{n} {one}",
+            };
+        }
+        string Every(int n, FrequencyUnit unit) => $"كل {Count(Math.Max(1, n), unit)}";
+        string[] days = ["الأحد", "الإثنين", "الثلاثاء", "الأربعاء", "الخميس", "الجمعة", "السبت"];
+        string[] weeks = ["", "الأول", "الثاني", "الثالث", "الرابع", "الأخير"];
+        return s.Type switch
+        {
+            PmScheduleType.FixedInterval => Every(s.Frequency, s.Unit) + (s.Basis == PmBasis.Actual ? " بعد الإنجاز" : ""),
+            PmScheduleType.DayOfWeekInMonth => $"{days[(int)(s.DayOfWeek ?? System.DayOfWeek.Monday)]} {weeks[Math.Clamp(s.WeekOfMonth ?? 1, 1, 5)]} · {Every(s.Frequency, FrequencyUnit.Month)}",
+            PmScheduleType.DateOfMonth => $"اليوم {s.DayOfMonth} · {Every(s.Frequency, FrequencyUnit.Month)}",
+            _ => s.MeterTrigger == Pm.MeterTrigger.Threshold
+                ? (s.LowerLimit, s.UpperLimit) switch
+                {
+                    ({ } lo, { } hi) => $"عند الخروج عن {lo:0.###}–{hi:0.###}",
+                    ({ } lo, null) => $"عند الانخفاض عن {lo:0.###}",
+                    (null, { } hi) => $"عند تجاوز {hi:0.###}",
+                    _ => "حد العداد",
+                }
+                : $"كل {s.MeterInterval:0.###}" + (s.TimeBased ? $" أو {Every(s.Frequency, s.Unit)}" : ""),
+        };
+    }
+
     public static string Describe(PmSchedule s)
     {
         string Every(int n, string unit) => n == 1 ? $"Every {unit}" : $"Every {n} {unit}s";

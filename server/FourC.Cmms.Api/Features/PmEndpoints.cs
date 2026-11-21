@@ -74,7 +74,7 @@ public static class PmEndpoints
         var today = Today;
         return new PagedResult<PmScheduleListItem>(paged.Items.Select(i => new PmScheduleListItem(
             i.S.Id, i.S.Code, i.S.Name, i.S.Type, i.S.Basis, i.S.IsActive, i.S.SiteId, i.SiteName, i.S.AssetId, i.AssetNumber, i.AssetName, i.LocationName,
-            i.TaskCode, i.TaskName, PmCalendar.Describe(i.S), i.S.NextDueDate, i.S.NextDueReading, i.MeterUnit, i.MeterReading, i.S.LastGeneratedAt,
+            i.TaskCode, i.TaskName, PmCalendar.Describe(i.S, Translator.CurrentLanguage), i.S.NextDueDate, i.S.NextDueReading, i.MeterUnit, i.MeterReading, i.S.LastGeneratedAt,
             i.S.LastWorkOrderId, i.LastWorkOrderNumber, i.OpenWorkOrders, i.S.IsActive && i.S.NextDueDate < today, i.S.ExtraTasks.Count, i.AssetCount)).ToList(),
             paged.Total, paged.Page, paged.PageSize);
     }
@@ -176,7 +176,7 @@ public static class PmEndpoints
                 s.WorkPeriodDays, s.WholeMonth, s.LeadDays, s.StartDate, s.NextDueDate, s.LastDueDate, s.LastGeneratedAt, s.GenerationCount,
                 s.MeterId, Meter = s.Meter is null ? null : new { s.Meter.Id, s.Meter.Code, s.Meter.Name, s.Meter.Unit, s.Meter.CurrentReading },
                 s.MeterTrigger, s.MeterInterval, s.NextDueReading, s.LowerLimit, s.UpperLimit, s.LowerTaskId, s.UpperTaskId, s.TimeBased, s.IsActive,
-                Schedule = PmCalendar.Describe(s), Upcoming = PmCalendar.Forecast(s, Today.AddYears(2), 6), RecentWorkOrders = recent, VisitCost = visitCost,
+                Schedule = PmCalendar.Describe(s, Translator.CurrentLanguage), Upcoming = PmCalendar.Forecast(s, Today.AddYears(2), 6), RecentWorkOrders = recent, VisitCost = visitCost,
                 s.LegacyRef, RowVersion = Convert.ToBase64String(s.RowVersion),
             });
         }).RequirePermission(Permissions.PmView);
@@ -188,7 +188,7 @@ public static class PmEndpoints
             ApplySchedule(s, input);
             s.NextDueDate = input.NextDueDate ?? PmCalendar.FirstOnOrAfter(s, input.StartDate);
             var dates = PmCalendar.Forecast(s, s.NextDueDate.Value.AddYears(3), 6).ToList();
-            return Results.Ok(new { Schedule = PmCalendar.Describe(s), Upcoming = dates, DueDates = dates.Select(d => PmCalendar.DueDate(s, d)) });
+            return Results.Ok(new { Schedule = PmCalendar.Describe(s, Translator.CurrentLanguage), Upcoming = dates, DueDates = dates.Select(d => PmCalendar.DueDate(s, d)) });
         }).RequirePermission(Permissions.PmView);
 
         g.MapPost("/", async (ScheduleInput input, CmmsDbContext db, CancellationToken ct) =>

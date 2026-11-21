@@ -9,6 +9,8 @@ public class AppUser : IdentityUser<Guid>
     public required string FullName { get; set; }
     public string? JobTitle { get; set; }
     public string? Phone { get; set; }
+    /// <summary>The language this person chose ("en", "ar"); null = their organization's default.</summary>
+    public string? Language { get; set; }
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastLoginAt { get; set; }

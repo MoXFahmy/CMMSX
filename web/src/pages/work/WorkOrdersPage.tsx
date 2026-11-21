@@ -209,7 +209,7 @@ export function WorkOrdersPage() {
         <DataTable<WorkOrderListItem>
           minHeight={260} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []} columns={cols.columns}
           noRecordsText={t('wo.emptyTitle')} totalRecords={data?.total ?? 0} recordsPerPage={lp.pageSize} page={lp.page} onPageChange={(n) => set({ page: String(n) })}
-          recordsPerPageOptions={[25, 50, 100]} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
+          recordsPerPageOptions={[25, 50, 100]} recordsPerPageLabel={t('common.perPage')} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
           sortStatus={lp.sort} onSortStatusChange={lp.setSort}
           selectedRecords={canBulkStatus || canBulkEdit ? selected : undefined} onSelectedRecordsChange={canBulkStatus || canBulkEdit ? setSelected : undefined}
           rowClassName={() => 'clickable-row'} onRowClick={({ record }) => navigate(`/work-orders/${record.id}`)}

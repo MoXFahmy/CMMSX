@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { ActionIcon, Anchor, Badge, Box, Breadcrumbs, Button, Card, Center, Grid, Group, Loader, Menu, ScrollArea, SimpleGrid, Stack, Text, TextInput, ThemeIcon, Title, Tooltip, UnstyledButton } from '@mantine/core';
+import { ActionIcon, Anchor, Badge, Box, Breadcrumbs, Button, Card, Center, Grid, Group, Loader, Menu, ScrollArea, SimpleGrid, Stack, Text, TextInput, ThemeIcon, Title, Tooltip, UnstyledButton, useDirection } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useSearchParams } from 'react-router';
@@ -50,6 +50,8 @@ function filterTree(nodes: Node[], q: string): Node[] {
 function TreeRow({ node, depth, expanded, toggle, selected, onSelect, forceOpen }: {
   node: Node; depth: number; expanded: Set<string>; toggle: (id: string) => void; selected: string | null; onSelect: (n: Node) => void; forceOpen: boolean;
 }) {
+  const { dir } = useDirection();
+  const { t } = useTranslation();
   const open = forceOpen || expanded.has(node.id);
   const total = subtreeCount(node);
   return (
@@ -57,7 +59,8 @@ function TreeRow({ node, depth, expanded, toggle, selected, onSelect, forceOpen 
       <Group gap={4} wrap="nowrap" className="tree-node" data-selected={selected === node.id} pl={depth * 16 + 4} pr={6} py={4}
         onClick={() => onSelect(node)} style={{ cursor: 'pointer', opacity: node.isActive ? 1 : 0.55 }}>
         <ActionIcon variant="subtle" color="gray" size="sm" onClick={(e) => { e.stopPropagation(); toggle(node.id); }}
-          style={{ visibility: node.children.length ? 'visible' : 'hidden', transform: open ? 'rotate(90deg)' : undefined, transition: 'transform 120ms' }} aria-label="Toggle">
+          style={{ visibility: node.children.length ? 'visible' : 'hidden', transform: open ? 'rotate(90deg)' : dir === 'rtl' ? 'scaleX(-1)' : undefined, transition: 'transform 120ms' }}
+          aria-label={t('locations.toggleChildren')}>
           <IconChevronRight size={14} />
         </ActionIcon>
         {node.kind === 'site' ? <SiteIcon size={22} /> : <Box c="dimmed" style={{ display: 'flex' }}><LocationTypeIcon type={node.loc!.type} /></Box>}

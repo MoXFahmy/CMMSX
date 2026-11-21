@@ -14,7 +14,7 @@ import { LocationPicker } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
 import { EmployeePicker } from '@/components/EmployeePicker';
 import { AssetCheck } from '@/components/AssetCheck';
-import { handleFormError, notifySuccess, toIsoDate } from '@/components/utils';
+import { dateTimeFormat, handleFormError, notifySuccess, toIsoDate } from '@/components/utils';
 
 type Values = {
   title: string; description: string; type: string; priority: string; siteId: string | null; locationId: string | null; assetId: string | null;
@@ -132,7 +132,7 @@ export function WorkOrderFormPage() {
               siteId={form.values.siteId} tradeId={form.values.tradeId} error={err('assigneeIds')} />
             <SimpleGrid cols={2}>
               <DateInput label={t('wo.plannedStart')} clearable valueFormat="DD MMM YYYY" {...form.getInputProps('plannedStart')} />
-              <DateTimePicker label={t('wo.dueAt')} description={t('wo.dueAtHint')} clearable valueFormat="DD MMM YYYY, HH:mm" {...form.getInputProps('dueAt')}
+              <DateTimePicker label={t('wo.dueAt')} description={t('wo.dueAtHint')} clearable valueFormat={dateTimeFormat()} {...form.getInputProps('dueAt')}
                 error={err('dueDate')} />
             </SimpleGrid>
             <NumberInput label={t('wo.estimatedHours')} min={0} decimalScale={2} {...form.getInputProps('estimatedHours')} />

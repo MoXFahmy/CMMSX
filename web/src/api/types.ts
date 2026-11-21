@@ -15,7 +15,7 @@ export const FIELD_TYPES: CustomFieldType[] = ['Text', 'LongText', 'Number', 'Da
 
 export type Terminology = { site: string; sites: string; location: string; locations: string; asset: string; assets: string };
 export type TenantSettings = {
-  terminology: Terminology; assetNumberPrefix: string; assetNumberPadding: number; autoNumberAssets: boolean;
+  terminology: Terminology; terminologyArabic?: Terminology; defaultLanguage?: 'en' | 'ar'; assetNumberPrefix: string; assetNumberPadding: number; autoNumberAssets: boolean;
   workOrderNumberPrefix: string; workRequestNumberPrefix: string; requireCompletionNotes: boolean; autoGeneratePm: boolean;
   purchaseOrderNumberPrefix: string; defaultTaxPercent: number; currency: string; dateFormat: string; timeZone: string;
   requireLaborToComplete: boolean; requireAllTasksDone: boolean; requireFailureCodeForBreakdowns: boolean; autoStartWork: boolean;
@@ -32,7 +32,7 @@ export type EmailLogItem = {
   id: string; createdAt: string; sentAt?: string; eventKey: string; toAddress: string; subject: string; status: 'Pending' | 'Sent' | 'Failed'; attempts: number; lastError?: string;
 };
 export type Me = {
-  user: { id: string; fullName: string; email: string; jobTitle?: string };
+  user: { id: string; fullName: string; email: string; jobTitle?: string; language: 'en' | 'ar'; languageChoice?: 'en' | 'ar' | null };
   tenant: { id: string; name: string; slug: string; settings: TenantSettings };
   permissions: string[];
   /** Set when the account is linked to an employee: the technician view is for them. */

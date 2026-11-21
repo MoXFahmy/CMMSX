@@ -110,7 +110,7 @@ function SchedulesTab() {
       <Card p={0}>
         <DataTable<PmScheduleListItem> minHeight={240} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []}
           columns={cols.columns} noRecordsText={t('common.noRecords')} totalRecords={data?.total ?? 0} recordsPerPage={lp.pageSize} page={lp.page}
-          onPageChange={(n) => set({ page: String(n) })} recordsPerPageOptions={[25, 50, 100]} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
+          onPageChange={(n) => set({ page: String(n) })} recordsPerPageOptions={[25, 50, 100]} recordsPerPageLabel={t('common.perPage')} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
           sortStatus={lp.sort} onSortStatusChange={lp.setSort}
           selectedRecords={canManage ? selected : undefined} onSelectedRecordsChange={canManage ? setSelected : undefined}
           rowClassName={() => 'clickable-row'} onRowClick={({ record }) => navigate(`/pm/schedules/${record.id}`)}
@@ -183,8 +183,8 @@ function TasksTab() {
               <Group key={i} gap={6} wrap="nowrap">
                 <Text fz="sm" c="dimmed" w={28} ta="right">{i + 1}.</Text>
                 <TextInput style={{ flex: 1 }} size="xs" {...form.getInputProps(`steps.${i}`)} />
-                <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Up" onClick={() => move(i, -1)}><IconArrowUp size={14} /></ActionIcon>
-                <ActionIcon variant="subtle" color="gray" size="sm" aria-label="Down" onClick={() => move(i, 1)}><IconArrowDown size={14} /></ActionIcon>
+                <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('pm.moveUp')} onClick={() => move(i, -1)}><IconArrowUp size={14} /></ActionIcon>
+                <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('pm.moveDown')} onClick={() => move(i, 1)}><IconArrowDown size={14} /></ActionIcon>
                 <ActionIcon variant="subtle" color="red" size="sm" aria-label={t('common.delete')} onClick={() => form.removeListItem('steps', i)}><IconTrash size={14} /></ActionIcon>
               </Group>
             ))}
@@ -359,7 +359,7 @@ export function MetersTab({ assetId }: { assetId?: string }) {
         ]} />
       <Modal opened={opened} onClose={m.close} title={editing ? editing.code : t('pm.newMeter')}>
         <form onSubmit={submit}><Stack>
-          <SimpleGrid cols={2}><TextInput label={t('pm.meterCode')} required {...form.getInputProps('code')} /><TextInput label={t('pm.unitLabel')} required placeholder="h, km, cycles, °C" {...form.getInputProps('unit')} /></SimpleGrid>
+          <SimpleGrid cols={2}><TextInput label={t('pm.meterCode')} required {...form.getInputProps('code')} /><TextInput label={t('pm.unitLabel')} required placeholder={t('pm.unitPlaceholder')} {...form.getInputProps('unit')} /></SimpleGrid>
           <TextInput label={t('common.name')} required {...form.getInputProps('name')} />
           {!assetId && <AssetPicker label={t('wo.asset')} value={form.values.assetId} onChange={(v) => form.setFieldValue('assetId', v)} error={form.errors.assetId}
             initial={editing ? { id: editing.assetId, assetNumber: editing.assetNumber, name: editing.assetName } : null} />}

@@ -43,7 +43,8 @@ One cloud service shared by all customers; each customer is an isolated *organiz
 | **Purchasing**: suppliers; purchase orders (draft → awaiting approval → approved → partly received → received → closed, or cancelled) with per-user approval limits, currency and exchange rate, tax, shipping and line discounts; partial receipts into stores; service lines charged to work orders; re-order proposal that raises draft orders per supplier; printable PO | ✅ |
 | **Reports**: 14 reports — work order backlog and throughput, PM compliance, labour hours, asset reliability (MTBF / MTTR / availability), failure Pareto, maintenance costs by asset/site/category/type/trade/month, asset register, stock valuation, re-order, parts consumption, dormant stock, supplier spend with on-time delivery, open purchase orders — with KPIs, charts, sorting, CSV export and print | ✅ |
 | **4CSQL importer** (locations, assets, people, trades, failure codes, work requests, work orders with labour, costs, tasks, notes and status history, PM tasks, schedules (including multi-asset PMs as rounds), PM step results, meters and readings, stores, parts, levels, suppliers, purchase orders and the stock ledger) | ✅ |
-| Mobile & offline, integrations, Arabic | Next — see [docs/ROADMAP.md](docs/ROADMAP.md) |
+| **Arabic**: every screen in Arabic, laid out right to left, including the technician app, print pages, reports, server messages and e-mails; each person picks their language, otherwise the organization's | ✅ |
+| Mobile & offline, integrations, more languages | Next — see [docs/ROADMAP.md](docs/ROADMAP.md) |
 
 ## Try it on your computer
 
@@ -133,7 +134,7 @@ deploy/azure/setup.sh       one-time Azure ↔ GitHub connection (run in Cloud S
 web/src/
   pages/                    dashboard, locations, assets, work, pm, inventory, purchasing, reports, settings
   components/               layout, pickers, attachments, audit timeline
-  locales/en.json           all UI text (add ar.json etc. for more languages)
+  locales/en.json, ar.json  all UI text, English and Arabic (add a file per language)
 ```
 
 ## Design notes

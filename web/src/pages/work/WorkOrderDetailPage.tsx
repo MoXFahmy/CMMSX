@@ -20,7 +20,7 @@ import { CriticalityBadge } from '@/components/Badges';
 import { confirmDelete } from '@/components/confirm';
 import { StockTxModal } from '@/components/StockTxModal';
 import { TxTypeBadge } from '@/components/InventoryBadges';
-import { fmtDate, fmtDateTime, fmtMoney, fmtPrice, fmtQty, fromNow, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { fmtDate, fmtDateTime, fmtMoney, fmtPrice, fmtQty, fromNow, handleFormError, hoursText, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { PlannedHoursCard, PlannedPartsCard, PlanVsActualCard } from './WorkOrderPlanning';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
@@ -99,7 +99,7 @@ export function WorkOrderDetailPage() {
         <Tabs.List mb="md">
           <Tabs.Tab value="details">{t('wo.details')}</Tabs.Tab>
           <Tabs.Tab value="tasks" rightSection={w.tasks.length ? <Badge size="xs" variant="default">{doneTasks}/{w.tasks.length}</Badge> : null}>{t('wo.tasks')}</Tabs.Tab>
-          <Tabs.Tab value="labor" rightSection={w.labor.length ? <Badge size="xs" variant="default">{w.totals.laborHours}h</Badge> : null}>{t('wo.labor')}</Tabs.Tab>
+          <Tabs.Tab value="labor" rightSection={w.labor.length ? <Badge size="xs" variant="default">{hoursText(w.totals.laborHours)}</Badge> : null}>{t('wo.labor')}</Tabs.Tab>
           {can(P.inventoryView) && <Tabs.Tab value="parts" rightSection={w.parts.length ? <Badge size="xs" variant="default">{w.parts.length}</Badge> : null}>{t('wo.parts')}</Tabs.Tab>}
           <Tabs.Tab value="costs">{t('wo.costs')}</Tabs.Tab>
           <Tabs.Tab value="activity">{t('wo.activity')}</Tabs.Tab>
@@ -143,7 +143,7 @@ export function WorkOrderDetailPage() {
                       <Field label={t('wo.causeNotes')}>{w.causeNotes}</Field>
                       <Field label={t('wo.preventionNotes')}>{w.preventionNotes}</Field>
                       <Field label={t('wo.failureCode')}>{w.failureCode ? `${w.failureCode.code} · ${w.failureCode.name}` : null}</Field>
-                      <Field label={t('wo.downtimeHours')}>{w.assetWasDown ? `${w.downtimeHours ?? 0} h` : t('common.no')}</Field>
+                      <Field label={t('wo.downtimeHours')}>{w.assetWasDown ? hoursText(w.downtimeHours ?? 0) : t('common.no')}</Field>
                     </SimpleGrid>
                     {w.signatures.length > 0 && (
                       <Group mt="md" gap="lg" align="flex-end">
@@ -316,7 +316,7 @@ function LaborPanel({ w, canExec, onChange, currency }: { w: WorkOrderDetail; ca
             {w.labor.map((l) => (
               <Table.Tr key={l.id}><Table.Td>{fmtDate(l.workDate)}</Table.Td><Table.Td>{l.employeeName}</Table.Td><Table.Td ta="right">{l.hours}</Table.Td><Table.Td ta="right">{l.overtimeHours || '—'}</Table.Td>
                 <Table.Td ta="right">{fmtMoney(l.cost, currency)}</Table.Td><Table.Td><Text fz="sm" lineClamp={2}>{l.notes}</Text></Table.Td>
-                <Table.Td>{canExec && <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('common.delete')} onClick={() => confirmDelete(`${l.employeeName} · ${l.hours}h`, async () => { try { await del(`/work-orders/${w.id}/labor/${l.id}`); await onChange(); } catch (e) { notifyError(e); } })}><IconTrash size={14} /></ActionIcon>}</Table.Td></Table.Tr>
+                <Table.Td>{canExec && <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('common.delete')} onClick={() => confirmDelete(`${l.employeeName} · ${hoursText(l.hours)}`, async () => { try { await del(`/work-orders/${w.id}/labor/${l.id}`); await onChange(); } catch (e) { notifyError(e); } })}><IconTrash size={14} /></ActionIcon>}</Table.Td></Table.Tr>
             ))}
           </Table.Tbody>
         </Table>

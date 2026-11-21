@@ -9,6 +9,7 @@ import { DataTable } from 'mantine-datatable';
 import { IconDevices, IconEdit, IconKey, IconPlus, IconTrash } from '@tabler/icons-react';
 import { DevicesModal } from '@/components/DevicesModal';
 import { TargetsEditor, timeZones } from './TargetsEditor';
+import { LANGUAGES } from '@/language';
 import { del, get, post, put } from '@/api/client';
 import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -73,10 +74,13 @@ function OrganizationSettings() {
       notifySuccess(t('common.saved')); await refresh(); await qc.invalidateQueries({ queryKey: ['settings'] });
     } catch (e) { handleFormError(form, e); }
   });
+  // Each term in English and in Arabic: whoever reads CMX in Arabic sees the organization's Arabic names.
   const termRow = (key: 'site' | 'location' | 'asset', plural: 'sites' | 'locations' | 'assets') => (
-    <SimpleGrid cols={2} key={key}>
-      <TextInput label={`${t('settings.singular')} (${key})`} disabled={!editable} {...form.getInputProps(`settings.terminology.${key}`)} />
+    <SimpleGrid cols={{ base: 2, sm: 4 }} key={key}>
+      <TextInput label={`${t(`settings.levels.${key}`)} · English`} disabled={!editable} {...form.getInputProps(`settings.terminology.${key}`)} />
       <TextInput label={t('settings.plural')} disabled={!editable} {...form.getInputProps(`settings.terminology.${plural}`)} />
+      <TextInput label={`${t(`settings.levels.${key}`)} · العربية`} dir="rtl" disabled={!editable} {...form.getInputProps(`settings.terminologyArabic.${key}`)} />
+      <TextInput label={`${t('settings.plural')} · العربية`} dir="rtl" disabled={!editable} {...form.getInputProps(`settings.terminologyArabic.${plural}`)} />
     </SimpleGrid>
   );
   return (
@@ -86,8 +90,10 @@ function OrganizationSettings() {
           <Title order={5}>{t('settings.organization')}</Title>
           <TextInput label={t('auth.organizationName')} disabled={!editable} {...form.getInputProps('name')} />
           <SimpleGrid cols={2}>
-            <TextInput label={t('settings.currency')} description="ISO code, e.g. USD, EGP, AED" maxLength={3} disabled={!editable} {...form.getInputProps('settings.currency')} />
+            <TextInput label={t('settings.currency')} description={t('settings.currencyHint')} maxLength={3} disabled={!editable} {...form.getInputProps('settings.currency')} />
             <Select label={t('locations.timeZone')} disabled={!editable} searchable data={timeZones(form.values.settings.timeZone)} {...form.getInputProps('settings.timeZone')} />
+            <Select label={t('settings.defaultLanguage')} description={t('settings.defaultLanguageHint')} disabled={!editable} allowDeselect={false}
+              data={LANGUAGES.map((l) => ({ value: l.code, label: l.name }))} {...form.getInputProps('settings.defaultLanguage')} />
           </SimpleGrid>
         </Stack></Card>
         <Card><Stack>

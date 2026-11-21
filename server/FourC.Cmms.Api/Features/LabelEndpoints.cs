@@ -23,11 +23,11 @@ public static class LabelEndpoints
             CancellationToken ct) =>
         {
             var ids = (input.Ids ?? []).Distinct().ToList();
-            if (ids.Count == 0) return Results.Problem(title: "Choose what to print labels for.", statusCode: 400);
-            if (ids.Count > MaxLabels) return Results.Problem(title: $"Print at most {MaxLabels} labels at a time.", statusCode: 400);
+            if (ids.Count == 0) return Results.Problem(title: Translator.T("Choose what to print labels for."), statusCode: 400);
+            if (ids.Count > MaxLabels) return Results.Problem(title: Translator.T($"Print at most {MaxLabels} labels at a time."), statusCode: 400);
             var type = input.Type?.ToLowerInvariant();
             var needed = type switch { "asset" => Permissions.AssetsView, "location" => Permissions.LocationsView, "part" => Permissions.InventoryView, _ => null };
-            if (needed is null) return Results.Problem(title: "Labels are for assets, locations or parts.", statusCode: 400);
+            if (needed is null) return Results.Problem(title: Translator.T("Labels are for assets, locations or parts."), statusCode: 400);
             if (!(await perms.GetAsync(ctx.UserId!.Value)).Contains(needed)) return Results.Forbid();
 
             var baseUrl = (config["App:PublicUrl"] is { Length: > 0 } u ? u : $"{http.Request.Scheme}://{http.Request.Host}").TrimEnd('/');
@@ -53,7 +53,7 @@ public static class LabelEndpoints
                         var prefixes = chosen.Select(c => c.Path).ToList();
                         var below = (await db.Locations.AsNoTracking().Select(l => new { l.Id, l.Path }).ToListAsync(ct))
                             .Where(l => prefixes.Any(p => l.Path.StartsWith(p, StringComparison.OrdinalIgnoreCase))).Select(l => l.Id).ToList();
-                        if (below.Count > MaxLabels) return Results.Problem(title: $"That is {below.Count} locations; print at most {MaxLabels} labels at a time.", statusCode: 400);
+                        if (below.Count > MaxLabels) return Results.Problem(title: Translator.T($"That is {below.Count} locations; print at most {MaxLabels} labels at a time."), statusCode: 400);
                         q = db.Locations.AsNoTracking().Where(l => below.Contains(l.Id));
                     }
                     labels = (await q.Select(l => new { l.Id, l.Code, l.Name, l.Path, l.ParentId }).ToListAsync(ct))

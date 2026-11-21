@@ -16,7 +16,7 @@ Built in the order the business depends on it. Each module ships with API, UI, p
 | ✅ 10 | Reports & KPIs | reportdb (82 reports) | 14 reports: backlog, throughput, PM compliance, labour, MTBF/MTTR/availability, failure Pareto, costs by asset/site/category/type/trade/month, asset register, stock valuation, re-order, consumption, dormant stock, supplier spend & on-time delivery, open POs. Next: scheduled e-mailing, dashboards per role, the remaining legacy reports by demand |
 | 11 | Mobile & offline | — | Installable technician app, offline WOs, barcode/QR scan, photos, signatures |
 | 12 | Integrations | SPOC, Dynamics GP | REST API keys & webhooks, alarm → work order, ERP export |
-| 13 | Languages | ObjectCaptions (12 languages) | Arabic (RTL) first, then others from the existing caption tables |
+| ✅ 13 | Languages | ObjectCaptions (12 languages) | Arabic with right-to-left screens (0.6.0): per-person language with an organization default, Arabic server messages, reports and e-mails. Next: other languages from the existing caption tables |
 
 Workflows are checked against the *4CSQL User's Guide* (251 pages) so that existing customers find the same concepts:
 work request → generate work order, notes to technician (asset + location), warranty/contract alert, assignment to employees

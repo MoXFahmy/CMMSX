@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Security.Claims;
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Data;
@@ -61,7 +62,7 @@ public static class ReportEndpoints
         g.MapGet("/", async (HttpContext http, PermissionService perms) =>
         {
             var mine = await perms.GetAsync(Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!));
-            return Catalog.Where(r => mine.Contains(r.Permission));
+            return Catalog.Where(r => mine.Contains(r.Permission)).Select(Localized);
         }).RequirePermission(Permissions.ReportsView);
 
         g.MapGet("/{key}", async (string key, HttpContext http, PermissionService perms, CmmsDbContext db, DateOnly? from, DateOnly? to, Guid? siteId, string? groupBy, int? days, CancellationToken ct) =>
@@ -95,7 +96,7 @@ public static class ReportEndpoints
                 "open-purchase-orders" => await OpenPoAsync(db, a, ct),
                 _ => throw new InvalidOperationException(),
             };
-            return Results.Ok(r);
+            return Results.Ok(Localized(r));
         }).RequirePermission(Permissions.ReportsView);
     }
 
@@ -103,14 +104,41 @@ public static class ReportEndpoints
     private static Dictionary<string, object?> Row(params (string Key, object? Value)[] cells) => cells.ToDictionary(c => c.Key, c => c.Value);
     private static DateTimeOffset Start(DateOnly d) => new(d.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
     private static DateTimeOffset End(DateOnly d) => Start(d.AddDays(1));
-    private static string Period(ReportArgs a) => $"{a.From:d MMM yyyy} – {a.To:d MMM yyyy}";
+    /// <summary>Month names in the person's language (Arabic months with the digits 0-9), else as before.</summary>
+    private static CultureInfo Dates => Translator.CurrentLanguage == "ar" ? CultureInfo.GetCultureInfo("ar-EG") : CultureInfo.InvariantCulture;
+    private static string Period(ReportArgs a) => $"{a.From.ToString("d MMM yyyy", Dates)} – {a.To.ToString("d MMM yyyy", Dates)}";
+
+    /// <summary>A report's name, description and choices in the person's language.</summary>
+    private static ReportDef Localized(ReportDef d) => d with
+    {
+        Title = Translator.T(d.Title), Description = Translator.T(d.Description),
+        Params = d.Params.Select(p => p with { Options = p.Options?.Select(o => o with { Label = Translator.T(o.Label) }).ToList() }).ToList(),
+    };
+
+    /// <summary>
+    /// A report's texts in the person's language: title, subtitle, column names, summary labels, and the first column's
+    /// group names where they are fixed words (statuses, priorities, "No asset"…); names people typed stay as they are.
+    /// </summary>
+    private static ReportResult Localized(ReportResult r)
+    {
+        if (Translator.CurrentLanguage == "en") return r;
+        var first = r.Columns.FirstOrDefault()?.Key;
+        return r with
+        {
+            Title = Translator.T(r.Title), Subtitle = r.Subtitle is null ? null : Translator.T(r.Subtitle),
+            Columns = r.Columns.Select(c => c with { Label = Translator.T(c.Label) }).ToList(),
+            Summary = r.Summary.Select(k => k with { Label = Translator.T(k.Label) }).ToList(),
+            Rows = first is null ? r.Rows : r.Rows.Select(row => row.TryGetValue(first, out var v) && v is string s
+                ? new Dictionary<string, object?>(row) { [first] = Translator.T(s) } : row).ToList(),
+        };
+    }
     private static decimal R2(decimal v) => Math.Round(v, 2);
     private static decimal? Pct(decimal part, decimal whole) => whole == 0 ? null : Math.Round(part / whole * 100, 1);
     private static IEnumerable<(int Y, int M)> Months(ReportArgs a)
     {
         for (var d = new DateOnly(a.From.Year, a.From.Month, 1); d <= a.To; d = d.AddMonths(1)) yield return (d.Year, d.Month);
     }
-    private static string MonthLabel(int y, int m) => new DateOnly(y, m, 1).ToString("MMM yyyy");
+    private static string MonthLabel(int y, int m) => new DateOnly(y, m, 1).ToString("MMM yyyy", Dates);
     private static bool IsFailure(WorkOrder w) => w.Type == WorkType.Breakdown || w.AssetWasDown;
 
     private static IQueryable<WorkOrder> Wo(CmmsDbContext db, ReportArgs a) => a.SiteId is { } s ? db.WorkOrders.AsNoTracking().Where(w => w.SiteId == s) : db.WorkOrders.AsNoTracking();
