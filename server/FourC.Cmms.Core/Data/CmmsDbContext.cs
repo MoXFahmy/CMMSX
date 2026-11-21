@@ -41,6 +41,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<AssetCategory> AssetCategories => Set<AssetCategory>();
     public DbSet<Asset> Assets => Set<Asset>();
     public DbSet<AssetTransfer> AssetTransfers => Set<AssetTransfer>();
+    public DbSet<AssetPart> AssetParts => Set<AssetPart>();
+    public DbSet<DowntimeEvent> DowntimeEvents => Set<DowntimeEvent>();
     public DbSet<CustomFieldDefinition> CustomFields => Set<CustomFieldDefinition>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
@@ -205,6 +207,30 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasIndex(x => new { x.TenantId, x.Barcode });
             e.HasIndex(x => new { x.TenantId, x.LocationId });
             e.HasIndex(x => new { x.TenantId, x.ParentAssetId });
+            e.Property(x => x.RunsHoursPerDay).HasPrecision(4, 2);
+            e.Property(x => x.RunsOn).HasMaxLength(200).HasConversion(JsonConverter<List<DayOfWeek>>()).Metadata.SetValueComparer(JsonComparer<List<DayOfWeek>>());
+        });
+
+        b.Entity<AssetPart>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Quantity).HasPrecision(18, 3);
+            e.Property(x => x.Note).HasMaxLength(200);
+            e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Part).WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.AssetId, x.PartId }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => new { x.TenantId, x.PartId });
+        });
+
+        b.Entity<DowntimeEvent>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Reason).HasMaxLength(500);
+            e.Property(x => x.SourceNumber).HasMaxLength(50);
+            e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            // One open stop per asset.
+            e.HasIndex(x => new { x.TenantId, x.AssetId }).IsUnique().HasFilter("[EndedAt] IS NULL AND [IsDeleted] = 0").HasDatabaseName("IX_DowntimeEvents_OpenPerAsset");
+            e.HasIndex(x => new { x.TenantId, x.AssetId, x.StartedAt });
         });
 
         b.Entity<AssetTransfer>(e =>
@@ -278,6 +304,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasFilter("[IsDeleted] = 0");
             e.HasIndex(x => new { x.TenantId, x.Status });
+            e.HasOne<DowntimeEvent>().WithMany().HasForeignKey(x => x.DowntimeEventId).OnDelete(DeleteBehavior.Restrict);
         });
         b.Entity<WorkOrder>(e =>
         {
@@ -294,6 +321,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasFilter("[IsDeleted] = 0");
             e.HasIndex(x => new { x.TenantId, x.Status, x.DueDate });
             e.HasIndex(x => new { x.TenantId, x.AssetId });
+            e.HasOne<DowntimeEvent>().WithMany().HasForeignKey(x => x.DowntimeEventId).OnDelete(DeleteBehavior.Restrict);
         });
         b.Entity<WorkOrderAssignee>(e =>
         {
