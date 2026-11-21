@@ -4,6 +4,27 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.8.1] - 2026-11-21
+
+### Added
+- **Technician app: "The asset is down"** on the request form (after scanning an asset). It works offline: the stop
+  starts at the moment the request was made on the phone, even if it is sent hours later.
+- **Technician app: completing a job with a stop** shows "from the asset's downtime log" instead of asking whether
+  the asset was down and for how long.
+
+### Changed
+- **Changing a work order's asset moves its stop.** The stop the work order started (still open, nothing else on it)
+  goes to the new asset and keeps its start, so a machine picked by mistake doesn't stay down. If the new asset is
+  already down, the work order joins that stop. A stop that came from a request, or that other records share, stays
+  where it is. The work order form says which will happen.
+
+### Fixed
+- Running hours are kept to two decimals, so an import of 8.333 doesn't show as a change every time.
+- A stop added without a start is refused ("Choose when the asset stopped.").
+- An asset's spare-parts list holds at most 500 parts with quantities up to 1,000,000,000, on the screen as in the
+  import (a huge quantity used to fail with a server error).
+- The Downtime log report says when it shows only the first 5,000 stops.
+
 ## [0.8.0] - 2026-11-21
 
 Each asset gets its own spare-parts list and a log of its real stops, and availability counts only the time it is
