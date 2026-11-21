@@ -631,5 +631,15 @@
  "Opening quantity ignored for existing stock: use a stock take to change quantities.": "تم تجاهل الرصيد الافتتاحي للمخزون الموجود: استخدم الجرد لتغيير الكميات.",
  "Opening balance (import)": "رصيد افتتاحي (استيراد)",
  "Set up meter-based schedules on screen.": "أنشئ جداول العدادات من الشاشة.",
- "Steps are numbered from 1.": "تُرقَّم الخطوات بدءًا من 1."
+ "Steps are numbered from 1.": "تُرقَّم الخطوات بدءًا من 1.",
+ "Problem": "المشكلة",
+ "Help": "مساعدة",
+ "Sheet": "الورقة",
+ "Column": "العمود",
+ "Required on new rows": "مطلوب في الصفوف الجديدة",
+ "Allowed values": "القيم المسموحة",
+ "A number": "رقم",
+ "A whole number": "عدد صحيح",
+ "Codes separated by commas": "رموز مفصولة بفواصل",
+ "Cut off at 5,000 rows: {0}.": "قُطعت عند 5,000 صف: {0}."
 }

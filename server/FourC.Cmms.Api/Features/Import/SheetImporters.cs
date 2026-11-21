@@ -49,6 +49,9 @@ internal abstract class RecordImporter<TEntity> : ISheetImporter where TEntity :
     /// <summary>A stored record's values, by column key.</summary>
     protected abstract Dictionary<string, object?> Values(ImportContext c, TEntity e);
 
+    /// <summary>The same values, for "Download current data" (so an export imports back unchanged).</summary>
+    internal Dictionary<string, object?> Export(ImportContext c, TEntity e) => Values(c, e);
+
     /// <summary>A new record's values before the row is laid over them (the screen's defaults).</summary>
     protected virtual Dictionary<string, object?> Defaults() => new() { ["active"] = true };
 

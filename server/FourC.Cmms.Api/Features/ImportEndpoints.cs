@@ -25,7 +25,25 @@ public static class ImportEndpoints
         g.MapPost("/run", async (HttpRequest req, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
             Results.Ok(await ImportRun.RunAsync(db, ctx, await ReadAsync(req, ct), save: true, Budget, ct)))
             .RequirePermission(Permissions.SettingsManage).DisableAntiforgery();
+
+        g.MapGet("/template", async (CmmsDbContext db, CancellationToken ct) =>
+            Results.File(await ImportWorkbook.TemplateAsync(db, ct), Xlsx, "CMX-import-template.xlsx"))
+            .RequirePermission(Permissions.SettingsManage);
+
+        g.MapGet("/current", async (CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+            Results.File(await ImportWorkbook.CurrentAsync(db, ctx, ct), Xlsx, $"CMX-data-{DateTime.UtcNow:yyyy-MM-dd}.xlsx"))
+            .RequirePermission(Permissions.SettingsManage);
+
+        // The rows a check found problems in, as they were in the file, with the reason beside each.
+        g.MapPost("/problems", async (HttpRequest req, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        {
+            var book = await ReadAsync(req, ct);
+            var result = await ImportRun.RunAsync(db, ctx, book, save: false, Budget, ct);
+            return Results.File(ImportWorkbook.Problems(book, result), Xlsx, "CMX-import-problems.xlsx");
+        }).RequirePermission(Permissions.SettingsManage).DisableAntiforgery();
     }
+
+    private const string Xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
     /// <summary>The uploaded workbook ("file"): .xlsx or .csv, up to 10 MB.</summary>
     internal static async Task<SpreadsheetBook> ReadAsync(HttpRequest req, CancellationToken ct)

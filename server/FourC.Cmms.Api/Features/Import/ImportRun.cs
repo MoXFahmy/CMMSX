@@ -195,11 +195,8 @@ public static class ImportRun
     {
         void Check() { if (clock.Elapsed > budget) throw new Stopped(); }
         Check();
-        var tenant = await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct);
-        var c = new ImportContext(db, ctx, tenant.Settings, DateOnly.FromDateTime(DateTime.UtcNow));
-        await LoadCodesAsync(c, ct);
-        var customFields = await db.CustomFields.AsNoTracking().Where(f => f.EntityType == "Asset").OrderBy(f => f.SortOrder).ToListAsync(ct);
-        c.AssetFields = customFields;
+        var c = await ContextAsync(db, ctx, ct);
+        var customFields = c.AssetFields;
         var importers = SheetImporters.All(customFields).ToDictionary(i => i.Sheet);
         var results = new List<SheetResult>();
 
@@ -280,6 +277,16 @@ public static class ImportRun
             rows.Add(row);
         }
         return (rows, ignored);
+    }
+
+    /// <summary>A run's context: the organization's settings, custom fields and every code it has.</summary>
+    internal static async Task<ImportContext> ContextAsync(CmmsDbContext db, ITenantContext ctx, CancellationToken ct)
+    {
+        var tenant = await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct);
+        var c = new ImportContext(db, ctx, tenant.Settings, DateOnly.FromDateTime(DateTime.UtcNow));
+        await LoadCodesAsync(c, ct);
+        c.AssetFields = await db.CustomFields.AsNoTracking().Where(f => f.EntityType == "Asset").OrderBy(f => f.SortOrder).ToListAsync(ct);
+        return c;
     }
 
     /// <summary>Every code in the organization, by kind, for references between sheets.</summary>
