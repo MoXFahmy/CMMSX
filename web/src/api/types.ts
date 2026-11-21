@@ -285,3 +285,11 @@ export type ReportResult = {
   key: string; title: string; subtitle?: string; columns: { key: string; label: string; type: ReportColumnType }[]; rows: Record<string, string | number | null>[];
   chart?: { type: 'bar' | 'line' | 'donut'; x: string; series: string[]; stacked: boolean }; summary: { label: string; value: number | null; type: ReportColumnType }[];
 };
+
+// ---- Settings › Import ----
+export type ImportOutcome = 'New' | 'Changed' | 'Unchanged' | 'Problem';
+export type FieldChange = { column: string; old: string | null; new: string | null };
+export type RowResult = { row: number; key: string; outcome: ImportOutcome; changes: FieldChange[]; problems: string[] };
+/** One sheet of a check or import; `rows` lists the new, changed and problem rows (not the unchanged ones). */
+export type SheetResult = { sheet: string; new: number; changed: number; unchanged: number; problems: number; rows: RowResult[]; ignoredColumns: string[] };
+export type ImportResult = { saved: boolean; sheets: SheetResult[]; newLookups: string[]; notes: string[]; stopped: string | null };
