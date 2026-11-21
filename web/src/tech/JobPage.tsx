@@ -7,7 +7,9 @@ import dayjs from 'dayjs';
 import { IconCamera, IconPhoto, IconCheck, IconChevronLeft, IconClock, IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react';
 import { HOLD_REASONS, type HoldReason } from '@/api/types';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
-import { fmtDate, fmtDateTime, fmtQty, hoursText, notifyError } from '@/components/utils';
+import { fmtDate, fmtDateTime, fmtQty, hoursText, notifyError, notifySuccess } from '@/components/utils';
+import { post } from '@/api/client';
+import { downFor } from '@/components/downtime';
 import { withQueued } from './overlay';
 import { shrink } from './photos';
 import { dueLabel } from './due';
@@ -21,7 +23,8 @@ export function JobPage() {
   const { t } = useTranslation();
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { bundle, queue, sent, add, online } = useTech();
+  const { bundle, queue, sent, add, online, refresh } = useTech();
+  const [backBusy, setBackBusy] = useState(false);
   const base = bundle?.jobs.find((j) => j.id === id);
   // Sent changes first (they are older), then those still waiting.
   const job = useMemo(() => (base ? withQueued(base, [...sent, ...queue]) : undefined), [base, sent, queue]);
@@ -65,6 +68,18 @@ export function JobPage() {
         {job.location?.path && <Text fz="xs" c="dimmed">{job.location.path}</Text>}
         {job.description && <Text fz="sm" mt={6} style={{ whiteSpace: 'pre-wrap' }}>{job.description}</Text>}
       </Card>
+      {job.asset?.downSince && (
+        <Alert color="red" title={t('downtime.downSince', { when: fmtDateTime(job.asset.downSince), for: downFor(job.asset.downSince, new Date()) })}>
+          {/* Online only: the stop's end time is the moment the button is pressed. */}
+          <Button size="sm" color="teal" leftSection={<IconPlayerPlay size={14} />} disabled={!online} loading={backBusy}
+            onClick={async () => {
+              setBackBusy(true);
+              try { await post(`/assets/${job.asset!.id}/back-running`); notifySuccess(t('downtime.backRunningDone')); await refresh(); }
+              catch (e) { notifyError(e); } finally { setBackBusy(false); }
+            }}>{t('downtime.backRunning')}</Button>
+          {!online && <Text fz="xs" mt={4}>{t('downtime.backRunningOffline')}</Text>}
+        </Alert>
+      )}
       {(job.asset?.notesToTechnician || job.location?.notesToTechnician) && (
         <Alert color="yellow" title={t('tech.notesToTech')}>{[job.asset?.notesToTechnician, job.location?.notesToTechnician].filter(Boolean).join('\n\n')}</Alert>
       )}

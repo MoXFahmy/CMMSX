@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { ActionIcon, Button, Card, Center, Grid, Group, Loader, NumberInput, Select, SimpleGrid, Stack, TextInput, Textarea, Title } from '@mantine/core';
+import { ActionIcon, Button, Card, Center, Checkbox, Grid, Group, Loader, NumberInput, Select, SimpleGrid, Stack, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput, DateTimePicker } from '@mantine/dates';
 import dayjs from 'dayjs';
 import { useForm } from '@mantine/form';
@@ -21,9 +21,11 @@ type Values = {
   tradeId: string | null; assigneeIds: string[]; plannedStart: Date | null;
   /** Due date and time, local ("YYYY-MM-DD HH:mm:ss"); empty = from the priority's target. */
   dueAt: string | null; estimatedHours: number | ''; tasks: string[]; requestedBy: string;
+  /** "The asset is down": starts (or joins) the asset's stop; completing the work order ends it. */
+  assetIsDown: boolean;
 };
 const empty: Values = { title: '', description: '', type: 'Corrective', priority: 'Medium', siteId: null, locationId: null, assetId: null, tradeId: null,
-  assigneeIds: [], plannedStart: null, dueAt: null, estimatedHours: '', tasks: [], requestedBy: '' };
+  assigneeIds: [], plannedStart: null, dueAt: null, estimatedHours: '', tasks: [], requestedBy: '', assetIsDown: false };
 const local = (v?: string | null) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : null);
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 
@@ -47,7 +49,7 @@ export function WorkOrderFormPage() {
       form.setValues({
         title: wo.title, description: wo.description ?? '', type: wo.type, priority: wo.priority, siteId: wo.siteId, locationId: wo.locationId ?? null,
         assetId: wo.assetId ?? null, tradeId: wo.tradeId ?? null, assigneeIds: wo.assignees.map((a) => a.employeeId), plannedStart: d(wo.plannedStart),
-        dueAt: local(wo.dueAt), estimatedHours: wo.estimatedHours ?? '', tasks: [], requestedBy: wo.requestedBy ?? '',
+        dueAt: local(wo.dueAt), estimatedHours: wo.estimatedHours ?? '', tasks: [], requestedBy: wo.requestedBy ?? '', assetIsDown: !!wo.downtime,
       });
       form.resetDirty();
     } else if (source) {
@@ -70,7 +72,7 @@ export function WorkOrderFormPage() {
     const body = {
       ...v, plannedStart: toIsoDate(v.plannedStart), dueAt: v.dueAt ? dayjs(v.dueAt).toISOString() : null, dueDate: null,
       estimatedHours: v.estimatedHours === '' ? null : v.estimatedHours,
-      tasks: v.tasks.filter((x) => x.trim()), rowVersion: wo?.rowVersion,
+      tasks: v.tasks.filter((x) => x.trim()), rowVersion: wo?.rowVersion, assetIsDown: v.assetId ? v.assetIsDown : null,
       // Duplicate: the source's planned parts and hours come along (server side).
       copyPlanFromId: !editing && source ? source.id : undefined,
     };
@@ -80,6 +82,7 @@ export function WorkOrderFormPage() {
       await qc.invalidateQueries({ queryKey: ['work-orders'] });
       await qc.invalidateQueries({ queryKey: ['work-order'] });
       await qc.invalidateQueries({ queryKey: ['dashboard'] });
+      if (v.assetId) { await qc.invalidateQueries({ queryKey: ['asset'] }); await qc.invalidateQueries({ queryKey: ['assets'] }); }
       navigate(`/work-orders/${r.id}`, { replace: true });
     } catch (e) { handleFormError(form, e); }
   });
@@ -110,6 +113,9 @@ export function WorkOrderFormPage() {
               <AssetPicker label={t('wo.asset')} value={form.values.assetId} error={err('assetId')} onChange={(v) => form.setFieldValue('assetId', v)}
                 initial={wo?.asset ?? source?.asset ?? (asset ? { id: asset.id, assetNumber: asset.assetNumber, name: asset.name } : null)} />
               <AssetCheck assetId={form.values.assetId} excludeWorkOrderId={id} />
+              {form.values.assetId && <Checkbox label={t('downtime.assetIsDown')} color="red"
+                description={editing && wo?.downtime && form.values.assetId !== wo.assetId ? t('downtime.assetChangedHint') : t('downtime.assetIsDownHint')}
+                {...form.getInputProps('assetIsDown', { type: 'checkbox' })} />}
             </Stack></Card>
             {!editing && (
               <Card><Stack gap="xs">

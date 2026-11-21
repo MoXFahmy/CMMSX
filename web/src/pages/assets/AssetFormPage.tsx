@@ -1,12 +1,12 @@
 import { useEffect, useMemo } from 'react';
-import { Button, Card, Center, Grid, Group, Loader, NumberInput, Select, SimpleGrid, Stack, TextInput, Textarea, Title } from '@mantine/core';
+import { Button, Card, Center, Grid, Group, Loader, MultiSelect, NumberInput, Select, SimpleGrid, Stack, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { get, post, put } from '@/api/client';
-import { ASSET_STATUSES, CRITICALITIES, WARRANTY_TYPES, type AssetDetail, type Category, type CustomField } from '@/api/types';
+import { ASSET_STATUSES, CRITICALITIES, DAY_NAMES, WARRANTY_TYPES, type AssetDetail, type Category, type CustomField, type DayName } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { LocationPicker } from '@/components/LocationPicker';
@@ -19,12 +19,14 @@ type Values = {
   commissionedOn: Date | null; disposedOn: Date | null; purchasePrice: number | ''; currentValue: number | ''; salvageValue: number | '';
   expectedLifeYears: number | ''; downtimeCostPerHour: number | ''; warrantyType: string; warrantyExpiresOn: Date | null; warrantyNotes: string;
   notes: string; notesToTechnician: string; customFields: Record<string, string>;
+  runsHoursPerDay: number | ''; runsOn: DayName[];
 };
 
 const empty: Values = {
   assetNumber: '', name: '', description: '', categoryId: null, siteId: null, locationId: null, parentAssetId: null, status: 'Active', criticality: 'Medium',
   manufacturer: '', model: '', serialNumber: '', barcode: '', operationNumber: '', commissionedOn: null, disposedOn: null, purchasePrice: '', currentValue: '',
   salvageValue: '', expectedLifeYears: '', downtimeCostPerHour: '', warrantyType: 'None', warrantyExpiresOn: null, warrantyNotes: '', notes: '', notesToTechnician: '', customFields: {},
+  runsHoursPerDay: 24, runsOn: [...DAY_NAMES],
 };
 
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
@@ -62,6 +64,7 @@ export function AssetFormPage() {
         salvageValue: n(asset.salvageValue), expectedLifeYears: n(asset.expectedLifeYears), downtimeCostPerHour: n(asset.downtimeCostPerHour),
         warrantyType: asset.warrantyType, warrantyExpiresOn: d(asset.warrantyExpiresOn), warrantyNotes: asset.warrantyNotes ?? '', notes: asset.notes ?? '',
         notesToTechnician: asset.notesToTechnician ?? '', customFields: Object.fromEntries(Object.entries(asset.customFields ?? {}).map(([k, v]) => [k, v ?? ''])),
+        runsHoursPerDay: asset.runsHoursPerDay ?? 24, runsOn: asset.runsOn ?? [...DAY_NAMES],
       });
       form.resetDirty();
     } else if (parent) {
@@ -81,6 +84,7 @@ export function AssetFormPage() {
       ...v, commissionedOn: toIsoDate(v.commissionedOn), disposedOn: toIsoDate(v.disposedOn), warrantyExpiresOn: toIsoDate(v.warrantyExpiresOn),
       purchasePrice: num(v.purchasePrice), currentValue: num(v.currentValue), salvageValue: num(v.salvageValue), expectedLifeYears: num(v.expectedLifeYears),
       downtimeCostPerHour: num(v.downtimeCostPerHour), assetNumber: v.assetNumber || null, rowVersion: asset?.rowVersion,
+      runsHoursPerDay: v.runsHoursPerDay === '' ? null : v.runsHoursPerDay,
     };
     try {
       const r = editing ? await put<{ id: string }>(`/assets/${id}`, body) : await post<{ id: string; assetNumber: string }>('/assets', body);
@@ -166,6 +170,12 @@ export function AssetFormPage() {
                 <NumberInput label={t('assets.salvageValue')} thousandSeparator min={0} {...form.getInputProps('salvageValue')} />
                 <NumberInput label={t('assets.expectedLife')} min={0} decimalScale={1} {...form.getInputProps('expectedLifeYears')} />
                 <NumberInput label={t('assets.downtimeCost')} thousandSeparator min={0} {...form.getInputProps('downtimeCostPerHour')} />
+              </SimpleGrid>
+            </Section>
+            <Section title={t('downtime.runningTime')}>
+              <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                <NumberInput label={t('downtime.runsHoursPerDay')} description={t('downtime.runsHint')} min={0.5} max={24} step={0.5} decimalScale={2} {...form.getInputProps('runsHoursPerDay')} />
+                <MultiSelect label={t('downtime.runsOn')} data={DAY_NAMES.map((d) => ({ value: d, label: t(`pm.days.${d}`) }))} {...form.getInputProps('runsOn')} />
               </SimpleGrid>
             </Section>
             <Section title={t('assets.warranty')}>

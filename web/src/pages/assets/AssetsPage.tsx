@@ -13,7 +13,7 @@ import { P, useAuth } from '@/auth/AuthContext';
 import { CriticalityBadge, StatusBadge } from '@/components/Badges';
 import { PageHeader } from '@/components/PageHeader';
 import { locationOptions, useHierarchy } from '@/components/LocationPicker';
-import { fmtDate, notifyError, notifySuccess } from '@/components/utils';
+import { fmtDate, fmtDateTime, notifyError, notifySuccess } from '@/components/utils';
 import { FilterChips, ListTools, listText, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
 
 const PAGE_SIZES = [25, 50, 100];
@@ -28,7 +28,7 @@ export function AssetsPage() {
   const { p, set, page, pageSize, sort } = lp;
   const filters = {
     search: p('search'), siteId: p('siteId'), locationId: p('locationId'), categoryId: p('categoryId'), status: p('status'), criticality: p('criticality'),
-    topLevelOnly: p('topLevelOnly'), sort: sort.columnAccessor as string, dir: sort.direction,
+    topLevelOnly: p('topLevelOnly'), downNow: p('downNow'), sort: sort.columnAccessor as string, dir: sort.direction,
   };
   const { data, isFetching } = useQuery({
     queryKey: ['assets', filters, page, pageSize],
@@ -46,7 +46,7 @@ export function AssetsPage() {
   // If filtering by location only, infer the site so the location dropdown has options.
   const siteForLocations = p('siteId') || h?.locations.find((l) => l.id === p('locationId'))?.siteId || null;
   const locOpts = useMemo(() => locationOptions(h?.locations ?? [], siteForLocations), [h, siteForLocations]);
-  const activeFilters = ['siteId', 'locationId', 'categoryId', 'status', 'criticality', 'topLevelOnly', 'search'].filter((k) => p(k)).length;
+  const activeFilters = ['siteId', 'locationId', 'categoryId', 'status', 'criticality', 'topLevelOnly', 'downNow', 'search'].filter((k) => p(k)).length;
 
   const bulk = useMutation({
     mutationFn: (patch: Record<string, string>) => post<{ updated: number }>('/assets/bulk', { ids: selected.map((s) => s.id), ...patch }),
@@ -62,7 +62,8 @@ export function AssetsPage() {
       render: (a) => a.categoryName ? <Badge variant="dot" color={a.categoryColor ?? 'gray'} style={{ maxWidth: 'none' }} styles={{ label: { textTransform: 'none', fontWeight: 500, overflow: 'visible' } }}>{a.categoryName}</Badge> : '—' },
     { accessor: 'site', title: terms.site, sortable: true, noWrap: true, export: [{ key: 'siteName' }], render: (a) => a.siteName },
     { accessor: 'location', title: terms.location, sortable: true, width: 240, ellipsis: true, export: [{ key: 'locationPath' }], render: (a) => <span title={a.locationPath}>{a.locationPath || '—'}</span> },
-    { accessor: 'status', title: t('common.status'), sortable: true, noWrap: true, width: 140, render: (a) => <StatusBadge status={a.status} /> },
+    { accessor: 'status', title: t('common.status'), sortable: true, noWrap: true, width: 160, render: (a) => <Group gap={4} wrap="nowrap"><StatusBadge status={a.status} />
+      {a.downSince && <Tooltip label={t('downtime.downSinceShort', { when: fmtDateTime(a.downSince) })}><Badge color="red" variant="filled" size="sm">{t('downtime.down')}</Badge></Tooltip>}</Group> },
     { accessor: 'criticality', title: t('criticality.label'), sortable: true, noWrap: true, width: 130, render: (a) => <CriticalityBadge value={a.criticality} /> },
     { accessor: 'manufacturer', title: t('assets.manufacturer'), sortable: true, noWrap: true },
     { accessor: 'model', title: t('assets.model'), sortable: true, noWrap: true },
@@ -88,6 +89,7 @@ export function AssetsPage() {
     { keys: ['status'], label: t('common.status'), format: listText(statusLabel) },
     { keys: ['criticality'], label: t('criticality.label'), format: listText((v) => t(`criticality.${v}`)) },
     { keys: ['topLevelOnly'], label: t('assets.topLevelOnly'), format: () => t('common.yes') },
+    { keys: ['downNow'], label: t('downtime.downNow'), format: () => t('common.yes') },
   ];
 
   return (
@@ -110,6 +112,7 @@ export function AssetsPage() {
           <MultiSelect placeholder={p('criticality') ? undefined : t('criticality.label')} data={CRITICALITIES.map((s) => ({ value: s, label: t(`criticality.${s}`) }))} w={{ base: '100%', xs: 190 }}
             value={p('criticality') ? p('criticality').split(',') : []} onChange={(v) => set({ criticality: v.join(',') || null })} clearable />
           <Switch label={t('assets.topLevelOnly')} checked={p('topLevelOnly') === 'true'} onChange={(e) => set({ topLevelOnly: e.currentTarget.checked ? 'true' : null })} mb={8} />
+          <Switch label={t('downtime.downNow')} color="red" checked={p('downNow') === 'true'} onChange={(e) => set({ downNow: e.currentTarget.checked ? 'true' : null })} mb={8} />
           <Group gap={6} ml="auto">
             {activeFilters > 0 && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')} onClick={() => lp.replaceAll('')}><IconFilterOff size={16} /></ActionIcon></Tooltip>}
             <ListTools list="assets" lp={lp} cols={cols} exportPath="/assets/export" exportQuery={filters} total={data?.total} />

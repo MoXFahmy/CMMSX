@@ -183,6 +183,16 @@ export function PartDetailPage() {
                 {p.alternates.length === 0 ? <Text fz="sm" c="dimmed">{t('inv.noAlternates')}</Text>
                   : <Stack gap={4}>{p.alternates.map((a) => <Anchor key={a.id} component={Link} to={`/inventory/parts/${a.id}`} fz="sm">{a.partNumber} · {a.name}</Anchor>)}</Stack>}
               </Card>
+              <Card mt="md">
+                <Text fw={600} mb="xs">{t('assetParts.usedOn')}</Text>
+                {(p.usedOn ?? []).length === 0 ? <Text fz="sm" c="dimmed">{t('assetParts.usedOnNone')}</Text>
+                  : <Stack gap={6}>{p.usedOn.map((u) => (
+                      <div key={u.assetId}>
+                        <Anchor component={Link} to={`/assets/${u.assetId}`} fz="sm">{u.assetNumber} · {u.assetName}</Anchor>
+                        <Text fz="xs" c="dimmed">{fmtQty(u.quantity)} {p.unitOfMeasure}{u.note ? ` · ${u.note}` : ''}</Text>
+                      </div>
+                    ))}</Stack>}
+              </Card>
             </Grid.Col>
           </Grid>
         </Tabs.Panel>
