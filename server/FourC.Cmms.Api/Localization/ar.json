@@ -611,5 +611,20 @@
  "Due date": "تاريخ الاستحقاق",
  "Completion": "الإنجاز",
  "Last": "الأخير",
- "Meter": "عداد"
+ "Meter": "عداد",
+ "{0} appears twice in this sheet (row {1}).": "{0} مكرر في هذه الورقة (الصف {1}).",
+ "{0} column is missing.": "العمود {0} غير موجود.",
+ "{0} has {1} rows; the limit is 5,000 per sheet. Split it into smaller files.": "الورقة {0} فيها {1} صفًا، والحد الأقصى 5,000 صف لكل ورقة. قسّمها إلى ملفات أصغر.",
+ "This file is too big to import in one go. Split it into smaller files.": "هذا الملف أكبر من أن يُستورد دفعة واحدة. قسّمه إلى ملفات أصغر.",
+ "Choose a file of up to 10 MB.": "اختر ملفًا لا يزيد حجمه عن 10 ميجابايت.",
+ "{0} can't be under itself.": "لا يمكن أن يكون {0} تحت نفسه.",
+ "{0} isn't a time zone CMX knows (for example Africa/Cairo).": "{0} ليست منطقة زمنية يعرفها CMX (مثل Africa/Cairo).",
+ "Site {0} not found.": "الموقع {0} غير موجود.",
+ "Location {0} not found.": "المكان {0} غير موجود.",
+ "Store {0} not found.": "المخزن {0} غير موجود.",
+ "Supplier {0} not found.": "المورد {0} غير موجود.",
+ "Part {0} not found.": "القطعة {0} غير موجودة.",
+ "Person {0} not found.": "الشخص {0} غير موجود.",
+ "Asset {0} not found.": "الأصل {0} غير موجود.",
+ "PM task {0} not found.": "مهمة الصيانة الوقائية {0} غير موجودة."
 }
