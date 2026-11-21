@@ -667,5 +667,9 @@
  "This part is on assets' spare-parts lists. Remove it from them, or mark it inactive instead.": "هذه القطعة مدرجة في قوائم قطع غيار الأصول. أزلها منها، أو اجعلها غير نشطة بدلًا من ذلك.",
  "Choose another asset to copy from.": "اختر أصلًا آخر للنسخ منه.",
  "Not saved: fix row {0} of this asset first.": "لم يُحفظ: صحّح الصف {0} لهذا الأصل أولًا.",
- "At most {0} parts.": "{0} قطعة على الأكثر."
+ "At most {0} parts.": "{0} قطعة على الأكثر.",
+ "Choose when the asset stopped.": "اختر وقت توقف الأصل.",
+ "A quantity can be at most 1,000,000,000.": "لا يمكن أن تزيد الكمية على 1,000,000,000.",
+ "At most 500 parts.": "500 قطعة على الأكثر.",
+ "{0} · hours count each asset's running time only · the first 5,000 stops": "{0} · تُحسب الساعات خلال وقت تشغيل كل أصل فقط · أول 5,000 توقف"
 }

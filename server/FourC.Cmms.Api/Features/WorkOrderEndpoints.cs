@@ -197,8 +197,8 @@ public static class WorkOrderEndpoints
             var priorityBefore = w.Priority;
             var assetBefore = w.AssetId;
             Apply(w, input);
-            if (w.DowntimeEventId is not null && w.AssetId != assetBefore) w.DowntimeEventId = null; // the stop stays on the old asset, still open
-            else if (input.AssetIsDown == false) await Downtime.UntickAsync(db, w, ct);
+            if (w.AssetId != assetBefore) await Downtime.FollowAssetAsync(db, w, ct); // its own stop goes with it; any other stays behind
+            if (input.AssetIsDown == false) await Downtime.UntickAsync(db, w, ct);
             if (input.AssetIsDown == true && w.DowntimeEventId is null && w.AssetId is { } downAsset)
                 w.DowntimeEventId = (await Downtime.StartOrJoinAsync(db, downAsset, DateTimeOffset.UtcNow, w.Title, FourC.Cmms.Core.Assets.DowntimeSource.WorkOrder, w.Number, ct)).Id;
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;

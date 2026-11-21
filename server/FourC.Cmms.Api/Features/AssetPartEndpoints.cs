@@ -12,6 +12,9 @@ public sealed record AssetPartInput(Guid PartId, decimal Quantity, string? Note)
 /// <summary>Each asset's spare-parts list: the parts it takes and how many.</summary>
 public static class AssetPartEndpoints
 {
+    /// <summary>The most parts one asset's list may hold (the screen and the import).</summary>
+    public const int MaxLines = 500;
+
     public static void MapAssetPartEndpoints(this RouteGroupBuilder api)
     {
         var g = api.MapGroup("/assets/{id:guid}/parts").WithTags("Assets");
@@ -53,7 +56,9 @@ public static class AssetPartEndpoints
     {
         var v = new Validator()
             .When(lines.GroupBy(l => l.PartId).Any(g => g.Count() > 1), "partId", "List each part once.")
-            .When(lines.Any(l => l.Quantity <= 0), "quantity", "Each part needs a quantity above zero.");
+            .When(lines.Any(l => l.Quantity <= 0), "quantity", "Each part needs a quantity above zero.")
+            .When(lines.Any(l => l.Quantity > 1_000_000_000m), "quantity", "A quantity can be at most 1,000,000,000.")
+            .When(lines.Count > MaxLines, "partId", "At most 500 parts.");
         foreach (var l in lines) v.MaxLength("note", l.Note, "Note", 200);
         return v;
     }

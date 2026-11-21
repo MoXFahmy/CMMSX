@@ -523,6 +523,8 @@ internal sealed class AssetImporter : RecordImporter<Asset>
 
     public override Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
     {
+        // Running hours compare as stored (2 decimals), so 8.333 loaded twice isn't a change the second time.
+        if (row.Get<decimal?>("runsHoursPerDay") is { } hours) row.Set("runsHoursPerDay", Math.Round(hours, 2));
         // Yes/No custom fields compare as the screen stores them.
         foreach (var f in c.AssetFields.Where(f => f.DataType == CustomFieldType.Boolean && row.Has("cf:" + f.Key)))
             row.Set("cf:" + f.Key, Custom(f, row.Get<string>("cf:" + f.Key)));
@@ -1001,7 +1003,7 @@ internal sealed class PmPartImporter : PmTaskListImporter
 /// <summary>Each asset's spare-parts list (the Asset parts sheet), one row per part, like the PM parts sheet.</summary>
 internal sealed class AssetPartImporter : ListSheetImporter
 {
-    public const int MaxLines = 500;
+    public const int MaxLines = AssetPartEndpoints.MaxLines;
     private readonly Dictionary<Guid, Dictionary<Guid, (decimal Quantity, string? Note)>> _wanted = [];
     private readonly Dictionary<Guid, Dictionary<Guid, (decimal Quantity, string? Note)>> _before = [];
 

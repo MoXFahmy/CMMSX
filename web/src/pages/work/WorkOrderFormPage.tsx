@@ -114,7 +114,9 @@ export function WorkOrderFormPage() {
                 initial={wo?.asset ?? source?.asset ?? (asset ? { id: asset.id, assetNumber: asset.assetNumber, name: asset.name } : null)} />
               <AssetCheck assetId={form.values.assetId} excludeWorkOrderId={id} />
               {form.values.assetId && <Checkbox label={t('downtime.assetIsDown')} color="red"
-                description={editing && wo?.downtime && form.values.assetId !== wo.assetId ? t('downtime.assetChangedHint') : t('downtime.assetIsDownHint')}
+                description={editing && wo?.downtime && form.values.assetId !== wo.assetId
+                  ? (wo.downtime.source === 'WorkOrder' && wo.downtime.sourceNumber === wo.number && !wo.downtime.endedAt ? t('downtime.assetMovesHint') : t('downtime.assetChangedHint'))
+                  : t('downtime.assetIsDownHint')}
                 {...form.getInputProps('assetIsDown', { type: 'checkbox' })} />}
             </Stack></Card>
             {!editing && (

@@ -1,3 +1,8 @@
+using FourC.Cmms.Core.Assets;
+using FourC.Cmms.Core.Common;
+using FourC.Cmms.Core.Data;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using System.Net.Http.Json;
 using System.Text.Json;
 
@@ -110,5 +115,25 @@ public class DowntimeReportTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var pareto = await Ok(await c.GetAsync($"/api/reports/failure-pareto?{Range}"));
         var downtime = pareto.GetProperty("rows").EnumerateArray().Sum(r => r.GetProperty("downtime").GetDecimal());
         Assert.InRange(downtime, 2.9m, 3.1m);
+    }
+
+    [SkippableFact]
+    public async Task The_downtime_log_says_when_it_is_cut_off()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (c, _, asset) = await SetupAsync();
+        var tenantId = (await Ok(await c.GetAsync("/api/auth/me"))).GetProperty("tenant").GetProperty("id").GetGuid();
+        using (var scope = fx.Factory!.Services.CreateScope())
+        {
+            var options = scope.ServiceProvider.GetRequiredService<DbContextOptions<CmmsDbContext>>();
+            await using var db = new CmmsDbContext(options, new FixedTenantContext(tenantId));
+            var first = DateTimeOffset.UtcNow.AddMinutes(-2 * 5001 - 5);
+            db.DowntimeEvents.AddRange(Enumerable.Range(0, 5001).Select(i => new DowntimeEvent
+                { AssetId = asset, StartedAt = first.AddMinutes(2 * i), EndedAt = first.AddMinutes(2 * i + 1), Source = DowntimeSource.Manual, Reason = $"Jam {i}" }));
+            await db.SaveChangesAsync();
+        }
+        var report = await Ok(await c.GetAsync($"/api/reports/downtime?{Range}"));
+        Assert.Equal(5000, report.GetProperty("rows").GetArrayLength());
+        Assert.EndsWith("the first 5,000 stops", report.GetProperty("subtitle").GetString());
     }
 }

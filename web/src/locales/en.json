@@ -1344,7 +1344,9 @@
     "signOutNeedsSignal": "Signing out needs a connection. Try again when you have signal.",
     "takePhoto": "Camera",
     "pickPhoto": "Gallery",
-    "refreshServerProblem": "The server couldn't send your jobs just now. Your phone keeps working from its copy; try again in a few minutes."
+    "refreshServerProblem": "The server couldn't send your jobs just now. Your phone keeps working from its copy; try again in a few minutes.",
+    "assetIsDownHint": "Starts a stop on the asset's downtime log at the time you send this, even without signal.",
+    "stopFromLog": "From the asset's downtime log: down since {{start}}. Completing the job ends the stop."
   },
   "labels": {
     "title": "QR labels",
@@ -1504,7 +1506,8 @@
     "fromLogEnded": "From the asset's downtime log: {{start}} to {{end}}.",
     "fromLogOpen": "From the asset's downtime log: down since {{start}}. Completing the work ends the stop at the actual end.",
     "stopFrom": "the stop from {{when}}",
-    "deleteBody": "Only for a stop that never happened (logged on the wrong asset, or a request ticked down by mistake). Its requests and work orders let go of it, and completed work on it no longer says the asset was down."
+    "deleteBody": "Only for a stop that never happened (logged on the wrong asset, or a request ticked down by mistake). Its requests and work orders let go of it, and completed work on it no longer says the asset was down.",
+    "assetMovesHint": "The stop this work order started moves to this asset and keeps its start. If this asset is already down, the work order joins that stop."
   },
   "assetParts": {
     "tab": "Parts",

@@ -47,6 +47,8 @@ public static partial class TechEndpoints
                     w.Id, w.Number, w.Title, w.Description, w.Type, w.Priority, w.Status, w.HoldReason, w.DueDate, w.DueAt, w.PlannedStart, w.SiteId,
                     Asset = w.Asset == null ? null : new { w.Asset.Id, w.Asset.AssetNumber, w.Asset.Name, w.Asset.NotesToTechnician,
                         DownSince = db.DowntimeEvents.Where(e => e.AssetId == w.AssetId && e.EndedAt == null).Select(e => (DateTimeOffset?)e.StartedAt).FirstOrDefault() },
+                    // The job's own stop: completing it ends the stop and fills the downtime from it.
+                    Downtime = db.DowntimeEvents.Where(e => e.Id == w.DowntimeEventId).Select(e => new { e.StartedAt, e.EndedAt }).FirstOrDefault(),
                     w.LocationId, LocationPath = w.Location == null ? null : w.Location.Path, LocationNotes = w.Location == null ? null : w.Location.NotesToTechnician,
                 }).ToListAsync(ct);
             var ids = jobs.Select(j => j.Id).ToList();
@@ -73,7 +75,7 @@ public static partial class TechEndpoints
                 me.EmployeeId, ctx.UserId,
                 Jobs = jobs.Select(j => new
                 {
-                    j.Id, j.Number, j.Title, j.Description, j.Type, j.Priority, j.Status, j.HoldReason, j.DueDate, j.DueAt, j.PlannedStart, j.SiteId, j.Asset,
+                    j.Id, j.Number, j.Title, j.Description, j.Type, j.Priority, j.Status, j.HoldReason, j.DueDate, j.DueAt, j.PlannedStart, j.SiteId, j.Asset, j.Downtime,
                     Location = j.LocationId is null ? null : new { Id = j.LocationId, Path = PathText(j.LocationPath, names), NotesToTechnician = j.LocationNotes },
                     RoundAssets = round[j.Id].Select(a => new { a.Id, a.AssetNumber, a.Name }),
                     Tasks = tasks[j.Id].Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName }),

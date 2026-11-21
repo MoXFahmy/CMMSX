@@ -20,6 +20,9 @@ internal static class Downtime
         var open = db.DowntimeEvents.Local.FirstOrDefault(e => e.AssetId == assetId && e.EndedAt == null && !e.IsDeleted)
             ?? await db.DowntimeEvents.FirstOrDefaultAsync(e => e.AssetId == assetId && e.EndedAt == null, ct);
         if (open is not null) return open;
+        // A late report (made offline, sent later) about a stop that has since ended joins that stop instead of overlapping it.
+        var ended = await db.DowntimeEvents.Where(e => e.AssetId == assetId && e.EndedAt > at).OrderByDescending(e => e.EndedAt).FirstOrDefaultAsync(ct);
+        if (ended is not null) return ended;
         var stop = new DowntimeEvent { AssetId = assetId, StartedAt = at, Reason = Shorten(reason, 500), Source = source, SourceNumber = sourceNumber };
         db.DowntimeEvents.Add(stop);
         return stop;
@@ -48,6 +51,39 @@ internal static class Downtime
         var shared = await db.WorkRequests.AnyAsync(r => r.DowntimeEventId == id, ct)
             || await db.WorkOrders.AnyAsync(o => o.DowntimeEventId == id && o.Id != w.Id, ct);
         if (!shared) db.DowntimeEvents.Remove(stop);
+    }
+
+    /// <summary>
+    /// After a work order's asset changed: the stop this work order started (still open, nothing else on it) goes with it and keeps its
+    /// start; if the new asset is already down, the work order joins that stop and its own is removed. Any other stop stays where it is
+    /// and the work order lets go of it. Not saved.
+    /// </summary>
+    public static async Task FollowAssetAsync(CmmsDbContext db, WorkOrder w, CancellationToken ct)
+    {
+        if (w.DowntimeEventId is not { } id) return;
+        var stop = await db.DowntimeEvents.FirstOrDefaultAsync(e => e.Id == id, ct);
+        var own = stop is { EndedAt: null, Source: DowntimeSource.WorkOrder } && stop.SourceNumber == w.Number
+                  && !await db.WorkRequests.AnyAsync(r => r.DowntimeEventId == id, ct)
+                  && !await db.WorkOrders.AnyAsync(o => o.DowntimeEventId == id && o.Id != w.Id, ct);
+        if (!own) { w.DowntimeEventId = null; return; }
+        if (w.AssetId is not { } asset)
+        {
+            // No asset any more: the stop it claimed for the old one was a mistake.
+            w.DowntimeEventId = null;
+            db.DowntimeEvents.Remove(stop!);
+            return;
+        }
+        var there = await db.DowntimeEvents.FirstOrDefaultAsync(e => e.AssetId == asset && e.EndedAt == null && e.Id != id, ct);
+        if (there is null)
+        {
+            // Never over a stop the new asset already had: start where its last one ended, if that was later.
+            var lastEnd = await db.DowntimeEvents.Where(e => e.AssetId == asset && e.Id != id && e.EndedAt > stop!.StartedAt).MaxAsync(e => e.EndedAt, ct);
+            if (lastEnd is { } end) stop!.StartedAt = end;
+            stop!.AssetId = asset;
+            return;
+        }
+        w.DowntimeEventId = there.Id;
+        db.DowntimeEvents.Remove(stop!);
     }
 
     /// <summary>On completion: ends the work order's open stop at the completion time and fills its downtime from the stop. Not saved.</summary>
@@ -214,6 +250,7 @@ public static class DowntimeEndpoints
     private static async Task<Validator> CheckAsync(CmmsDbContext db, Guid assetId, Guid? stopId, StopInput i, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
+        if (i.StartedAt == default) { var missing = new Validator(); missing.Add("startedAt", "Choose when the asset stopped."); return missing; }
         var v = new Validator().MaxLength("reason", i.Reason, "Reason", 500)
             .When(i.StartedAt > now.AddMinutes(1), "startedAt", "The start can't be in the future.")
             .When(i.EndedAt is { } e && e <= i.StartedAt, "endedAt", "The end must be after the start.")

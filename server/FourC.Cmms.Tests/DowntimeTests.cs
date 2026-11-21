@@ -176,18 +176,6 @@ public class DowntimeTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.False(IsNull(await WoAsync(o, wo3), "downtime"));
     }
 
-    [SkippableFact]
-    public async Task Changing_the_asset_leaves_the_stop_on_the_old_one()
-    {
-        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
-        var o = await SetupAsync();
-        var wo = await NewWoAsync(o, Wo(o, o.Asset));
-        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset2, down: null)));
-        Assert.Null(Assert.Single(await StopsAsync(o.Asset)).EndedAt);
-        Assert.Empty(await StopsAsync(o.Asset2));
-        Assert.True(IsNull(await WoAsync(o, wo), "downtime"));
-    }
-
     private static async Task<JsonElement> DowntimeAsync(Org o, Guid asset) => await Ok(await o.C.GetAsync($"/api/assets/{asset}/downtime"));
     private static object Stop(DateTimeOffset start, DateTimeOffset? end, string reason) => new { startedAt = start, endedAt = end, reason };
     private static readonly string[] AllDays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -331,15 +319,89 @@ public class DowntimeTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
-    public async Task Changing_the_asset_with_the_box_ticked_starts_a_stop_on_the_new_one()
+    public async Task Changing_the_asset_moves_the_stop_this_work_order_started()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        foreach (var down in new bool?[] { null, true })
+        {
+            var wo = await NewWoAsync(o, Wo(o, o.Asset));
+            var before = Assert.Single(await StopsAsync(o.Asset));
+            await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset2, down: down)));
+            Assert.Empty(await StopsAsync(o.Asset));
+            var moved = Assert.Single(await StopsAsync(o.Asset2));
+            Assert.Equal(before.Id, moved.Id);
+            Assert.Equal(before.StartedAt, moved.StartedAt);
+            Assert.Equal(moved.Id, G((await WoAsync(o, wo)).GetProperty("downtime"), "id"));
+            // Ready for the next round: the moved stop is removed.
+            await Ok(await o.C.DeleteAsync($"/api/downtime/{moved.Id}"));
+        }
+    }
+
+    [SkippableFact]
+    public async Task Moving_onto_a_down_asset_joins_its_stop()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var manual = Id(await Ok(await o.C.PostAsJsonAsync($"/api/assets/{o.Asset2}/downtime", Stop(DateTimeOffset.UtcNow.AddHours(-2), null, "Already down"))));
+        var wo = await NewWoAsync(o, Wo(o, o.Asset));
+        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset2, down: true)));
+        Assert.Empty(await StopsAsync(o.Asset));
+        Assert.Equal(manual, Assert.Single(await StopsAsync(o.Asset2)).Id);
+        Assert.Equal(manual, G((await WoAsync(o, wo)).GetProperty("downtime"), "id"));
+    }
+
+    [SkippableFact]
+    public async Task A_requests_stop_stays_when_the_work_order_moves()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var rid = await NewRequestAsync(o, Request(o, o.Asset));
+        var wo = (await Ok(await o.C.PostAsJsonAsync($"/api/work-requests/{rid}/approve", new { }))).GetProperty("workOrderId").GetGuid();
+        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset2, down: null)));
+        Assert.Null(Assert.Single(await StopsAsync(o.Asset)).EndedAt);
+        Assert.Empty(await StopsAsync(o.Asset2));
+        Assert.True(IsNull(await WoAsync(o, wo), "downtime"));
+    }
+
+    [SkippableFact]
+    public async Task A_stop_needs_a_start()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        Assert.Contains("Choose when the asset stopped.", await Refused(await o.C.PostAsJsonAsync($"/api/assets/{o.Asset}/downtime", new { endedAt = (DateTimeOffset?)null, reason = "No start" })));
+        Assert.Empty(await StopsAsync(o.Asset));
+    }
+
+    [SkippableFact]
+    public async Task A_moved_stop_never_overlaps_the_new_assets_stops()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var now = DateTimeOffset.UtcNow;
+        var wo = await NewWoAsync(o, Wo(o, o.Asset));
+        var own = Assert.Single(await StopsAsync(o.Asset)).Id;
+        await Ok(await o.C.PutAsJsonAsync($"/api/downtime/{own}", Stop(now.AddHours(-3), null, "Fix the press")));
+        var earlier = Id(await Ok(await o.C.PostAsJsonAsync($"/api/assets/{o.Asset2}/downtime", Stop(now.AddHours(-2), now.AddHours(-1), "Short jam"))));
+        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset2, down: null)));
+        var stops = await StopsAsync(o.Asset2);
+        Assert.Equal(2, stops.Count);
+        var moved = stops.Single(s => s.Id == own);
+        var ended = stops.Single(s => s.Id == earlier);
+        Assert.Equal(ended.EndedAt, moved.StartedAt);
+        // No overlap: the moved stop can still be edited.
+        await Ok(await o.C.PutAsJsonAsync($"/api/downtime/{own}", Stop(moved.StartedAt, null, "Fix the lathe")));
+    }
+
+    [SkippableFact]
+    public async Task Clearing_the_asset_removes_the_stop_this_work_order_started()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
         var o = await SetupAsync();
         var wo = await NewWoAsync(o, Wo(o, o.Asset));
-        // The web form keeps the box ticked: the old stop stays open on the old asset, and the new asset gets a stop from now.
-        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset2, down: true)));
-        Assert.Null(Assert.Single(await StopsAsync(o.Asset)).EndedAt);
-        var moved = Assert.Single(await StopsAsync(o.Asset2));
-        Assert.Equal(moved.Id, G((await WoAsync(o, wo)).GetProperty("downtime"), "id"));
+        Assert.Single(await StopsAsync(o.Asset));
+        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, null, down: null)));
+        Assert.Empty(await StopsAsync(o.Asset));
+        Assert.True(IsNull(await WoAsync(o, wo), "downtime"));
     }
 }
