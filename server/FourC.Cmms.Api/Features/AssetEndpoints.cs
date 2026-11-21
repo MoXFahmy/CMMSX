@@ -382,7 +382,7 @@ public static class AssetEndpoints
         a.WarrantyType = i.WarrantyType; a.WarrantyExpiresOn = i.WarrantyExpiresOn; a.WarrantyNotes = i.WarrantyNotes.Clean();
         a.Notes = i.Notes.Clean(); a.NotesToTechnician = i.NotesToTechnician.Clean();
         // Left out (older screens, the import without these columns): the running time stays as it is.
-        if (i.RunsHoursPerDay is { } hours) a.RunsHoursPerDay = hours;
+        if (i.RunsHoursPerDay is { } hours) a.RunsHoursPerDay = Math.Round(hours, 2); // kept to 2 decimals, as stored
         if (i.RunsOn is { Count: > 0 } days) a.RunsOn = days.Distinct().OrderBy(d => d).ToList();
         // Preserve values of fields that don't apply to the current category (e.g. imported legacy data).
         foreach (var kv in custom) a.CustomFields[kv.Key] = kv.Value;

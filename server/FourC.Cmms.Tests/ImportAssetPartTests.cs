@@ -85,4 +85,19 @@ public class ImportAssetPartTests(ApiFixture fx) : IClassFixture<ApiFixture>
                 $"{sheet.GetProperty("sheet").GetString()}: {sheet.GetProperty("rows")}");
         Assert.Equal(1, Count(SheetOf(check, "AssetParts"), "unchanged"));
     }
+
+    [SkippableFact]
+    public async Task Running_hours_are_kept_to_two_decimals()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        var file = Book(new Sheet("Sites", SiteHeadings, ["CAI", "Cairo", null]),
+            new Sheet("Assets", ["Asset number", "Name", "Site code", "Runs hours a day"], ["OVEN-1", "Oven", "CAI", 8.333m]));
+        await RunAsync(c, file);
+        var oven = await OkAsync(await c.GetAsync($"/api/assets/{await AssetIdAsync(c, "OVEN-1")}"));
+        Assert.Equal(8.33m, oven.GetProperty("runsHoursPerDay").GetDecimal());
+        var again = SheetOf(await CheckAsync(c, file), "Assets");
+        Assert.Equal(0, Count(again, "changed"));
+        Assert.Equal(1, Count(again, "unchanged"));
+    }
 }

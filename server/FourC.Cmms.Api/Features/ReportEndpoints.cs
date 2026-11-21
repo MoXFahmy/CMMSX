@@ -357,15 +357,18 @@ public static class ReportEndpoints
         var (tz, s, e) = await LocalPeriodAsync(db, a, ct);
         var q = db.DowntimeEvents.AsNoTracking().Where(d => d.StartedAt < e && (d.EndedAt == null || d.EndedAt > s));
         if (a.SiteId is { } site) q = q.Where(d => d.Asset!.SiteId == site);
-        var stops = await q.OrderBy(d => d.StartedAt).Take(5000)
+        const int most = 5000;
+        var stops = await q.OrderBy(d => d.StartedAt).Take(most + 1)
             .Select(d => new { d.AssetId, d.Asset!.AssetNumber, AssetName = d.Asset.Name, d.Asset.RunsHoursPerDay, d.Asset.RunsOn, d.StartedAt, d.EndedAt, d.Reason, d.SourceNumber })
             .ToListAsync(ct);
+        var cut = stops.Count > most;
+        if (cut) stops = stops.Take(most).ToList();
         var now = DateTimeOffset.UtcNow;
         var byHand = Translator.T("By hand");
         var rows = stops.Select(x => Row(("asset", $"{x.AssetNumber} · {x.AssetName}"), ("assetId", x.AssetId), ("start", x.StartedAt), ("end", x.EndedAt),
             ("hours", FourC.Cmms.Core.Assets.DowntimeMath.Measure([new(x.StartedAt, x.EndedAt)], [], a.From, a.To, now, x.RunsHoursPerDay, x.RunsOn, tz).DownHours),
             ("reason", x.Reason), ("from", x.SourceNumber ?? byHand))).ToList();
-        return new("downtime", "Downtime log", $"{Period(a)} · hours count each asset's running time only",
+        return new("downtime", "Downtime log", cut ? $"{Period(a)} · hours count each asset's running time only · the first 5,000 stops" : $"{Period(a)} · hours count each asset's running time only",
             [new("asset", "Asset"), new("start", "Start", "datetime"), new("end", "End", "datetime"), new("hours", "Hours", "hours"), new("reason", "Reason"), new("from", "Source")],
             rows, null,
             [new("Stops", rows.Count), new("Assets stopped", stops.Select(x => x.AssetId).Distinct().Count()), new("Total hours", rows.Sum(r => (decimal)r["hours"]!), "hours")]);

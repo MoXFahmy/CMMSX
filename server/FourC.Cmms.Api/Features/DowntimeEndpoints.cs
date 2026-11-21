@@ -233,6 +233,7 @@ public static class DowntimeEndpoints
     private static async Task<Validator> CheckAsync(CmmsDbContext db, Guid assetId, Guid? stopId, StopInput i, CancellationToken ct)
     {
         var now = DateTimeOffset.UtcNow;
+        if (i.StartedAt == default) { var missing = new Validator(); missing.Add("startedAt", "Choose when the asset stopped."); return missing; }
         var v = new Validator().MaxLength("reason", i.Reason, "Reason", 500)
             .When(i.StartedAt > now.AddMinutes(1), "startedAt", "The start can't be in the future.")
             .When(i.EndedAt is { } e && e <= i.StartedAt, "endedAt", "The end must be after the start.")

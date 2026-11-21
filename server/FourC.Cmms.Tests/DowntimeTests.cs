@@ -363,4 +363,13 @@ public class DowntimeTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Empty(await StopsAsync(o.Asset2));
         Assert.True(IsNull(await WoAsync(o, wo), "downtime"));
     }
+
+    [SkippableFact]
+    public async Task A_stop_needs_a_start()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        Assert.Contains("Choose when the asset stopped.", await Refused(await o.C.PostAsJsonAsync($"/api/assets/{o.Asset}/downtime", new { endedAt = (DateTimeOffset?)null, reason = "No start" })));
+        Assert.Empty(await StopsAsync(o.Asset));
+    }
 }

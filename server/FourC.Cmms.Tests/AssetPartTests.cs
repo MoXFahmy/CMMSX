@@ -122,4 +122,15 @@ public class AssetPartTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Single((await Ok(await o.C.GetAsync($"/api/parts/{o.P1}"))).GetProperty("usedOn").EnumerateArray());
         Assert.Equal(HttpStatusCode.NoContent, (await o.C.DeleteAsync($"/api/parts/{o.P2}")).StatusCode);
     }
+
+    [SkippableFact]
+    public async Task Parts_lists_have_limits()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var url = $"/api/assets/{o.A}/parts";
+        Assert.Contains("At most 500 parts.", await Refused(await o.C.PutAsJsonAsync(url, Enumerable.Range(0, 501).Select(_ => Line(Guid.NewGuid(), 1)).ToArray())));
+        Assert.Contains("A quantity can be at most 1,000,000,000.", await Refused(await o.C.PutAsJsonAsync(url, new[] { Line(o.P1, 2_000_000_000m) })));
+        Assert.Empty(await PartsAsync(o, o.A));
+    }
 }
