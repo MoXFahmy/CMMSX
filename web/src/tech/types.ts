@@ -4,7 +4,8 @@ import type { HoldReason, WorkOrderStatus, WorkPriority, WorkType } from '@/api/
 export type TechJob = {
   id: string; number: string; title: string; description?: string | null; type: WorkType; priority: WorkPriority; status: WorkOrderStatus;
   holdReason?: HoldReason | null; dueDate?: string | null; dueAt?: string | null; plannedStart?: string | null; siteId: string;
-  asset?: { id: string; assetNumber: string; name: string; notesToTechnician?: string | null } | null;
+  /** downSince: when the asset's open stop began (as of the last refresh); empty while it runs. */
+  asset?: { id: string; assetNumber: string; name: string; notesToTechnician?: string | null; downSince?: string | null } | null;
   location?: { id: string; path?: string | null; notesToTechnician?: string | null } | null;
   roundAssets: { id: string; assetNumber: string; name: string }[];
   tasks: { id: string; sequence: number; description: string; isDone: boolean; reading?: string | null; remarks?: string | null; assetId?: string | null; updatedAt?: string | null; updatedByName?: string | null }[];

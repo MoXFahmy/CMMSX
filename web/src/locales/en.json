@@ -84,7 +84,8 @@
     "refresh": "Refresh",
     "language": "Language",
     "toggleNavigation": "Show or hide the menu",
-    "toggleColorScheme": "Switch between light and dark"
+    "toggleColorScheme": "Switch between light and dark",
+    "listSeparator": ", "
   },
   "auth": {
     "signIn": "Sign in",
@@ -162,7 +163,8 @@
     "workByStatus": "Work orders by status",
     "lateWork": "Late work",
     "dueSoon": "Due soon",
-    "responseLate": "Not started in time"
+    "responseLate": "Not started in time",
+    "assetsDown": "Assets down now"
   },
   "locations": {
     "title": "Locations",
@@ -1453,11 +1455,78 @@
       "Assets": "Assets",
       "People": "People",
       "Parts": "Parts",
+      "AssetParts": "Asset parts",
       "Stock": "Stock",
       "PmTasks": "PM tasks",
       "PmSteps": "PM steps",
       "PmParts": "PM parts",
       "PmSchedules": "PM schedules"
     }
+  },
+  "downtime": {
+    "tab": "Downtime",
+    "down": "Down",
+    "downNow": "Down now",
+    "downSince": "Down since {{when}} ({{for}})",
+    "downSinceShort": "Down since {{when}}",
+    "assetDownSince": "{{asset}} has been down since {{when}} ({{for}})",
+    "running": "Running: no open stop.",
+    "availability30": "Availability, last 30 days",
+    "downHours30": "Down, last 30 days",
+    "ofPlanned": "of {{hours}} planned running time",
+    "runningTime": "Running time",
+    "runsHours": "Runs {{hours}} hours a day",
+    "everyDay": "Every day",
+    "runsHoursPerDay": "Runs … hours a day",
+    "runsOn": "Runs on",
+    "runsHint": "Availability counts only the time the asset is meant to run.",
+    "stops": "Stops",
+    "addStop": "Add a stop",
+    "editStop": "Change the stop",
+    "noStops": "No stops recorded.",
+    "start": "Start",
+    "end": "End",
+    "duration": "Duration",
+    "reason": "Reason",
+    "from": "From",
+    "stillDown": "Still down",
+    "byHand": "By hand",
+    "startRequired": "Choose when the asset stopped.",
+    "endRequired": "Choose when it ran again, or tick Still down.",
+    "backRunning": "Back running",
+    "backRunningDone": "The asset is back running.",
+    "backRunningHint": "Press Back running when the asset runs again, even before the work is completed.",
+    "backRunningOffline": "Needs a connection: the stop ends when you press it.",
+    "assetIsDown": "The asset is down",
+    "assetIsDownHint": "Starts a stop on the asset's downtime log now; completing the work order ends it.",
+    "assetChangedHint": "The stop stays open on the asset chosen before. With the box ticked, a new stop starts now on this asset.",
+    "fromLogShort": "from the asset's downtime log",
+    "fromLogEnded": "From the asset's downtime log: {{start}} to {{end}}.",
+    "fromLogOpen": "From the asset's downtime log: down since {{start}}. Completing the work ends the stop at the actual end.",
+    "stopFrom": "the stop from {{when}}",
+    "deleteBody": "Only for a stop that never happened (logged on the wrong asset, or a request ticked down by mistake). Its requests and work orders let go of it, and completed work on it no longer says the asset was down."
+  },
+  "assetParts": {
+    "tab": "Parts",
+    "title": "Spare parts",
+    "hint": "The parts this asset takes. They come first when parts are planned or issued for its work.",
+    "copyFrom": "Copy from another asset",
+    "edit": "Edit the list",
+    "empty": "No spare parts listed yet.",
+    "note": "Note",
+    "addPart": "Add a part",
+    "addHint": "Pick a part to add it to the list.",
+    "copied": "Parts copied.",
+    "copyHint": "Adds the other asset's parts. Parts already on this list keep their quantity and note.",
+    "copySource": "Copy the parts of",
+    "copy": "Copy",
+    "usedOn": "Used on",
+    "usedOnNone": "Not on any asset's spare-parts list."
+  },
+  "partPicker": {
+    "onAssetQty": "{{qty}} on this asset",
+    "chosen": "Chosen",
+    "ofThisAsset": "Parts of this asset",
+    "otherParts": "Other parts"
   }
 }

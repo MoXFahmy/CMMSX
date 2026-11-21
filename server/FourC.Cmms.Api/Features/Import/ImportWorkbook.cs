@@ -34,7 +34,8 @@ public static class ImportWorkbook
             var rows = await RowsAsync(c, def.Key, ct);
             var wasCut = false;
             // A task's steps or parts go out whole or not at all: loading a list back replaces the task's list.
-            if (def.Key is "PmSteps" or "PmParts") (rows, wasCut) = WholeTasks(rows, MaxExportRows);
+            if (def.Key is "PmSteps" or "PmParts") (rows, wasCut) = WholeLists(rows, MaxExportRows, "taskCode");
+            else if (def.Key is "AssetParts") (rows, wasCut) = WholeLists(rows, MaxExportRows, "assetNumber");
             else if (rows.Count > MaxExportRows) { wasCut = true; rows = rows.Take(MaxExportRows).ToList(); }
             if (wasCut) cut.Add(def.Name);
             sheets.Add(new ExportSheet(def.Name, Columns(def), rows.Select(r => def.Columns.Select(col => Cell(r.GetValueOrDefault(col.Key))).ToArray()).ToList()));
@@ -64,17 +65,19 @@ public static class ImportWorkbook
     }
 
     /// <summary>
-    /// At most <paramref name="max"/> rows, ending at a task boundary (rows come grouped by task code), and whether any
-    /// were left out.
+    /// At most <paramref name="max"/> rows, ending where one owner's list ends (rows come grouped by <paramref name="ownerKey"/>:
+    /// a task's code, an asset's number), and whether any were left out.
     /// </summary>
-    public static (List<Dictionary<string, object?>> Rows, bool Cut) WholeTasks(List<Dictionary<string, object?>> rows, int max)
+    public static (List<Dictionary<string, object?>> Rows, bool Cut) WholeLists(List<Dictionary<string, object?>> rows, int max, string ownerKey)
     {
         if (rows.Count <= max) return (rows, false);
         var keep = max;
-        var boundary = rows[max]["taskCode"] as string;
-        while (keep > 0 && string.Equals(rows[keep - 1]["taskCode"] as string, boundary, StringComparison.OrdinalIgnoreCase)) keep--;
+        var boundary = rows[max][ownerKey] as string;
+        while (keep > 0 && string.Equals(rows[keep - 1][ownerKey] as string, boundary, StringComparison.OrdinalIgnoreCase)) keep--;
         return (rows.Take(keep).ToList(), true);
     }
+
+    public static (List<Dictionary<string, object?>> Rows, bool Cut) WholeTasks(List<Dictionary<string, object?>> rows, int max) => WholeLists(rows, max, "taskCode");
 
     private static List<SheetDef> Defs(IReadOnlyList<Core.Assets.CustomFieldDefinition> fields) =>
         ImportSheets.All.Select(d => d.Key == "Assets" ? SheetImporters.AssetSheet(fields) : d).ToList();
@@ -89,6 +92,7 @@ public static class ImportWorkbook
         decimal or DateOnly => value,
         bool b => Translator.T(b ? "Yes" : "No"),
         Enum e => ImportSheets.ChoiceText(e),
+        IEnumerable<Enum> choices => ImportValues.Show(choices),
         string s => s,
         IEnumerable<string> list => string.Join(", ", list),
         _ => ImportValues.Show(value),
@@ -108,7 +112,7 @@ public static class ImportWorkbook
 
     private static string? Allowed(ColumnDef col) => col.Kind switch
     {
-        ValueKind.Choice => string.Join(", ", Enum.GetValues(col.Choices!).Cast<Enum>().Select(ImportSheets.ChoiceText)),
+        ValueKind.Choice or ValueKind.ChoiceList => string.Join(", ", Enum.GetValues(col.Choices!).Cast<Enum>().Select(ImportSheets.ChoiceText)),
         ValueKind.YesNo => $"{Translator.T("Yes")}, {Translator.T("No")}",
         ValueKind.Date => "yyyy-mm-dd",
         ValueKind.Number => Translator.T("A number"),
@@ -146,6 +150,12 @@ public static class ImportWorkbook
                 return (await (from p in db.PmTaskParts.AsNoTracking() join t in db.PmTasks on p.PmTaskId equals t.Id join part in db.Parts on p.PartId equals part.Id
                                orderby t.Code, part.PartNumber select new { t.Code, part.PartNumber, p.Quantity }).Take(take + 200).ToListAsync(ct))
                     .Select(p => new Dictionary<string, object?> { ["taskCode"] = p.Code, ["partNumber"] = p.PartNumber, ["quantity"] = p.Quantity }).ToList();
+            case "AssetParts":
+                // Ordered by asset number, with room to finish the asset's list at the 5,000-row boundary.
+                return (await (from l in db.AssetParts.AsNoTracking() join a in db.Assets on l.AssetId equals a.Id join p in db.Parts on l.PartId equals p.Id
+                               orderby a.AssetNumber, p.PartNumber select new { a.AssetNumber, p.PartNumber, l.Quantity, l.Note }).Take(take + AssetPartImporter.MaxLines).ToListAsync(ct))
+                    .Select(l => new Dictionary<string, object?> { ["assetNumber"] = l.AssetNumber, ["partNumber"] = l.PartNumber, ["quantity"] = l.Quantity, ["note"] = l.Note })
+                    .ToList();
             case "PmSchedules": return Of(new PmScheduleImporter(), c, await db.PmSchedules.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
             default: return [];
         }

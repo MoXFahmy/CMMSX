@@ -13,7 +13,7 @@ namespace FourC.Cmms.Api.Features;
 public static class WorkRequestEndpoints
 {
     public sealed record RequestInput(string Title, string? Description, Guid SiteId, Guid? LocationId, Guid? AssetId, WorkPriority Priority, WorkType Type,
-        string? RequesterName, string? RequesterEmail, string? RequesterPhone, DateOnly? RequiredBy);
+        string? RequesterName, string? RequesterEmail, string? RequesterPhone, DateOnly? RequiredBy, bool AssetIsDown = false);
     public sealed record ApproveInput(WorkType? Type, WorkPriority? Priority, Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? DueDate, string? Note, DateTimeOffset? DueAt = null);
     public sealed record DecisionInput(string? Note);
 
@@ -108,7 +108,7 @@ public static class WorkRequestEndpoints
                 r.Id, r.Number, r.Title, r.Description, r.Status, r.Priority, r.Type, r.SiteId, Site = new { r.Site!.Id, r.Site.Name }, r.LocationId, LocationName = r.Location?.Name,
                 r.AssetId, Asset = r.Asset is null ? null : new { r.Asset.Id, r.Asset.AssetNumber, r.Asset.Name }, r.RequesterName, r.RequesterEmail, r.RequesterPhone,
                 r.RequiredBy, r.RespondBy, DueAt = r.Status == WorkRequestStatus.Approved && work is not null ? work.DueAt : r.DueAt, r.DueFromTarget, Sla = sla,
-                r.DecisionNote, r.DecidedAt, DecidedBy = r.DecidedById is { } d ? users.GetValueOrDefault(d) : null, WorkOrder = wo,
+                r.DecisionNote, r.DecidedAt, DecidedBy = r.DecidedById is { } d ? users.GetValueOrDefault(d) : null, WorkOrder = wo, r.DowntimeEventId,
                 r.CreatedAt, CreatedBy = r.CreatedById is { } c ? users.GetValueOrDefault(c) : null, CanCancel = r.Status == WorkRequestStatus.New && r.CreatedById == ctx.UserId,
             });
         }).RequireAuthorization();
@@ -135,7 +135,9 @@ public static class WorkRequestEndpoints
             if (!v.IsValid) return v.Problem();
             var wo = await db.InTransactionAsync(async token =>
             {
-                var created = await WorkOrderEndpoints.CreateAsync(db, ctx, woInput, r.Id, token, w => w.DueFromTarget = fromTarget, mail: mail, raisedAt: r.CreatedAt);
+                // The request's stop (if it said the asset is down) carries over: completing the work order ends it.
+                var created = await WorkOrderEndpoints.CreateAsync(db, ctx, woInput, r.Id, token, w => { w.DueFromTarget = fromTarget; w.DowntimeEventId = r.DowntimeEventId; },
+                    mail: mail, raisedAt: r.CreatedAt);
                 r.Status = WorkRequestStatus.Approved; r.WorkOrderId = created.Id; r.DecisionNote = input.Note.Clean(); r.DecidedAt = DateTimeOffset.UtcNow; r.DecidedById = ctx.UserId;
                 await mail.RequestDecidedAsync(db, ctx, r, created.Number, token);
                 await db.SaveChangesAsync(token);
@@ -201,6 +203,9 @@ public static class WorkRequestEndpoints
         if (r.AssetId is not null && r.LocationId is null) r.LocationId = await db.Assets.Where(a => a.Id == r.AssetId).Select(a => a.LocationId).FirstOrDefaultAsync(ct);
         r.CreatedAt = raisedAt ?? DateTimeOffset.UtcNow;
         Deadlines.OnCreate(r, settings, r.CreatedAt);
+        // "The asset is down": the stop starts when the request was raised, or joins the asset's open stop.
+        if (input.AssetIsDown && r.AssetId is { } downAsset)
+            r.DowntimeEventId = (await Downtime.StartOrJoinAsync(db, downAsset, r.CreatedAt, r.Title, FourC.Cmms.Core.Assets.DowntimeSource.Request, r.Number, ct)).Id;
         db.WorkRequests.Add(r);
         await mail.RequestSubmittedAsync(db, ctx, r, ct);
         await db.SaveChangesAsync(ct);

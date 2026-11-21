@@ -18,7 +18,8 @@ public static class AssetEndpoints
         AssetStatus Status, Criticality Criticality, string? Manufacturer, string? Model, string? SerialNumber, string? Barcode, string? OperationNumber,
         DateOnly? CommissionedOn, DateOnly? DisposedOn, decimal? PurchasePrice, decimal? CurrentValue, decimal? SalvageValue,
         decimal? ExpectedLifeYears, decimal? DowntimeCostPerHour, WarrantyType WarrantyType, DateOnly? WarrantyExpiresOn, string? WarrantyNotes,
-        string? Notes, string? NotesToTechnician, Dictionary<string, string?>? CustomFields, string? RowVersion = null);
+        string? Notes, string? NotesToTechnician, Dictionary<string, string?>? CustomFields, string? RowVersion = null,
+        decimal? RunsHoursPerDay = null, List<DayOfWeek>? RunsOn = null);
 
     public sealed record TransferInput(Guid SiteId, Guid? LocationId, string? Reason, bool IncludeChildren = true);
     public sealed record BulkInput(Guid[] Ids, AssetStatus? Status, Criticality? Criticality, Guid? CategoryId);
@@ -35,6 +36,8 @@ public static class AssetEndpoints
         public Guid? ParentAssetId { get; set; }
         public bool? TopLevelOnly { get; set; }
         public int? WarrantyExpiringDays { get; set; }
+        /// <summary>Only assets with an open stop.</summary>
+        public bool? DownNow { get; set; }
         public string? Sort { get; set; }
         public string? Dir { get; set; }
         public int? Page { get; set; }
@@ -93,6 +96,8 @@ public static class AssetEndpoints
                 a.Status, a.Criticality, a.Manufacturer, a.Model, a.SerialNumber, a.Barcode, a.OperationNumber,
                 a.CommissionedOn, a.DisposedOn, a.PurchasePrice, a.CurrentValue, a.SalvageValue, a.ExpectedLifeYears, a.DowntimeCostPerHour,
                 a.WarrantyType, a.WarrantyExpiresOn, a.WarrantyNotes, a.Notes, a.NotesToTechnician, a.CustomFields,
+                a.RunsHoursPerDay, a.RunsOn,
+                DownSince = await db.DowntimeEvents.Where(e => e.AssetId == id && e.EndedAt == null).Select(e => (DateTimeOffset?)e.StartedAt).FirstOrDefaultAsync(ct),
                 ChildCount = await db.Assets.CountAsync(x => x.ParentAssetId == id, ct),
                 PrimaryImageId = image,
                 a.CreatedAt, CreatedBy = a.CreatedById is { } c ? users.GetValueOrDefault(c) : null,
@@ -153,6 +158,7 @@ public static class AssetEndpoints
             if (await db.Assets.AnyAsync(a => a.ParentAssetId == id, ct))
                 throw new DomainException("This asset has child assets. Re-assign or delete them first.");
             db.Assets.Remove(asset);
+            db.AssetParts.RemoveRange(await db.AssetParts.Where(x => x.AssetId == id).ToListAsync(ct)); // its spare-parts list goes with it
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.AssetsDelete);
@@ -225,7 +231,7 @@ public static class AssetEndpoints
     public sealed record AssetListItem(Guid Id, string AssetNumber, string Name, Guid? CategoryId, string? CategoryName, string? CategoryColor,
         Guid SiteId, string SiteName, Guid? LocationId, string? LocationName, string? LocationPath, Guid? ParentAssetId, string? ParentAssetNumber,
         AssetStatus Status, Criticality Criticality, string? Manufacturer, string? Model, string? SerialNumber, DateOnly? CommissionedOn,
-        DateOnly? WarrantyExpiresOn, Dictionary<string, string?> CustomFields, DateTimeOffset? UpdatedAt);
+        DateOnly? WarrantyExpiresOn, Dictionary<string, string?> CustomFields, DateTimeOffset? UpdatedAt, DateTimeOffset? DownSince);
 
     /// <summary>One page of the asset list, location paths in names (the list screen and its export share it).</summary>
     internal static async Task<PagedResult<AssetListItem>> ListAsync(CmmsDbContext db, AssetFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
@@ -233,13 +239,15 @@ public static class AssetEndpoints
         var q = await FilterAsync(db, f, ct);
         var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "assetNumber").Select(ListProjection).ToPagedAsync(page, pageSize, ct, maxPageSize);
         var names = await LocationEndpoints.ResolvePathNamesAsync(db, paged.Items.Select(i => i.LocationPath), ct);
-        return new PagedResult<AssetListItem>(paged.Items.Select(i => i with { LocationPath = names(i.LocationPath) }).ToList(), paged.Total, paged.Page, paged.PageSize);
+        var down = await Downtime.DownSinceAsync(db, paged.Items.Select(i => i.Id).ToList(), ct);
+        return new PagedResult<AssetListItem>(paged.Items.Select(i => i with { LocationPath = names(i.LocationPath), DownSince = down.TryGetValue(i.Id, out var at) ? at : null }).ToList(),
+            paged.Total, paged.Page, paged.PageSize);
     }
 
     private static readonly Expression<Func<Asset, AssetListItem>> ListProjection = a => new AssetListItem(
         a.Id, a.AssetNumber, a.Name, a.CategoryId, a.Category!.Name, a.Category.Color, a.SiteId, a.Site!.Name, a.LocationId, a.Location!.Name,
         a.Location.Path, a.ParentAssetId, a.ParentAsset!.AssetNumber, a.Status, a.Criticality, a.Manufacturer, a.Model, a.SerialNumber,
-        a.CommissionedOn, a.WarrantyExpiresOn, a.CustomFields, a.UpdatedAt ?? a.CreatedAt);
+        a.CommissionedOn, a.WarrantyExpiresOn, a.CustomFields, a.UpdatedAt ?? a.CreatedAt, null);
 
     private static async Task<IQueryable<Asset>> FilterAsync(CmmsDbContext db, AssetFilter f, CancellationToken ct)
     {
@@ -268,6 +276,7 @@ public static class AssetEndpoints
             var until = today.AddDays(days);
             q = q.Where(a => a.WarrantyExpiresOn != null && a.WarrantyExpiresOn >= today && a.WarrantyExpiresOn <= until);
         }
+        if (f.DownNow == true) q = q.Where(a => db.DowntimeEvents.Any(e => e.AssetId == a.Id && e.EndedAt == null));
         return q;
     }
 
@@ -286,7 +295,9 @@ public static class AssetEndpoints
             .When(!Enum.IsDefined(i.Criticality), "criticality", "Choose a valid criticality.")
             .When(i.PurchasePrice < 0 || i.CurrentValue < 0 || i.SalvageValue < 0, "purchasePrice", "Amounts cannot be negative.")
             .When(i.DisposedOn is not null && i.CommissionedOn is not null && i.DisposedOn < i.CommissionedOn, "disposedOn", "Disposal date cannot be before the commissioning date.")
-            .When(i.ParentAssetId is not null && i.ParentAssetId == id, "parentAssetId", "An asset cannot be its own parent.");
+            .When(i.ParentAssetId is not null && i.ParentAssetId == id, "parentAssetId", "An asset cannot be its own parent.")
+            .When(i.RunsHoursPerDay is { } h && (h < 0.5m || h > 24), "runsHoursPerDay", "Running hours must be between 0.5 and 24.")
+            .When(i.RunsOn is { } days && (days.Count == 0 || days.Any(d => !Enum.IsDefined(d))), "runsOn", "Choose at least one running day.");
         if (requireNumber) v.Required("assetNumber", i.AssetNumber, "Asset number", 100);
         return v;
     }
@@ -370,6 +381,9 @@ public static class AssetEndpoints
         a.SalvageValue = i.SalvageValue; a.ExpectedLifeYears = i.ExpectedLifeYears; a.DowntimeCostPerHour = i.DowntimeCostPerHour;
         a.WarrantyType = i.WarrantyType; a.WarrantyExpiresOn = i.WarrantyExpiresOn; a.WarrantyNotes = i.WarrantyNotes.Clean();
         a.Notes = i.Notes.Clean(); a.NotesToTechnician = i.NotesToTechnician.Clean();
+        // Left out (older screens, the import without these columns): the running time stays as it is.
+        if (i.RunsHoursPerDay is { } hours) a.RunsHoursPerDay = hours;
+        if (i.RunsOn is { Count: > 0 } days) a.RunsOn = days.Distinct().OrderBy(d => d).ToList();
         // Preserve values of fields that don't apply to the current category (e.g. imported legacy data).
         foreach (var kv in custom) a.CustomFields[kv.Key] = kv.Value;
         foreach (var k in a.CustomFields.Keys.Where(k => i.CustomFields?.ContainsKey(k) == true && !custom.ContainsKey(k)).ToList())

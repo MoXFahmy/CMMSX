@@ -55,15 +55,20 @@ public static class ImportValues
                 return false;
             case ValueKind.Choice:
                 var type = col.Choices ?? throw new InvalidOperationException($"Column {col.Key} has no choices.");
-                var wanted = ImportSheets.Normal(text);
-                foreach (Enum option in Enum.GetValues(type))
-                {
-                    var words = new[] { option.ToString(), ImportSheets.ChoiceWord(option), Translator.T(ImportSheets.ChoiceWord(option), "ar") };
-                    if (words.Any(w => ImportSheets.Normal(w) == wanted)) { value = option; return true; }
-                }
-                var allowed = string.Join(", ", Enum.GetValues(type).Cast<Enum>().Select(ImportSheets.ChoiceText));
-                problem = Translator.T($"{col.Heading} must be one of: {allowed}.");
+                if (Choice(type, text) is { } option) { value = option; return true; }
+                problem = Translator.T($"{col.Heading} must be one of: {Allowed(type)}.");
                 return false;
+            case ValueKind.ChoiceList:
+                // Several choices separated by commas ("Sunday, Monday, الثلاثاء"), kept in the choices' order.
+                var listType = col.Choices ?? throw new InvalidOperationException($"Column {col.Key} has no choices.");
+                var picked = new List<Enum>();
+                foreach (var piece in text.Split([',', '،', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                {
+                    if (Choice(listType, piece) is not { } one) { problem = Translator.T($"{col.Heading} must be one of: {Allowed(listType)}."); return false; }
+                    if (!picked.Contains(one)) picked.Add(one);
+                }
+                value = picked.OrderBy(Convert.ToInt64).ToList();
+                return true;
             case ValueKind.CodeList:
                 value = text.Split([',', '،', ';'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).ToList();
                 return true;
@@ -71,6 +76,20 @@ public static class ImportValues
                 throw new InvalidOperationException($"Unknown kind {col.Kind}.");
         }
     }
+
+    /// <summary>The choice a word names: its English name, the screens' word, or that word in Arabic (any case and spacing).</summary>
+    private static Enum? Choice(Type type, string text)
+    {
+        var wanted = ImportSheets.Normal(text);
+        foreach (Enum option in Enum.GetValues(type))
+        {
+            var words = new[] { option.ToString(), ImportSheets.ChoiceWord(option), Translator.T(ImportSheets.ChoiceWord(option), "ar") };
+            if (words.Any(w => ImportSheets.Normal(w) == wanted)) return option;
+        }
+        return null;
+    }
+
+    private static string Allowed(Type type) => string.Join(", ", Enum.GetValues(type).Cast<Enum>().Select(ImportSheets.ChoiceText));
 
     /// <summary>How a value shows in the preview's "old → new": dates yyyy-mm-dd, plain numbers, words in the request's language.</summary>
     public static string? Show(object? value) => value switch
@@ -83,6 +102,7 @@ public static class ImportValues
         int i => i.ToString(CultureInfo.InvariantCulture),
         bool b => Translator.T(b ? "Yes" : "No"),
         Enum e => ImportSheets.ChoiceText(e),
+        IEnumerable<Enum> choices => string.Join(", ", choices.OrderBy(Convert.ToInt64).Select(ImportSheets.ChoiceText)),
         IEnumerable<string> list => string.Join(", ", list),
         _ => Convert.ToString(value, CultureInfo.InvariantCulture),
     };

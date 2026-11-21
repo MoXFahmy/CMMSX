@@ -15,7 +15,7 @@ public static class WorkOrderEndpoints
 {
     public sealed record WorkOrderInput(string Title, string? Description, WorkType Type, WorkPriority Priority, Guid SiteId, Guid? LocationId, Guid? AssetId,
         Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? PlannedStart, DateOnly? DueDate, decimal? EstimatedHours, List<string>? Tasks, string? RowVersion = null,
-        string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null);
+        string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null, bool? AssetIsDown = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
         DateTimeOffset? At = null);
@@ -115,6 +115,10 @@ public static class WorkOrderEndpoints
                 .Select(t => new { t.Id, t.Type, t.Date, t.PartId, t.Part!.PartNumber, PartName = t.Part.Name, t.Part.UnitOfMeasure, t.StoreId, StoreCode = t.Store!.Code,
                     Quantity = -t.Quantity, t.UnitCost, Total = Math.Round(-t.Quantity * t.UnitCost, 2), t.BatchNumber, t.Notes, t.CreatedByName }).ToListAsync(ct);
             var request = w.WorkRequestId is { } rid ? await db.WorkRequests.AsNoTracking().Where(r => r.Id == rid).Select(r => new { r.Id, r.Number, r.RequesterName, r.RespondBy, r.DecidedAt }).FirstOrDefaultAsync(ct) : null;
+            var downtime = w.DowntimeEventId is { } did ? await db.DowntimeEvents.AsNoTracking().Where(e => e.Id == did)
+                .Select(e => new { e.Id, e.StartedAt, e.EndedAt, e.Source, e.SourceNumber }).FirstOrDefaultAsync(ct) : null;
+            var assetDownSince = w.AssetId is { } aid ? await db.DowntimeEvents.AsNoTracking().Where(e => e.AssetId == aid && e.EndedAt == null)
+                .Select(e => (DateTimeOffset?)e.StartedAt).FirstOrDefaultAsync(ct) : null;
             var settings = await SlaQueries.SettingsAsync(db, ct);
             var now = DateTimeOffset.UtcNow;
             var sla = SlaQueries.Work(settings, w.Priority, w.Status, w.StartBy, w.RespondedAt, w.DueAt, w.DueFromTarget, w.CompletedAt, now);
@@ -145,6 +149,7 @@ public static class WorkOrderEndpoints
                 w.TradeId, TradeName = w.Trade?.Name, w.FailureCodeId, FailureCode = w.FailureCode is null ? null : new { w.FailureCode.Code, w.FailureCode.Name },
                 Assignees = w.Assignees.Select(a => new { a.EmployeeId, a.Employee!.FullName, a.Employee.Code, a.PlannedHours, a.Employee.HourlyRate }),
                 w.PlannedStart, w.DueDate, w.DueAt, w.DueFromTarget, w.StartBy, w.RespondedAt, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
+                Downtime = downtime, AssetDownSince = assetDownSince,
                 LocationNotesToTechnician = locationNotes, Request = request, Pm = pm, w.PmDueDate,
                 Assets = roundAssets,
                 Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName }),
@@ -166,6 +171,12 @@ public static class WorkOrderEndpoints
             if (input.CopyPlanFromId is { } from && !await db.WorkOrders.AnyAsync(x => x.Id == from, ct)) v.Add("copyPlanFromId", "The work order to copy was not found.");
             if (!v.IsValid) return v.Problem();
             var w = await CreateAsync(db, ctx, input, requestId: null, ct, mail: mail);
+            if (input.AssetIsDown == true && w.AssetId is { } downAsset)
+            {
+                // "The asset is down": a stop from when the work order was raised, or the asset's open stop.
+                w.DowntimeEventId = (await Downtime.StartOrJoinAsync(db, downAsset, w.CreatedAt, w.Title, FourC.Cmms.Core.Assets.DowntimeSource.WorkOrder, w.Number, ct)).Id;
+                await db.SaveChangesAsync(ct);
+            }
             if (input.CopyPlanFromId is { } source)
             {
                 // Duplicate: the plan comes along (planned parts with stores re-picked, planned hours of technicians on both).
@@ -184,7 +195,12 @@ public static class WorkOrderEndpoints
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(w).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
             var priorityBefore = w.Priority;
+            var assetBefore = w.AssetId;
             Apply(w, input);
+            if (w.DowntimeEventId is not null && w.AssetId != assetBefore) w.DowntimeEventId = null; // the stop stays on the old asset, still open
+            else if (input.AssetIsDown == false) await Downtime.UntickAsync(db, w, ct);
+            if (input.AssetIsDown == true && w.DowntimeEventId is null && w.AssetId is { } downAsset)
+                w.DowntimeEventId = (await Downtime.StartOrJoinAsync(db, downAsset, DateTimeOffset.UtcNow, w.Title, FourC.Cmms.Core.Assets.DowntimeSource.WorkOrder, w.Number, ct)).Id;
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
             var raisedAt = w.WorkRequestId is { } rid ? await db.WorkRequests.Where(r => r.Id == rid).Select(r => (DateTimeOffset?)r.CreatedAt).FirstOrDefaultAsync(ct) ?? w.CreatedAt : w.CreatedAt;
             Deadlines.OnUpdate(w, input.DueAt, input.DueDate, priorityBefore, settings, raisedAt);
@@ -448,6 +464,7 @@ public static class WorkOrderEndpoints
                 w.FailureCodeId = input.FailureCodeId ?? w.FailureCodeId;
                 w.AssetWasDown = input.AssetWasDown ?? w.AssetWasDown;
                 w.DowntimeHours = input.DowntimeHours ?? w.DowntimeHours;
+                await Downtime.OnCompletedAsync(db, ctx, w, ct); // a linked stop ends now and fills the downtime fields
                 break;
             case WorkOrderStatus.Closed: w.ClosedAt = now; w.CompletedAt ??= now; break;
             case WorkOrderStatus.Open: w.CompletedAt = null; w.ClosedAt = null; break;

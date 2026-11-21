@@ -123,6 +123,15 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<decimal>("RunsHoursPerDay")
+                        .HasPrecision(4, 2)
+                        .HasColumnType("decimal(4,2)");
+
+                    b.Property<string>("RunsOn")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<decimal?>("SalvageValue")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -248,6 +257,75 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasFilter("[LegacyRef] IS NOT NULL");
 
                     b.ToTable("AssetCategories");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.AssetPart", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("PartId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Quantity")
+                        .HasPrecision(18, 3)
+                        .HasColumnType("decimal(18,3)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("PartId");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "PartId");
+
+                    b.HasIndex("TenantId", "AssetId", "PartId")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("AssetParts");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Assets.AssetTransfer", b =>
@@ -377,6 +455,83 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasFilter("[IsDeleted] = 0");
 
                     b.ToTable("CustomFields");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.DowntimeEvent", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("EndedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("EndedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<int>("Source")
+                        .HasColumnType("int");
+
+                    b.Property<string>("SourceNumber")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("StartedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("TenantId", "AssetId")
+                        .IsUnique()
+                        .HasDatabaseName("IX_DowntimeEvents_OpenPerAsset")
+                        .HasFilter("[EndedAt] IS NULL AND [IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "AssetId", "StartedAt");
+
+                    b.ToTable("DowntimeEvents");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Auditing.AuditEntry", b =>
@@ -2582,6 +2737,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid?>("DowntimeEventId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<decimal?>("DowntimeHours")
                         .HasPrecision(9, 2)
                         .HasColumnType("decimal(9,2)");
@@ -2689,6 +2847,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssetId");
+
+                    b.HasIndex("DowntimeEventId");
 
                     b.HasIndex("FailureCodeId");
 
@@ -3095,6 +3255,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<string>("Description")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid?>("DowntimeEventId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset?>("DueAt")
                         .HasColumnType("datetimeoffset");
 
@@ -3172,6 +3335,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssetId");
+
+                    b.HasIndex("DowntimeEventId");
 
                     b.HasIndex("LocationId");
 
@@ -3302,6 +3467,36 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Navigation("ParentAsset");
 
                     b.Navigation("Site");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.AssetPart", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Assets.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.Inventory.Part", "Part")
+                        .WithMany()
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
+
+                    b.Navigation("Part");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.DowntimeEvent", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Assets.Asset", "Asset")
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Asset");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Identity.UserRole", b =>
@@ -3543,6 +3738,11 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasForeignKey("AssetId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("FourC.Cmms.Core.Assets.DowntimeEvent", null)
+                        .WithMany()
+                        .HasForeignKey("DowntimeEventId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("FourC.Cmms.Core.Work.FailureCode", "FailureCode")
                         .WithMany()
                         .HasForeignKey("FailureCodeId")
@@ -3651,6 +3851,11 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasOne("FourC.Cmms.Core.Assets.Asset", "Asset")
                         .WithMany()
                         .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FourC.Cmms.Core.Assets.DowntimeEvent", null)
+                        .WithMany()
+                        .HasForeignKey("DowntimeEventId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("FourC.Cmms.Core.Locations.Location", "Location")

@@ -45,7 +45,8 @@ public static partial class TechEndpoints
                 .Select(w => new
                 {
                     w.Id, w.Number, w.Title, w.Description, w.Type, w.Priority, w.Status, w.HoldReason, w.DueDate, w.DueAt, w.PlannedStart, w.SiteId,
-                    Asset = w.Asset == null ? null : new { w.Asset.Id, w.Asset.AssetNumber, w.Asset.Name, w.Asset.NotesToTechnician },
+                    Asset = w.Asset == null ? null : new { w.Asset.Id, w.Asset.AssetNumber, w.Asset.Name, w.Asset.NotesToTechnician,
+                        DownSince = db.DowntimeEvents.Where(e => e.AssetId == w.AssetId && e.EndedAt == null).Select(e => (DateTimeOffset?)e.StartedAt).FirstOrDefault() },
                     w.LocationId, LocationPath = w.Location == null ? null : w.Location.Path, LocationNotes = w.Location == null ? null : w.Location.NotesToTechnician,
                 }).ToListAsync(ct);
             var ids = jobs.Select(j => j.Id).ToList();

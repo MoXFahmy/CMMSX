@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Alert, Anchor, Badge, Button, Card, Drawer, Group, Modal, Select, SimpleGrid, Stack, Tabs, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Button, Card, Checkbox, Drawer, Group, Modal, Select, SimpleGrid, Stack, Tabs, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput, DateTimePicker } from '@mantine/dates';
 import dayjs from 'dayjs';
 import { SlaText } from '@/components/SlaBadge';
@@ -114,7 +114,7 @@ export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean
   const qc = useQueryClient();
   const { data: asset } = useQuery({ queryKey: ['asset', assetId], queryFn: () => get<AssetDetail>(`/assets/${assetId}`), enabled: !!assetId && opened });
   const blank = { title: '', description: '', siteId: null as string | null, locationId: null as string | null, assetId: null as string | null, priority: 'Medium', type: 'Corrective',
-    requesterName: me?.user.fullName ?? '', requesterPhone: '', requiredBy: null as Date | null };
+    requesterName: me?.user.fullName ?? '', requesterPhone: '', requiredBy: null as Date | null, assetIsDown: false };
   const form = useForm({ initialValues: blank });
   useEffect(() => {
     if (!opened) return;
@@ -123,9 +123,10 @@ export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean
   }, [opened, asset]);
   const submit = form.onSubmit(async (v) => {
     try {
-      const r = await post<{ id: string; number: string }>('/work-requests', { ...v, requiredBy: toIsoDate(v.requiredBy) });
+      const r = await post<{ id: string; number: string }>('/work-requests', { ...v, requiredBy: toIsoDate(v.requiredBy), assetIsDown: !!v.assetId && v.assetIsDown });
       notifySuccess(t('wr.submitted', { number: r.number }));
       await qc.invalidateQueries({ queryKey: ['work-requests'] }); await qc.invalidateQueries({ queryKey: ['dashboard'] });
+      if (v.assetId && v.assetIsDown) { await qc.invalidateQueries({ queryKey: ['asset', v.assetId] }); await qc.invalidateQueries({ queryKey: ['assets'] }); }
       onClose();
     } catch (e) { handleFormError(form, e); }
   });
@@ -139,6 +140,8 @@ export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean
         <AssetPicker label={t('wo.asset')} value={form.values.assetId} onChange={(v) => form.setFieldValue('assetId', v)} error={form.errors.assetId}
           initial={asset ? { id: asset.id, assetNumber: asset.assetNumber, name: asset.name } : null} />
         <AssetCheck assetId={form.values.assetId} />
+        {form.values.assetId && <Checkbox label={t('downtime.assetIsDown')} description={t('downtime.assetIsDownHint')} color="red"
+          {...form.getInputProps('assetIsDown', { type: 'checkbox' })} />}
         <SimpleGrid cols={{ base: 1, sm: 3 }}>
           <Select label={t('priority.label')} data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))} {...form.getInputProps('priority')} />
           <Select label={t('workType.label')} data={WORK_TYPES.map((x) => ({ value: x, label: t(`workType.${x}`) }))} {...form.getInputProps('type')} />

@@ -6,7 +6,7 @@ using FourC.Cmms.Core.Work;
 
 namespace FourC.Cmms.Api.Features.Import;
 
-public enum ValueKind { Text, Number, Integer, Date, YesNo, Choice, CodeList }
+public enum ValueKind { Text, Number, Integer, Date, YesNo, Choice, CodeList, ChoiceList }
 
 /// <summary>"Week of month" on a PM schedule: the first to fourth week, or the last.</summary>
 public enum WeekOfMonth { First = 1, Second = 2, Third = 3, Fourth = 4, Last = 5 }
@@ -46,6 +46,7 @@ public static class ImportSheets
     private static ColumnDef Y(string key, string en, string ar) => new(key, en, ar, ValueKind.YesNo);
     private static ColumnDef C<TEnum>(string key, string en, string ar) where TEnum : struct, Enum => new(key, en, ar, ValueKind.Choice, false, typeof(TEnum));
     private static ColumnDef L(string key, string en, string ar) => new(key, en, ar, ValueKind.CodeList);
+    private static ColumnDef CL<TEnum>(string key, string en, string ar) where TEnum : struct, Enum => new(key, en, ar, ValueKind.ChoiceList, false, typeof(TEnum));
 
     private static ColumnDef Code => T("code", "Code", "الرمز", true);
     private static ColumnDef Name => T("name", "Name", "الاسم", true);
@@ -78,7 +79,8 @@ public static class ImportSheets
             N("purchasePrice", "Purchase price", "سعر الشراء"), N("currentValue", "Current value", "القيمة الحالية"), N("salvageValue", "Salvage value", "قيمة الخردة"),
             N("expectedLifeYears", "Expected life (years)", "العمر المتوقع (سنوات)"), N("downtimeCostPerHour", "Downtime cost per hour", "تكلفة التوقف للساعة"),
             C<WarrantyType>("warrantyType", "Warranty type", "نوع الضمان"), D("warrantyExpiresOn", "Warranty expires on", "انتهاء الضمان"),
-            T("warrantyNotes", "Warranty notes", "ملاحظات الضمان"), Description, Notes, T("notesToTechnician", "Notes to technician", "ملاحظات للفني")]),
+            T("warrantyNotes", "Warranty notes", "ملاحظات الضمان"), Description, Notes, T("notesToTechnician", "Notes to technician", "ملاحظات للفني"),
+            N("runsHoursPerDay", "Runs hours a day", "ساعات التشغيل في اليوم"), CL<DayOfWeek>("runsOn", "Runs on", "يعمل في")]),
         new("People", "People", "الأفراد", [Code, T("fullName", "Full name", "الاسم الكامل", true), T("jobTitle", "Job title", "المسمى الوظيفي"),
             T("email", "Email", "البريد الإلكتروني"), T("phone", "Phone", "الهاتف"), L("trades", "Trades", "التخصصات"), L("sites", "Sites", "المواقع"),
             N("hourlyRate", "Hourly rate", "أجر الساعة"), N("overtimeRate", "Overtime rate", "أجر الساعة الإضافية"), Y("contractor", "Contractor", "مقاول"),
@@ -89,6 +91,8 @@ public static class ImportSheets
             I("leadTimeDays", "Lead time (days)", "مدة التوريد (أيام)"), Y("critical", "Critical", "حرجة"), Y("shelfLife", "Shelf-life item", "صنف له صلاحية"),
             Y("allowNegative", "Allow negative stock", "السماح بالرصيد السالب"), T("preferredSupplierCode", "Preferred supplier code", "رمز المورد المفضل"),
             T("barcode", "Barcode", "الباركود"), Notes, Active]),
+        new("AssetParts", "Asset parts", "قطع الأصول", [T("assetNumber", "Asset number", "رقم الأصل", true), T("partNumber", "Part number", "رقم القطعة", true),
+            N("quantity", "Quantity", "الكمية", true), T("note", "Note", "ملاحظة")]),
         new("Stock", "Stock", "المخزون", [T("partNumber", "Part number", "رقم القطعة", true), T("storeCode", "Store code", "رمز المخزن", true),
             T("bin", "Bin", "الموضع"), N("min", "Min", "الحد الأدنى"), N("reorderLevel", "Re-order level", "حد إعادة الطلب"), N("max", "Max", "الحد الأقصى"),
             N("reorderQuantity", "Re-order quantity", "كمية إعادة الطلب"), N("openingQuantity", "Opening quantity", "الرصيد الافتتاحي"),

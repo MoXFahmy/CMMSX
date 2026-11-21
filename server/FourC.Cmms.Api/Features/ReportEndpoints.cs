@@ -41,6 +41,7 @@ public static class ReportEndpoints
         new("labor-hours", "Work", "Labour hours", "Hours, overtime and labour cost booked to work orders.", Permissions.WorkOrdersView,
             [Range, SiteP, GroupBy("employee", ("employee", "Employee"), ("trade", "Trade"), ("type", "Work type"))]),
         new("reliability", "Reliability", "Asset reliability (MTBF / MTTR)", "Breakdowns per asset with downtime, mean time between failures and mean time to repair.", Permissions.WorkOrdersView, [Range, SiteP]),
+        new("downtime", "Reliability", "Downtime log", "Every stop in the period with how long the asset was stopped during its running time.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("failure-pareto", "Reliability", "Failure analysis", "Breakdowns by failure code — the few causes behind most of the downtime.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("maintenance-costs", "Costs", "Maintenance costs", "Labour, parts and other costs booked in the period.", Permissions.WorkOrdersView,
             [Range, SiteP, GroupBy("asset", ("asset", "Asset"), ("site", "Site"), ("category", "Asset category"), ("type", "Work type"), ("trade", "Trade"), ("month", "Month"))]),
@@ -86,6 +87,7 @@ public static class ReportEndpoints
                 "labor-hours" => await LaborAsync(db, a, ct),
                 "reliability" => await ReliabilityAsync(db, a, ct),
                 "failure-pareto" => await FailureParetoAsync(db, a, ct),
+                "downtime" => await DowntimeLogAsync(db, a, ct),
                 "maintenance-costs" => await CostsAsync(db, a, ct),
                 "assets-by-category" => await AssetsAsync(db, a, ct),
                 "stock-valuation" => await ValuationAsync(db, a, ct),
@@ -298,37 +300,75 @@ public static class ReportEndpoints
     {
         var (s, e) = (Start(a.From), End(a.To));
         var xs = await Wo(db, a).Where(w => w.AssetId != null && w.CreatedAt >= s && w.CreatedAt < e && w.Status != WorkOrderStatus.Cancelled && (w.Type == WorkType.Breakdown || w.AssetWasDown))
-            .Select(w => new { AssetId = w.AssetId!.Value, w.Asset!.AssetNumber, w.Asset.Name, w.Asset.DowntimeCostPerHour, Code = w.FailureCode!.Code, CodeName = w.FailureCode.Name, w.DowntimeHours, w.StartedAt, w.CompletedAt, w.CreatedAt })
+            .Select(w => new { w.Id, AssetId = w.AssetId!.Value, w.Asset!.AssetNumber, w.Asset.Name, w.Asset.DowntimeCostPerHour, Code = w.FailureCode!.Code, CodeName = w.FailureCode.Name, w.DowntimeHours, w.StartedAt, w.CompletedAt, w.CreatedAt, w.DowntimeEventId })
             .ToListAsync(ct);
-        return xs.Select(x => new Failure(x.AssetId, x.AssetNumber, x.Name, x.Code, x.CodeName, x.DowntimeHours ?? 0,
+        // Work orders sharing one stop (two requests about the same stop) carry its hours once: on the one completed first.
+        var counted = xs.Where(x => x.DowntimeEventId != null).GroupBy(x => x.DowntimeEventId)
+            .Select(g => g.OrderBy(x => x.CompletedAt ?? DateTimeOffset.MaxValue).ThenBy(x => x.CreatedAt).First().Id).ToHashSet();
+        return xs.Select(x => new Failure(x.AssetId, x.AssetNumber, x.Name, x.Code, x.CodeName, x.DowntimeEventId is null || counted.Contains(x.Id) ? x.DowntimeHours ?? 0 : 0,
             x.CompletedAt is { } c ? (c - (x.StartedAt ?? x.CreatedAt)).TotalHours : null, x.DowntimeCostPerHour)).ToList();
+    }
+
+    // Since 0.8.0: breakdowns are stops that began in the period (plus work done the old way, "Asset was down" with hours typed and no stop),
+    // and downtime and planned time count only each asset's running days and hours, in the organization's time zone.
+    private sealed record AssetClock(Guid Id, string AssetNumber, string Name, decimal RunsHoursPerDay, List<DayOfWeek> RunsOn, decimal? DowntimeCostPerHour);
+
+    private static async Task<(TimeZoneInfo Tz, DateTimeOffset Start, DateTimeOffset End)> LocalPeriodAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
+    {
+        var tz = Downtime.Zone((await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings.TimeZone);
+        return (tz, FourC.Cmms.Core.Assets.DowntimeMath.Midnight(a.From, tz), FourC.Cmms.Core.Assets.DowntimeMath.Midnight(a.To.AddDays(1), tz));
     }
 
     private static async Task<ReportResult> ReliabilityAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
     {
-        var fs = await FailuresAsync(db, a, ct);
-        var periodHours = (decimal)(a.To.DayNumber - a.From.DayNumber + 1) * 24;
-        decimal? Mttr(IEnumerable<Failure> g)
+        var (tz, s, e) = await LocalPeriodAsync(db, a, ct);
+        var assets = db.Assets.AsNoTracking();
+        if (a.SiteId is { } site) assets = assets.Where(x => x.SiteId == site);
+        var clocks = await assets
+            .Where(x => db.DowntimeEvents.Any(d => d.AssetId == x.Id && d.StartedAt < e && (d.EndedAt == null || d.EndedAt > s))
+                     || db.WorkOrders.Any(w => w.AssetId == x.Id && w.AssetWasDown && w.DowntimeEventId == null && w.CompletedAt >= s && w.CompletedAt < e))
+            .Select(x => new AssetClock(x.Id, x.AssetNumber, x.Name, x.RunsHoursPerDay, x.RunsOn, x.DowntimeCostPerHour)).ToListAsync(ct);
+        var history = await Downtime.LoadAsync(db, clocks.Select(x => x.Id).ToList(), a.From, a.To, tz, ct);
+        var now = DateTimeOffset.UtcNow;
+        var measured = clocks.Select(x =>
         {
-            var l = g.ToList();
-            var withDown = l.Where(f => f.Downtime > 0).ToList();
-            if (withDown.Count > 0) return Math.Round(withDown.Average(f => f.Downtime), 1);
-            var rep = l.Where(f => f.RepairHours is not null).ToList();
-            return rep.Count == 0 ? null : Math.Round((decimal)rep.Average(f => f.RepairHours!.Value), 1);
-        }
-        var rows = fs.GroupBy(f => f.AssetId).Select(g =>
-        {
-            var down = g.Sum(f => f.Downtime);
-            return Row(("asset", $"{g.First().AssetNumber} · {g.First().AssetName}"), ("assetId", g.Key), ("failures", g.Count()), ("downtime", down),
-                ("mttr", Mttr(g)), ("mtbf", Math.Round(Math.Max(periodHours - down, 0) / g.Count(), 0)),
-                ("availability", Pct(Math.Max(periodHours - down, 0), periodHours)), ("downtimeCost", g.First().CostPerHour is { } cph ? R2(cph * down) : null));
-        }).OrderByDescending(r => (int)r["failures"]!).ThenByDescending(r => (decimal)r["downtime"]!).Take(100).ToList();
-        var assets = fs.Select(f => f.AssetId).Distinct().Count();
-        return new("reliability", "Asset reliability", $"{Period(a)} · breakdowns are breakdown work orders or work where the asset was down",
+            var h = history[x.Id];
+            var m = FourC.Cmms.Core.Assets.DowntimeMath.Measure(h.Stops, h.Typed, a.From, a.To, now, x.RunsHoursPerDay, x.RunsOn, tz);
+            return (Asset: x, Planned: m.PlannedHours, Down: m.DownHours, Breakdowns: h.Stops.Count(st => st.Start >= s && st.Start < e) + h.OldBreakdowns.Count);
+        }).ToList();
+        var rows = measured.Select(x => Row(("asset", $"{x.Asset.AssetNumber} · {x.Asset.Name}"), ("assetId", x.Asset.Id), ("failures", x.Breakdowns), ("downtime", x.Down),
+                ("mttr", x.Breakdowns == 0 ? null : (decimal?)Math.Round(x.Down / x.Breakdowns, 1)),
+                ("mtbf", x.Breakdowns == 0 ? null : (decimal?)Math.Round(Math.Max(x.Planned - x.Down, 0) / x.Breakdowns, 1)),
+                ("availability", Pct(Math.Max(x.Planned - x.Down, 0), x.Planned)),
+                ("downtimeCost", x.Asset.DowntimeCostPerHour is { } cph ? R2(cph * x.Down) : null)))
+            .OrderByDescending(r => (int)r["failures"]!).ThenByDescending(r => (decimal)r["downtime"]!).Take(100).ToList();
+        var breakdowns = measured.Sum(x => x.Breakdowns);
+        var down = measured.Sum(x => x.Down);
+        return new("reliability", "Asset reliability", $"{Period(a)} · breakdowns are stops that began in the period; downtime counts each asset's running time only",
             [new("asset", "Asset"), new("failures", "Breakdowns", "number"), new("downtime", "Downtime (h)", "hours"), new("mttr", "MTTR (h)", "hours"), new("mtbf", "MTBF (h)", "hours"),
              new("availability", "Availability", "percent"), new("downtimeCost", "Downtime cost", "currency")],
             rows, new Chart("bar", "asset", ["failures"]),
-            [new("Breakdowns", fs.Count), new("Assets affected", assets), new("Total downtime (h)", fs.Sum(f => f.Downtime), "hours"), new("Overall MTTR (h)", Mttr(fs), "hours")]);
+            [new("Breakdowns", breakdowns), new("Assets affected", measured.Count(x => x.Breakdowns > 0 || x.Down > 0)), new("Total downtime (h)", down, "hours"),
+             new("Overall MTTR (h)", breakdowns == 0 ? null : Math.Round(down / breakdowns, 1), "hours")]);
+    }
+
+    private static async Task<ReportResult> DowntimeLogAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
+    {
+        var (tz, s, e) = await LocalPeriodAsync(db, a, ct);
+        var q = db.DowntimeEvents.AsNoTracking().Where(d => d.StartedAt < e && (d.EndedAt == null || d.EndedAt > s));
+        if (a.SiteId is { } site) q = q.Where(d => d.Asset!.SiteId == site);
+        var stops = await q.OrderBy(d => d.StartedAt).Take(5000)
+            .Select(d => new { d.AssetId, d.Asset!.AssetNumber, AssetName = d.Asset.Name, d.Asset.RunsHoursPerDay, d.Asset.RunsOn, d.StartedAt, d.EndedAt, d.Reason, d.SourceNumber })
+            .ToListAsync(ct);
+        var now = DateTimeOffset.UtcNow;
+        var byHand = Translator.T("By hand");
+        var rows = stops.Select(x => Row(("asset", $"{x.AssetNumber} · {x.AssetName}"), ("assetId", x.AssetId), ("start", x.StartedAt), ("end", x.EndedAt),
+            ("hours", FourC.Cmms.Core.Assets.DowntimeMath.Measure([new(x.StartedAt, x.EndedAt)], [], a.From, a.To, now, x.RunsHoursPerDay, x.RunsOn, tz).DownHours),
+            ("reason", x.Reason), ("from", x.SourceNumber ?? byHand))).ToList();
+        return new("downtime", "Downtime log", $"{Period(a)} · hours count each asset's running time only",
+            [new("asset", "Asset"), new("start", "Start", "datetime"), new("end", "End", "datetime"), new("hours", "Hours", "hours"), new("reason", "Reason"), new("from", "Source")],
+            rows, null,
+            [new("Stops", rows.Count), new("Assets stopped", stops.Select(x => x.AssetId).Distinct().Count()), new("Total hours", rows.Sum(r => (decimal)r["hours"]!), "hours")]);
     }
 
     private static async Task<ReportResult> FailureParetoAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)

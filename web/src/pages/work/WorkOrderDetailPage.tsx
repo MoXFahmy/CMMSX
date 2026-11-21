@@ -22,6 +22,8 @@ import { StockTxModal } from '@/components/StockTxModal';
 import { TxTypeBadge } from '@/components/InventoryBadges';
 import { fmtDate, fmtDateTime, fmtMoney, fmtPrice, fmtQty, fromNow, handleFormError, hoursText, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { PlannedHoursCard, PlannedPartsCard, PlanVsActualCard } from './WorkOrderPlanning';
+import { BackRunningButton } from '@/pages/assets/AssetDowntime';
+import { downFor } from '@/components/downtime';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={2}><Text fz="xs" c="dimmed">{label}</Text><Text fz="sm" fw={500} style={{ whiteSpace: 'pre-wrap' }}>{children === undefined || children === null || children === '' ? '—' : children}</Text></Stack>;
@@ -95,6 +97,12 @@ export function WorkOrderDetailPage() {
             </Menu>
           )}
         </>} />
+      {w.assetId && w.assetDownSince && (
+        <Alert color="red" mb="md" icon={<IconAlertTriangle size={16} />}
+          title={t('downtime.assetDownSince', { asset: w.asset?.assetNumber ?? '', when: fmtDateTime(w.assetDownSince), for: downFor(w.assetDownSince, new Date()) })}>
+          <Group justify="space-between" gap="xs"><Text fz="sm">{t('downtime.backRunningHint')}</Text>{can(P.woExecute) && <BackRunningButton assetId={w.assetId} size="xs" />}</Group>
+        </Alert>
+      )}
       <Tabs value={tab} onChange={setTab} keepMounted={false}>
         <Tabs.List mb="md">
           <Tabs.Tab value="details">{t('wo.details')}</Tabs.Tab>
@@ -143,7 +151,8 @@ export function WorkOrderDetailPage() {
                       <Field label={t('wo.causeNotes')}>{w.causeNotes}</Field>
                       <Field label={t('wo.preventionNotes')}>{w.preventionNotes}</Field>
                       <Field label={t('wo.failureCode')}>{w.failureCode ? `${w.failureCode.code} · ${w.failureCode.name}` : null}</Field>
-                      <Field label={t('wo.downtimeHours')}>{w.assetWasDown ? hoursText(w.downtimeHours ?? 0) : t('common.no')}</Field>
+                      <Field label={t('wo.downtimeHours')}>{w.assetWasDown ? hoursText(w.downtimeHours ?? 0) : t('common.no')}
+                        {w.downtime && <Text span fz="xs" c="dimmed"> · {t('downtime.fromLogShort')}</Text>}</Field>
                     </SimpleGrid>
                     {w.signatures.length > 0 && (
                       <Group mt="md" gap="lg" align="flex-end">
@@ -391,7 +400,7 @@ function WoPartsPanel({ w, canPlan, canIssue, canOrder, onChange, currency }: { 
         </Card>
       )}
       {kind && <StockTxModal kind={kind} opened onClose={() => setKind(null)} onDone={onChange}
-        defaults={{ workOrderId: w.id, workOrder: { id: w.id, number: w.number, title: w.title }, partId: part?.id, part, storeId: preset.storeId, quantity: preset.quantity }} />}
+        defaults={{ workOrderId: w.id, workOrder: { id: w.id, number: w.number, title: w.title }, assetId: w.assetId, partId: part?.id, part, storeId: preset.storeId, quantity: preset.quantity }} />}
     </Stack>
   );
 }
@@ -476,6 +485,7 @@ function CompleteModal({ opened, onClose, w, onDone }: { opened: boolean; onClos
   const calcDowntime = () => { const { actualStart: s, actualEnd: e } = form.values; if (s && e && e > s) form.setFieldValue('downtimeHours', Math.round(((e.getTime() - s.getTime()) / 36e5) * 100) / 100); };
   const submit = form.onSubmit(async (v) => {
     try {
+      // With a stop on the asset's downtime log, the server fills the downtime from the stop.
       await post(`/work-orders/${w.id}/status`, { status: 'Completed', ...v, downtimeHours: v.downtimeHours === '' ? null : v.downtimeHours,
         actualStart: v.actualStart ? dayjs(v.actualStart).toISOString() : null, actualEnd: v.actualEnd ? dayjs(v.actualEnd).toISOString() : null });
       notifySuccess(t('woStatus.Completed')); onClose(); await onDone();
@@ -496,7 +506,14 @@ function CompleteModal({ opened, onClose, w, onDone }: { opened: boolean; onClos
           <Textarea label={t('wo.preventionNotes')} autosize minRows={2} {...form.getInputProps('preventionNotes')} />
         </SimpleGrid>
         <Select label={t('wo.failureCode')} clearable searchable data={(codes ?? []).filter((c) => c.isActive).map((c) => ({ value: c.id, label: `${c.code} · ${c.name}` }))} {...form.getInputProps('failureCodeId')} />
-        {w.assetId && <Group grow align="flex-end">
+        {w.assetId && w.downtime && (
+          <Alert color="blue" variant="light" title={t('wo.assetWasDown')}>
+            {w.downtime.endedAt
+              ? t('downtime.fromLogEnded', { start: fmtDateTime(w.downtime.startedAt), end: fmtDateTime(w.downtime.endedAt) })
+              : t('downtime.fromLogOpen', { start: fmtDateTime(w.downtime.startedAt) })}
+          </Alert>
+        )}
+        {w.assetId && !w.downtime && <Group grow align="flex-end">
           <Switch label={t('wo.assetWasDown')} {...form.getInputProps('assetWasDown', { type: 'checkbox' })} />
           {form.values.assetWasDown && <NumberInput label={t('wo.downtimeHours')} min={0} decimalScale={2} {...form.getInputProps('downtimeHours')}
             rightSectionWidth={110} rightSection={<Button size="compact-xs" variant="subtle" onClick={calcDowntime}>{t('wo.calcDowntime')}</Button>} />}

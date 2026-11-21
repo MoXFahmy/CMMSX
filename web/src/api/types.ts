@@ -62,6 +62,8 @@ export type AssetListItem = {
   parentAssetId?: string; parentAssetNumber?: string; status: AssetStatus; criticality: Criticality;
   manufacturer?: string; model?: string; serialNumber?: string; commissionedOn?: string; warrantyExpiresOn?: string;
   customFields: Record<string, string | null>; updatedAt?: string;
+  /** When the asset's open stop began; empty while it runs. */
+  downSince?: string | null;
 };
 export type AssetDetail = {
   id: string; assetNumber: string; name: string; description?: string; categoryId?: string;
@@ -74,7 +76,19 @@ export type AssetDetail = {
   warrantyNotes?: string; notes?: string; notesToTechnician?: string; customFields: Record<string, string | null>;
   childCount: number; primaryImageId?: string; createdAt: string; createdBy?: string; updatedAt?: string; updatedBy?: string;
   legacyRef?: string; rowVersion: string;
+  runsHoursPerDay: number; runsOn: DayName[]; downSince?: string | null;
 };
+export type DowntimeSource = 'Request' | 'WorkOrder' | 'Manual';
+/** A stop of an asset: no end while it is still down. */
+export type DowntimeStop = {
+  id: string; startedAt: string; endedAt?: string | null; hours: number; reason?: string | null; source: DowntimeSource; sourceNumber?: string | null;
+  links: { kind: 'request' | 'workOrder'; id: string; number: string }[];
+};
+export type AssetDowntime = {
+  downSince?: string | null; runsHoursPerDay: number; runsOn: DayName[];
+  availability30?: number | null; plannedHours30: number; downHours30: number; stops: DowntimeStop[];
+};
+export type AssetPartLine = { partId: string; partNumber: string; name: string; unitOfMeasure: string; quantity: number; note?: string | null };
 export type Category = { id: string; code: string; name: string; description?: string; color?: string; isActive: boolean; assetCount: number };
 export type CustomField = {
   id: string; entityType: string; key: string; label: string; dataType: CustomFieldType; options: string[];
@@ -88,7 +102,7 @@ export type Role = { id: string; name: string; description?: string; isSystem: b
 export type PermissionInfo = { code: string; group: string; name: string };
 export type Dashboard = {
   work: WorkDashboard;
-  totals: { sites: number; locations: number; assets: number; criticalAssets: number; underRepair: number; warrantyExpiring90: number; assetValue: number };
+  totals: { sites: number; locations: number; assets: number; criticalAssets: number; underRepair: number; warrantyExpiring90: number; assetValue: number; assetsDown: number };
   byStatus: { status: AssetStatus; count: number }[];
   byCriticality: { criticality: Criticality; count: number }[];
   byCategory: { categoryId?: string; name: string; color?: string; count: number }[];
@@ -130,6 +144,8 @@ export type WorkOrderDetail = {
   tradeId?: string; tradeName?: string; failureCodeId?: string; failureCode?: { code: string; name: string };
   assignees: { employeeId: string; fullName: string; code: string; plannedHours?: number | null; hourlyRate?: number | null }[]; plannedStart?: string; dueDate?: string; estimatedHours?: number;
   startedAt?: string; completedAt?: string; closedAt?: string; completionNotes?: string; causeNotes?: string; assetWasDown: boolean; downtimeHours?: number;
+  /** The asset stop this work order is about (completing it ends the stop), and whether the asset is down now. */
+  downtime?: { id: string; startedAt: string; endedAt?: string | null; source: DowntimeSource; sourceNumber?: string | null } | null; assetDownSince?: string | null;
   locationNotesToTechnician?: string; request?: { id: string; number: string; requesterName?: string };
   pm?: { id: string; code: string; name: string }; pmDueDate?: string;
   /** Assets a PM round work order covers, in order (empty otherwise). */
@@ -164,7 +180,7 @@ export type WorkRequestDetail = {
   id: string; number: string; title: string; description?: string; status: WorkRequestStatus; priority: WorkPriority; type: WorkType;
   siteId: string; site: { id: string; name: string }; locationId?: string; locationName?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
   requesterName?: string; requesterEmail?: string; requesterPhone?: string; requiredBy?: string; decisionNote?: string; decidedAt?: string; decidedBy?: string;
-  workOrder?: { id: string; number: string; status: WorkOrderStatus }; createdAt: string; createdBy?: string; canCancel: boolean;
+  workOrder?: { id: string; number: string; status: WorkOrderStatus }; createdAt: string; createdBy?: string; canCancel: boolean; downtimeEventId?: string | null;
   respondBy?: string | null; dueAt?: string | null; dueFromTarget: boolean; sla: SlaView;
 };
 export type WorkDashboard = {
@@ -230,7 +246,9 @@ export type PartListItem = {
   id: string; partNumber: string; name: string; manufacturer?: string; unitOfMeasure: string; groupName?: string; averageCost: number; isCritical: boolean; isShelfItem: boolean;
   isActive: boolean; onHand: number; reserved: number; available: number; onOrder: number; low: boolean; value: number;
 };
-export type PartLookup = { id: string; partNumber: string; name: string; unitOfMeasure: string; averageCost: number; lastPurchasePrice?: number; isShelfItem: boolean; preferredSupplierId?: string; onHand: number };
+export type PartLookup = { id: string; partNumber: string; name: string; unitOfMeasure: string; averageCost: number; lastPurchasePrice?: number; isShelfItem: boolean; preferredSupplierId?: string; onHand: number;
+  /** How many the asset's spare-parts list says (only when looked up for an asset). */
+  onAsset?: number | null };
 export type StockLevelItem = { id: string; storeId: string; storeCode: string; storeName: string; bin?: string; minLevel: number; reorderLevel: number; maxLevel: number; reorderQuantity: number; quantityOnHand: number;
   /** Reserved for open work orders' planned parts; available = on hand − reserved (may be negative). */
   reserved: number; available: number };
@@ -242,6 +260,8 @@ export type PartDetail = {
   batches: { storeId: string; batchNumber: string; quantity: number; expiry?: string }[]; onHand: number; reserved: number; available: number; onOrder: number; stockValue: number;
   /** Open work orders holding this part, in the order stock goes to them (earliest due first). */
   reservedFor: { workOrderId: string; workOrderNumber: string; title?: string; storeCode: string; reserved: number; short: number; dueDate?: string }[];
+  /** Assets whose spare-parts list has this part. */
+  usedOn: { assetId: string; assetNumber: string; assetName: string; quantity: number; note?: string | null }[];
   legacyRef?: string; rowVersion: string;
 };
 export type StockTransactionItem = {
@@ -280,7 +300,7 @@ export type PoDetail = {
 // ---------------- Reports ----------------
 export type ReportParam = { name: string; type: 'dateRange' | 'site' | 'select' | 'number'; options?: { value: string; label: string }[]; default?: string | number };
 export type ReportDef = { key: string; category: string; title: string; description: string; permission: string; params: ReportParam[] };
-export type ReportColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date' | 'hours';
+export type ReportColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date' | 'datetime' | 'hours';
 export type ReportResult = {
   key: string; title: string; subtitle?: string; columns: { key: string; label: string; type: ReportColumnType }[]; rows: Record<string, string | number | null>[];
   chart?: { type: 'bar' | 'line' | 'donut'; x: string; series: string[]; stacked: boolean }; summary: { label: string; value: number | null; type: ReportColumnType }[];

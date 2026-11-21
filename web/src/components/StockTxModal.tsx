@@ -15,7 +15,9 @@ import { fmtPrice, fmtQty, handleFormError, notifySuccess, toIsoDate } from './u
 export type StockTxKind = 'receive' | 'issue' | 'return' | 'adjust' | 'transfer';
 
 type Defaults = { partId?: string; part?: { id: string; partNumber: string; name: string } | null; storeId?: string | null; quantity?: number;
-  workOrderId?: string; workOrder?: { id: string; number: string; title?: string } | null };
+  workOrderId?: string; workOrder?: { id: string; number: string; title?: string } | null;
+  /** The work order's asset: its spare parts come first in the part picker. */
+  assetId?: string | null };
 
 /** One dialog for every stock movement: receipts, issues and returns to work, adjustments and store transfers. */
 export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind: StockTxKind; opened: boolean; onClose: () => void; onDone?: () => void | Promise<void>; defaults?: Defaults }) {
@@ -84,7 +86,7 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
     <Modal opened={opened} onClose={onClose} title={t(`inv.tx.${kind}`)} size="lg">
       <form onSubmit={submit}>
         <Stack>
-          <PartPicker label={t('inv.part')} required value={v.partId} initial={defaults?.part} storeId={kind === 'transfer' ? null : v.storeId}
+          <PartPicker label={t('inv.part')} required value={v.partId} initial={defaults?.part} storeId={kind === 'transfer' ? null : v.storeId} assetId={defaults?.assetId}
             onChange={(id, p) => { form.setFieldValue('partId', id); setPart(p); form.setFieldValue('unitCost', ''); }} error={form.errors.partId} />
           <SimpleGrid cols={{ base: 1, sm: 2 }}>
             <Select label={kind === 'transfer' ? t('inv.fromStore') : t('inv.store')} required data={storeOpts} {...form.getInputProps('storeId')} searchable />

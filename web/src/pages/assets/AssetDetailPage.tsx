@@ -23,6 +23,8 @@ import { Attachments } from '@/components/Attachments';
 import { AuditTimeline } from '@/components/AuditTimeline';
 import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtDateTime, fmtMoney, handleFormError, notifyError, notifySuccess } from '@/components/utils';
+import { AssetDowntimeTab } from './AssetDowntime';
+import { AssetPartsTab } from './AssetParts';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -71,7 +73,8 @@ export function AssetDetailPage() {
     <>
       <PageHeader
         crumbs={[{ label: terms.assets, to: '/assets' }, ...(a.parentAsset ? [{ label: a.parentAsset.assetNumber, to: `/assets/${a.parentAsset.id}` }] : []), { label: a.assetNumber }]}
-        title={<>{a.name}</>} badge={<Group gap={6}><StatusBadge status={a.status} /><CriticalityBadge value={a.criticality} /></Group>}
+        title={<>{a.name}</>} badge={<Group gap={6}><StatusBadge status={a.status} /><CriticalityBadge value={a.criticality} />
+          {a.downSince && <Badge color="red" variant="filled" style={{ cursor: 'pointer' }} onClick={() => setTab('downtime')}>{t('downtime.down')}</Badge>}</Group>}
         subtitle={<>{a.assetNumber}{a.category && <> · {a.category.name}</>}{a.legacyRef && <> · <Badge size="xs" variant="outline" color="gray">4CSQL</Badge></>}</>}
         actions={<>
           {can(P.assetsEdit) && <Button leftSection={<IconEdit size={16} />} component={Link} to={`/assets/${a.id}/edit`}>{t('common.edit')}</Button>}
@@ -96,6 +99,8 @@ export function AssetDetailPage() {
           {applicableFields.length > 0 && <Tabs.Tab value="specs">{t('assets.specifications')}</Tabs.Tab>}
           <Tabs.Tab value="components" rightSection={a.childCount ? <Badge size="xs" variant="default">{a.childCount}</Badge> : null}>{t('assets.components')}</Tabs.Tab>
           {can(P.woView) && <Tabs.Tab value="work">{t('assets.workOrders')}</Tabs.Tab>}
+          <Tabs.Tab value="downtime" rightSection={a.downSince ? <Badge size="xs" color="red" variant="filled">{t('downtime.down')}</Badge> : null}>{t('downtime.tab')}</Tabs.Tab>
+          <Tabs.Tab value="parts">{t('assetParts.tab')}</Tabs.Tab>
           {can(P.pmView) && <Tabs.Tab value="pm">{t('pm.maintenancePlan')}</Tabs.Tab>}
           <Tabs.Tab value="files">{t('assets.files')}</Tabs.Tab>
           <Tabs.Tab value="transfers">{t('assets.transfers')}</Tabs.Tab>
@@ -214,6 +219,8 @@ export function AssetDetailPage() {
             <MetersTab assetId={a.id} />
           </Stack>
         </Tabs.Panel>
+        <Tabs.Panel value="downtime"><AssetDowntimeTab assetId={a.id} /></Tabs.Panel>
+        <Tabs.Panel value="parts"><AssetPartsTab assetId={a.id} /></Tabs.Panel>
         <Tabs.Panel value="files"><Card><Attachments entityType="Asset" entityId={a.id} canEdit={can(P.assetsEdit)} onChanged={refresh} /></Card></Tabs.Panel>
         <Tabs.Panel value="transfers">
           <Card>

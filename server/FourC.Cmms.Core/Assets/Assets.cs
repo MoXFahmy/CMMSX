@@ -1,4 +1,5 @@
 using FourC.Cmms.Core.Common;
+using FourC.Cmms.Core.Inventory;
 using FourC.Cmms.Core.Locations;
 
 namespace FourC.Cmms.Core.Assets;
@@ -54,6 +55,22 @@ public class Asset : TenantEntity
     public string? Notes { get; set; }
     public string? NotesToTechnician { get; set; }
     public Dictionary<string, string?> CustomFields { get; set; } = [];
+
+    /// <summary>How many hours a day the asset is meant to run (0.5–24), for availability.</summary>
+    public decimal RunsHoursPerDay { get; set; } = 24;
+    /// <summary>The weekdays the asset is meant to run.</summary>
+    public List<DayOfWeek> RunsOn { get; set; } = [.. Enum.GetValues<DayOfWeek>()];
+}
+
+/// <summary>A spare part an asset takes, with how many (its spare-parts list).</summary>
+public class AssetPart : TenantEntity
+{
+    public Guid AssetId { get; set; }
+    public Asset? Asset { get; set; }
+    public Guid PartId { get; set; }
+    public Part? Part { get; set; }
+    public decimal Quantity { get; set; }
+    public string? Note { get; set; }
 }
 
 /// <summary>History of asset moves between sites/locations (legacy assetstransfer).</summary>

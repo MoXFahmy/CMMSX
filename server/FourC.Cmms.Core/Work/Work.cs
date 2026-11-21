@@ -47,6 +47,8 @@ public class WorkRequest : TenantEntity
     public DateTimeOffset? DecidedAt { get; set; }
     public Guid? DecidedById { get; set; }
     public Guid? WorkOrderId { get; set; }
+    /// <summary>The asset stop this request reported ("The asset is down").</summary>
+    public Guid? DowntimeEventId { get; set; }
 }
 
 public class WorkOrder : TenantEntity
@@ -99,6 +101,8 @@ public class WorkOrder : TenantEntity
     public string? RequestedBy { get; set; }
     public bool AssetWasDown { get; set; }
     public decimal? DowntimeHours { get; set; }
+    /// <summary>The asset stop this work order is about; completing it ends the stop.</summary>
+    public Guid? DowntimeEventId { get; set; }
 
     public List<WorkOrderAssignee> Assignees { get; set; } = [];
     /// <summary>Assets a PM round work order covers, in round order. Empty for all other work orders (they use <see cref="AssetId"/>).</summary>

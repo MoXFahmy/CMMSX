@@ -3,7 +3,7 @@ import { DonutChart, BarChart } from '@mantine/charts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { IconAlertTriangle, IconBox, IconCash, IconShieldCheck, IconTool, IconDatabaseImport, IconClipboardList, IconClockExclamation, IconCircleCheck, IconInbox, IconHourglass, IconBellRinging } from '@tabler/icons-react';
+import { IconAlertOctagon, IconAlertTriangle, IconBox, IconCash, IconShieldCheck, IconTool, IconDatabaseImport, IconClipboardList, IconClockExclamation, IconCircleCheck, IconInbox, IconHourglass, IconBellRinging } from '@tabler/icons-react';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { get, post } from '@/api/client';
 import type { Dashboard } from '@/api/types';
@@ -91,8 +91,9 @@ export function DashboardPage() {
           )}
         </>
       )}
-      <SimpleGrid cols={{ base: 1, xs: 2, lg: 4 }} mb="lg">
+      <SimpleGrid cols={{ base: 1, xs: 2, lg: can(P.assetsView) ? 5 : 4 }} mb="lg">
         <Kpi label={t('dashboard.totalAssets')} value={data.totals.assets.toLocaleString()} icon={IconBox} color="brand" to="/assets" />
+        {can(P.assetsView) && <Kpi label={t('dashboard.assetsDown')} value={(data.totals.assetsDown ?? 0).toLocaleString()} icon={IconAlertOctagon} color="red" to="/assets?downNow=true" />}
         <Kpi label={t('dashboard.critical')} value={data.totals.criticalAssets.toLocaleString()} icon={IconAlertTriangle} color="red" to="/assets?criticality=Critical" />
         <Kpi label={t('dashboard.underRepair')} value={data.totals.underRepair.toLocaleString()} icon={IconTool} color="orange" to="/assets?status=UnderRepair" />
         <Kpi label={t('dashboard.assetValue')} value={fmtMoney(data.totals.assetValue, currency)} icon={IconCash} color="teal" />

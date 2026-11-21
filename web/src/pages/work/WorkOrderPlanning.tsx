@@ -90,7 +90,7 @@ export function PlannedPartsCard({ w, canPlan, canIssue, onChange, onIssue, curr
         <form onSubmit={submit}>
           <Stack>
             {editing === 'new'
-              ? <PartPicker label={t('inv.part')} required value={form.getValues().partId} onChange={(id) => form.setFieldValue('partId', id)} error={form.errors.partId} />
+              ? <PartPicker label={t('inv.part')} required value={form.getValues().partId} assetId={w.assetId} onChange={(id) => form.setFieldValue('partId', id)} error={form.errors.partId} />
               : editing && <Text fw={600}>{editing.partNumber} · {editing.partName}</Text>}
             <Select label={t('inv.store')} data={storeOpts} searchable clearable={editing === 'new'} placeholder={t('plan.defaultStore')} {...form.getInputProps('storeId')} />
             <NumberInput label={t('inv.quantity')} required min={0} decimalScale={3} {...form.getInputProps('quantity')} />

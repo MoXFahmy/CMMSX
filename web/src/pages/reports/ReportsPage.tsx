@@ -14,7 +14,7 @@ import type { ReportColumnType, ReportDef, ReportResult } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { useHierarchy } from '@/components/LocationPicker';
-import { fmtDate, fmtNumber, fmtPrice } from '@/components/utils';
+import { fmtDate, fmtDateTime, fmtNumber, fmtPrice } from '@/components/utils';
 import { downloadCsv } from '../inventory/InventoryPage';
 
 const CATEGORY_ICON: Record<string, typeof IconTool> = { Work: IconTool, Reliability: IconAlertTriangle, Costs: IconCoin, Assets: IconBox, Inventory: IconPackage, Purchasing: IconShoppingCart };
@@ -93,6 +93,7 @@ export function ReportViewPage() {
       case 'hours': return fmtNumber(Math.round(Number(v) * 10) / 10);
       case 'number': return fmtNumber(Number(v));
       case 'date': return fmtDate(String(v));
+      case 'datetime': return fmtDateTime(String(v));
       default: return String(v);
     }
   };
