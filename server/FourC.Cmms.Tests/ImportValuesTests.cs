@@ -40,6 +40,9 @@ public class ImportValuesTests
         Assert.Equal("Thing must be a date (yyyy-mm-dd).", Problem("21/11/2026", date));
         Assert.Equal(7.5m, Read("7.5", Col(ValueKind.Number)));
         Assert.Equal("Thing must be a number.", Problem("seven", Col(ValueKind.Number)));
+        // A comma is never a thousands separator or a decimal mark here: "12,5" must not become 125.
+        Assert.Equal("Thing must be a number, with . for decimals and no thousands separators.", Problem("12,5", Col(ValueKind.Number)));
+        Assert.Equal("Thing must be a number, with . for decimals and no thousands separators.", Problem("1,250", Col(ValueKind.Number)));
         Assert.Equal(3, Read(3m, Col(ValueKind.Integer)));
         Assert.Equal("Thing must be a whole number.", Problem(2.5m, Col(ValueKind.Integer)));
     }
@@ -67,6 +70,19 @@ public class ImportValuesTests
         Assert.Equal(false, Read("no", yes));
         Assert.Equal("Thing must be Yes or No.", Problem("maybe", yes));
         Assert.Equal(new List<string> { "ELEC", "MECH" }, Read(" ELEC , MECH ,", Col(ValueKind.CodeList)));
+    }
+
+    [Fact]
+    public void A_cut_off_export_never_splits_a_task_list()
+    {
+        Dictionary<string, object?> Row(string task, int step) => new() { ["taskCode"] = task, ["step"] = step };
+        List<Dictionary<string, object?>> rows = [Row("A", 1), Row("A", 2), Row("A", 3), Row("B", 1), Row("B", 2), Row("B", 3)];
+        var (kept, cut) = ImportWorkbook.WholeTasks(rows, 4);
+        Assert.True(cut);
+        Assert.Equal(["A", "A", "A"], kept.Select(r => (string)r["taskCode"]!));
+        var (all, notCut) = ImportWorkbook.WholeTasks(rows, 6);
+        Assert.False(notCut);
+        Assert.Equal(6, all.Count);
     }
 
     [Fact]

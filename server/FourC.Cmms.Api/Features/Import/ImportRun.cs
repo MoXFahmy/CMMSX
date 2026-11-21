@@ -133,6 +133,10 @@ internal interface ISheetImporter
     IReadOnlyList<ImportRow> Order(IReadOnlyList<ImportRow> rows, ImportContext c) => rows;
     Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct);
     Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct);
+
+    /// <summary>A last look at the sheet's results before <see cref="FinishAsync"/> (a list importer blocks a task with a problem row).</summary>
+    IReadOnlyList<RowResult> Review(ImportContext c, IReadOnlyList<ImportRow> rows, IReadOnlyList<RowResult> results) => results;
+
     Task FinishAsync(ImportContext c, CancellationToken ct) => Task.CompletedTask;
 }
 
@@ -147,9 +151,15 @@ public static class ImportRun
 
     private sealed class Stopped : Exception;
 
-    public static async Task<ImportResult> RunAsync(CmmsDbContext db, ITenantContext ctx, SpreadsheetBook book, bool save, TimeSpan budget, CancellationToken ct)
+    public static Task<ImportResult> RunAsync(CmmsDbContext db, ITenantContext ctx, SpreadsheetBook book, bool save, TimeSpan budget, CancellationToken ct) =>
+        RunAsync(db, ctx, book, save, budget, null, ct);
+
+    /// <summary>As above, with the time taken so far read from <paramref name="elapsed"/> (tests stand in a clock).</summary>
+    public static async Task<ImportResult> RunAsync(CmmsDbContext db, ITenantContext ctx, SpreadsheetBook book, bool save, TimeSpan budget,
+        Func<TimeSpan>? elapsed, CancellationToken ct)
     {
-        var clock = Stopwatch.StartNew();
+        var stopwatch = Stopwatch.StartNew();
+        var clock = elapsed ?? (() => stopwatch.Elapsed);
         var plan = Match(book);
         foreach (var (def, sheet) in plan)
         {
@@ -158,19 +168,27 @@ public static class ImportRun
                 throw new DomainException($"{def.Name} has {count:N0} rows; the limit is 5,000 per sheet. Split it into smaller files.");
         }
 
+        // Database work still running when the time is up is cancelled; the run then stops like any other over-time run.
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var remaining = budget - clock();
+        if (remaining > TimeSpan.Zero) deadline.CancelAfter(remaining);
+        var token = deadline.Token;
+
         var strategy = db.Database.CreateExecutionStrategy();
         return await strategy.ExecuteAsync(async () =>
         {
             db.ChangeTracker.Clear();
-            await using var tx = await db.Database.BeginTransactionAsync(ct);
+            await using var tx = await db.Database.BeginTransactionAsync(token);
             try
             {
-                var result = await RunSheetsAsync(db, ctx, plan, clock, budget, ct);
-                if (save) await tx.CommitAsync(ct); else await tx.RollbackAsync(ct);
+                var result = await RunSheetsAsync(db, ctx, plan, clock, budget, token);
+                // The last word on time: nothing is committed once the page may have given up waiting.
+                if (clock() > budget) throw new Stopped();
+                if (save) await tx.CommitAsync(CancellationToken.None); else await tx.RollbackAsync(CancellationToken.None);
                 db.ChangeTracker.Clear();
                 return result with { Saved = save };
             }
-            catch (Stopped)
+            catch (Exception e) when (e is Stopped || e is OperationCanceledException && deadline.IsCancellationRequested && !ct.IsCancellationRequested)
             {
                 await tx.RollbackAsync(CancellationToken.None);
                 db.ChangeTracker.Clear();
@@ -191,9 +209,9 @@ public static class ImportRun
     private static bool IsBlank(IReadOnlyList<object?> row) => row.All(v => v is null || v is string s && string.IsNullOrWhiteSpace(s));
 
     private static async Task<ImportResult> RunSheetsAsync(CmmsDbContext db, ITenantContext ctx, List<(SheetDef Def, SpreadsheetSheet Sheet)> plan,
-        Stopwatch clock, TimeSpan budget, CancellationToken ct)
+        Func<TimeSpan> clock, TimeSpan budget, CancellationToken ct)
     {
-        void Check() { if (clock.Elapsed > budget) throw new Stopped(); }
+        void Check() { if (clock() > budget) throw new Stopped(); }
         Check();
         var c = await ContextAsync(db, ctx, ct);
         var customFields = c.AssetFields;
@@ -221,8 +239,12 @@ public static class ImportRun
                 var result = row.HasProblems ? Problem(row, key) : await importer.ImportAsync(c, row, ct);
                 outcomes.Add(result);
             }
+            outcomes = [.. importer.Review(c, rows, outcomes)];
+            Check();
             await importer.FinishAsync(c, ct);
+            Check();
             await db.SaveChangesAsync(ct);
+            Check();
             outcomes = [.. outcomes.OrderBy(r => r.Row)];
             results.Add(new SheetResult(def.Key,
                 outcomes.Count(r => r.Outcome == RowOutcome.New), outcomes.Count(r => r.Outcome == RowOutcome.Changed),

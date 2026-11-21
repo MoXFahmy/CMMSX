@@ -48,6 +48,17 @@ public class ImportExportTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Text_with_windows_line_breaks_round_trips_unchanged()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        await OkAsync(await c.PostAsJsonAsync("/api/suppliers", new { code = "SKF", name = "SKF", notes = "Line 1\r\nLine 2", isContractor = false, isActive = true }));
+        var current = await (await c.GetAsync("/api/import/current")).Content.ReadAsByteArrayAsync();
+        var suppliers = SheetOf(await CheckAsync(c, current), "Suppliers");
+        Assert.Equal((0, 1), (Count(suppliers, "changed"), Count(suppliers, "unchanged")));
+    }
+
+    [SkippableFact]
     public async Task The_template_has_every_sheet_and_heading()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

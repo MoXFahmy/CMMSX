@@ -25,12 +25,13 @@ public static class ImportValues
         switch (col.Kind)
         {
             case ValueKind.Text:
-                value = text;
+                value = text.Replace("\r\n", "\n");
                 return true;
             case ValueKind.Number:
                 if (cell is decimal num) { value = num; return true; }
-                if (cell is string && decimal.TryParse(text, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed)) { value = parsed; return true; }
-                problem = Translator.T($"{col.Heading} must be a number.");
+                // No thousands separators: in a comma-decimal file "12,5" would otherwise read as 125.
+                if (cell is string && !text.Contains(',') && decimal.TryParse(text, NumberStyles.Float, CultureInfo.InvariantCulture, out var parsed)) { value = parsed; return true; }
+                problem = Translator.T(text.Contains(',') ? $"{col.Heading} must be a number, with . for decimals and no thousands separators." : $"{col.Heading} must be a number.");
                 return false;
             case ValueKind.Integer:
                 if ((cell is decimal whole && whole == decimal.Truncate(whole) && whole is >= int.MinValue and <= int.MaxValue))

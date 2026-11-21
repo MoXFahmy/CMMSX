@@ -60,6 +60,42 @@ public class ImportPmTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Removed_steps_and_parts_show_in_the_preview()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        await RunAsync(c, Book([.. Basics().Where(x => x.Name != "Parts"),
+            new Sheet("Parts", ["Part number", "Name", "Unit"], ["BRG-6205", "Ball bearing", "EA"], ["SEAL-01", "Seal", "EA"]),
+            new Sheet("PM steps", ["Task code", "Step", "Description"], ["LUB-M", 1m, "Grease"], ["LUB-M", 2m, "Check belts"], ["LUB-M", 3m, "Clean"]),
+            new Sheet("PM parts", ["Task code", "Part number", "Quantity"], ["LUB-M", "BRG-6205", 2m], ["LUB-M", "SEAL-01", 1m])]));
+
+        var check = await CheckAsync(c, Book(
+            new Sheet("PM steps", ["Task code", "Step", "Description"], ["LUB-M", 1m, "Grease"], ["LUB-M", 2m, "Check belts"]),
+            new Sheet("PM parts", ["Task code", "Part number", "Quantity"], ["LUB-M", "BRG-6205", 2m])));
+        var steps = SheetOf(check, "PmSteps");
+        Assert.Equal(1, Count(steps, "changed"));
+        var change = steps.GetProperty("rows")[0].GetProperty("changes").EnumerateArray().Single();
+        Assert.Equal(("Steps", "Grease; Check belts; Clean", "Grease; Check belts"),
+            (change.GetProperty("column").GetString(), change.GetProperty("old").GetString(), change.GetProperty("new").GetString()));
+        Assert.Equal(1, Count(SheetOf(check, "PmParts"), "changed"));
+    }
+
+    [SkippableFact]
+    public async Task A_problem_row_keeps_the_task_list()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        await RunAsync(c, Book([.. Basics(),
+            new Sheet("PM steps", ["Task code", "Step", "Description"], ["LUB-M", 1m, "Grease"], ["LUB-M", 2m, "Check belts"])]));
+
+        var result = await RunAsync(c, Book(new Sheet("PM steps", ["Task code", "Step", "Description"], ["LUB-M", 1m, "Grease more"], ["LUB-M", 2m, null])));
+        var sheet = SheetOf(result, "PmSteps");
+        Assert.Equal(2, Count(sheet, "problems"));
+        Assert.Contains("Not saved: fix row 3 of this task first.", ProblemsOf(sheet));
+        Assert.Equal(["Grease", "Check belts"], (await TaskAsync(c, "LUB-M")).GetProperty("steps").EnumerateArray().Select(x => x.GetString()));
+    }
+
+    [SkippableFact]
     public async Task A_schedule_comes_out_as_on_screen()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
@@ -70,6 +106,21 @@ public class ImportPmTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var s = await ScheduleAsync(c, "PM-LUB-01");
         Assert.Equal("2026-12-01", s.GetProperty("nextDueDate").GetString());
         Assert.Equal("Every 3 months", s.GetProperty("schedule").GetString());
+    }
+
+    [SkippableFact]
+    public async Task A_new_schedule_needs_its_task_and_site()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        var result = await RunAsync(c, Book([.. Basics(),
+            new Sheet("PM schedules", ScheduleHeadings,
+                ["PM-A", "No task", null, "CAI", "PUMP-01", "Every", 1m, "Month", null, new DateOnly(2026, 12, 1)],
+                ["PM-B", "No site", "LUB-M", null, "PUMP-01", "Every", 1m, "Month", null, new DateOnly(2026, 12, 1)])]));
+        var sheet = SheetOf(result, "PmSchedules");
+        Assert.Equal((0, 2), (Count(sheet, "new"), Count(sheet, "problems")));
+        Assert.Contains("Task code is required.", ProblemsOf(sheet));
+        Assert.Contains("Choose a site.", ProblemsOf(sheet));
     }
 
     [SkippableFact]

@@ -32,7 +32,11 @@ public static class ImportWorkbook
         foreach (var def in defs)
         {
             var rows = await RowsAsync(c, def.Key, ct);
-            if (rows.Count > MaxExportRows) { cut.Add(def.Name); rows = rows.Take(MaxExportRows).ToList(); }
+            var wasCut = false;
+            // A task's steps or parts go out whole or not at all: loading a list back replaces the task's list.
+            if (def.Key is "PmSteps" or "PmParts") (rows, wasCut) = WholeTasks(rows, MaxExportRows);
+            else if (rows.Count > MaxExportRows) { wasCut = true; rows = rows.Take(MaxExportRows).ToList(); }
+            if (wasCut) cut.Add(def.Name);
             sheets.Add(new ExportSheet(def.Name, Columns(def), rows.Select(r => def.Columns.Select(col => Cell(r.GetValueOrDefault(col.Key))).ToArray()).ToList()));
         }
         sheets.Add(Help(defs, cut));
@@ -57,6 +61,19 @@ public static class ImportWorkbook
             sheets.Add(new ExportSheet(source.Name, columns, rows));
         }
         return TableExport.Xlsx(sheets);
+    }
+
+    /// <summary>
+    /// At most <paramref name="max"/> rows, ending at a task boundary (rows come grouped by task code), and whether any
+    /// were left out.
+    /// </summary>
+    public static (List<Dictionary<string, object?>> Rows, bool Cut) WholeTasks(List<Dictionary<string, object?>> rows, int max)
+    {
+        if (rows.Count <= max) return (rows, false);
+        var keep = max;
+        var boundary = rows[max]["taskCode"] as string;
+        while (keep > 0 && string.Equals(rows[keep - 1]["taskCode"] as string, boundary, StringComparison.OrdinalIgnoreCase)) keep--;
+        return (rows.Take(keep).ToList(), true);
     }
 
     private static List<SheetDef> Defs(IReadOnlyList<Core.Assets.CustomFieldDefinition> fields) =>
@@ -121,14 +138,14 @@ public static class ImportWorkbook
                 return Of(new StockImporter(), c, await db.StockLevels.AsNoTracking().OrderBy(x => x.Part!.PartNumber).ThenBy(x => x.Store!.Code).Take(take).ToListAsync(ct));
             case "PmTasks": return Of(new PmTaskImporter(), c, await db.PmTasks.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
             case "PmSteps":
-                return (await db.PmTaskSteps.AsNoTracking().Where(s => db.PmTasks.Any(t => t.Id == s.PmTaskId)).OrderBy(s => s.PmTaskId).ThenBy(s => s.Sequence)
-                        .Take(take).ToListAsync(ct))
-                    .Select(s => new Dictionary<string, object?> { ["taskCode"] = c.CodeOf.GetValueOrDefault(s.PmTaskId), ["step"] = s.Sequence, ["description"] = s.Description })
-                    .OrderBy(r => (string?)r["taskCode"], StringComparer.OrdinalIgnoreCase).ThenBy(r => (int)r["step"]!).ToList();
+                // Ordered by task code, with room to finish the task at the 5,000-row boundary (at most 300 steps a task).
+                return (await (from s in db.PmTaskSteps.AsNoTracking() join t in db.PmTasks on s.PmTaskId equals t.Id
+                               orderby t.Code, s.Sequence select new { t.Code, s.Sequence, s.Description }).Take(take + 300).ToListAsync(ct))
+                    .Select(s => new Dictionary<string, object?> { ["taskCode"] = s.Code, ["step"] = s.Sequence, ["description"] = s.Description }).ToList();
             case "PmParts":
-                return (await db.PmTaskParts.AsNoTracking().Where(p => db.PmTasks.Any(t => t.Id == p.PmTaskId)).Take(take).ToListAsync(ct))
-                    .Select(p => new Dictionary<string, object?> { ["taskCode"] = c.CodeOf.GetValueOrDefault(p.PmTaskId), ["partNumber"] = c.CodeOf.GetValueOrDefault(p.PartId), ["quantity"] = p.Quantity })
-                    .OrderBy(r => (string?)r["taskCode"], StringComparer.OrdinalIgnoreCase).ThenBy(r => (string?)r["partNumber"], StringComparer.OrdinalIgnoreCase).ToList();
+                return (await (from p in db.PmTaskParts.AsNoTracking() join t in db.PmTasks on p.PmTaskId equals t.Id join part in db.Parts on p.PartId equals part.Id
+                               orderby t.Code, part.PartNumber select new { t.Code, part.PartNumber, p.Quantity }).Take(take + 200).ToListAsync(ct))
+                    .Select(p => new Dictionary<string, object?> { ["taskCode"] = p.Code, ["partNumber"] = p.PartNumber, ["quantity"] = p.Quantity }).ToList();
             case "PmSchedules": return Of(new PmScheduleImporter(), c, await db.PmSchedules.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
             default: return [];
         }

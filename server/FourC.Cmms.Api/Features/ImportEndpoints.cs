@@ -18,12 +18,10 @@ public static class ImportEndpoints
     {
         var g = api.MapGroup("/import").WithTags("Import");
 
-        g.MapPost("/check", async (HttpRequest req, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
-            Results.Ok(await ImportRun.RunAsync(db, ctx, await ReadAsync(req, ct), save: false, Budget, ct)))
+        g.MapPost("/check", (HttpRequest req, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) => RunAsync(req, db, ctx, save: false, ct))
             .RequirePermission(Permissions.SettingsManage).DisableAntiforgery();
 
-        g.MapPost("/run", async (HttpRequest req, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
-            Results.Ok(await ImportRun.RunAsync(db, ctx, await ReadAsync(req, ct), save: true, Budget, ct)))
+        g.MapPost("/run", (HttpRequest req, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) => RunAsync(req, db, ctx, save: true, ct))
             .RequirePermission(Permissions.SettingsManage).DisableAntiforgery();
 
         g.MapGet("/template", async (CmmsDbContext db, CancellationToken ct) =>
@@ -37,13 +35,22 @@ public static class ImportEndpoints
         // The rows a check found problems in, as they were in the file, with the reason beside each.
         g.MapPost("/problems", async (HttpRequest req, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
+            var started = System.Diagnostics.Stopwatch.StartNew();
             var book = await ReadAsync(req, ct);
-            var result = await ImportRun.RunAsync(db, ctx, book, save: false, Budget, ct);
+            var result = await ImportRun.RunAsync(db, ctx, book, save: false, Budget - started.Elapsed, ct);
             return Results.File(ImportWorkbook.Problems(book, result), Xlsx, "CMX-import-problems.xlsx");
         }).RequirePermission(Permissions.SettingsManage).DisableAntiforgery();
     }
 
     private const string Xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
+
+    /// <summary>The time limit counts from the start of the request, so reading the upload uses up part of it.</summary>
+    private static async Task<IResult> RunAsync(HttpRequest req, CmmsDbContext db, ITenantContext ctx, bool save, CancellationToken ct)
+    {
+        var started = System.Diagnostics.Stopwatch.StartNew();
+        var book = await ReadAsync(req, ct);
+        return Results.Ok(await ImportRun.RunAsync(db, ctx, book, save, Budget - started.Elapsed, ct));
+    }
 
     /// <summary>The uploaded workbook ("file"): .xlsx or .csv, up to 10 MB.</summary>
     internal static async Task<SpreadsheetBook> ReadAsync(HttpRequest req, CancellationToken ct)

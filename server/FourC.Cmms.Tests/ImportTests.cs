@@ -57,6 +57,24 @@ public class ImportTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Moving_a_location_keeps_the_paths_below_it_right()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        await RunAsync(c, Book(new Sheet("Sites", SiteHeadings, ["CAI", "Cairo", null]),
+            new Sheet("Locations", LocationHeadings, ["CAI", "B1", "Building 1", null], ["CAI", "F1", "Floor 1", "B1"])));
+
+        // One file: a new area, the building moved under it, its floor (unchanged) and a new room on that floor.
+        await RunAsync(c, Book(new Sheet("Locations", LocationHeadings,
+            ["CAI", "X", "East area", null], ["CAI", "B1", "Building 1", "X"], ["CAI", "F1", "Floor 1", "B1"], ["CAI", "R9", "Room 9", "F1"])));
+        var site = (await Sites(c))[0].GetProperty("id");
+        var locations = (await OkAsync(await c.GetAsync($"/api/locations?siteId={site}"))).GetProperty("items").EnumerateArray().ToList();
+        string PathOf(string code) => locations.Single(l => l.GetProperty("code").GetString() == code).GetProperty("pathName").GetString()!;
+        Assert.Equal("East area › Building 1 › Floor 1", PathOf("F1"));
+        Assert.Equal("East area › Building 1 › Floor 1 › Room 9", PathOf("R9"));
+    }
+
+    [SkippableFact]
     public async Task Codes_and_headings_match_ignoring_case_and_spaces()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
@@ -155,6 +173,28 @@ public class ImportTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var result = await ImportRun.RunAsync(db, ctx, book, save: true, budget: TimeSpan.Zero, CancellationToken.None);
         Assert.False(result.Saved);
         Assert.Equal("This file is too big to import in one go. Split it into smaller files.", result.Stopped);
+        Assert.Equal(0, (await Sites(c)).GetArrayLength());
+    }
+
+    [SkippableFact]
+    public async Task A_run_that_runs_out_of_time_after_its_last_row_saves_nothing()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        var tenantId = (await OkAsync(await c.GetAsync("/api/auth/me"))).GetProperty("tenant").GetProperty("id").GetGuid();
+        using var scope = fx.Factory!.Services.CreateScope();
+        var options = scope.ServiceProvider.GetRequiredService<DbContextOptions<CmmsDbContext>>();
+        var ctx = new FixedTenantContext(tenantId);
+        await using var db = new CmmsDbContext(options, ctx);
+        var book = SpreadsheetReader.Read(new MemoryStream(Book(new Sheet("Sites", SiteHeadings, ["CAI", "Cairo", null]))), "data.xlsx");
+
+        // In time for the start, the sheet and its one row; out of time from then on (finishing, saving, committing).
+        var calls = 0;
+        TimeSpan Clock() => ++calls > 3 ? TimeSpan.FromSeconds(100) : TimeSpan.Zero;
+        var result = await ImportRun.RunAsync(db, ctx, book, save: true, budget: TimeSpan.FromSeconds(45), Clock, CancellationToken.None);
+
+        Assert.False(result.Saved);
+        Assert.NotNull(result.Stopped);
         Assert.Equal(0, (await Sites(c)).GetArrayLength());
     }
 
