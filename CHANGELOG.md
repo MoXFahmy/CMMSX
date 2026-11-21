@@ -20,7 +20,7 @@ meant to run.
 - **Asset › Downtime tab**: down since (and for how long), Back running, availability and downtime over the last 30
   days, the running time, and every stop with its reason and the request or work order it came from. People who
   can edit assets add stops by hand and correct a stop's start, end or reason (each change is kept in the history;
-  stops may not overlap).
+  stops may not overlap), or delete a stop that never happened (its requests and work orders let go of it).
 - **Running time per asset**: "Runs … hours a day" (0.5–24) and "Runs on" (weekdays), on the asset form and in the
   import. Existing assets run 24 hours, every day, until changed.
 - **"Down" badge** on the asset page and list, a **Down now** filter, and an **Assets down now** tile on the dashboard.
@@ -36,7 +36,10 @@ meant to run.
 ### Changed
 - **Asset reliability report**: breakdowns are the stops that began in the period; downtime, MTBF and availability
   count only each asset's running time, in the organization's time zone. Work completed the old way ("Asset was
-  down" with hours typed and no stop) still counts on its completion day. MTBF now shows one decimal.
+  down" with hours typed and no stop) still counts on its completion day, unless it was done while the asset had a
+  stop, which already counts those hours. Breakdown work orders where the asset was not down no longer count as
+  breakdowns. MTBF now shows one decimal.
+- **Failure analysis report**: work orders that share one stop count its downtime once.
 - **Completing a work order with a stop**: "Asset was down" and the downtime hours come from the downtime log and
   can't be typed over.
 

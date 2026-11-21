@@ -302,4 +302,44 @@ public class DowntimeTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Contains(links, l => l.GetProperty("kind").GetString() == "workOrder" && Id(l) == approved.GetProperty("workOrderId").GetGuid()
             && l.GetProperty("number").GetString() == approved.GetProperty("number").GetString());
     }
+
+    [SkippableFact]
+    public async Task A_mistaken_stop_can_be_deleted()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var rid = await NewRequestAsync(o, Request(o, o.Asset, title: "Wrong machine"));
+        var wo = (await Ok(await o.C.PostAsJsonAsync($"/api/work-requests/{rid}/approve", new { }))).GetProperty("workOrderId").GetGuid();
+        var stop = Assert.Single(await StopsAsync(o.Asset));
+        Assert.Equal(HttpStatusCode.NoContent, (await o.C.DeleteAsync($"/api/downtime/{stop.Id}")).StatusCode);
+        Assert.Empty(await StopsAsync(o.Asset));
+        Assert.Null(G(await RequestAsync(o, rid), "downtimeEventId"));
+        var w = await WoAsync(o, wo);
+        Assert.True(IsNull(w, "downtime"));
+        Assert.True(IsNull(w, "assetDownSince"));
+        Assert.Equal(0, (await Ok(await o.C.GetAsync("/api/assets?downNow=true"))).GetProperty("total").GetInt32());
+        var history = await Ok(await o.C.GetAsync($"/api/audit?entityType=DowntimeEvent&entityId={stop.Id}"));
+        Assert.Contains(history.EnumerateArray(), h => h.GetProperty("action").GetString() == "Deleted");
+
+        // A completed work order on a deleted stop no longer says the asset was down.
+        var wo2 = await NewWoAsync(o, Wo(o, o.Asset2));
+        await CompleteAsync(o, wo2);
+        Assert.Equal(HttpStatusCode.NoContent, (await o.C.DeleteAsync($"/api/downtime/{Assert.Single(await StopsAsync(o.Asset2)).Id}")).StatusCode);
+        var done = await WoAsync(o, wo2);
+        Assert.False(done.GetProperty("assetWasDown").GetBoolean());
+        Assert.True(IsNull(done, "downtimeHours"));
+    }
+
+    [SkippableFact]
+    public async Task Changing_the_asset_with_the_box_ticked_starts_a_stop_on_the_new_one()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var wo = await NewWoAsync(o, Wo(o, o.Asset));
+        // The web form keeps the box ticked: the old stop stays open on the old asset, and the new asset gets a stop from now.
+        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset2, down: true)));
+        Assert.Null(Assert.Single(await StopsAsync(o.Asset)).EndedAt);
+        var moved = Assert.Single(await StopsAsync(o.Asset2));
+        Assert.Equal(moved.Id, G((await WoAsync(o, wo)).GetProperty("downtime"), "id"));
+    }
 }

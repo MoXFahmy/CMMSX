@@ -6,8 +6,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
-import { IconAlertTriangle, IconEdit, IconPlayerPlay, IconPlus } from '@tabler/icons-react';
-import { get, post, put } from '@/api/client';
+import { IconAlertTriangle, IconEdit, IconPlayerPlay, IconPlus, IconTrash } from '@tabler/icons-react';
+import { del, get, post, put } from '@/api/client';
+import { confirmDelete } from '@/components/confirm';
 import { DAY_NAMES } from '@/api/types';
 import type { AssetDowntime as Downtime, DowntimeStop } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -129,7 +130,14 @@ function StopModal({ assetId, stop, onClose }: { assetId: string; stop: Downtime
         <Checkbox label={t('downtime.stillDown')} {...form.getInputProps('stillDown', { type: 'checkbox' })} />
         {!form.values.stillDown && <DateTimePicker label={t('downtime.end')} required valueFormat="DD MMM YYYY HH:mm" maxDate={new Date()} {...form.getInputProps('endedAt')} />}
         <Textarea label={t('downtime.reason')} autosize minRows={2} maxLength={500} {...form.getInputProps('reason')} />
-        <Group justify="flex-end"><Button variant="default" onClick={onClose}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>
+        <Group justify="space-between">
+          {stop && stop !== 'new'
+            ? <Button variant="subtle" color="red" leftSection={<IconTrash size={14} />} onClick={() => confirmDelete(t('downtime.stopFrom', { when: fmtDateTime(stop.startedAt) }), async () => {
+                try { await del(`/downtime/${stop.id}`); notifySuccess(t('common.deleted')); await refreshDowntime(qc, assetId); onClose(); } catch (e) { notifyError(e); }
+              }, t('downtime.deleteBody'))}>{t('common.delete')}</Button>
+            : <span />}
+          <Group gap="xs"><Button variant="default" onClick={onClose}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>
+        </Group>
       </Stack></form>
     </Modal>
   );

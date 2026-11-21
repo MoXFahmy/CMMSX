@@ -71,4 +71,44 @@ public class DowntimeReportTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var catalog = await Ok(await c.GetAsync("/api/reports"));
         Assert.Contains(catalog.EnumerateArray(), r => r.GetProperty("key").GetString() == "downtime");
     }
+
+    [SkippableFact]
+    public async Task Work_done_during_a_stop_does_not_count_again()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (c, site, asset) = await SetupAsync();
+        var now = DateTimeOffset.UtcNow;
+        await Ok(await c.PostAsJsonAsync($"/api/assets/{asset}/downtime", new { startedAt = now.AddHours(-7), endedAt = now.AddHours(-1), reason = "Hydraulics" }));
+        // The same incident, completed the old way ("Asset was down", hours typed) without being linked to the stop.
+        var wo = Id(await Ok(await c.PostAsJsonAsync("/api/work-orders", new { title = "Hydraulic pump", siteId = site, assetId = asset, type = "Breakdown", priority = "High", tasks = Array.Empty<string>() })));
+        await Ok(await c.PostAsJsonAsync($"/api/work-orders/{wo}/status", new { status = "Completed", completionNotes = "Replaced the pump", assetWasDown = true, downtimeHours = 3,
+            actualStart = now.AddHours(-5) }));
+
+        var row = Assert.Single((await Ok(await c.GetAsync($"/api/reports/reliability?{Range}"))).GetProperty("rows").EnumerateArray());
+        Assert.Equal(1, row.GetProperty("failures").GetInt32());
+        Assert.Equal(6m, row.GetProperty("downtime").GetDecimal());
+        Assert.Equal(6m, (await Ok(await c.GetAsync($"/api/assets/{asset}/downtime"))).GetProperty("downHours30").GetDecimal());
+    }
+
+    [SkippableFact]
+    public async Task A_stop_shared_by_two_work_orders_counts_once_in_failure_analysis()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (c, site, asset) = await SetupAsync();
+        var now = DateTimeOffset.UtcNow;
+        var wos = new List<Guid>();
+        foreach (var title in new[] { "Press stopped", "Press won't start" })
+        {
+            var r = Id(await Ok(await c.PostAsJsonAsync("/api/work-requests", new { title, siteId = site, assetId = asset, priority = "High", type = "Breakdown", assetIsDown = true })));
+            wos.Add((await Ok(await c.PostAsJsonAsync($"/api/work-requests/{r}/approve", new { }))).GetProperty("workOrderId").GetGuid());
+        }
+        var stop = Id((await Ok(await c.GetAsync($"/api/assets/{asset}/downtime"))).GetProperty("stops")[0]);
+        await Ok(await c.PutAsJsonAsync($"/api/downtime/{stop}", new { startedAt = now.AddHours(-3), endedAt = (DateTimeOffset?)null, reason = "Press stopped" }));
+        foreach (var wo in wos)
+            await Ok(await c.PostAsJsonAsync($"/api/work-orders/{wo}/status", new { status = "Completed", completionNotes = "Fixed" }));
+
+        var pareto = await Ok(await c.GetAsync($"/api/reports/failure-pareto?{Range}"));
+        var downtime = pareto.GetProperty("rows").EnumerateArray().Sum(r => r.GetProperty("downtime").GetDecimal());
+        Assert.InRange(downtime, 2.9m, 3.1m);
+    }
 }

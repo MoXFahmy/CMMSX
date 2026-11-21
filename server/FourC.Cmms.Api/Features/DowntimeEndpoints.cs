@@ -77,7 +77,8 @@ internal static class Downtime
 
     /// <summary>
     /// The stops touching the period, plus work completed without a stop but with "Asset was down" ticked (data from before 0.8.0, or typed by
-    /// hand): its typed hours count on its completion day.
+    /// hand): its typed hours count on its completion day. Such work done while the asset had a stop is about that stop, so it adds neither
+    /// hours nor a breakdown of its own (no minute counted twice).
     /// </summary>
     public static async Task<Dictionary<Guid, History>> LoadAsync(CmmsDbContext db, IReadOnlyCollection<Guid> assetIds, DateOnly from, DateOnly to, TimeZoneInfo tz,
         CancellationToken ct)
@@ -87,9 +88,17 @@ internal static class Downtime
         var ids = assetIds.Distinct().ToList();
         var stops = await db.DowntimeEvents.AsNoTracking().Where(e => ids.Contains(e.AssetId) && e.StartedAt < end && (e.EndedAt == null || e.EndedAt > start))
             .Select(e => new { e.AssetId, e.StartedAt, e.EndedAt }).ToListAsync(ct);
-        var typed = await db.WorkOrders.AsNoTracking()
+        var done = await db.WorkOrders.AsNoTracking()
             .Where(w => w.AssetId != null && ids.Contains(w.AssetId.Value) && w.AssetWasDown && w.DowntimeEventId == null && w.CompletedAt >= start && w.CompletedAt < end)
-            .Select(w => new { AssetId = w.AssetId!.Value, CompletedAt = w.CompletedAt!.Value, Hours = w.DowntimeHours ?? 0 }).ToListAsync(ct);
+            .Select(w => new { AssetId = w.AssetId!.Value, CompletedAt = w.CompletedAt!.Value, Hours = w.DowntimeHours ?? 0, w.CreatedAt, w.StartedAt }).ToListAsync(ct);
+        // The work's own time: from when it was raised (or started, if earlier) until it was completed.
+        var work = done.Select(w => (w.AssetId, w.CompletedAt, w.Hours, From: w.StartedAt is { } st && st < w.CreatedAt ? st : w.CreatedAt)).ToList();
+        var earliest = work.Count == 0 ? start : work.Min(w => w.From);
+        var now = DateTimeOffset.UtcNow;
+        var around = work.Count == 0 ? [] : await db.DowntimeEvents.AsNoTracking()
+            .Where(e => ids.Contains(e.AssetId) && e.StartedAt < end && (e.EndedAt == null || e.EndedAt > earliest))
+            .Select(e => new { e.AssetId, e.StartedAt, e.EndedAt }).ToListAsync(ct);
+        var typed = work.Where(w => !around.Any(e => e.AssetId == w.AssetId && e.StartedAt < w.CompletedAt && (e.EndedAt ?? now) > w.From)).ToList();
         return ids.ToDictionary(id => id, id => new History(
             stops.Where(s => s.AssetId == id).Select(s => new StopSpan(s.StartedAt, s.EndedAt)).ToList(),
             typed.Where(t => t.AssetId == id && t.Hours > 0).Select(t => (LocalDay(t.CompletedAt, tz), t.Hours)).ToList(),
@@ -157,6 +166,23 @@ public static class DowntimeEndpoints
             db.DowntimeEvents.Add(stop);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/downtime/{stop.Id}", new { stop.Id });
+        }).RequirePermission(Permissions.AssetsEdit).WithTags("Downtime");
+
+        // A stop that wasn't one (logged on the wrong asset, a request ticked down by mistake): removed, and the requests and work orders on it
+        // let go of it. Completed work on it no longer says the asset was down.
+        api.MapDelete("/downtime/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var stop = await db.DowntimeEvents.FirstOrDefaultAsync(e => e.Id == id, ct);
+            if (stop is null) return Results.NotFound();
+            foreach (var r in await db.WorkRequests.Where(r => r.DowntimeEventId == id).ToListAsync(ct)) r.DowntimeEventId = null;
+            foreach (var w in await db.WorkOrders.Where(w => w.DowntimeEventId == id).ToListAsync(ct))
+            {
+                w.DowntimeEventId = null;
+                if (w.CompletedAt is not null) { w.AssetWasDown = false; w.DowntimeHours = null; }
+            }
+            db.DowntimeEvents.Remove(stop);
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
         }).RequirePermission(Permissions.AssetsEdit).WithTags("Downtime");
 
         // Correcting any stop's start, end or reason; the change history keeps each edit.

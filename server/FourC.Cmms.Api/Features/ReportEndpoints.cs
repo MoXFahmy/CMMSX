@@ -300,9 +300,12 @@ public static class ReportEndpoints
     {
         var (s, e) = (Start(a.From), End(a.To));
         var xs = await Wo(db, a).Where(w => w.AssetId != null && w.CreatedAt >= s && w.CreatedAt < e && w.Status != WorkOrderStatus.Cancelled && (w.Type == WorkType.Breakdown || w.AssetWasDown))
-            .Select(w => new { AssetId = w.AssetId!.Value, w.Asset!.AssetNumber, w.Asset.Name, w.Asset.DowntimeCostPerHour, Code = w.FailureCode!.Code, CodeName = w.FailureCode.Name, w.DowntimeHours, w.StartedAt, w.CompletedAt, w.CreatedAt })
+            .Select(w => new { w.Id, AssetId = w.AssetId!.Value, w.Asset!.AssetNumber, w.Asset.Name, w.Asset.DowntimeCostPerHour, Code = w.FailureCode!.Code, CodeName = w.FailureCode.Name, w.DowntimeHours, w.StartedAt, w.CompletedAt, w.CreatedAt, w.DowntimeEventId })
             .ToListAsync(ct);
-        return xs.Select(x => new Failure(x.AssetId, x.AssetNumber, x.Name, x.Code, x.CodeName, x.DowntimeHours ?? 0,
+        // Work orders sharing one stop (two requests about the same stop) carry its hours once: on the one completed first.
+        var counted = xs.Where(x => x.DowntimeEventId != null).GroupBy(x => x.DowntimeEventId)
+            .Select(g => g.OrderBy(x => x.CompletedAt ?? DateTimeOffset.MaxValue).ThenBy(x => x.CreatedAt).First().Id).ToHashSet();
+        return xs.Select(x => new Failure(x.AssetId, x.AssetNumber, x.Name, x.Code, x.CodeName, x.DowntimeEventId is null || counted.Contains(x.Id) ? x.DowntimeHours ?? 0 : 0,
             x.CompletedAt is { } c ? (c - (x.StartedAt ?? x.CreatedAt)).TotalHours : null, x.DowntimeCostPerHour)).ToList();
     }
 
