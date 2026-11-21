@@ -372,4 +372,36 @@ public class DowntimeTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Contains("Choose when the asset stopped.", await Refused(await o.C.PostAsJsonAsync($"/api/assets/{o.Asset}/downtime", new { endedAt = (DateTimeOffset?)null, reason = "No start" })));
         Assert.Empty(await StopsAsync(o.Asset));
     }
+
+    [SkippableFact]
+    public async Task A_moved_stop_never_overlaps_the_new_assets_stops()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var now = DateTimeOffset.UtcNow;
+        var wo = await NewWoAsync(o, Wo(o, o.Asset));
+        var own = Assert.Single(await StopsAsync(o.Asset)).Id;
+        await Ok(await o.C.PutAsJsonAsync($"/api/downtime/{own}", Stop(now.AddHours(-3), null, "Fix the press")));
+        var earlier = Id(await Ok(await o.C.PostAsJsonAsync($"/api/assets/{o.Asset2}/downtime", Stop(now.AddHours(-2), now.AddHours(-1), "Short jam"))));
+        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset2, down: null)));
+        var stops = await StopsAsync(o.Asset2);
+        Assert.Equal(2, stops.Count);
+        var moved = stops.Single(s => s.Id == own);
+        var ended = stops.Single(s => s.Id == earlier);
+        Assert.Equal(ended.EndedAt, moved.StartedAt);
+        // No overlap: the moved stop can still be edited.
+        await Ok(await o.C.PutAsJsonAsync($"/api/downtime/{own}", Stop(moved.StartedAt, null, "Fix the lathe")));
+    }
+
+    [SkippableFact]
+    public async Task Clearing_the_asset_removes_the_stop_this_work_order_started()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var wo = await NewWoAsync(o, Wo(o, o.Asset));
+        Assert.Single(await StopsAsync(o.Asset));
+        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, null, down: null)));
+        Assert.Empty(await StopsAsync(o.Asset));
+        Assert.True(IsNull(await WoAsync(o, wo), "downtime"));
+    }
 }

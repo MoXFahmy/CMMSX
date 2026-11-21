@@ -8,15 +8,17 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); num
 
 ### Added
 - **Technician app: "The asset is down"** on the request form (after scanning an asset). It works offline: the stop
-  starts at the moment the request was made on the phone, even if it is sent hours later.
+  starts at the moment the request was made on the phone, even if it is sent hours later. A late report about a stop
+  that has since ended joins that stop instead of overlapping it.
 - **Technician app: completing a job with a stop** shows "from the asset's downtime log" instead of asking whether
   the asset was down and for how long.
 
 ### Changed
 - **Changing a work order's asset moves its stop.** The stop the work order started (still open, nothing else on it)
-  goes to the new asset and keeps its start, so a machine picked by mistake doesn't stay down. If the new asset is
-  already down, the work order joins that stop. A stop that came from a request, or that other records share, stays
-  where it is. The work order form says which will happen.
+  goes to the new asset and keeps its start (or starts where the new asset's last stop ended, so stops never
+  overlap), so a machine picked by mistake doesn't stay down. If the new asset is already down, the work order joins
+  that stop; if the asset is cleared, the stop is removed. A stop that came from a request, or that other records
+  share, stays where it is. The work order form says which will happen.
 
 ### Fixed
 - Running hours are kept to two decimals, so an import of 8.333 doesn't show as a change every time.

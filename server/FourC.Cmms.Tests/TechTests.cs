@@ -491,4 +491,22 @@ public class TechTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.NotEqual(JsonValueKind.Null, jobs.Single(j => Id(j) == down).GetProperty("downtime").GetProperty("startedAt").ValueKind);
         Assert.Equal(JsonValueKind.Null, jobs.Single(j => Id(j) == plain).GetProperty("downtime").ValueKind);
     }
+
+    [SkippableFact]
+    public async Task A_late_phone_report_joins_the_stop_it_was_about()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var press = await AssetAsync(o.C, o.SiteA, "Press");
+        var now = DateTimeOffset.UtcNow;
+        // Someone else's stop on the press already ran and ended while the phone had no signal.
+        var other = Id(await Ok(await o.C.PostAsJsonAsync($"/api/assets/{press}/downtime", new { startedAt = now.AddMinutes(-90), endedAt = now.AddMinutes(-30), reason = "Jam" })));
+        Assert.Equal("done", Status(await SendAsync(o.C, Guid.NewGuid(), now.AddHours(-2), "request.create", null,
+            new { title = "Press stopped", priority = "High", assetId = press, siteId = o.SiteA, assetIsDown = true })));
+        var d = await Ok(await o.C.GetAsync($"/api/assets/{press}/downtime"));
+        Assert.Equal(other, Id(Assert.Single(d.GetProperty("stops").EnumerateArray())));
+        Assert.Equal(JsonValueKind.Null, d.GetProperty("downSince").ValueKind);
+        var request = (await Ok(await o.C.GetAsync("/api/work-requests?pageSize=50"))).GetProperty("items").EnumerateArray().Single(r => r.GetProperty("title").GetString() == "Press stopped");
+        Assert.Equal(other, (await Ok(await o.C.GetAsync($"/api/work-requests/{Id(request)}"))).GetProperty("downtimeEventId").GetGuid());
+    }
 }

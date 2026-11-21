@@ -20,6 +20,9 @@ internal static class Downtime
         var open = db.DowntimeEvents.Local.FirstOrDefault(e => e.AssetId == assetId && e.EndedAt == null && !e.IsDeleted)
             ?? await db.DowntimeEvents.FirstOrDefaultAsync(e => e.AssetId == assetId && e.EndedAt == null, ct);
         if (open is not null) return open;
+        // A late report (made offline, sent later) about a stop that has since ended joins that stop instead of overlapping it.
+        var ended = await db.DowntimeEvents.Where(e => e.AssetId == assetId && e.EndedAt > at).OrderByDescending(e => e.EndedAt).FirstOrDefaultAsync(ct);
+        if (ended is not null) return ended;
         var stop = new DowntimeEvent { AssetId = assetId, StartedAt = at, Reason = Shorten(reason, 500), Source = source, SourceNumber = sourceNumber };
         db.DowntimeEvents.Add(stop);
         return stop;
@@ -62,9 +65,23 @@ internal static class Downtime
         var own = stop is { EndedAt: null, Source: DowntimeSource.WorkOrder } && stop.SourceNumber == w.Number
                   && !await db.WorkRequests.AnyAsync(r => r.DowntimeEventId == id, ct)
                   && !await db.WorkOrders.AnyAsync(o => o.DowntimeEventId == id && o.Id != w.Id, ct);
-        if (!own || w.AssetId is not { } asset) { w.DowntimeEventId = null; return; }
+        if (!own) { w.DowntimeEventId = null; return; }
+        if (w.AssetId is not { } asset)
+        {
+            // No asset any more: the stop it claimed for the old one was a mistake.
+            w.DowntimeEventId = null;
+            db.DowntimeEvents.Remove(stop!);
+            return;
+        }
         var there = await db.DowntimeEvents.FirstOrDefaultAsync(e => e.AssetId == asset && e.EndedAt == null && e.Id != id, ct);
-        if (there is null) { stop!.AssetId = asset; return; }
+        if (there is null)
+        {
+            // Never over a stop the new asset already had: start where its last one ended, if that was later.
+            var lastEnd = await db.DowntimeEvents.Where(e => e.AssetId == asset && e.Id != id && e.EndedAt > stop!.StartedAt).MaxAsync(e => e.EndedAt, ct);
+            if (lastEnd is { } end) stop!.StartedAt = end;
+            stop!.AssetId = asset;
+            return;
+        }
         w.DowntimeEventId = there.Id;
         db.DowntimeEvents.Remove(stop!);
     }
