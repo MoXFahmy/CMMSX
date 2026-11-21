@@ -4,6 +4,42 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.8.0] - 2026-11-21
+
+Each asset gets its own spare-parts list and a log of its real stops, and availability counts only the time it is
+meant to run.
+
+### Added
+- **"The asset is down"** on new requests and on work orders (new and edit), shown once an asset is chosen. It starts
+  a stop on the asset's downtime log at the moment the request or work order was raised, so the real start is kept
+  even when the work order comes hours later. One open stop per asset: a second report joins it. Approving the
+  request carries the stop to its work order.
+- **Ending a stop**: completing the work order ends it at the completion's actual end; **Back running** ends it
+  earlier, from the asset page, the work order page or the technician app's job page (needs a connection).
+  Rejecting or cancelling the paperwork leaves the asset down until someone presses Back running.
+- **Asset › Downtime tab**: down since (and for how long), Back running, availability and downtime over the last 30
+  days, the running time, and every stop with its reason and the request or work order it came from. People who
+  can edit assets add stops by hand and correct a stop's start, end or reason (each change is kept in the history;
+  stops may not overlap).
+- **Running time per asset**: "Runs … hours a day" (0.5–24) and "Runs on" (weekdays), on the asset form and in the
+  import. Existing assets run 24 hours, every day, until changed.
+- **"Down" badge** on the asset page and list, a **Down now** filter, and an **Assets down now** tile on the dashboard.
+- **Downtime log report**: every stop in a period with the hours stopped during the asset's running time.
+- **Asset › Parts tab**: the asset's spare parts with quantity and a note, edited by people who can edit assets;
+  **Copy from another asset** adds the other asset's parts (a part already listed keeps its quantity).
+- **Part › Used on**: the assets whose spare-parts list has the part. A part on such a list can't be deleted.
+- **Parts of this asset first**: planning or issuing parts on a work order lists the asset's spare parts first, with
+  the quantity from its list.
+- **Import**: a new **Asset parts** sheet (asset number, part number, quantity, note); the rows given for an asset
+  become its whole list, as with PM parts. The Assets sheet gains "Runs hours a day" and "Runs on".
+
+### Changed
+- **Asset reliability report**: breakdowns are the stops that began in the period; downtime, MTBF and availability
+  count only each asset's running time, in the organization's time zone. Work completed the old way ("Asset was
+  down" with hours typed and no stop) still counts on its completion day. MTBF now shows one decimal.
+- **Completing a work order with a stop**: "Asset was down" and the downtime hours come from the downtime log and
+  can't be typed over.
+
 ## [0.7.2] - 2026-11-21
 
 0.7.1 was built but never went live: its automatic checks failed on a slow test machine (5,000 locations took 32 s
