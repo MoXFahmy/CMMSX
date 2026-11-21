@@ -21,7 +21,8 @@
   <div class="card">
     <div class="logo" aria-hidden="true"></div>
     <h1>Can't reach CMX</h1>
-    <p>Check your connection, then try again.</p>
+    <!-- Shown both when the phone has no signal and when the server answers with an error (e.g. during an update). -->
+    <p>Your phone may be offline, or CMX may be unavailable for a moment, for example during an update. Check your connection, then try again.</p>
     <!-- Same address as server.url in capacitor.config.ts. -->
     <button type="button" onclick="location.replace('https://cmx.cworks.com.eg/tech/')">Try again</button>
   </div>

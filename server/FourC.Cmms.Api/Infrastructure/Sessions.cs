@@ -25,6 +25,13 @@ public static class Sessions
     /// <summary>The latest the sign-in can run out: last use (known to within <see cref="TouchEvery"/>) plus its lifetime.</summary>
     private static DateTimeOffset ExpiresAt(DateTimeOffset seen, TimeSpan lifetime) => seen + lifetime + TouchEvery;
 
+    /// <summary>
+    /// Whether to reissue a long sign-in's cookie now, so its 30 days count from the last use. The cookie handler alone only
+    /// renews at half its life, so a phone used on day 14 and then on day 31 was signed out.
+    /// </summary>
+    public static bool RenewCookie(DateTimeOffset? issued, DateTimeOffset? expires, DateTimeOffset now) =>
+        issued is { } i && expires is { } e && e - i > TimeSpan.FromDays(1) && now - i > TimeSpan.FromDays(1);
+
     private static TimeSpan LifetimeOf(AuthenticationProperties p) =>
         p.ExpiresUtc is { } e && p.IssuedUtc is { } i && e > i ? e - i : DefaultLifetime;
 
@@ -125,6 +132,7 @@ public static class Sessions
             return;
         }
         var now = DateTimeOffset.UtcNow;
+        if (RenewCookie(ctx.Properties.IssuedUtc, ctx.Properties.ExpiresUtc, now)) ctx.ShouldRenew = true;
         if (now - state.LastSeenAt > TouchEvery)
         {
             var expires = ExpiresAt(now, LifetimeOf(ctx.Properties));

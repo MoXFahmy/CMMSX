@@ -22,3 +22,21 @@ export function lookupCode(places: TechPlaces | undefined, code: string): { kind
   const byBarcode = byNumber ?? places.assets.find((a) => a.barcode?.toLowerCase() === c);
   return byBarcode ? { kind: 'asset', id: byBarcode.id } : null;
 }
+
+/**
+ * Where a scanned asset or location label leads: the technician view when it is on the phone; otherwise, with a
+ * connection, the full app (it can be on a site this phone doesn't carry); offline, nowhere.
+ */
+export function placeTarget(kind: 'asset' | 'location', id: string, places: TechPlaces | undefined, online: boolean):
+  { tech: string } | { full: string } | { problem: 'notOnPhone' } {
+  const known = kind === 'asset' ? places?.assets.some((a) => a.id === id) : places?.locations.some((l) => l.id === id);
+  if (known) return { tech: `/tech/place/${kind}/${id}` };
+  if (online) return { full: kind === 'asset' ? `/assets/${id}` : '/locations' };
+  return { problem: 'notOnPhone' };
+}
+
+/** The part a code names exactly: its part number or barcode, ignoring case (a search also returns near matches). */
+export function exactPart(found: { id: string; partNumber: string; barcode?: string | null }[], code: string): string | null {
+  const c = code.trim().toLowerCase();
+  return found.find((p) => p.partNumber.toLowerCase() === c || p.barcode?.toLowerCase() === c)?.id ?? null;
+}

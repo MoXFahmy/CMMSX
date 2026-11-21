@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { withQueued } from './overlay';
+import { stillShown, withQueued } from './overlay';
 import type { QueuedChange } from './outbox';
 import type { TechJob } from './types';
 
@@ -28,5 +28,20 @@ describe('withQueued', () => {
   it("leaves out changes that couldn't be sent and other jobs' changes", () => {
     const j = withQueued(job, [q(1, 'status.change', { status: 'Completed' }, { state: 'failed' }), q(2, 'status.change', { status: 'OnHold' }, { workOrderId: 'w2' })]);
     expect(j.status).toBe('Open');
+  });
+});
+
+describe('stillShown', () => {
+  const sent = [
+    { ...q(1, 'task.update', { taskId: 't1', isDone: true }), sentAt: 100 },
+    { ...q(2, 'photo.add', { kind: 'photo' }, { fileKey: 'f' }), sentAt: 100 },
+    { ...q(3, 'comment.add', { body: 'Done' }), sentAt: 300 },
+  ];
+  it('keeps sent changes on screen until a copy fetched after them arrives', () => {
+    expect(stillShown(sent, 200).map((c) => c.clientId)).toEqual(['c3']);
+    expect(stillShown(sent, undefined).map((c) => c.clientId)).toEqual(['c1', 'c3']);
+  });
+  it('does not count a sent photo as still waiting', () => {
+    expect(stillShown(sent, undefined).some((c) => c.type === 'photo.add')).toBe(false);
   });
 });

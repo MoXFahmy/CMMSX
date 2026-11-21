@@ -1,7 +1,8 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { fetchBundle, fetchMe, fetchPlaces, logout, Offline, sendChange, SignedOut } from './api';
+import { fetchBundle, fetchMe, fetchPlaces, logout, Offline, refreshProblem, sendChange, ServerError, SignedOut } from './api';
 import { confirmUser, forgetUser, type IdentityDeps } from './identity';
 import { drain, retryNow, type QueuedChange, type SendResult } from './outbox';
+import { stillShown, type SentChange } from './overlay';
 import { enqueue, getMeta, idbOutboxStore, loadBundle, loadPlaces, queued, saveBundle, savePlaces, setMeta, techDb, wipeCopy } from './store';
 import type { TechBundle, TechPlaces } from './types';
 import { registerTechWorker } from './worker';
@@ -19,7 +20,11 @@ export const MODE_KEY = 'cmms.tech.mode';
 type Note = { at: string; text: string };
 type TechState = {
   phase: Phase; userId?: string; fullName?: string; bundle?: TechBundle; places?: TechPlaces; queue: QueuedChange[]; online: boolean;
+  /** Changes the server took that the phone's copy doesn't show yet (shown on top of it like waiting ones). */
+  sent: SentChange[];
   lastRefresh?: number; notes: Note[]; busy: boolean;
+  /** Why the last refresh failed, when it wasn't just missing signal ('server': the server failed). */
+  problem?: string;
   refresh(): Promise<void>; drainNow(now?: boolean): Promise<void>;
   add(change: { type: string; workOrderId?: string; payload: unknown }, file?: { blob: Blob; fileName: string }): Promise<void>;
   retry(c: QueuedChange, force?: boolean): Promise<void>; discard(c: QueuedChange): Promise<void>;
@@ -41,6 +46,9 @@ export function TechProvider({ children }: { children: ReactNode }) {
   const [lastRefresh, setLastRefresh] = useState<number>();
   const [notes, setNotes] = useState<Note[]>([]);
   const [busy, setBusy] = useState(false);
+  const [sentRaw, setSent] = useState<SentChange[]>([]);
+  const [problem, setProblem] = useState<string>();
+  const [fetchedAt, setFetchedAt] = useState<number>();
   const draining = useRef(false);
   const user = useRef<string | undefined>(undefined);
   /** Whether the server has confirmed who is signed in since the view opened (not yet after an offline start). */
@@ -51,7 +59,7 @@ export function TechProvider({ children }: { children: ReactNode }) {
   /** The server said this device was signed out: forget the jobs and places on the phone (the queue stays with its owner). */
   const revoked = useCallback(async () => {
     if (user.current) await wipeCopy(user.current);
-    setBundle(undefined); setPlaces(undefined); setPhase('revoked');
+    setBundle(undefined); setPlaces(undefined); setSent([]); setPhase('revoked');
   }, []);
 
   const contact = useCallback(async () => { setOnline(true); await setMeta('lastContactAt', Date.now()); }, []);
@@ -68,7 +76,7 @@ export function TechProvider({ children }: { children: ReactNode }) {
       if (!me.employeeId) { window.location.replace('/'); return false; }
       if (me.userId !== user.current) {
         user.current = me.userId; setUserId(me.userId); setFullName(me.fullName);
-        setBundle(undefined); setPlaces(undefined);
+        setBundle(undefined); setPlaces(undefined); setSent([]);
         setNotes((await getMeta<Note[]>(`notes:${me.userId}`)) ?? []);
         await reloadQueue();
       }
@@ -87,16 +95,21 @@ export function TechProvider({ children }: { children: ReactNode }) {
     if (!id) return;
     setBusy(true);
     try {
+      const started = Date.now();
       const b = await fetchBundle();
       await saveBundle(id, b);
       setBundle(b);
+      setFetchedAt(started);
+      setSent((s) => stillShown(s, started));
       const saved = await loadPlaces(id);
       const p = await fetchPlaces(saved?.etag);
       if (p) { await savePlaces(id, p.data, p.etag); setPlaces(p.data); } else if (saved) setPlaces(saved.data);
       await contact();
       setLastRefresh(Date.now());
+      setProblem(undefined);
     } catch (e) {
-      if (e instanceof Offline) setOnline(false);
+      setProblem(refreshProblem(e) ?? undefined);
+      if (e instanceof Offline && !(e instanceof ServerError)) setOnline(false);
       else if (e instanceof SignedOut) { if (e.revoked) await revoked(); else setPhase('signedOut'); }
     } finally { setBusy(false); }
   }, [contact, ensureUser, revoked]);
@@ -111,7 +124,7 @@ export function TechProvider({ children }: { children: ReactNode }) {
     try {
       const r = await drain(idbOutboxStore(), id, async (c, f) => (last = await sendChange(c, f)), Date.now, (_c, text) => {
         setNotes((n) => { const next = [{ at: new Date().toISOString(), text }, ...n].slice(0, 20); void setMeta(`notes:${id}`, next); return next; });
-      }, { ignoreBackoff: now });
+      }, { ignoreBackoff: now, onSent: (c) => setSent((s) => [...s, { ...c, sentAt: Date.now() }]) });
       if (r.sent > 0) { await contact(); void refresh(); }
       if (r.stoppedBy === 'retry') setOnline(false);
       if (r.stoppedBy === 'serverError') await contact(); // there is signal; the server failed
@@ -204,8 +217,9 @@ export function TechProvider({ children }: { children: ReactNode }) {
     return true;
   }, []);
 
-  const value = useMemo<TechState>(() => ({ phase, userId, fullName, bundle, places, queue, online, lastRefresh, notes, busy, refresh, drainNow, add, retry, discard, signOut }),
-    [phase, userId, fullName, bundle, places, queue, online, lastRefresh, notes, busy, refresh, drainNow, add, retry, discard, signOut]);
+  const sent = useMemo(() => stillShown(sentRaw, fetchedAt), [sentRaw, fetchedAt]);
+  const value = useMemo<TechState>(() => ({ phase, userId, fullName, bundle, places, queue, sent, online, lastRefresh, notes, busy, problem, refresh, drainNow, add, retry, discard, signOut }),
+    [phase, userId, fullName, bundle, places, queue, sent, online, lastRefresh, notes, busy, problem, refresh, drainNow, add, retry, discard, signOut]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

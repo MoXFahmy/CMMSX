@@ -15,13 +15,19 @@ export function PlacePage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { kind = 'asset', id = '' } = useParams();
-  const { places, bundle, add } = useTech();
+  const { places, bundle, add, online } = useTech();
   const [meter, setMeter] = useState<string | null>(null);
   const [requestOpen, setRequestOpen] = useState(false);
   const asset = kind === 'asset' ? places?.assets.find((a) => a.id === id) : undefined;
   const location = kind === 'location' ? places?.locations.find((l) => l.id === id) : places?.locations.find((l) => l.id === asset?.locationId);
   if (!asset && !(kind === 'location' && location)) {
-    return <Stack><Anchor onClick={() => navigate('/tech/scan')}>{t('tech.back')}</Anchor><Text c="dimmed">{t('tech.notOnPhone')}</Text></Stack>;
+    return (
+      <Stack>
+        <Anchor onClick={() => navigate('/tech/scan')}>{t('tech.back')}</Anchor>
+        <Text c="dimmed">{t('tech.notOnPhone')}</Text>
+        {online && <Anchor href={kind === 'asset' ? `/assets/${id}` : '/locations'}>{t('tech.openInFullApp')}</Anchor>}
+      </Stack>
+    );
   }
   const jobs = (bundle?.jobs ?? []).filter((j) => kind === 'asset'
     ? j.asset?.id === id || j.roundAssets.some((a) => a.id === id)

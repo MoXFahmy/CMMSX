@@ -147,13 +147,17 @@ public static class ReportEndpoints
         var now = DateTimeOffset.UtcNow;
         var requests = db.WorkRequests.AsNoTracking().Where(r => r.Status != WorkRequestStatus.Cancelled && r.RespondBy >= s && r.RespondBy < e);
         if (a.SiteId is { } site) requests = requests.Where(r => r.SiteId == site);
-        var response = (await requests.Select(r => new { r.Priority, Deadline = r.RespondBy!.Value, Done = r.DecidedAt }).ToListAsync(ct))
+        // Finished: decided, or completed/closed. Finished with no recorded time (imported history) can't be judged, so it isn't counted.
+        var response = (await requests.Select(r => new { r.Priority, Deadline = r.RespondBy!.Value, Done = r.DecidedAt,
+                    Finished = r.Status == WorkRequestStatus.Approved || r.Status == WorkRequestStatus.Rejected }).ToListAsync(ct))
             .Concat(await Wo(db, a).Where(w => w.WorkRequestId == null && w.Status != WorkOrderStatus.Cancelled && w.StartBy >= s && w.StartBy < e)
-                .Select(w => new { w.Priority, Deadline = w.StartBy!.Value, Done = w.RespondedAt }).ToListAsync(ct))
-            .Select(x => (x.Priority, x.Deadline, Met: Outcome(x.Deadline, x.Done, now))).Where(x => x.Met is not null).ToList();
+                .Select(w => new { w.Priority, Deadline = w.StartBy!.Value, Done = w.RespondedAt,
+                    Finished = w.Status == WorkOrderStatus.Completed || w.Status == WorkOrderStatus.Closed }).ToListAsync(ct))
+            .Select(x => (x.Priority, x.Deadline, Met: Outcome(x.Deadline, x.Done, x.Finished, now))).Where(x => x.Met is not null).ToList();
         var completion = (await Wo(db, a).Where(w => w.PmScheduleId == null && w.Status != WorkOrderStatus.Cancelled && w.DueAt >= s && w.DueAt < e)
-                .Select(w => new { w.Priority, Deadline = w.DueAt!.Value, Done = w.CompletedAt }).ToListAsync(ct))
-            .Select(x => (x.Priority, x.Deadline, Met: Outcome(x.Deadline, x.Done, now))).Where(x => x.Met is not null).ToList();
+                .Select(w => new { w.Priority, Deadline = w.DueAt!.Value, Done = w.CompletedAt,
+                    Finished = w.Status == WorkOrderStatus.Completed || w.Status == WorkOrderStatus.Closed }).ToListAsync(ct))
+            .Select(x => (x.Priority, x.Deadline, Met: Outcome(x.Deadline, x.Done, x.Finished, now))).Where(x => x.Met is not null).ToList();
 
         var byPriority = a.GroupBy == "priority";
         var groups = byPriority
@@ -178,9 +182,9 @@ public static class ReportEndpoints
              new("Missed responses", response.Count - allRm), new("Missed completions", completion.Count - allCm)]);
     }
 
-    /// <summary>Met (done in time), missed (done late, or not done and past), or null while still pending.</summary>
-    private static bool? Outcome(DateTimeOffset deadline, DateTimeOffset? done, DateTimeOffset now) =>
-        done is { } d ? d <= deadline : deadline < now ? false : null;
+    /// <summary>Met (done in time), missed (done late, or not done and past), or null while still pending or when finished with no time recorded.</summary>
+    private static bool? Outcome(DateTimeOffset deadline, DateTimeOffset? done, bool finished, DateTimeOffset now) =>
+        done is { } d ? d <= deadline : finished ? null : deadline < now ? false : null;
 
     private static async Task<ReportResult> ThroughputAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
     {
