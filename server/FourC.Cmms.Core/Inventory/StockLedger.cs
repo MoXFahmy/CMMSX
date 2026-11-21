@@ -4,6 +4,9 @@ using Microsoft.EntityFrameworkCore;
 
 namespace FourC.Cmms.Core.Inventory;
 
+/// <summary>An opening balance for a new stock level (see <see cref="StockLedger.PostOpeningBalances"/>).</summary>
+public sealed record OpeningBalance(Part Part, Store Store, StockLevel Level, decimal Quantity, DateOnly Date, string? BatchNumber, DateOnly? ExpiryDate, string Notes);
+
 public sealed record StockPost(
     StockTransactionType Type, Guid PartId, Guid StoreId, decimal Quantity, DateOnly Date,
     decimal? UnitCost = null, Guid? WorkOrderId = null, Guid? LocationId = null, Guid? SupplierId = null,
@@ -98,6 +101,30 @@ public static class StockLedger
         db.StockTransactions.Add(tx);
         await db.SaveChangesAsync(ct);
         return tx;
+    }
+
+    /// <summary>
+    /// Opening balances for stock levels that are new in this unit of work (added, not saved, so nobody else can move them):
+    /// one adjustment entry each at the part's average cost, and the level's quantity set. These are the entries
+    /// <see cref="PostAsync"/> would write, without its round trips for every line (an import posts thousands). The caller saves.
+    /// </summary>
+    public static void PostOpeningBalances(CmmsDbContext db, ITenantContext ctx, IEnumerable<OpeningBalance> lines)
+    {
+        foreach (var o in lines)
+        {
+            if (db.Entry(o.Level).State != EntityState.Added) throw new InvalidOperationException("Opening balances go only into new stock levels.");
+            if (o.Quantity <= 0) throw new DomainException("Quantity must be positive.");
+            if (!o.Store.IsActive) throw new DomainException($"Store {o.Store.Code} is inactive.");
+            var batch = string.IsNullOrWhiteSpace(o.BatchNumber) ? null : o.BatchNumber.Trim();
+            if (o.Part.IsShelfItem && batch is null) throw new DomainException($"{o.Part.PartNumber} is a shelf-life item: enter the batch number.");
+            o.Level.QuantityOnHand += o.Quantity;
+            db.StockTransactions.Add(new StockTransaction
+            {
+                Type = StockTransactionType.Adjustment, PartId = o.Part.Id, StoreId = o.Store.Id, Quantity = o.Quantity, UnitCost = Math.Round(o.Part.AverageCost, 4),
+                Date = o.Date, BatchNumber = Trim(batch, 100), ExpiryDate = o.ExpiryDate, Notes = Trim(o.Notes, 1000),
+                CreatedAt = DateTimeOffset.UtcNow, CreatedById = ctx.UserId, CreatedByName = ctx.UserName,
+            });
+        }
     }
 
     /// <summary>Moves stock between stores at the outgoing average cost; returns (out, in).</summary>

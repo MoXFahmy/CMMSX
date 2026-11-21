@@ -4,6 +4,36 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.7.0] - 2026-11-21
+
+Customers who never used 4CSQL can load their own data from Excel.
+
+### Added
+- **Settings › Import** (administrators): load or update locations, assets, parts and stock, people, suppliers and PM
+  from one Excel workbook (or a CSV file for one sheet).
+  - **Download empty template**: every sheet with its headings, plus a Help sheet listing the columns, which are
+    required and the allowed values. In each person's language.
+  - **Download current data**: the organization's records in the same layout, with codes. Fix them in Excel and
+    load the file again.
+  - **Check file** shows what an import would do before anything is saved: new rows, changed rows (each change
+    field by field), unchanged rows and problems with their reasons. **Import** then saves the good rows and skips
+    the rest; **Download problem rows** gives those rows back with the reason beside each.
+- Sheets: sites, locations, categories, trades, part groups, suppliers, stores, assets (custom fields too), people,
+  parts, stock, PM tasks, PM steps, PM parts and PM schedules. Headings and fixed values work in English or Arabic.
+
+### How it behaves
+- Rows are matched by code: a new code adds a record, a known code updates it. Nothing is deleted (set Active to
+  No instead), and a blank cell keeps the current value.
+- An imported record is the same as one made on screen: asset numbering, location paths, PM due dates, stock
+  ledger entries and "created/updated by".
+- Unknown category, trade and part group codes are added and listed in the preview; any other unknown code makes the
+  row a problem.
+- The opening stock quantity is used only for stock that is new; after that, quantities change through a stock take.
+- Steps and parts listed for a PM task replace that task's list. Meter-based PM, PM rounds and "every Nth" tasks
+  are still set up on screen.
+- Limits: 10 MB per file and 5,000 rows per sheet; a bigger load is split over several files. Old `.xls` files must
+  be saved as `.xlsx` first.
+
 ## [0.6.0] - 2026-11-21
 
 CMX speaks Arabic, with screens that read right to left.

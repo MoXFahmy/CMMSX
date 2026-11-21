@@ -14,6 +14,7 @@ import { del, get, post, put } from '@/api/client';
 import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { NotificationSettings } from './NotificationSettings';
+import { ImportSettings } from './ImportSettings';
 import { PageHeader } from '@/components/PageHeader';
 import { LookupTable } from '@/components/LookupTable';
 import { confirmDelete } from '@/components/confirm';
@@ -32,6 +33,7 @@ export function SettingsPage() {
     { value: 'failure-codes', label: t('settings.failureCodes'), show: can(P.woView) },
     { value: 'users', label: t('settings.users'), show: can(P.usersManage) },
     { value: 'roles', label: t('settings.roles'), show: can(P.usersManage) },
+    { value: 'import', label: t('settings.import'), show: can(P.settingsManage) },
   ].filter((x) => x.show);
   const current = tabs.some((x) => x.value === sub) ? sub! : 'organization';
   return (
@@ -46,6 +48,7 @@ export function SettingsPage() {
         <Tabs.Panel value="failure-codes"><LookupTable path="/failure-codes" title={t('settings.failureCodes')} newLabel={t('settings.newFailureCode')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="users"><UserSettings /></Tabs.Panel>
         <Tabs.Panel value="roles"><RoleSettings /></Tabs.Panel>
+        <Tabs.Panel value="import"><ImportSettings /></Tabs.Panel>
       </Tabs>
     </>
   );

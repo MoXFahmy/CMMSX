@@ -11,6 +11,9 @@ namespace FourC.Cmms.Api.Infrastructure;
 /// <summary>A column of an exported list: the property to read (camelCase, dots reach into objects) and its heading.</summary>
 public sealed record ExportColumn(string Key, string Title);
 
+/// <summary>One sheet of a workbook: its name, columns and rows (values as for <see cref="TableExport.Rows"/>).</summary>
+public sealed record ExportSheet(string Name, IReadOnlyList<ExportColumn> Columns, IReadOnlyList<object?[]> Rows);
+
 /// <summary>
 /// Turns list rows into CSV or Excel (.xlsx) files. Values read like the screen: codes in words, "Yes"/"No", lists joined
 /// with ", ", date-times in the organization's time zone; in Excel, dates are real dates and numbers are numbers.
@@ -145,10 +148,20 @@ public static class TableExport
     }
 
     /// <summary>One sheet: bold, frozen header row with filters, dates and numbers as real values, widths from the text.</summary>
-    public static byte[] Xlsx(string sheetName, IReadOnlyList<ExportColumn> cols, IReadOnlyList<object?[]> rows)
+    public static byte[] Xlsx(string sheetName, IReadOnlyList<ExportColumn> cols, IReadOnlyList<object?[]> rows) =>
+        Xlsx([new ExportSheet(sheetName, cols, rows)]);
+
+    /// <summary>Several sheets in one workbook, each laid out like the one-sheet export.</summary>
+    public static byte[] Xlsx(IReadOnlyList<ExportSheet> sheets)
     {
-        var name = new string(sheetName.Where(ch => !"[]:*?/\\".Contains(ch)).ToArray()).Trim();
-        name = name.Length == 0 ? "Sheet1" : name[..Math.Min(31, name.Length)];
+        if (sheets.Count == 0) sheets = [new ExportSheet("Sheet1", [], [])];
+        var names = new List<string>();
+        foreach (var sheet in sheets)
+        {
+            var name = new string(sheet.Name.Where(ch => !"[]:*?/\\".Contains(ch)).ToArray()).Trim();
+            name = name.Length == 0 ? $"Sheet{names.Count + 1}" : name[..Math.Min(31, name.Length)];
+            names.Add(name);
+        }
         using var ms = new MemoryStream();
         using (var zip = new ZipArchive(ms, ZipArchiveMode.Create, leaveOpen: true))
         {
@@ -158,18 +171,19 @@ public static class TableExport
                 w.Write(xml);
             }
             const string head = "<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>";
+            var n = Enumerable.Range(1, sheets.Count).ToList();
             Add("[Content_Types].xml", head + "<Types xmlns=\"http://schemas.openxmlformats.org/package/2006/content-types\">"
                 + "<Default Extension=\"rels\" ContentType=\"application/vnd.openxmlformats-package.relationships+xml\"/><Default Extension=\"xml\" ContentType=\"application/xml\"/>"
                 + "<Override PartName=\"/xl/workbook.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml\"/>"
-                + "<Override PartName=\"/xl/worksheets/sheet1.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"
+                + string.Concat(n.Select(i => $"<Override PartName=\"/xl/worksheets/sheet{i}.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml\"/>"))
                 + "<Override PartName=\"/xl/styles.xml\" ContentType=\"application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml\"/></Types>");
             Add("_rels/.rels", head + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
                 + "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument\" Target=\"xl/workbook.xml\"/></Relationships>");
             Add("xl/workbook.xml", head + "<workbook xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\">"
-                + $"<sheets><sheet name=\"{Esc(name)}\" sheetId=\"1\" r:id=\"rId1\"/></sheets></workbook>");
+                + "<sheets>" + string.Concat(n.Select(i => $"<sheet name=\"{Esc(names[i - 1])}\" sheetId=\"{i}\" r:id=\"rId{i}\"/>")) + "</sheets></workbook>");
             Add("xl/_rels/workbook.xml.rels", head + "<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\">"
-                + "<Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet1.xml\"/>"
-                + "<Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/></Relationships>");
+                + string.Concat(n.Select(i => $"<Relationship Id=\"rId{i}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet\" Target=\"worksheets/sheet{i}.xml\"/>"))
+                + $"<Relationship Id=\"rId{sheets.Count + 1}\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles\" Target=\"styles.xml\"/></Relationships>");
             // Cell styles: 0 normal, 1 bold header, 2 date (built-in format 14), 3 date and time.
             Add("xl/styles.xml", head + "<styleSheet xmlns=\"http://schemas.openxmlformats.org/spreadsheetml/2006/main\">"
                 + "<numFmts count=\"1\"><numFmt numFmtId=\"164\" formatCode=\"yyyy-mm-dd hh:mm\"/></numFmts>"
@@ -180,7 +194,7 @@ public static class TableExport
                 + "<cellXfs count=\"4\"><xf numFmtId=\"0\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\"/><xf numFmtId=\"0\" fontId=\"1\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyFont=\"1\"/>"
                 + "<xf numFmtId=\"14\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyNumberFormat=\"1\"/><xf numFmtId=\"164\" fontId=\"0\" fillId=\"0\" borderId=\"0\" xfId=\"0\" applyNumberFormat=\"1\"/></cellXfs>"
                 + "<cellStyles count=\"1\"><cellStyle name=\"Normal\" xfId=\"0\" builtinId=\"0\"/></cellStyles></styleSheet>");
-            Add("xl/worksheets/sheet1.xml", Sheet(cols, rows));
+            for (var i = 0; i < sheets.Count; i++) Add($"xl/worksheets/sheet{i + 1}.xml", Sheet(sheets[i].Columns, sheets[i].Rows));
         }
         return ms.ToArray();
     }

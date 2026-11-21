@@ -140,6 +140,7 @@ api.MapAttachmentEndpoints();
 api.MapAuditEndpoints();
 api.MapAdminEndpoints();
 api.MapPeopleEndpoints();
+api.MapImportEndpoints();
 api.MapWorkRequestEndpoints();
 api.MapWorkOrderEndpoints();
 api.MapPlanningEndpoints();

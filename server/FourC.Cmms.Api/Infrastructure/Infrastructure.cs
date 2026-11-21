@@ -329,6 +329,14 @@ public sealed class Validator
         list.Add(message);
     }
 
+    /// <summary>Adds the other validator's errors to this one's.</summary>
+    public Validator Merge(Validator other)
+    {
+        foreach (var (field, messages) in other._errors)
+            foreach (var m in messages) Add(field, m);
+        return this;
+    }
+
     public IResult Problem() => Results.ValidationProblem(_errors.ToDictionary(k => k.Key, v => v.Value.Select(m => Translator.T(m)).ToArray()),
         title: Translator.T("One or more validation errors occurred."));
 }

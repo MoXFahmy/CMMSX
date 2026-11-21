@@ -49,9 +49,7 @@ public static class PeopleEndpoints
         {
             var v = await ValidateAsync(input, null, db, ct);
             if (!v.IsValid) return v.Problem();
-            var e = new Employee { Code = input.Code.Trim(), FullName = input.FullName.Trim() };
-            Apply(e, input);
-            db.Employees.Add(e);
+            var e = CreateEmployee(db, input);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/employees/{e.Id}", new { e.Id });
         }).RequirePermission(Permissions.PeopleManage);
@@ -63,8 +61,7 @@ public static class PeopleEndpoints
             var v = await ValidateAsync(input, id, db, ct);
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(e).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
-            e.Code = input.Code.Trim(); e.FullName = input.FullName.Trim();
-            Apply(e, input);
+            UpdateEmployee(e, input);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { e.Id });
         }).RequirePermission(Permissions.PeopleManage);
@@ -87,12 +84,29 @@ public static class PeopleEndpoints
         e.UserId, e.Notes, e.IsActive, OpenWorkOrders = openWork, RowVersion = Convert.ToBase64String(e.RowVersion),
     };
 
+    /// <summary>The checks that need no database (shared with the import).</summary>
+    internal static Validator EmployeeRules(EmployeeInput i) => new Validator().Required("code", i.Code, "Employee no.", 50).Required("fullName", i.FullName, "Name", 200)
+        .MaxLength("email", i.Email, "Email", 256).MaxLength("phone", i.Phone, "Phone", 50).MaxLength("company", i.Company, "Company", 200)
+        .When(i.HourlyRate < 0 || i.OvertimeRate < 0, "hourlyRate", "Rates cannot be negative.")
+        .When(i.Email.Clean() is { } em && !em.Contains('@'), "email", "Enter a valid email address.");
+
+    internal static Employee CreateEmployee(CmmsDbContext db, EmployeeInput i)
+    {
+        var e = new Employee { Code = i.Code.Trim(), FullName = i.FullName.Trim() };
+        Apply(e, i);
+        db.Employees.Add(e);
+        return e;
+    }
+
+    internal static void UpdateEmployee(Employee e, EmployeeInput i)
+    {
+        e.Code = i.Code.Trim(); e.FullName = i.FullName.Trim();
+        Apply(e, i);
+    }
+
     private static async Task<Validator> ValidateAsync(EmployeeInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
-        var v = new Validator().Required("code", i.Code, "Employee no.", 50).Required("fullName", i.FullName, "Name", 200)
-            .MaxLength("email", i.Email, "Email", 256).MaxLength("phone", i.Phone, "Phone", 50).MaxLength("company", i.Company, "Company", 200)
-            .When(i.HourlyRate < 0 || i.OvertimeRate < 0, "hourlyRate", "Rates cannot be negative.")
-            .When(i.Email.Clean() is { } em && !em.Contains('@'), "email", "Enter a valid email address.");
+        var v = EmployeeRules(i);
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.Employees.AnyAsync(e => e.Code == i.Code.Trim() && e.Id != id, ct)) v.Add("code", "Another person already uses this number.");
         var trades = i.TradeIds ?? [];
         if (trades.Count > 0 && await db.Trades.CountAsync(t => trades.Contains(t.Id), ct) != trades.Distinct().Count()) v.Add("tradeIds", "Unknown trade.");
@@ -104,7 +118,7 @@ public static class PeopleEndpoints
         return v;
     }
 
-    private static void Apply(Employee e, EmployeeInput i)
+    internal static void Apply(Employee e, EmployeeInput i)
     {
         e.JobTitle = i.JobTitle.Clean(); e.Email = i.Email.Clean(); e.Phone = i.Phone.Clean(); e.TradeIds = (i.TradeIds ?? []).Distinct().ToList();
         e.SiteIds = (i.SiteIds ?? []).Distinct().ToList(); e.HourlyRate = i.HourlyRate; e.OvertimeRate = i.OvertimeRate; e.IsContractor = i.IsContractor;
@@ -124,7 +138,7 @@ public static class PeopleEndpoints
             var v = await ValidateLookupAsync(set(db), input, null, ct);
             if (!v.IsValid) return v.Problem();
             var item = create();
-            item.Code = input.Code.Trim(); item.Name = input.Name.Trim(); item.IsActive = input.IsActive; setColor?.Invoke(item, input.Color.Clean());
+            ApplyLookup(item, input, setColor);
             set(db).Add(item);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api{path}/{item.Id}", new { item.Id });
@@ -135,7 +149,7 @@ public static class PeopleEndpoints
             if (item is null) return Results.NotFound();
             var v = await ValidateLookupAsync(set(db), input, id, ct);
             if (!v.IsValid) return v.Problem();
-            item.Code = input.Code.Trim(); item.Name = input.Name.Trim(); item.IsActive = input.IsActive; setColor?.Invoke(item, input.Color.Clean());
+            ApplyLookup(item, input, setColor);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { item.Id });
         }).RequirePermission(managePermission);
@@ -150,9 +164,17 @@ public static class PeopleEndpoints
         }).RequirePermission(managePermission);
     }
 
+    /// <summary>The checks that need no database (shared with the import).</summary>
+    internal static Validator LookupRules(LookupInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200);
+
+    internal static void ApplyLookup<T>(T item, LookupInput i, Action<T, string?>? setColor) where T : ICodeLookup
+    {
+        item.Code = i.Code.Trim(); item.Name = i.Name.Trim(); item.IsActive = i.IsActive; setColor?.Invoke(item, i.Color.Clean());
+    }
+
     private static async Task<Validator> ValidateLookupAsync<T>(DbSet<T> set, LookupInput i, Guid? id, CancellationToken ct) where T : TenantEntity, ICodeLookup
     {
-        var v = new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200);
+        var v = LookupRules(i);
         if (!string.IsNullOrWhiteSpace(i.Code))
         {
             var code = i.Code.Trim();

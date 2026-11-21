@@ -37,7 +37,7 @@ async function parseError(res: Response): Promise<ApiError> {
   return new ApiError(res.status, message, fieldErrors, body);
 }
 
-export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+async function request(path: string, init?: RequestInit & { json?: unknown }): Promise<Response> {
   const headers = new Headers(init?.headers);
   let body = init?.body;
   if (init?.json !== undefined) { headers.set('Content-Type', 'application/json'); body = JSON.stringify(init.json); }
@@ -49,6 +49,16 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
   catch { throw new ApiError(0, NO_CONNECTION); }
   if (res.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('cmms:unauthorized'));
   if (!res.ok) throw await parseError(res);
+  return res;
+}
+
+/** A file the server makes (an Excel workbook…), with the same headers and error handling as {@link api}. */
+export async function apiBlob(path: string, init?: RequestInit): Promise<Blob> {
+  return (await request(path, init)).blob();
+}
+
+export async function api<T>(path: string, init?: RequestInit & { json?: unknown }): Promise<T> {
+  const res = await request(path, init);
   if (res.status === 204) return undefined as T;
   const text = await res.text();
   return (text ? JSON.parse(text) : undefined) as T;

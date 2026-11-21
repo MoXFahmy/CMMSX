@@ -1,0 +1,1016 @@
+using FourC.Cmms.Api.Infrastructure;
+using FourC.Cmms.Core.Assets;
+using FourC.Cmms.Core.Inventory;
+using FourC.Cmms.Core.Locations;
+using FourC.Cmms.Core.People;
+using FourC.Cmms.Core.Pm;
+using FourC.Cmms.Core.Work;
+using FourC.Cmms.Core.Purchasing;
+using Microsoft.EntityFrameworkCore;
+
+namespace FourC.Cmms.Api.Features.Import;
+
+/// <summary>The importer for each sheet, and the run's sheet definitions that depend on the organization (Assets' custom fields).</summary>
+internal static class SheetImporters
+{
+    public static IEnumerable<ISheetImporter> All(IReadOnlyList<CustomFieldDefinition> customFields) =>
+    [
+        new SiteImporter(), new LocationImporter(), new CategoryImporter(), new TradeImporter(), new PartGroupImporter(),
+        new SupplierImporter(), new StoreImporter(), new AssetImporter(), new PeopleImporter(), new PartImporter(), new StockImporter(),
+        new PmTaskImporter(), new PmStepImporter(), new PmPartImporter(), new PmScheduleImporter(),
+    ];
+
+    /// <summary>The Assets sheet with one more column per custom field, headed by the field's label.</summary>
+    public static SheetDef AssetSheet(IReadOnlyList<CustomFieldDefinition> customFields) =>
+        ImportSheets.All.First(s => s.Key == "Assets").With(customFields.Select(f => new ColumnDef("cf:" + f.Key, f.Label, f.Label, ValueKind.Text)));
+}
+
+/// <summary>
+/// The common part of every record importer. A record is seen through its sheet's columns (a dictionary of column key →
+/// value, references as codes), so a row can be laid over it (blank cells keep the current value) and compared with it.
+/// </summary>
+internal abstract class RecordImporter<TEntity> : ISheetImporter where TEntity : class
+{
+    public abstract string Sheet { get; }
+    public abstract IReadOnlyList<string> KeyColumns { get; }
+    public virtual string KeyOf(ImportRow row) => string.Join('|', KeyColumns.Select(k => row.Get<string>(k)?.Trim() ?? ""));
+
+    /// <summary>The records the sheet's keys refer to, tracked, by key.</summary>
+    protected Dictionary<string, TEntity> Existing { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public abstract Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct);
+
+    /// <summary>The order to take the rows in; the sheet's own by default.</summary>
+    public virtual IReadOnlyList<ImportRow> Order(IReadOnlyList<ImportRow> rows, ImportContext c) => rows;
+
+    /// <summary>Work left after the last row (posting opening stock, replacing task lists…).</summary>
+    public virtual Task FinishAsync(ImportContext c, CancellationToken ct) => Task.CompletedTask;
+
+    /// <summary>A stored record's values, by column key.</summary>
+    protected abstract Dictionary<string, object?> Values(ImportContext c, TEntity e);
+
+    /// <summary>The same values, for "Download current data" (so an export imports back unchanged).</summary>
+    internal Dictionary<string, object?> Export(ImportContext c, TEntity e) => Values(c, e);
+
+    /// <summary>A new record's values before the row is laid over them (the screen's defaults).</summary>
+    protected virtual Dictionary<string, object?> Defaults() => new() { ["active"] = true };
+
+    /// <summary>
+    /// Checks the values (adding any problem to the row, and changing nothing then) and saves them: a new record when
+    /// <paramref name="existing"/> is null (returned), else an update.
+    /// </summary>
+    protected abstract Task<TEntity?> SaveAsync(ImportContext c, ImportRow row, TEntity? existing, Dictionary<string, object?> values, CancellationToken ct);
+
+    /// <summary>Makes a new record's code known to later rows and sheets.</summary>
+    protected virtual void Remember(ImportContext c, TEntity created, Dictionary<string, object?> values) { }
+
+    public virtual async Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        var key = KeyOf(row);
+        Existing.TryGetValue(key, out var existing);
+        var current = existing is null ? Defaults() : Values(c, existing);
+        var next = new Dictionary<string, object?>(current);
+        foreach (var k in row.Keys.Where(row.Has)) next[k] = row.Value(k);
+        if (existing is not null) foreach (var k in KeyColumns) next[k] = current.GetValueOrDefault(k); // the stored code stays as it is
+        var changes = existing is null ? [] : Changes(row.Sheet, current, next);
+        var shown = Shown(row);
+        if (existing is not null && changes.Count == 0) return new RowResult(row.Number, shown, RowOutcome.Unchanged, [], []);
+
+        var created = await SaveAsync(c, row, existing, next, ct);
+        if (row.HasProblems) return new RowResult(row.Number, shown, RowOutcome.Problem, [], row.Problems);
+        if (existing is not null) return new RowResult(row.Number, shown, RowOutcome.Changed, changes, []);
+        // A new row is either saved or a problem; never "New" with nothing behind it.
+        if (created is null) throw new InvalidOperationException($"{Sheet} row {row.Number} was neither saved nor given a problem.");
+        if (key.Trim('|').Length > 0) Existing[key] = created!; // a blank key (an asset to be numbered) is always new
+        Remember(c, created!, next);
+        return new RowResult(row.Number, shown, RowOutcome.New, [], []);
+    }
+
+    /// <summary>How the row's key reads in the results: its last key column (the code).</summary>
+    protected virtual string Shown(ImportRow row) => row.Get<string>(KeyColumns[^1]) ?? "";
+
+    /// <summary>The columns whose shown value differs, in the sheet's order. Lists compare as sets.</summary>
+    private static List<FieldChange> Changes(SheetDef sheet, Dictionary<string, object?> before, Dictionary<string, object?> after) =>
+        sheet.Columns.Where(col => after.ContainsKey(col.Key) || before.ContainsKey(col.Key))
+            .Select(col => (col, Old: Show(before.GetValueOrDefault(col.Key)), New: Show(after.GetValueOrDefault(col.Key))))
+            .Where(x => x.Old != x.New)
+            .Select(x => new FieldChange(x.col.Heading, x.Old, x.New)).ToList();
+
+    private static string? Show(object? value) => value switch
+    {
+        string s => s.Replace("\r\n", "\n").Clean(), // a workbook brings line breaks back as \n; stored text may hold \r\n
+        IEnumerable<string> list => ImportValues.Show(list.Select(x => x.Trim()).Where(x => x.Length > 0).Order(StringComparer.OrdinalIgnoreCase).ToList()).Clean(),
+        _ => ImportValues.Show(value),
+    };
+
+    // ---- reading values ----
+    protected static string? S(Dictionary<string, object?> v, string key) => (v.GetValueOrDefault(key) as string).Clean();
+    protected static decimal? N(Dictionary<string, object?> v, string key) => v.GetValueOrDefault(key) as decimal?;
+    protected static int? I(Dictionary<string, object?> v, string key) => v.GetValueOrDefault(key) as int?;
+    protected static DateOnly? D(Dictionary<string, object?> v, string key) => v.GetValueOrDefault(key) as DateOnly?;
+    protected static bool B(Dictionary<string, object?> v, string key, bool otherwise = false) => v.GetValueOrDefault(key) as bool? ?? otherwise;
+    protected static T E<T>(Dictionary<string, object?> v, string key, T otherwise) where T : struct, Enum => v.GetValueOrDefault(key) is T t ? t : otherwise;
+    protected static List<string> L(Dictionary<string, object?> v, string key) => v.GetValueOrDefault(key) as List<string> ?? [];
+
+    /// <summary>The id behind a code, or null with "Site XX not found." on the row (<paramref name="kind"/> is "Site", "Store"…).</summary>
+    protected static Guid? Ref(ImportRow row, Dictionary<string, Guid> map, string? code, string kind)
+    {
+        if (code is null) return null;
+        if (map.TryGetValue(code.Trim(), out var id)) return id;
+        row.Problem(Translator.T($"{kind} {code.Trim()} not found."));
+        return null;
+    }
+
+    /// <summary>Adds the validator's messages to the row; true when there were none.</summary>
+    protected static bool Accept(ImportRow row, Validator v)
+    {
+        foreach (var m in v.Messages) row.Problem(Translator.T(m));
+        return !row.HasProblems;
+    }
+
+    protected static async Task<Dictionary<string, TEntity>> ByKey(IQueryable<TEntity> query, Func<TEntity, string> key, CancellationToken ct) =>
+        (await query.ToListAsync(ct)).GroupBy(key, StringComparer.OrdinalIgnoreCase).ToDictionary(g => g.Key, g => g.First(), StringComparer.OrdinalIgnoreCase);
+
+    protected void Keep(Dictionary<string, TEntity> found) { foreach (var (k, e) in found) Existing[k] = e; }
+
+    /// <summary>
+    /// Rows whose parent is another row of the sheet come after that row. Rows in a loop get "{code} can't be under itself."
+    /// </summary>
+    protected static IReadOnlyList<ImportRow> ParentsFirst(IReadOnlyList<ImportRow> rows, Func<ImportRow, string> keyOf, Func<ImportRow, string?> parentKeyOf, string codeColumn)
+    {
+        var byKey = new Dictionary<string, ImportRow>(StringComparer.OrdinalIgnoreCase);
+        foreach (var r in rows.Where(r => !r.HasProblems)) if (keyOf(r).Trim('|').Length > 0) byKey.TryAdd(keyOf(r), r);
+        var ordered = new List<ImportRow>();
+        var state = new Dictionary<ImportRow, int>(); // 1 = visiting, 2 = done
+        void Visit(ImportRow r, List<ImportRow> path)
+        {
+            if (state.GetValueOrDefault(r) == 2) return;
+            if (state.GetValueOrDefault(r) == 1)
+            {
+                foreach (var x in path.SkipWhile(x => x != r)) x.Problem(Translator.T($"{x.Get<string>(codeColumn)} can't be under itself."));
+                return;
+            }
+            state[r] = 1;
+            path.Add(r);
+            if (parentKeyOf(r) is { } pk && byKey.TryGetValue(pk, out var parent) && parent != r) Visit(parent, path);
+            path.RemoveAt(path.Count - 1);
+            state[r] = 2;
+            ordered.Add(r);
+        }
+        foreach (var r in rows) if (!r.HasProblems) Visit(r, []);
+        return [.. ordered, .. rows.Where(r => !ordered.Contains(r))];
+    }
+
+    protected static List<string> Codes(IReadOnlyList<ImportRow> rows, string key) =>
+        rows.Select(r => r.Get<string>(key)?.Trim()).OfType<string>().Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+}
+
+// ---------------- Sites, locations ----------------
+
+internal sealed class SiteImporter : RecordImporter<Site>
+{
+    public override string Sheet => "Sites";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.Sites.Where(s => codes.Contains(s.Code)), s => s.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, Site s) => new()
+    {
+        ["code"] = s.Code, ["name"] = s.Name, ["address"] = s.Address, ["city"] = s.City, ["country"] = s.Country, ["timeZone"] = s.TimeZone, ["active"] = s.IsActive,
+    };
+
+    protected override Task<Site?> SaveAsync(ImportContext c, ImportRow row, Site? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var input = new SiteEndpoints.SiteInput(S(v, "code")!, S(v, "name") ?? "", S(v, "address"), S(v, "city"), S(v, "country"), S(v, "timeZone"),
+            existing?.Latitude, existing?.Longitude, existing?.Notes, B(v, "active", true));
+        var rules = SiteEndpoints.SiteRules(input);
+        if (row.Has("timeZone") && !TimeZoneInfo.TryFindSystemTimeZoneById(input.TimeZone!, out _))
+            rules.Add("timeZone", $"{input.TimeZone} isn't a time zone CMX knows (for example Africa/Cairo).");
+        if (!Accept(row, rules)) return Task.FromResult<Site?>(null);
+        if (existing is not null) { SiteEndpoints.UpdateSite(existing, input); return Task.FromResult<Site?>(null); }
+        return Task.FromResult<Site?>(SiteEndpoints.CreateSite(c.Db, input));
+    }
+
+    protected override void Remember(ImportContext c, Site s, Dictionary<string, object?> v) => c.Remember(c.Sites, s.Code, s.Id);
+}
+
+internal sealed class LocationImporter : RecordImporter<Location>
+{
+    public override string Sheet => "Locations";
+    public override IReadOnlyList<string> KeyColumns => ["siteCode", "code"];
+
+    /// <summary>Parents before their children (when both are in the sheet); a loop makes its rows problems.</summary>
+    public override IReadOnlyList<ImportRow> Order(IReadOnlyList<ImportRow> rows, ImportContext c) => ParentsFirst(rows, KeyOf,
+        r => r.Get<string>("parentCode") is { } p ? $"{r.Get<string>("siteCode")?.Trim()}|{p.Trim()}" : null, "code");
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        var siteIds = Codes(rows, "siteCode").Select(s => c.Sites.TryGetValue(s, out var id) ? id : Guid.Empty).Where(id => id != Guid.Empty).ToList();
+        var found = await c.Db.Locations.Where(l => siteIds.Contains(l.SiteId) && codes.Contains(l.Code)).ToListAsync(ct);
+        foreach (var l in found) Existing[$"{c.CodeOf.GetValueOrDefault(l.SiteId)}|{l.Code}"] = l;
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, Location l) => new()
+    {
+        ["siteCode"] = c.CodeOf.GetValueOrDefault(l.SiteId), ["code"] = l.Code, ["name"] = l.Name,
+        ["parentCode"] = l.ParentId is { } p ? c.CodeOf.GetValueOrDefault(p) : null, ["type"] = l.Type, ["criticality"] = l.Criticality,
+        ["description"] = l.Description, ["notesToTechnician"] = l.NotesToTechnician, ["active"] = l.IsActive,
+    };
+
+    protected override Dictionary<string, object?> Defaults() => new() { ["type"] = LocationType.Space, ["criticality"] = Criticality.Medium, ["active"] = true };
+
+    protected override async Task<Location?> SaveAsync(ImportContext c, ImportRow row, Location? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var siteId = Ref(row, c.Sites, S(v, "siteCode"), "Site");
+        Guid? parentId = null;
+        if (siteId is { } site && S(v, "parentCode") is { } parentCode)
+        {
+            if (c.Locations.TryGetValue(ImportContext.LocationKey(site, parentCode), out var pid)) parentId = pid;
+            else if (c.Locations.Keys.Any(k => k.EndsWith("|" + parentCode, StringComparison.OrdinalIgnoreCase)))
+                row.Problem(Translator.T("Parent location must belong to the selected site."));
+            else row.Problem(Translator.T($"Location {parentCode} not found."));
+        }
+        if (existing is not null && parentId is { } start)
+        {
+            // Walk up from the new parent: meeting this location means it would sit under itself.
+            Guid? cursor = start;
+            for (var depth = 0; cursor is { } at && depth < 50; depth++)
+            {
+                if (at == existing.Id) { row.Problem(Translator.T($"{existing.Code} can't be under itself.")); break; }
+                cursor = c.LocationTree.TryGetValue(at, out var node) ? node.ParentId : null;
+            }
+        }
+        if (row.HasProblems || siteId is null) return null;
+        var input = new LocationEndpoints.LocationInput(siteId.Value, parentId, S(v, "code")!, S(v, "name") ?? "", E(v, "type", LocationType.Space),
+            E(v, "criticality", Criticality.Medium), S(v, "description"), S(v, "notesToTechnician"), existing?.Latitude, existing?.Longitude, B(v, "active", true));
+        if (!Accept(row, LocationEndpoints.LocationRules(input, existing?.Id))) return null;
+        if (existing is not null)
+        {
+            var (oldPath, oldDepth) = (existing.Path, existing.Depth);
+            await LocationEndpoints.UpdateLocationAsync(c.Db, existing, input, ct);
+            c.LocationTree[existing.Id] = (existing.SiteId, existing.ParentId);
+            if (existing.Path != oldPath) Repath(c, existing, oldPath, existing.Depth - oldDepth);
+            return null;
+        }
+        return await LocationEndpoints.CreateLocationAsync(c.Db, input, ct);
+    }
+
+    /// <summary>
+    /// A move rewrote the paths below the location in the database; the locations this run holds in memory get the same new
+    /// paths (without being written again), so rows further down the sheet build on the right ones.
+    /// </summary>
+    private static void Repath(ImportContext c, Location moved, string oldPath, int depthDelta)
+    {
+        foreach (var entry in c.Db.ChangeTracker.Entries<Location>().Where(e => e.Entity != moved && e.Entity.Path.StartsWith(oldPath, StringComparison.Ordinal)).ToList())
+        {
+            var path = moved.Path + entry.Entity.Path[oldPath.Length..];
+            var depth = entry.Entity.Depth + depthDelta;
+            entry.Property(x => x.Path).CurrentValue = path;
+            entry.Property(x => x.Depth).CurrentValue = depth;
+            if (entry.State != EntityState.Added)
+            {
+                // Already right in the database (and its version stamp moved on): not a change to write.
+                entry.Property(x => x.Path).OriginalValue = path;
+                entry.Property(x => x.Depth).OriginalValue = depth;
+                entry.Property(x => x.Path).IsModified = false;
+                entry.Property(x => x.Depth).IsModified = false;
+            }
+        }
+    }
+
+    protected override void Remember(ImportContext c, Location l, Dictionary<string, object?> v)
+    {
+        c.Locations[ImportContext.LocationKey(l.SiteId, l.Code)] = l.Id;
+        c.CodeOf[l.Id] = l.Code;
+        c.LocationTree[l.Id] = (l.SiteId, l.ParentId);
+    }
+}
+
+// ---------------- Lookups ----------------
+
+internal sealed class CategoryImporter : RecordImporter<AssetCategory>
+{
+    public override string Sheet => "Categories";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.AssetCategories.Where(x => codes.Contains(x.Code)), x => x.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, AssetCategory x) => new()
+    { ["code"] = x.Code, ["name"] = x.Name, ["color"] = x.Color, ["active"] = x.IsActive };
+
+    protected override Task<AssetCategory?> SaveAsync(ImportContext c, ImportRow row, AssetCategory? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var input = new AssetCategoryEndpoints.CategoryInput(S(v, "code")!, S(v, "name") ?? "", existing?.Description, S(v, "color"), B(v, "active", true));
+        if (!Accept(row, AssetCategoryEndpoints.CategoryRules(input))) return Task.FromResult<AssetCategory?>(null);
+        if (existing is not null) { AssetCategoryEndpoints.UpdateCategory(existing, input); return Task.FromResult<AssetCategory?>(null); }
+        return Task.FromResult<AssetCategory?>(AssetCategoryEndpoints.CreateCategory(c.Db, input));
+    }
+
+    protected override void Remember(ImportContext c, AssetCategory x, Dictionary<string, object?> v) => c.Remember(c.Categories, x.Code, x.Id);
+}
+
+internal sealed class TradeImporter : RecordImporter<Trade>
+{
+    public override string Sheet => "Trades";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.Trades.Where(x => codes.Contains(x.Code)), x => x.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, Trade x) => new()
+    { ["code"] = x.Code, ["name"] = x.Name, ["color"] = x.Color, ["active"] = x.IsActive };
+
+    protected override Task<Trade?> SaveAsync(ImportContext c, ImportRow row, Trade? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var input = new PeopleEndpoints.LookupInput(S(v, "code")!, S(v, "name") ?? "", S(v, "color"), B(v, "active", true));
+        if (!Accept(row, PeopleEndpoints.LookupRules(input))) return Task.FromResult<Trade?>(null);
+        var item = existing ?? new Trade { Code = "", Name = "" };
+        PeopleEndpoints.ApplyLookup(item, input, (t, color) => t.Color = color);
+        if (existing is not null) return Task.FromResult<Trade?>(null);
+        c.Db.Trades.Add(item);
+        return Task.FromResult<Trade?>(item);
+    }
+
+    protected override void Remember(ImportContext c, Trade x, Dictionary<string, object?> v) => c.Remember(c.Trades, x.Code, x.Id);
+}
+
+internal sealed class PartGroupImporter : RecordImporter<PartGroup>
+{
+    public override string Sheet => "PartGroups";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.PartGroups.Where(x => codes.Contains(x.Code)), x => x.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, PartGroup x) => new() { ["code"] = x.Code, ["name"] = x.Name, ["active"] = x.IsActive };
+
+    protected override Task<PartGroup?> SaveAsync(ImportContext c, ImportRow row, PartGroup? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var input = new PeopleEndpoints.LookupInput(S(v, "code")!, S(v, "name") ?? "", null, B(v, "active", true));
+        if (!Accept(row, PeopleEndpoints.LookupRules(input))) return Task.FromResult<PartGroup?>(null);
+        var item = existing ?? new PartGroup { Code = "", Name = "" };
+        PeopleEndpoints.ApplyLookup(item, input, null);
+        if (existing is not null) return Task.FromResult<PartGroup?>(null);
+        c.Db.PartGroups.Add(item);
+        return Task.FromResult<PartGroup?>(item);
+    }
+
+    protected override void Remember(ImportContext c, PartGroup x, Dictionary<string, object?> v) => c.Remember(c.PartGroups, x.Code, x.Id);
+}
+
+// ---------------- Suppliers, stores ----------------
+
+internal sealed class SupplierImporter : RecordImporter<Supplier>
+{
+    public override string Sheet => "Suppliers";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.Suppliers.Where(x => codes.Contains(x.Code)), x => x.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, Supplier x) => new()
+    {
+        ["code"] = x.Code, ["name"] = x.Name, ["contact"] = x.ContactName, ["email"] = x.Email, ["phone"] = x.Phone, ["address"] = x.Address,
+        ["city"] = x.City, ["country"] = x.Country, ["taxNumber"] = x.TaxNumber, ["paymentTerms"] = x.PaymentTerms, ["currency"] = x.Currency,
+        ["contractor"] = x.IsContractor, ["notes"] = x.Notes, ["active"] = x.IsActive,
+    };
+
+    protected override Dictionary<string, object?> Defaults() => new() { ["contractor"] = false, ["active"] = true };
+
+    protected override Task<Supplier?> SaveAsync(ImportContext c, ImportRow row, Supplier? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var input = new PurchasingEndpoints.SupplierInput(S(v, "code")!, S(v, "name") ?? "", S(v, "contact"), S(v, "email"), S(v, "phone"), S(v, "address"),
+            S(v, "city"), S(v, "country"), S(v, "taxNumber"), S(v, "paymentTerms"), S(v, "currency"), B(v, "contractor"), S(v, "notes"), B(v, "active", true));
+        if (!Accept(row, PurchasingEndpoints.SupplierRules(input))) return Task.FromResult<Supplier?>(null);
+        if (existing is not null) { PurchasingEndpoints.UpdateSupplier(existing, input); return Task.FromResult<Supplier?>(null); }
+        return Task.FromResult<Supplier?>(PurchasingEndpoints.CreateSupplier(c.Db, input));
+    }
+
+    protected override void Remember(ImportContext c, Supplier x, Dictionary<string, object?> v) => c.Remember(c.Suppliers, x.Code, x.Id);
+}
+
+internal sealed class StoreImporter : RecordImporter<Store>
+{
+    public override string Sheet => "Stores";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.Stores.Where(x => codes.Contains(x.Code)), x => x.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, Store x) => new()
+    {
+        ["code"] = x.Code, ["name"] = x.Name, ["siteCode"] = c.CodeOf.GetValueOrDefault(x.SiteId), ["description"] = x.Description, ["active"] = x.IsActive,
+    };
+
+    protected override async Task<Store?> SaveAsync(ImportContext c, ImportRow row, Store? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var siteId = Ref(row, c.Sites, S(v, "siteCode"), "Site");
+        if (siteId is null && S(v, "siteCode") is null) row.Problem(Translator.T("Choose a site."));
+        if (row.HasProblems) return null;
+        var input = new InventoryEndpoints.StoreInput(S(v, "code")!, S(v, "name") ?? "", siteId, S(v, "description"), B(v, "active", true));
+        var rules = InventoryEndpoints.StoreRules(input);
+        if (existing is not null && existing.SiteId != siteId && await c.Db.StockLevels.AnyAsync(l => l.StoreId == existing.Id && l.QuantityOnHand != 0, ct))
+            rules.Add("siteId", "Move the stock out before changing the store's site.");
+        if (!Accept(row, rules)) return null;
+        if (existing is not null) { InventoryEndpoints.UpdateStore(existing, input); return null; }
+        return InventoryEndpoints.CreateStore(c.Db, input);
+    }
+
+    protected override void Remember(ImportContext c, Store x, Dictionary<string, object?> v) => c.Remember(c.Stores, x.Code, x.Id);
+}
+
+// ---------------- Assets, people ----------------
+
+internal sealed class AssetImporter : RecordImporter<Asset>
+{
+    public override string Sheet => "Assets";
+
+    /// <summary>No key column is required: a blank asset number means a new asset, numbered automatically.</summary>
+    public override IReadOnlyList<string> KeyColumns => [];
+    public override string KeyOf(ImportRow row) => row.Get<string>("assetNumber")?.Trim() ?? "";
+    protected override string Shown(ImportRow row) => row.Get<string>("assetNumber") ?? row.Get<string>("name") ?? "";
+
+    public override IReadOnlyList<ImportRow> Order(IReadOnlyList<ImportRow> rows, ImportContext c) =>
+        ParentsFirst(rows, KeyOf, r => r.Get<string>("parentAssetNumber")?.Trim(), "assetNumber");
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var numbers = Codes(rows, "assetNumber");
+        Keep(await ByKey(c.Db.Assets.Where(a => numbers.Contains(a.AssetNumber)), a => a.AssetNumber, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, Asset a)
+    {
+        var v = new Dictionary<string, object?>
+        {
+            ["assetNumber"] = a.AssetNumber, ["name"] = a.Name, ["siteCode"] = c.CodeOf.GetValueOrDefault(a.SiteId),
+            ["locationCode"] = a.LocationId is { } l ? c.CodeOf.GetValueOrDefault(l) : null,
+            ["parentAssetNumber"] = a.ParentAssetId is { } p ? c.CodeOf.GetValueOrDefault(p) : null,
+            ["categoryCode"] = a.CategoryId is { } cat ? c.CodeOf.GetValueOrDefault(cat) : null,
+            ["status"] = a.Status, ["criticality"] = a.Criticality, ["manufacturer"] = a.Manufacturer, ["model"] = a.Model, ["serialNumber"] = a.SerialNumber,
+            ["barcode"] = a.Barcode, ["operationNumber"] = a.OperationNumber, ["commissionedOn"] = a.CommissionedOn, ["disposedOn"] = a.DisposedOn,
+            ["purchasePrice"] = a.PurchasePrice, ["currentValue"] = a.CurrentValue, ["salvageValue"] = a.SalvageValue, ["expectedLifeYears"] = a.ExpectedLifeYears,
+            ["downtimeCostPerHour"] = a.DowntimeCostPerHour, ["warrantyType"] = a.WarrantyType, ["warrantyExpiresOn"] = a.WarrantyExpiresOn,
+            ["warrantyNotes"] = a.WarrantyNotes, ["description"] = a.Description, ["notes"] = a.Notes, ["notesToTechnician"] = a.NotesToTechnician,
+        };
+        foreach (var f in c.AssetFields) v["cf:" + f.Key] = a.CustomFields.GetValueOrDefault(f.Key);
+        return v;
+    }
+
+    protected override Dictionary<string, object?> Defaults() => new()
+    { ["status"] = AssetStatus.Active, ["criticality"] = Criticality.Medium, ["warrantyType"] = WarrantyType.None };
+
+    /// <summary>A custom-field cell as the screen stores it: Yes/No become true/false for Yes/No fields.</summary>
+    private static string? Custom(CustomFieldDefinition f, string? text)
+    {
+        if (text is null || f.DataType != CustomFieldType.Boolean) return text;
+        var low = text.Trim().ToLowerInvariant();
+        return low is "yes" or "true" or "1" or "نعم" ? "true" : low is "no" or "false" or "0" or "لا" ? "false" : text;
+    }
+
+    public override Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        // Yes/No custom fields compare as the screen stores them.
+        foreach (var f in c.AssetFields.Where(f => f.DataType == CustomFieldType.Boolean && row.Has("cf:" + f.Key)))
+            row.Set("cf:" + f.Key, Custom(f, row.Get<string>("cf:" + f.Key)));
+        return base.ImportAsync(c, row, ct);
+    }
+
+    protected override async Task<Asset?> SaveAsync(ImportContext c, ImportRow row, Asset? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var siteCode = S(v, "siteCode");
+        var siteId = Ref(row, c.Sites, siteCode, "Site");
+        if (siteCode is null) row.Problem(Translator.T("Choose a site."));
+        Guid? locationId = null;
+        if (siteId is { } site && S(v, "locationCode") is { } locationCode)
+        {
+            if (c.Locations.TryGetValue(ImportContext.LocationKey(site, locationCode), out var lid)) locationId = lid;
+            else row.Problem(Translator.T($"Location {locationCode} not found."));
+        }
+        var parentId = Ref(row, c.Assets, S(v, "parentAssetNumber"), "Asset");
+        if (existing is not null && parentId is { } start)
+        {
+            Guid? cursor = start;
+            for (var depth = 0; cursor is { } at && depth < 50; depth++)
+            {
+                if (at == existing.Id) { row.Problem(Translator.T($"{existing.AssetNumber} can't be under itself.")); break; }
+                cursor = c.AssetParents.GetValueOrDefault(at);
+            }
+        }
+        var categoryCode = S(v, "categoryCode");
+        Guid? categoryId = categoryCode is not null && c.Categories.TryGetValue(categoryCode, out var known) ? known : null;
+        if (row.HasProblems || siteId is null) return null;
+
+        var number = S(v, "assetNumber");
+        var requireNumber = existing is not null || !(number is null && c.Settings.AutoNumberAssets);
+        var custom = c.AssetFields.ToDictionary(f => f.Key, f => S(v, "cf:" + f.Key));
+        var input = new AssetEndpoints.AssetInput(number, S(v, "name") ?? "", S(v, "description"), categoryId, siteId.Value, locationId, parentId,
+            E(v, "status", AssetStatus.Active), E(v, "criticality", Criticality.Medium), S(v, "manufacturer"), S(v, "model"), S(v, "serialNumber"),
+            S(v, "barcode"), S(v, "operationNumber"), D(v, "commissionedOn"), D(v, "disposedOn"), N(v, "purchasePrice"), N(v, "currentValue"),
+            N(v, "salvageValue"), N(v, "expectedLifeYears"), N(v, "downtimeCostPerHour"), E(v, "warrantyType", WarrantyType.None),
+            D(v, "warrantyExpiresOn"), S(v, "warrantyNotes"), S(v, "notes"), S(v, "notesToTechnician"), custom);
+        var rules = AssetEndpoints.AssetRules(input, existing?.Id, requireNumber);
+        var values = AssetEndpoints.CustomFieldValues(rules, c.AssetFields, input);
+        if (!Accept(row, rules)) return null;
+        // A new category is added only once the row is known to be good.
+        if (categoryCode is not null && categoryId is null) input = input with { CategoryId = c.EnsureLookup(c.Categories, categoryCode, "Categories") };
+
+        if (existing is not null)
+        {
+            AssetEndpoints.UpdateAsset(c.Db, existing, input, values, c.Tenant);
+            c.AssetParents[existing.Id] = existing.ParentAssetId;
+            c.AssetSites[existing.Id] = existing.SiteId;
+            return null;
+        }
+        var asset = await AssetEndpoints.CreateAssetAsync(c.Db, input, values, c.Settings, ct);
+        // A number given automatically may already be taken by a row of this sheet that isn't saved yet.
+        for (var tries = 0; c.Assets.ContainsKey(asset.AssetNumber) && tries < 20; tries++)
+            asset.AssetNumber = await AssetEndpoints.NextAssetNumberAsync(c.Db, c.Settings, ct);
+        return asset;
+    }
+
+    protected override void Remember(ImportContext c, Asset a, Dictionary<string, object?> v)
+    {
+        c.Remember(c.Assets, a.AssetNumber, a.Id);
+        c.AssetParents[a.Id] = a.ParentAssetId;
+        c.AssetSites[a.Id] = a.SiteId;
+    }
+}
+
+internal sealed class PeopleImporter : RecordImporter<Employee>
+{
+    public override string Sheet => "People";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.Employees.Where(e => codes.Contains(e.Code)), e => e.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, Employee e) => new()
+    {
+        ["code"] = e.Code, ["fullName"] = e.FullName, ["jobTitle"] = e.JobTitle, ["email"] = e.Email, ["phone"] = e.Phone,
+        ["trades"] = e.TradeIds.Select(id => c.CodeOf.GetValueOrDefault(id)).OfType<string>().ToList(),
+        ["sites"] = e.SiteIds.Select(id => c.CodeOf.GetValueOrDefault(id)).OfType<string>().ToList(),
+        ["hourlyRate"] = e.HourlyRate, ["overtimeRate"] = e.OvertimeRate, ["contractor"] = e.IsContractor, ["company"] = e.Company,
+        ["notes"] = e.Notes, ["active"] = e.IsActive,
+    };
+
+    protected override Dictionary<string, object?> Defaults() => new() { ["contractor"] = false, ["active"] = true };
+
+    protected override Task<Employee?> SaveAsync(ImportContext c, ImportRow row, Employee? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var siteIds = L(v, "sites").Select(code => Ref(row, c.Sites, code, "Site")).OfType<Guid>().ToList();
+        var tradeCodes = L(v, "trades");
+        var tradeIds = tradeCodes.Where(c.Trades.ContainsKey).Select(code => c.Trades[code]).ToList();
+        var input = new PeopleEndpoints.EmployeeInput(S(v, "code")!, S(v, "fullName") ?? "", S(v, "jobTitle"), S(v, "email"), S(v, "phone"), tradeIds, siteIds,
+            N(v, "hourlyRate"), N(v, "overtimeRate"), B(v, "contractor"), S(v, "company"), existing?.UserId, S(v, "notes"), B(v, "active", true));
+        if (row.HasProblems || !Accept(row, PeopleEndpoints.EmployeeRules(input))) return Task.FromResult<Employee?>(null);
+        // New trades are added only once the row is known to be good.
+        input = input with { TradeIds = tradeCodes.Select(code => c.EnsureLookup(c.Trades, code, "Trades")).Distinct().ToList() };
+        if (existing is not null) { PeopleEndpoints.UpdateEmployee(existing, input); return Task.FromResult<Employee?>(null); }
+        return Task.FromResult<Employee?>(PeopleEndpoints.CreateEmployee(c.Db, input));
+    }
+
+    protected override void Remember(ImportContext c, Employee e, Dictionary<string, object?> v) => c.Remember(c.Employees, e.Code, e.Id);
+}
+
+// ---------------- Parts, stock ----------------
+
+internal sealed class PartImporter : RecordImporter<Part>
+{
+    public override string Sheet => "Parts";
+    public override IReadOnlyList<string> KeyColumns => ["partNumber"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var numbers = Codes(rows, "partNumber");
+        Keep(await ByKey(c.Db.Parts.Where(p => numbers.Contains(p.PartNumber)), p => p.PartNumber, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, Part p) => new()
+    {
+        ["partNumber"] = p.PartNumber, ["name"] = p.Name, ["unit"] = p.UnitOfMeasure, ["groupCode"] = p.GroupId is { } g ? c.CodeOf.GetValueOrDefault(g) : null,
+        ["specification"] = p.Specification, ["manufacturer"] = p.Manufacturer, ["manufacturerPartNumber"] = p.ManufacturerPartNumber,
+        ["standardPrice"] = p.StandardPrice, ["leadTimeDays"] = p.LeadTimeDays, ["critical"] = p.IsCritical, ["shelfLife"] = p.IsShelfItem,
+        ["allowNegative"] = p.AllowNegativeStock, ["preferredSupplierCode"] = p.PreferredSupplierId is { } s ? c.CodeOf.GetValueOrDefault(s) : null,
+        ["barcode"] = p.Barcode, ["notes"] = p.Notes, ["active"] = p.IsActive,
+    };
+
+    protected override Dictionary<string, object?> Defaults() => new()
+    { ["standardPrice"] = 0m, ["critical"] = false, ["shelfLife"] = false, ["allowNegative"] = false, ["active"] = true };
+
+    protected override Task<Part?> SaveAsync(ImportContext c, ImportRow row, Part? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var supplierId = Ref(row, c.Suppliers, S(v, "preferredSupplierCode"), "Supplier");
+        var groupCode = S(v, "groupCode");
+        Guid? groupId = groupCode is not null && c.PartGroups.TryGetValue(groupCode, out var known) ? known : null;
+        var input = new InventoryEndpoints.PartInput(S(v, "partNumber")!, S(v, "name") ?? "", S(v, "specification"), S(v, "manufacturer"),
+            S(v, "manufacturerPartNumber"), S(v, "unit") ?? "", groupId, N(v, "standardPrice") ?? 0, I(v, "leadTimeDays"), B(v, "critical"), B(v, "shelfLife"),
+            B(v, "allowNegative"), supplierId, S(v, "barcode"), existing?.AlternatePartIds, S(v, "notes"), B(v, "active", true));
+        if (row.HasProblems || !Accept(row, InventoryEndpoints.PartRules(input))) return Task.FromResult<Part?>(null);
+        // A new group is added only once the row is known to be good.
+        if (groupCode is not null && groupId is null) input = input with { GroupId = c.EnsureLookup(c.PartGroups, groupCode, "PartGroups") };
+        if (existing is not null) { InventoryEndpoints.UpdatePart(existing, input); return Task.FromResult<Part?>(null); }
+        return Task.FromResult<Part?>(InventoryEndpoints.CreatePart(c.Db, input));
+    }
+
+    protected override void Remember(ImportContext c, Part p, Dictionary<string, object?> v) => c.Remember(c.Parts, p.PartNumber, p.Id);
+}
+
+/// <summary>
+/// Stock levels by part and store. The opening quantity goes in only for stock that is new in this run (posted to the
+/// ledger as an opening balance at the part's average cost), so an old export can't move quantities back.
+/// </summary>
+internal sealed class StockImporter : RecordImporter<StockLevel>
+{
+    public const string OpeningNote = "Opening balance (import)";
+    public const string IgnoredNote = "Opening quantity ignored for existing stock: use a stock take to change quantities.";
+
+    private readonly List<(Guid PartId, Guid StoreId, StockLevel Level, decimal Quantity, string? Batch, DateOnly? Expiry)> _opening = [];
+    private Dictionary<Guid, Part> _parts = [];
+    private Dictionary<Guid, Store> _stores = [];
+
+    public override string Sheet => "Stock";
+    public override IReadOnlyList<string> KeyColumns => ["partNumber", "storeCode"];
+    protected override string Shown(ImportRow row) => $"{row.Get<string>("partNumber")} · {row.Get<string>("storeCode")}";
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var partIds = Codes(rows, "partNumber").Select(n => c.Parts.GetValueOrDefault(n)).Where(id => id != Guid.Empty).ToList();
+        var storeIds = Codes(rows, "storeCode").Select(n => c.Stores.GetValueOrDefault(n)).Where(id => id != Guid.Empty).ToList();
+        foreach (var l in await c.Db.StockLevels.Where(l => partIds.Contains(l.PartId) && storeIds.Contains(l.StoreId)).ToListAsync(ct))
+            Existing[$"{c.CodeOf.GetValueOrDefault(l.PartId)}|{c.CodeOf.GetValueOrDefault(l.StoreId)}"] = l;
+        // Loaded once for the shelf-life, store and cost checks, not once a row.
+        _parts = await c.Db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
+        _stores = await c.Db.Stores.AsNoTracking().Where(s => storeIds.Contains(s.Id)).ToDictionaryAsync(s => s.Id, ct);
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, StockLevel l) => new()
+    {
+        ["partNumber"] = c.CodeOf.GetValueOrDefault(l.PartId), ["storeCode"] = c.CodeOf.GetValueOrDefault(l.StoreId), ["bin"] = l.Bin,
+        ["min"] = l.MinLevel, ["reorderLevel"] = l.ReorderLevel, ["max"] = l.MaxLevel, ["reorderQuantity"] = l.ReorderQuantity,
+    };
+
+    protected override Dictionary<string, object?> Defaults() => new() { ["min"] = 0m, ["reorderLevel"] = 0m, ["max"] = 0m, ["reorderQuantity"] = 0m };
+
+    public override Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        // On stock that exists, the opening quantity (and its batch) is set aside: quantities change through a stock take.
+        if (Existing.ContainsKey(KeyOf(row)) && (row.Has("openingQuantity") || row.Has("batch") || row.Has("expiry")))
+        {
+            if (row.Has("openingQuantity")) c.Note(Translator.T(IgnoredNote));
+            foreach (var k in new[] { "openingQuantity", "batch", "expiry" }) row.Set(k, null);
+        }
+        return base.ImportAsync(c, row, ct);
+    }
+
+    protected override async Task<StockLevel?> SaveAsync(ImportContext c, ImportRow row, StockLevel? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var partId = Ref(row, c.Parts, S(v, "partNumber"), "Part");
+        var storeId = Ref(row, c.Stores, S(v, "storeCode"), "Store");
+        if (row.HasProblems || partId is null || storeId is null) return null;
+        var level = new InventoryEndpoints.LevelInput(storeId.Value, S(v, "bin"), N(v, "min") ?? 0, N(v, "reorderLevel") ?? 0, N(v, "max") ?? 0, N(v, "reorderQuantity") ?? 0);
+        var rules = new Validator().MaxLength("bin", level.Bin, "Bin", 50);
+        InventoryEndpoints.LevelRules(rules, [level]);
+        var opening = existing is null ? N(v, "openingQuantity") : null;
+        if (opening < 0) rules.Add("levels", "Levels cannot be negative.");
+        if (opening > 0 && _parts.GetValueOrDefault(partId.Value) is { IsShelfItem: true } part && (S(v, "batch") is null || D(v, "expiry") is null))
+            rules.Add("batch", $"{part.PartNumber} is a shelf-life item: enter the batch and expiry.");
+        if (opening > 0 && _stores.GetValueOrDefault(storeId.Value) is { IsActive: false } store)
+            rules.Add("storeId", $"Store {store.Code} is inactive.");
+        if (!Accept(row, rules)) return null;
+
+        var target = existing ?? new StockLevel { PartId = partId.Value, StoreId = storeId.Value };
+        target.Bin = level.Bin.Clean(); target.MinLevel = level.MinLevel; target.ReorderLevel = level.ReorderLevel; target.MaxLevel = level.MaxLevel;
+        target.ReorderQuantity = level.ReorderQuantity;
+        if (existing is not null) return null;
+        c.Db.StockLevels.Add(target);
+        if (opening > 0) _opening.Add((partId.Value, storeId.Value, target, opening.Value, S(v, "batch"), D(v, "expiry")));
+        return target;
+    }
+
+    public override Task FinishAsync(ImportContext c, CancellationToken ct)
+    {
+        // All at once through the ledger: the levels are new in this run, so nobody else can be moving them.
+        StockLedger.PostOpeningBalances(c.Db, c.Tenant, _opening.Select(o =>
+            new OpeningBalance(_parts[o.PartId], _stores[o.StoreId], o.Level, o.Quantity, c.Today, o.Batch, o.Expiry, OpeningNote)));
+        return Task.CompletedTask;
+    }
+}
+
+// ---------------- PM ----------------
+
+internal sealed class PmTaskImporter : RecordImporter<PmTask>
+{
+    public override string Sheet => "PmTasks";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.PmTasks.Include(t => t.Steps).Include(t => t.Parts).Where(t => codes.Contains(t.Code)), t => t.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, PmTask t) => new()
+    {
+        ["code"] = t.Code, ["name"] = t.Name, ["description"] = t.Description, ["tradeCode"] = t.TradeId is { } tr ? c.CodeOf.GetValueOrDefault(tr) : null,
+        ["estimatedHours"] = t.EstimatedHours, ["safetyNotes"] = t.SafetyNotes, ["active"] = t.IsActive,
+    };
+
+    protected override Task<PmTask?> SaveAsync(ImportContext c, ImportRow row, PmTask? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var tradeCode = S(v, "tradeCode");
+        Guid? tradeId = tradeCode is not null && c.Trades.TryGetValue(tradeCode, out var known) ? known : null;
+        var steps = existing?.Steps.OrderBy(s => s.Sequence).Select(s => s.Description).ToList() ?? [];
+        var input = new PmEndpoints.TaskInput(S(v, "code")!, S(v, "name") ?? "", S(v, "description"), tradeId, N(v, "estimatedHours"), S(v, "safetyNotes"),
+            steps, B(v, "active", true));
+        if (!Accept(row, PmEndpoints.PmTaskRules(input))) return Task.FromResult<PmTask?>(null);
+        if (tradeCode is not null && tradeId is null) input = input with { TradeId = c.EnsureLookup(c.Trades, tradeCode, "Trades") };
+        if (existing is not null) { Replace(c, existing, input); return Task.FromResult<PmTask?>(null); }
+        return Task.FromResult<PmTask?>(PmEndpoints.CreateTask(c.Db, input));
+    }
+
+    /// <summary>
+    /// Updates a task through the screen's code. Step and part rows it creates have their ids set already, so a task saved
+    /// earlier in the same run would take them for existing rows: they are marked new here.
+    /// </summary>
+    internal static void Replace(ImportContext c, PmTask task, PmEndpoints.TaskInput input)
+    {
+        var steps = task.Steps.ToHashSet();
+        var parts = task.Parts.ToHashSet();
+        PmEndpoints.UpdateTask(c.Db, task, input);
+        foreach (var s in task.Steps.Where(s => !steps.Contains(s))) c.Db.Entry(s).State = EntityState.Added;
+        foreach (var p in task.Parts.Where(p => !parts.Contains(p))) c.Db.Entry(p).State = EntityState.Added;
+    }
+
+    protected override void Remember(ImportContext c, PmTask t, Dictionary<string, object?> v) => c.Remember(c.PmTasks, t.Code, t.Id);
+}
+
+/// <summary>
+/// A list belonging to a PM task (its steps, its parts), one row per item. Each row says whether its item is new, changed
+/// or the same; at the end every task named on the sheet gets the sheet's items as its whole list.
+/// </summary>
+internal abstract class PmTaskListImporter : ISheetImporter
+{
+    private readonly Dictionary<Guid, PmTask> _tasks = [];
+
+    /// <summary>
+    /// A task with a problem row keeps its list as it is: its other rows become problems too ("fix row N first"). A task
+    /// whose list loses items (or is renumbered) shows as changed, with its old and new list, on its first row.
+    /// </summary>
+    public IReadOnlyList<RowResult> Review(ImportContext c, IReadOnlyList<ImportRow> rows, IReadOnlyList<RowResult> results)
+    {
+        var taskOf = new Dictionary<int, Guid>();
+        foreach (var r in rows)
+            if (r.Get<string>("taskCode")?.Trim() is { } code && c.PmTasks.TryGetValue(code, out var id)) taskOf[r.Number] = id;
+        var blocked = new Dictionary<Guid, int>();
+        foreach (var res in results.Where(r => r.Outcome == RowOutcome.Problem))
+            if (taskOf.TryGetValue(res.Row, out var id)) blocked[id] = Math.Min(blocked.GetValueOrDefault(id, int.MaxValue), res.Row);
+        var output = results.Select(res =>
+            taskOf.TryGetValue(res.Row, out var id) && blocked.TryGetValue(id, out var first) && res.Outcome != RowOutcome.Problem
+                ? res with { Outcome = RowOutcome.Problem, Changes = [], Problems = [Translator.T($"Not saved: fix row {first} of this task first.")] }
+                : res).ToList();
+        foreach (var id in blocked.Keys) Forget(id);
+        foreach (var (id, change) in ListChanges(c))
+        {
+            var firstRow = taskOf.Where(x => x.Value == id).Select(x => x.Key).DefaultIfEmpty(-1).Min();
+            var i = output.FindIndex(r => r.Row == firstRow);
+            if (i >= 0) output[i] = output[i] with { Outcome = RowOutcome.Changed, Changes = [.. output[i].Changes, change] };
+        }
+        return output;
+    }
+
+    /// <summary>Drops a task's collected rows: its list isn't replaced.</summary>
+    protected abstract void Forget(Guid taskId);
+
+    /// <summary>The tasks whose list loses items (or is renumbered), with the old and new list.</summary>
+    protected abstract IEnumerable<(Guid TaskId, FieldChange Change)> ListChanges(ImportContext c);
+
+    public abstract string Sheet { get; }
+    public abstract IReadOnlyList<string> KeyColumns { get; }
+    public string KeyOf(ImportRow row) => string.Join('|', KeyColumns.Select(k => ImportValues.Show(row.Value(k))?.Trim() ?? ""));
+    public Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct) => Task.CompletedTask;
+    public abstract Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct);
+    public abstract Task FinishAsync(ImportContext c, CancellationToken ct);
+
+    /// <summary>The row's task, loaded once with its steps and parts; null with "PM task X not found." on the row.</summary>
+    protected async Task<PmTask?> TaskAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        var code = row.Get<string>("taskCode")?.Trim();
+        if (code is null || !c.PmTasks.TryGetValue(code, out var id)) { row.Problem(Translator.T($"PM task {code} not found.")); return null; }
+        if (!_tasks.TryGetValue(id, out var task))
+            _tasks[id] = task = await c.Db.PmTasks.Include(t => t.Steps).Include(t => t.Parts).FirstAsync(t => t.Id == id, ct);
+        return task;
+    }
+
+    protected PmTask TaskById(Guid id) => _tasks[id];
+
+    protected static PmEndpoints.TaskInput InputOf(PmTask t, List<string> steps, List<PmEndpoints.TaskPartInput>? parts) =>
+        new(t.Code, t.Name, t.Description, t.TradeId, t.EstimatedHours, t.SafetyNotes, steps, t.IsActive, null, parts);
+
+    protected static List<string> StepsOf(PmTask t) => t.Steps.OrderBy(s => s.Sequence).Select(s => s.Description).ToList();
+
+    /// <summary>Replaces a task's lists through the screen's code, and makes sure the new step and part rows are inserted.</summary>
+    internal static void Replace(ImportContext c, PmTask task, PmEndpoints.TaskInput input) => PmTaskImporter.Replace(c, task, input);
+
+    protected static RowResult Result(ImportRow row, string key, RowOutcome outcome, List<FieldChange>? changes = null) =>
+        row.HasProblems ? ImportRun.Problem(row, key) : new RowResult(row.Number, key, outcome, changes ?? [], []);
+}
+
+internal sealed class PmStepImporter : PmTaskListImporter
+{
+    private readonly Dictionary<Guid, SortedDictionary<int, string>> _wanted = [];
+    private readonly Dictionary<Guid, List<string>> _before = [];
+
+    public override string Sheet => "PmSteps";
+    public override IReadOnlyList<string> KeyColumns => ["taskCode", "step"];
+
+    public override async Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        var shown = $"{row.Get<string>("taskCode")} · {row.Get<int?>("step")}";
+        var task = await TaskAsync(c, row, ct);
+        var step = row.Get<int?>("step") ?? 0;
+        var text = row.Get<string>("description");
+        if (step < 1) row.Problem(Translator.T("Steps are numbered from 1."));
+        if (text is null) row.Problem(Translator.T($"{row.Sheet.Column("description").Heading} is required."));
+        if (task is null || row.HasProblems) return Result(row, shown, RowOutcome.Problem);
+        var before = _before.TryGetValue(task.Id, out var b) ? b : _before[task.Id] = StepsOf(task);
+        var wanted = _wanted.TryGetValue(task.Id, out var w) ? w : _wanted[task.Id] = [];
+        if (wanted.Count >= 300) { row.Problem(Translator.T("At most 300 steps.")); return Result(row, shown, RowOutcome.Problem); }
+        wanted[step] = text!;
+        var old = step <= before.Count ? before[step - 1] : null;
+        if (old is null) return Result(row, shown, RowOutcome.New);
+        return old == text ? Result(row, shown, RowOutcome.Unchanged)
+            : Result(row, shown, RowOutcome.Changed, [new FieldChange(row.Sheet.Column("description").Heading, old, text)]);
+    }
+
+    protected override void Forget(Guid taskId) => _wanted.Remove(taskId);
+
+    protected override IEnumerable<(Guid TaskId, FieldChange Change)> ListChanges(ImportContext c)
+    {
+        foreach (var (id, wanted) in _wanted)
+        {
+            var before = _before[id];
+            var renumbered = wanted.Keys.Select((step, i) => step != i + 1).Any(x => x);
+            if (before.Count > wanted.Count || renumbered)
+                yield return (id, new FieldChange(Translator.T("Steps"), string.Join("; ", before), string.Join("; ", wanted.Values)));
+        }
+    }
+
+    public override Task FinishAsync(ImportContext c, CancellationToken ct)
+    {
+        foreach (var (id, wanted) in _wanted)
+        {
+            var task = TaskById(id);
+            var steps = wanted.Values.ToList();
+            if (steps.SequenceEqual(_before[id])) continue;
+            Replace(c, task, InputOf(task, steps, null));
+        }
+        return System.Threading.Tasks.Task.CompletedTask;
+    }
+}
+
+internal sealed class PmPartImporter : PmTaskListImporter
+{
+    private readonly Dictionary<Guid, Dictionary<Guid, decimal>> _wanted = [];
+    private readonly Dictionary<Guid, Dictionary<Guid, decimal>> _before = [];
+
+    public override string Sheet => "PmParts";
+    public override IReadOnlyList<string> KeyColumns => ["taskCode", "partNumber"];
+
+    public override async Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        var shown = $"{row.Get<string>("taskCode")} · {row.Get<string>("partNumber")}";
+        var task = await TaskAsync(c, row, ct);
+        var partNumber = row.Get<string>("partNumber")?.Trim();
+        Guid partId = Guid.Empty;
+        if (partNumber is not null && !c.Parts.TryGetValue(partNumber, out partId)) row.Problem(Translator.T($"Part {partNumber} not found."));
+        var quantity = Math.Round(row.Get<decimal?>("quantity") ?? 0, 3);
+        if (quantity is <= 0 or > 1_000_000_000m) row.Problem(Translator.T("Each part needs a quantity above zero."));
+        if (task is null || row.HasProblems) return Result(row, shown, RowOutcome.Problem);
+        var before = _before.TryGetValue(task.Id, out var b) ? b : _before[task.Id] = task.Parts.ToDictionary(p => p.PartId, p => p.Quantity);
+        var wanted = _wanted.TryGetValue(task.Id, out var w) ? w : _wanted[task.Id] = [];
+        if (wanted.Count >= 200) { row.Problem(Translator.T("At most 200 parts.")); return Result(row, shown, RowOutcome.Problem); }
+        wanted[partId] = quantity;
+        if (!before.TryGetValue(partId, out var old)) return Result(row, shown, RowOutcome.New);
+        return old == quantity ? Result(row, shown, RowOutcome.Unchanged)
+            : Result(row, shown, RowOutcome.Changed, [new FieldChange(row.Sheet.Column("quantity").Heading, ImportValues.Plain(old), ImportValues.Plain(quantity))]);
+    }
+
+    protected override void Forget(Guid taskId) => _wanted.Remove(taskId);
+
+    protected override IEnumerable<(Guid TaskId, FieldChange Change)> ListChanges(ImportContext c)
+    {
+        string Show(Dictionary<Guid, decimal> list) =>
+            string.Join("; ", list.Select(x => $"{c.CodeOf.GetValueOrDefault(x.Key)} × {ImportValues.Plain(x.Value)}").Order(StringComparer.OrdinalIgnoreCase));
+        foreach (var (id, wanted) in _wanted)
+        {
+            var before = _before[id];
+            if (before.Keys.Any(k => !wanted.ContainsKey(k)))
+                yield return (id, new FieldChange(Translator.T("Parts"), Show(before), Show(wanted)));
+        }
+    }
+
+    public override Task FinishAsync(ImportContext c, CancellationToken ct)
+    {
+        foreach (var (id, wanted) in _wanted)
+        {
+            var before = _before[id];
+            if (wanted.Count == before.Count && wanted.All(x => before.TryGetValue(x.Key, out var q) && q == x.Value)) continue;
+            var task = TaskById(id);
+            Replace(c, task, InputOf(task, StepsOf(task), wanted.Select(x => new PmEndpoints.TaskPartInput(x.Key, x.Value)).ToList()));
+        }
+        return System.Threading.Tasks.Task.CompletedTask;
+    }
+}
+
+internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
+{
+    public override string Sheet => "PmSchedules";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Assets).Where(s => codes.Contains(s.Code)), s => s.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, PmSchedule s) => new()
+    {
+        ["code"] = s.Code, ["name"] = s.Name, ["taskCode"] = c.CodeOf.GetValueOrDefault(s.PmTaskId), ["siteCode"] = c.CodeOf.GetValueOrDefault(s.SiteId),
+        ["locationCode"] = s.LocationId is { } l ? c.CodeOf.GetValueOrDefault(l) : null, ["assetNumber"] = s.AssetId is { } a ? c.CodeOf.GetValueOrDefault(a) : null,
+        ["tradeCode"] = s.TradeId is { } t ? c.CodeOf.GetValueOrDefault(t) : null, ["priority"] = s.Priority,
+        ["schedule"] = s.Type == PmScheduleType.Meter ? null : s.Type, ["every"] = s.Frequency, ["unit"] = s.Unit, ["countFrom"] = s.Basis,
+        ["weekOfMonth"] = s.WeekOfMonth is { } w ? (WeekOfMonth)w : null, ["weekday"] = s.DayOfWeek, ["dayOfMonth"] = s.DayOfMonth,
+        ["startDate"] = s.StartDate, ["leadDays"] = s.LeadDays, ["workPeriodDays"] = s.WorkPeriodDays,
+        ["assignees"] = s.AssigneeIds.Select(id => c.CodeOf.GetValueOrDefault(id)).OfType<string>().ToList(), ["description"] = s.Description, ["active"] = s.IsActive,
+    };
+
+    protected override Dictionary<string, object?> Defaults() => new()
+    {
+        ["priority"] = WorkPriority.Medium, ["every"] = 1, ["unit"] = FrequencyUnit.Month, ["countFrom"] = PmBasis.Scheduled, ["leadDays"] = 7,
+        ["workPeriodDays"] = 1, ["active"] = true,
+    };
+
+    protected override Task<PmSchedule?> SaveAsync(ImportContext c, ImportRow row, PmSchedule? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var type = v.GetValueOrDefault("schedule") as PmScheduleType? ?? existing?.Type;
+        if (existing is null && type is null or PmScheduleType.Meter) row.Problem(Translator.T("Set up meter-based schedules on screen."));
+        if (existing is null && D(v, "startDate") is null) row.Problem(Translator.T($"{row.Sheet.Column("startDate").Heading} is required."));
+        if (S(v, "taskCode") is null) row.Problem(Translator.T($"{row.Sheet.Column("taskCode").Heading} is required."));
+        if (S(v, "siteCode") is null) row.Problem(Translator.T("Choose a site."));
+        var taskId = Ref(row, c.PmTasks, S(v, "taskCode"), "PM task");
+        var siteId = Ref(row, c.Sites, S(v, "siteCode"), "Site");
+        Guid? locationId = null;
+        if (siteId is { } site && S(v, "locationCode") is { } locationCode)
+        {
+            if (c.Locations.TryGetValue(ImportContext.LocationKey(site, locationCode), out var lid)) locationId = lid;
+            else row.Problem(Translator.T($"Location {locationCode} not found."));
+        }
+        var assetId = Ref(row, c.Assets, S(v, "assetNumber"), "Asset");
+        if (assetId is { } asset && siteId is { } s2 && c.AssetSites.TryGetValue(asset, out var assetSite) && assetSite != s2)
+            row.Problem(Translator.T("Asset must belong to the selected site."));
+        var assignees = L(v, "assignees").Select(code => Ref(row, c.Employees, code, "Person")).OfType<Guid>().ToList();
+        var tradeCode = S(v, "tradeCode");
+        Guid? tradeId = tradeCode is not null && c.Trades.TryGetValue(tradeCode, out var known) ? known : null;
+        if (row.HasProblems || taskId is null || siteId is null || type is null) return Task.FromResult<PmSchedule?>(null);
+
+        var round = existing?.Assets.OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList();
+        var input = new PmEndpoints.ScheduleInput(S(v, "code"), S(v, "name") ?? "", S(v, "description"), siteId.Value, locationId, assetId, tradeId,
+            E(v, "priority", WorkPriority.Medium), assignees, taskId.Value, existing?.ExtraTasks.Select(e => new PmEndpoints.ExtraTaskInput(e.PmTaskId, e.EveryNth)).ToList(),
+            type.Value, E(v, "countFrom", PmBasis.Scheduled), I(v, "every") ?? 1, E(v, "unit", FrequencyUnit.Month),
+            v.GetValueOrDefault("weekOfMonth") is WeekOfMonth w ? (int)w : null, v.GetValueOrDefault("weekday") as DayOfWeek?, I(v, "dayOfMonth"),
+            I(v, "workPeriodDays") ?? 1, existing?.WholeMonth ?? false, I(v, "leadDays") ?? 7, D(v, "startDate") ?? existing!.StartDate, null,
+            existing?.MeterId, existing?.MeterTrigger, existing?.MeterInterval, null, existing?.LowerLimit, existing?.UpperLimit,
+            existing?.LowerTaskId, existing?.UpperTaskId, existing?.TimeBased ?? false, B(v, "active", true), null, round is { Count: > 0 } ? round : null);
+        var rules = PmEndpoints.PmScheduleRules(input, existing?.Id);
+        if (existing is not null) rules.Merge(PmEndpoints.ScheduleChangeRules(existing, input));
+        if (!Accept(row, rules)) return Task.FromResult<PmSchedule?>(null);
+        if (tradeCode is not null && tradeId is null) input = input with { TradeId = c.EnsureLookup(c.Trades, tradeCode, "Trades") };
+        if (existing is not null) { PmEndpoints.UpdateSchedule(existing, input); return Task.FromResult<PmSchedule?>(null); }
+        return Task.FromResult<PmSchedule?>(PmEndpoints.CreateSchedule(c.Db, input, input.Code!.Trim()));
+    }
+}

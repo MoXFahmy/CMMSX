@@ -367,7 +367,8 @@
     "dailyCapacityHint": "Used by the planning board to show who is overloaded.",
     "defaultLanguage": "Default language",
     "defaultLanguageHint": "For people who haven't chosen one, and for e-mails to suppliers. Each person can choose their own from their name's menu.",
-    "currencyHint": "ISO code, e.g. USD, EGP, AED"
+    "currencyHint": "ISO code, e.g. USD, EGP, AED",
+    "import": "Import"
   },
   "audit": {
     "Created": "created this record",
@@ -1410,5 +1411,53 @@
     "wasPlanned": "was planned {{date}}",
     "moved": "Moved.",
     "undo": "Undo"
+  },
+  "import": {
+    "title": "Import data",
+    "intro": "Load or update locations, assets, parts and stock, people, suppliers and PM from one Excel workbook. Rows are matched by code: a new code adds a record, a known code updates it. Blank cells keep the current value and nothing is deleted (set Active to No instead). Up to 10 MB and 5,000 rows a sheet.",
+    "step1": "1. Get a workbook",
+    "template": "Download empty template",
+    "current": "Download current data",
+    "step2": "2. Choose the filled file",
+    "choose": "Choose an .xlsx or .csv file",
+    "check": "Check file",
+    "step3": "3. Preview: nothing is saved yet",
+    "sheet": "Sheet",
+    "new": "New",
+    "changed": "Changed",
+    "unchanged": "Unchanged",
+    "problems": "Problems",
+    "nothing": "The file has no sheet CMX knows. Use the template's sheet names.",
+    "newLookups": "New lookups will be added",
+    "run": "Import",
+    "willSave": "Rows to save: {{count}}",
+    "problemRows": "Download problem rows",
+    "done": "Import finished. Rows saved: {{saved}}. Rows skipped for problems: {{skipped}}.",
+    "ignored": "Columns CMX doesn't know, ignored: {{list}}",
+    "row": "Row {{row}}",
+    "more": "…and {{count}} more",
+    "outcome": {
+      "New": "New",
+      "Changed": "Changed",
+      "Unchanged": "Unchanged",
+      "Problem": "Problem"
+    },
+    "sheets": {
+      "Sites": "Sites",
+      "Locations": "Locations",
+      "Categories": "Categories",
+      "Trades": "Trades",
+      "PartGroups": "Part groups",
+      "Suppliers": "Suppliers",
+      "Stores": "Stores",
+      "Assets": "Assets",
+      "People": "People",
+      "Parts": "Parts",
+      "Stock": "Stock",
+      "PmTasks": "PM tasks",
+      "PmSteps": "PM steps",
+      "PmParts": "PM parts",
+      "PmSchedules": "PM schedules"
+    }
   }
 }

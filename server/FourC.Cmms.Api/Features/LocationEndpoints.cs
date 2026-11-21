@@ -34,9 +34,7 @@ public static class SiteEndpoints
         {
             var v = await ValidateAsync(input, null, db, ct);
             if (!v.IsValid) return v.Problem();
-            var site = new Site { Code = input.Code.Trim(), Name = input.Name.Trim() };
-            Apply(site, input);
-            db.Sites.Add(site);
+            var site = CreateSite(db, input);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/sites/{site.Id}", ToDto(site, 0, 0));
         }).RequirePermission(Permissions.LocationsManage);
@@ -48,8 +46,7 @@ public static class SiteEndpoints
             var v = await ValidateAsync(input, id, db, ct);
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(site).Property(s => s.RowVersion).OriginalValue = input.RowVersion.ToVersion();
-            site.Code = input.Code.Trim(); site.Name = input.Name.Trim();
-            Apply(site, input);
+            UpdateSite(site, input);
             await db.SaveChangesAsync(ct);
             return Results.Ok(ToDto(site, 0, 0));
         }).RequirePermission(Permissions.LocationsManage);
@@ -66,18 +63,35 @@ public static class SiteEndpoints
         }).RequirePermission(Permissions.LocationsManage);
     }
 
+    /// <summary>The checks that need no database (shared with the import).</summary>
+    internal static Validator SiteRules(SiteInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200)
+        .MaxLength("address", i.Address, "Address", 500).MaxLength("city", i.City, "City", 100).MaxLength("country", i.Country, "Country", 100)
+        .When(i.Latitude is < -90 or > 90, "latitude", "Latitude must be between -90 and 90.")
+        .When(i.Longitude is < -180 or > 180, "longitude", "Longitude must be between -180 and 180.");
+
+    internal static Site CreateSite(CmmsDbContext db, SiteInput i)
+    {
+        var site = new Site { Code = i.Code.Trim(), Name = i.Name.Trim() };
+        Apply(site, i);
+        db.Sites.Add(site);
+        return site;
+    }
+
+    internal static void UpdateSite(Site site, SiteInput i)
+    {
+        site.Code = i.Code.Trim(); site.Name = i.Name.Trim();
+        Apply(site, i);
+    }
+
     private static async Task<Validator> ValidateAsync(SiteInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
-        var v = new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200)
-            .MaxLength("address", i.Address, "Address", 500).MaxLength("city", i.City, "City", 100).MaxLength("country", i.Country, "Country", 100)
-            .When(i.Latitude is < -90 or > 90, "latitude", "Latitude must be between -90 and 90.")
-            .When(i.Longitude is < -180 or > 180, "longitude", "Longitude must be between -180 and 180.");
+        var v = SiteRules(i);
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.Sites.AnyAsync(s => s.Code == i.Code.Trim() && s.Id != id, ct))
             v.Add("code", "Another site already uses this code.");
         return v;
     }
 
-    private static void Apply(Site s, SiteInput i)
+    internal static void Apply(Site s, SiteInput i)
     {
         s.Address = i.Address.Clean(); s.City = i.City.Clean(); s.Country = i.Country.Clean(); s.TimeZone = i.TimeZone.Clean();
         s.Latitude = i.Latitude; s.Longitude = i.Longitude; s.Notes = i.Notes.Clean(); s.IsActive = i.IsActive;
@@ -158,10 +172,7 @@ public static class LocationEndpoints
         {
             var v = await ValidateAsync(input, null, db, ct);
             if (!v.IsValid) return v.Problem();
-            var loc = new Location { SiteId = input.SiteId, ParentId = input.ParentId, Code = input.Code.Trim(), Name = input.Name.Trim() };
-            Apply(loc, input);
-            await LocationTree.AssignPathAsync(db, loc, ct);
-            db.Locations.Add(loc);
+            var loc = await CreateLocationAsync(db, input, ct);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/locations/{loc.Id}", new { loc.Id });
         }).RequirePermission(Permissions.LocationsManage);
@@ -174,28 +185,11 @@ public static class LocationEndpoints
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(loc).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
 
-            var moved = loc.ParentId != input.ParentId || loc.SiteId != input.SiteId;
-            var siteChanged = loc.SiteId != input.SiteId;
-            var (oldPath, oldDepth) = (loc.Path, loc.Depth);
-            loc.Code = input.Code.Trim(); loc.Name = input.Name.Trim();
-            Apply(loc, input);
-
             await db.InTransactionAsync(async token =>
             {
-            if (moved)
-            {
-                loc.SiteId = input.SiteId; loc.ParentId = input.ParentId;
-                await LocationTree.AssignPathAsync(db, loc, token);
-            }
-            await db.SaveChangesAsync(token);
-            if (moved)
-            {
-                await LocationTree.RewriteDescendantsAsync(db, oldPath, loc.Path, loc.Depth - oldDepth, loc.SiteId, token);
-                if (siteChanged)
-                    await db.Assets.Where(a => a.LocationId != null && db.Locations.Any(x => x.Id == a.LocationId && x.Path.StartsWith(loc.Path)))
-                        .ExecuteUpdateAsync(s => s.SetProperty(a => a.SiteId, loc.SiteId), token);
-            }
-            return true;
+                await UpdateLocationAsync(db, loc, input, token);
+                await db.SaveChangesAsync(token);
+                return true;
             }, ct);
             return Results.Ok(new { loc.Id });
         }).RequirePermission(Permissions.LocationsManage);
@@ -212,12 +206,46 @@ public static class LocationEndpoints
         }).RequirePermission(Permissions.LocationsManage);
     }
 
+    /// <summary>The checks that need no database (shared with the import).</summary>
+    internal static Validator LocationRules(LocationInput i, Guid? id) => new Validator().Required("code", i.Code, "Code", 100).Required("name", i.Name, "Name", 300)
+        .When(!Enum.IsDefined(i.Type), "type", "Choose a valid location type.")
+        .When(!Enum.IsDefined(i.Criticality), "criticality", "Choose a valid criticality.")
+        .When(i.ParentId is not null && i.ParentId == id, "parentId", "A location cannot be its own parent.");
+
+    /// <summary>Adds a location under its parent (the parent may itself be new and not saved yet).</summary>
+    internal static async Task<Location> CreateLocationAsync(CmmsDbContext db, LocationInput i, CancellationToken ct)
+    {
+        var loc = new Location { SiteId = i.SiteId, ParentId = i.ParentId, Code = i.Code.Trim(), Name = i.Name.Trim() };
+        Apply(loc, i);
+        await LocationTree.AssignPathAsync(db, loc, ct);
+        db.Locations.Add(loc);
+        return loc;
+    }
+
+    /// <summary>
+    /// Updates a location. Moving it (another parent or site) saves, rewrites the paths below it and, across sites, moves the
+    /// assets in it; call it inside a transaction. Without a move nothing is saved yet.
+    /// </summary>
+    internal static async Task UpdateLocationAsync(CmmsDbContext db, Location loc, LocationInput i, CancellationToken ct)
+    {
+        var moved = loc.ParentId != i.ParentId || loc.SiteId != i.SiteId;
+        var siteChanged = loc.SiteId != i.SiteId;
+        var (oldPath, oldDepth) = (loc.Path, loc.Depth);
+        loc.Code = i.Code.Trim(); loc.Name = i.Name.Trim();
+        Apply(loc, i);
+        if (!moved) return;
+        loc.SiteId = i.SiteId; loc.ParentId = i.ParentId;
+        await LocationTree.AssignPathAsync(db, loc, ct);
+        await db.SaveChangesAsync(ct);
+        await LocationTree.RewriteDescendantsAsync(db, oldPath, loc.Path, loc.Depth - oldDepth, loc.SiteId, ct);
+        if (siteChanged)
+            await db.Assets.Where(a => a.LocationId != null && db.Locations.Any(x => x.Id == a.LocationId && x.Path.StartsWith(loc.Path)))
+                .ExecuteUpdateAsync(s => s.SetProperty(a => a.SiteId, loc.SiteId), ct);
+    }
+
     private static async Task<Validator> ValidateAsync(LocationInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
-        var v = new Validator().Required("code", i.Code, "Code", 100).Required("name", i.Name, "Name", 300)
-            .When(!Enum.IsDefined(i.Type), "type", "Choose a valid location type.")
-            .When(!Enum.IsDefined(i.Criticality), "criticality", "Choose a valid criticality.")
-            .When(i.ParentId is not null && i.ParentId == id, "parentId", "A location cannot be its own parent.");
+        var v = LocationRules(i, id);
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         if (i.ParentId is not null && !await db.Locations.AnyAsync(l => l.Id == i.ParentId && l.SiteId == i.SiteId, ct))
             v.Add("parentId", "Parent location must belong to the selected site.");
@@ -226,7 +254,7 @@ public static class LocationEndpoints
         return v;
     }
 
-    private static void Apply(Location l, LocationInput i)
+    internal static void Apply(Location l, LocationInput i)
     {
         l.Type = i.Type; l.Criticality = i.Criticality; l.Description = i.Description.Clean(); l.NotesToTechnician = i.NotesToTechnician.Clean();
         l.Latitude = i.Latitude; l.Longitude = i.Longitude; l.IsActive = i.IsActive;
