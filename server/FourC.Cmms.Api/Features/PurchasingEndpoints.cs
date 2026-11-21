@@ -109,9 +109,7 @@ public static class PurchasingEndpoints
         {
             var v = await ValidateSupplierAsync(i, null, db, ct);
             if (!v.IsValid) return v.Problem();
-            var x = new Supplier { Code = i.Code.Trim(), Name = i.Name.Trim() };
-            ApplySupplier(x, i);
-            db.Suppliers.Add(x);
+            var x = CreateSupplier(db, i);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/suppliers/{x.Id}", new { x.Id });
         }).RequirePermission(Permissions.SuppliersManage);
@@ -121,8 +119,7 @@ public static class PurchasingEndpoints
             if (x is null) return Results.NotFound();
             var v = await ValidateSupplierAsync(i, id, db, ct);
             if (!v.IsValid) return v.Problem();
-            x.Code = i.Code.Trim(); x.Name = i.Name.Trim();
-            ApplySupplier(x, i);
+            UpdateSupplier(x, i);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { x.Id });
         }).RequirePermission(Permissions.SuppliersManage);
@@ -453,15 +450,32 @@ public static class PurchasingEndpoints
         if (!await db.Suppliers.AnyAsync(s => s.Id == o.SupplierId && s.IsActive, ct)) throw new DomainException("The supplier is inactive.");
     }
 
+    /// <summary>The checks that need no database (shared with the import).</summary>
+    internal static Validator SupplierRules(SupplierInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200).MaxLength("email", i.Email, "Email", 200)
+        .When(i.Email.Clean() is { } e && !e.Contains('@'), "email", "Enter a valid email address.").When(i.Currency.Clean() is { Length: not 3 }, "currency", "Use a 3-letter currency code.");
+
+    internal static Supplier CreateSupplier(CmmsDbContext db, SupplierInput i)
+    {
+        var x = new Supplier { Code = i.Code.Trim(), Name = i.Name.Trim() };
+        ApplySupplier(x, i);
+        db.Suppliers.Add(x);
+        return x;
+    }
+
+    internal static void UpdateSupplier(Supplier x, SupplierInput i)
+    {
+        x.Code = i.Code.Trim(); x.Name = i.Name.Trim();
+        ApplySupplier(x, i);
+    }
+
     private static async Task<Validator> ValidateSupplierAsync(SupplierInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
-        var v = new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200).MaxLength("email", i.Email, "Email", 200)
-            .When(i.Email.Clean() is { } e && !e.Contains('@'), "email", "Enter a valid email address.").When(i.Currency.Clean() is { Length: not 3 }, "currency", "Use a 3-letter currency code.");
+        var v = SupplierRules(i);
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.Suppliers.AnyAsync(x => x.Code == i.Code.Trim() && x.Id != id, ct)) v.Add("code", "Another supplier uses this code.");
         return v;
     }
 
-    private static void ApplySupplier(Supplier x, SupplierInput i)
+    internal static void ApplySupplier(Supplier x, SupplierInput i)
     {
         x.ContactName = i.ContactName.Clean(); x.Email = i.Email.Clean(); x.Phone = i.Phone.Clean(); x.Address = i.Address.Clean(); x.City = i.City.Clean(); x.Country = i.Country.Clean();
         x.TaxNumber = i.TaxNumber.Clean(); x.PaymentTerms = i.PaymentTerms.Clean(); x.Currency = i.Currency.Clean()?.ToUpperInvariant(); x.IsContractor = i.IsContractor;

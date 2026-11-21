@@ -29,8 +29,7 @@ public static class AssetCategoryEndpoints
         {
             var v = await ValidateAsync(input, null, db, ct);
             if (!v.IsValid) return v.Problem();
-            var c = new AssetCategory { Code = input.Code.Trim(), Name = input.Name.Trim(), Description = input.Description.Clean(), Color = input.Color.Clean(), IsActive = input.IsActive };
-            db.AssetCategories.Add(c);
+            var c = CreateCategory(db, input);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/asset-categories/{c.Id}", new { c.Id });
         }).RequirePermission(Permissions.SettingsManage);
@@ -41,7 +40,7 @@ public static class AssetCategoryEndpoints
             if (c is null) return Results.NotFound();
             var v = await ValidateAsync(input, id, db, ct);
             if (!v.IsValid) return v.Problem();
-            c.Code = input.Code.Trim(); c.Name = input.Name.Trim(); c.Description = input.Description.Clean(); c.Color = input.Color.Clean(); c.IsActive = input.IsActive;
+            UpdateCategory(c, input);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { c.Id });
         }).RequirePermission(Permissions.SettingsManage);
@@ -57,9 +56,25 @@ public static class AssetCategoryEndpoints
         }).RequirePermission(Permissions.SettingsManage);
     }
 
+    /// <summary>The checks that need no database (shared with the import).</summary>
+    internal static Validator CategoryRules(CategoryInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200).MaxLength("color", i.Color, "Color", 20);
+
+    internal static AssetCategory CreateCategory(CmmsDbContext db, CategoryInput i)
+    {
+        var c = new AssetCategory { Code = i.Code.Trim(), Name = i.Name.Trim() };
+        UpdateCategory(c, i);
+        db.AssetCategories.Add(c);
+        return c;
+    }
+
+    internal static void UpdateCategory(AssetCategory c, CategoryInput i)
+    {
+        c.Code = i.Code.Trim(); c.Name = i.Name.Trim(); c.Description = i.Description.Clean(); c.Color = i.Color.Clean(); c.IsActive = i.IsActive;
+    }
+
     private static async Task<Validator> ValidateAsync(CategoryInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
-        var v = new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200).MaxLength("color", i.Color, "Color", 20);
+        var v = CategoryRules(i);
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.AssetCategories.AnyAsync(c => c.Code == i.Code.Trim() && c.Id != id, ct)) v.Add("code", "Another category uses this code.");
         return v;
     }

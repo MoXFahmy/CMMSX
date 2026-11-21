@@ -96,8 +96,7 @@ public static class InventoryEndpoints
         {
             var v = await ValidateStoreAsync(i, null, db, ct);
             if (!v.IsValid) return v.Problem();
-            var s = new Store { Code = i.Code.Trim(), Name = i.Name.Trim(), SiteId = i.SiteId!.Value, Description = i.Description.Clean(), IsActive = i.IsActive };
-            db.Stores.Add(s);
+            var s = CreateStore(db, i);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/stores/{s.Id}", new { s.Id });
         }).RequirePermission(Permissions.InventoryManage);
@@ -108,7 +107,7 @@ public static class InventoryEndpoints
             var v = await ValidateStoreAsync(i, id, db, ct);
             if (s.SiteId != i.SiteId && await db.StockLevels.AnyAsync(l => l.StoreId == id && l.QuantityOnHand != 0, ct)) v.Add("siteId", "Move the stock out before changing the store's site.");
             if (!v.IsValid) return v.Problem();
-            s.Code = i.Code.Trim(); s.Name = i.Name.Trim(); s.SiteId = i.SiteId!.Value; s.Description = i.Description.Clean(); s.IsActive = i.IsActive;
+            UpdateStore(s, i);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { s.Id });
         }).RequirePermission(Permissions.InventoryManage);
@@ -199,9 +198,7 @@ public static class InventoryEndpoints
         {
             var v = await ValidatePartAsync(i, null, db, ct);
             if (!v.IsValid) return v.Problem();
-            var p = new Part { PartNumber = i.PartNumber.Trim(), Name = i.Name.Trim(), UnitOfMeasure = i.UnitOfMeasure.Trim(), AverageCost = i.StandardPrice };
-            ApplyPart(p, i);
-            db.Parts.Add(p);
+            var p = CreatePart(db, i);
             foreach (var l in i.Levels ?? []) db.StockLevels.Add(new StockLevel { PartId = p.Id, StoreId = l.StoreId, Bin = l.Bin.Clean(), MinLevel = l.MinLevel, ReorderLevel = l.ReorderLevel, MaxLevel = l.MaxLevel, ReorderQuantity = l.ReorderQuantity });
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/parts/{p.Id}", new { p.Id });
@@ -214,8 +211,7 @@ public static class InventoryEndpoints
             var v = await ValidatePartAsync(i with { PartNumber = p.PartNumber }, id, db, ct); // part numbers are permanent (as in 4CSQL)
             if (!v.IsValid) return v.Problem();
             if (i.RowVersion is not null) db.Entry(p).Property(x => x.RowVersion).OriginalValue = i.RowVersion.ToVersion();
-            p.Name = i.Name.Trim(); p.UnitOfMeasure = i.UnitOfMeasure.Trim();
-            ApplyPart(p, i);
+            UpdatePart(p, i);
             if (i.Levels is not null)
             {
                 var existing = await db.StockLevels.Where(l => l.PartId == id).ToListAsync(ct);
@@ -438,31 +434,72 @@ public static class InventoryEndpoints
         if (locationId is { } loc && !await db.Locations.AnyAsync(l => l.Id == loc, ct)) throw new DomainException("Location not found.");
     }
 
+    /// <summary>The checks that need no database (shared with the import).</summary>
+    internal static Validator StoreRules(StoreInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200);
+
+    internal static Store CreateStore(CmmsDbContext db, StoreInput i)
+    {
+        var s = new Store { Code = i.Code.Trim(), Name = i.Name.Trim(), SiteId = i.SiteId!.Value };
+        UpdateStore(s, i);
+        db.Stores.Add(s);
+        return s;
+    }
+
+    internal static void UpdateStore(Store s, StoreInput i)
+    {
+        s.Code = i.Code.Trim(); s.Name = i.Name.Trim(); s.SiteId = i.SiteId!.Value; s.Description = i.Description.Clean(); s.IsActive = i.IsActive;
+    }
+
     private static async Task<Validator> ValidateStoreAsync(StoreInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
-        var v = new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200);
+        var v = StoreRules(i);
         if (i.SiteId is null || !await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.Stores.AnyAsync(s => s.Code == i.Code.Trim() && s.Id != id, ct)) v.Add("code", "Another store uses this code.");
         return v;
     }
 
+    /// <summary>The checks that need no database (shared with the import). Stock levels have their own, <see cref="LevelRules"/>.</summary>
+    internal static Validator PartRules(PartInput i) => new Validator().Required("partNumber", i.PartNumber, "Part no.", 100).Required("name", i.Name, "Description", 300).Required("unitOfMeasure", i.UnitOfMeasure, "Unit", 30)
+        .MaxLength("manufacturer", i.Manufacturer, "Manufacturer", 200).When(i.StandardPrice < 0, "standardPrice", "Price cannot be negative.")
+        .When(i.LeadTimeDays < 0, "leadTimeDays", "Lead time cannot be negative.");
+
+    /// <summary>Stock levels: none negative, minimum and re-order level within the maximum (shared with the import).</summary>
+    internal static void LevelRules(Validator v, IReadOnlyCollection<LevelInput> levels)
+    {
+        if (levels.Any(l => l.MinLevel < 0 || l.ReorderLevel < 0 || l.MaxLevel < 0 || l.ReorderQuantity < 0)) v.Add("levels", "Levels cannot be negative.");
+        if (levels.Any(l => l.MaxLevel > 0 && (l.ReorderLevel > l.MaxLevel || l.MinLevel > l.MaxLevel))) v.Add("levels", "Minimum and re-order levels must not exceed the maximum.");
+    }
+
+    /// <summary>A new part; its average cost starts at the standard price.</summary>
+    internal static Part CreatePart(CmmsDbContext db, PartInput i)
+    {
+        var p = new Part { PartNumber = i.PartNumber.Trim(), Name = i.Name.Trim(), UnitOfMeasure = i.UnitOfMeasure.Trim(), AverageCost = i.StandardPrice };
+        ApplyPart(p, i);
+        db.Parts.Add(p);
+        return p;
+    }
+
+    /// <summary>Part numbers are permanent (as in 4CSQL): the number isn't changed.</summary>
+    internal static void UpdatePart(Part p, PartInput i)
+    {
+        p.Name = i.Name.Trim(); p.UnitOfMeasure = i.UnitOfMeasure.Trim();
+        ApplyPart(p, i);
+    }
+
     private static async Task<Validator> ValidatePartAsync(PartInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
-        var v = new Validator().Required("partNumber", i.PartNumber, "Part no.", 100).Required("name", i.Name, "Description", 300).Required("unitOfMeasure", i.UnitOfMeasure, "Unit", 30)
-            .MaxLength("manufacturer", i.Manufacturer, "Manufacturer", 200).When(i.StandardPrice < 0, "standardPrice", "Price cannot be negative.")
-            .When(i.LeadTimeDays < 0, "leadTimeDays", "Lead time cannot be negative.");
+        var v = PartRules(i);
         if (!string.IsNullOrWhiteSpace(i.PartNumber) && await db.Parts.AnyAsync(p => p.PartNumber == i.PartNumber.Trim() && p.Id != id, ct)) v.Add("partNumber", "Another part uses this number.");
         if (i.GroupId is not null && !await db.PartGroups.AnyAsync(x => x.Id == i.GroupId, ct)) v.Add("groupId", "Unknown group.");
         if (i.PreferredSupplierId is not null && !await db.Suppliers.AnyAsync(x => x.Id == i.PreferredSupplierId, ct)) v.Add("preferredSupplierId", "Unknown supplier.");
         var levels = i.Levels ?? [];
         if (levels.Select(l => l.StoreId).Distinct().Count() != levels.Count) v.Add("levels", "Each store can appear only once.");
         if (levels.Count > 0 && await db.Stores.CountAsync(s => levels.Select(l => l.StoreId).Contains(s.Id), ct) != levels.Select(l => l.StoreId).Distinct().Count()) v.Add("levels", "Unknown store.");
-        if (levels.Any(l => l.MinLevel < 0 || l.ReorderLevel < 0 || l.MaxLevel < 0 || l.ReorderQuantity < 0)) v.Add("levels", "Levels cannot be negative.");
-        if (levels.Any(l => l.MaxLevel > 0 && (l.ReorderLevel > l.MaxLevel || l.MinLevel > l.MaxLevel))) v.Add("levels", "Minimum and re-order levels must not exceed the maximum.");
+        LevelRules(v, levels);
         return v;
     }
 
-    private static void ApplyPart(Part p, PartInput i)
+    internal static void ApplyPart(Part p, PartInput i)
     {
         p.Specification = i.Specification.Clean(); p.Manufacturer = i.Manufacturer.Clean(); p.ManufacturerPartNumber = i.ManufacturerPartNumber.Clean(); p.GroupId = i.GroupId;
         p.StandardPrice = i.StandardPrice; p.LeadTimeDays = i.LeadTimeDays; p.IsCritical = i.IsCritical; p.IsShelfItem = i.IsShelfItem; p.AllowNegativeStock = i.AllowNegativeStock;

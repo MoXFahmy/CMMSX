@@ -129,10 +129,7 @@ public static class AssetEndpoints
             var auto = string.IsNullOrWhiteSpace(input.AssetNumber) && tenant.Settings.AutoNumberAssets;
             var (v, custom) = await ValidateAsync(input, null, db, requireNumber: !auto, ct);
             if (!v.IsValid) return v.Problem();
-            var number = auto ? await NextAssetNumberAsync(db, tenant.Settings, ct) : input.AssetNumber!.Trim();
-            var asset = new Asset { AssetNumber = number, Name = input.Name.Trim(), SiteId = input.SiteId };
-            Apply(asset, input, custom);
-            db.Assets.Add(asset);
+            var asset = await CreateAssetAsync(db, input, custom, tenant.Settings, ct);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/assets/{asset.Id}", new { asset.Id, asset.AssetNumber });
         }).RequirePermission(Permissions.AssetsCreate);
@@ -144,10 +141,7 @@ public static class AssetEndpoints
             var (v, custom) = await ValidateAsync(input, id, db, requireNumber: true, ct);
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(asset).Property(a => a.RowVersion).OriginalValue = input.RowVersion.ToVersion();
-            if (asset.SiteId != input.SiteId || asset.LocationId != input.LocationId)
-                db.AssetTransfers.Add(NewTransfer(asset, input.SiteId, input.LocationId, "Location changed while editing the asset", ctx));
-            asset.AssetNumber = input.AssetNumber!.Trim(); asset.Name = input.Name.Trim(); asset.SiteId = input.SiteId;
-            Apply(asset, input, custom);
+            UpdateAsset(db, asset, input, custom, ctx);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { asset.Id, RowVersion = Convert.ToBase64String(asset.RowVersion) });
         }).RequirePermission(Permissions.AssetsEdit);
@@ -281,7 +275,8 @@ public static class AssetEndpoints
         (csv ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
             .Select(x => Enum.TryParse<T>(x, true, out var e) ? (T?)e : null).OfType<T>().ToList();
 
-    private static async Task<(Validator, Dictionary<string, string?>)> ValidateAsync(AssetInput i, Guid? id, CmmsDbContext db, bool requireNumber, CancellationToken ct)
+    /// <summary>The checks that need no database (shared with the import).</summary>
+    internal static Validator AssetRules(AssetInput i, Guid? id, bool requireNumber)
     {
         var v = new Validator().Required("name", i.Name, "Name", 300)
             .MaxLength("manufacturer", i.Manufacturer, "Manufacturer", 200).MaxLength("model", i.Model, "Model", 200)
@@ -290,34 +285,16 @@ public static class AssetEndpoints
             .When(!Enum.IsDefined(i.Status), "status", "Choose a valid status.")
             .When(!Enum.IsDefined(i.Criticality), "criticality", "Choose a valid criticality.")
             .When(i.PurchasePrice < 0 || i.CurrentValue < 0 || i.SalvageValue < 0, "purchasePrice", "Amounts cannot be negative.")
-            .When(i.DisposedOn is not null && i.CommissionedOn is not null && i.DisposedOn < i.CommissionedOn, "disposedOn", "Disposal date cannot be before the commissioning date.");
+            .When(i.DisposedOn is not null && i.CommissionedOn is not null && i.DisposedOn < i.CommissionedOn, "disposedOn", "Disposal date cannot be before the commissioning date.")
+            .When(i.ParentAssetId is not null && i.ParentAssetId == id, "parentAssetId", "An asset cannot be its own parent.");
         if (requireNumber) v.Required("assetNumber", i.AssetNumber, "Asset number", 100);
-        if (!string.IsNullOrWhiteSpace(i.AssetNumber) && await db.Assets.AnyAsync(a => a.AssetNumber == i.AssetNumber.Trim() && a.Id != id, ct))
-            v.Add("assetNumber", "Another asset already uses this number.");
-        if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
-        if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct))
-            v.Add("locationId", "Location must belong to the selected site.");
-        if (i.CategoryId is not null && !await db.AssetCategories.AnyAsync(c => c.Id == i.CategoryId, ct)) v.Add("categoryId", "Category not found.");
-        if (i.ParentAssetId is not null)
-        {
-            if (i.ParentAssetId == id) v.Add("parentAssetId", "An asset cannot be its own parent.");
-            else
-            {
-                // Walk up from the proposed parent; reaching this asset would create a cycle.
-                Guid? cursor = i.ParentAssetId;
-                for (var depth = 0; cursor is not null && depth < 20; depth++)
-                {
-                    var next = await db.Assets.Where(a => a.Id == cursor).Select(a => new { a.Id, a.ParentAssetId }).FirstOrDefaultAsync(ct);
-                    if (next is null) { v.Add("parentAssetId", "Parent asset not found."); break; }
-                    if (id is not null && next.ParentAssetId == id) { v.Add("parentAssetId", "The parent cannot be one of this asset's own children."); break; }
-                    cursor = next.ParentAssetId;
-                }
-            }
-        }
+        return v;
+    }
 
-        // Custom fields: keep only defined keys, enforce required + type rules.
+    /// <summary>The custom-field values to keep (defined keys only), with required and type rules added to <paramref name="v"/>.</summary>
+    internal static Dictionary<string, string?> CustomFieldValues(Validator v, IReadOnlyList<CustomFieldDefinition> defs, AssetInput i)
+    {
         var custom = new Dictionary<string, string?>();
-        var defs = await db.CustomFields.AsNoTracking().Where(c => c.EntityType == "Asset").ToListAsync(ct);
         foreach (var d in defs.Where(d => d.CategoryIds.Count == 0 || (i.CategoryId is { } cat && d.CategoryIds.Contains(cat))))
         {
             var raw = i.CustomFields?.GetValueOrDefault(d.Key).Clean();
@@ -334,10 +311,57 @@ public static class AssetEndpoints
             if (!ok) v.Add(key, $"{d.Label} has an invalid value.");
             custom[d.Key] = raw;
         }
-        return (v, custom);
+        return custom;
     }
 
-    private static void Apply(Asset a, AssetInput i, Dictionary<string, string?> custom)
+    /// <summary>A new asset; a blank number is given the next one when the organization numbers assets automatically.</summary>
+    internal static async Task<Asset> CreateAssetAsync(CmmsDbContext db, AssetInput i, Dictionary<string, string?> custom, FourC.Cmms.Core.Tenancy.TenantSettings settings, CancellationToken ct)
+    {
+        var auto = string.IsNullOrWhiteSpace(i.AssetNumber) && settings.AutoNumberAssets;
+        var number = auto ? await NextAssetNumberAsync(db, settings, ct) : i.AssetNumber!.Trim();
+        var asset = new Asset { AssetNumber = number, Name = i.Name.Trim(), SiteId = i.SiteId };
+        Apply(asset, i, custom);
+        db.Assets.Add(asset);
+        return asset;
+    }
+
+    /// <summary>Updates an asset; a new site or location is recorded as a transfer, as when editing on screen.</summary>
+    internal static void UpdateAsset(CmmsDbContext db, Asset asset, AssetInput i, Dictionary<string, string?> custom, ITenantContext ctx)
+    {
+        if (asset.SiteId != i.SiteId || asset.LocationId != i.LocationId)
+            db.AssetTransfers.Add(NewTransfer(asset, i.SiteId, i.LocationId, "Location changed while editing the asset", ctx));
+        asset.AssetNumber = i.AssetNumber!.Trim(); asset.Name = i.Name.Trim(); asset.SiteId = i.SiteId;
+        Apply(asset, i, custom);
+    }
+
+    private static async Task<(Validator, Dictionary<string, string?>)> ValidateAsync(AssetInput i, Guid? id, CmmsDbContext db, bool requireNumber, CancellationToken ct)
+    {
+        var v = AssetRules(i, id, requireNumber);
+        if (!string.IsNullOrWhiteSpace(i.AssetNumber) && await db.Assets.AnyAsync(a => a.AssetNumber == i.AssetNumber.Trim() && a.Id != id, ct))
+            v.Add("assetNumber", "Another asset already uses this number.");
+        if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
+        if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct))
+            v.Add("locationId", "Location must belong to the selected site.");
+        if (i.CategoryId is not null && !await db.AssetCategories.AnyAsync(c => c.Id == i.CategoryId, ct)) v.Add("categoryId", "Category not found.");
+        if (i.ParentAssetId is not null && i.ParentAssetId != id) // its own parent: AssetRules says so
+        {
+            // Walk up from the proposed parent; reaching this asset would create a cycle.
+            Guid? cursor = i.ParentAssetId;
+            for (var depth = 0; cursor is not null && depth < 20; depth++)
+            {
+                var next = await db.Assets.Where(a => a.Id == cursor).Select(a => new { a.Id, a.ParentAssetId }).FirstOrDefaultAsync(ct);
+                if (next is null) { v.Add("parentAssetId", "Parent asset not found."); break; }
+                if (id is not null && next.ParentAssetId == id) { v.Add("parentAssetId", "The parent cannot be one of this asset's own children."); break; }
+                cursor = next.ParentAssetId;
+            }
+        }
+
+        // Custom fields: keep only defined keys, enforce required + type rules.
+        var defs = await db.CustomFields.AsNoTracking().Where(c => c.EntityType == "Asset").ToListAsync(ct);
+        return (v, CustomFieldValues(v, defs, i));
+    }
+
+    internal static void Apply(Asset a, AssetInput i, Dictionary<string, string?> custom)
     {
         a.Description = i.Description.Clean(); a.CategoryId = i.CategoryId; a.LocationId = i.LocationId; a.ParentAssetId = i.ParentAssetId;
         a.Status = i.Status; a.Criticality = i.Criticality; a.Manufacturer = i.Manufacturer.Clean(); a.Model = i.Model.Clean();

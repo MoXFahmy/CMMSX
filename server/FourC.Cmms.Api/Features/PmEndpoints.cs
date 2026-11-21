@@ -107,10 +107,7 @@ public static class PmEndpoints
         {
             var v = await ValidateTaskAsync(input, null, db, ct);
             if (!v.IsValid) return v.Problem();
-            var x = new PmTask { Code = input.Code.Trim(), Name = input.Name.Trim() };
-            ApplyTask(x, input);
-            SetParts(x, input.Parts);
-            db.PmTasks.Add(x);
+            var x = CreateTask(db, input);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/pm-tasks/{x.Id}", new { x.Id });
         }).RequirePermission(Permissions.PmManage);
@@ -121,11 +118,7 @@ public static class PmEndpoints
             var v = await ValidateTaskAsync(input with { Code = x.Code }, id, db, ct); // task numbers are permanent (as in 4CSQL)
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(x).Property(y => y.RowVersion).OriginalValue = input.RowVersion.ToVersion();
-            x.Name = input.Name.Trim();
-            db.PmTaskSteps.RemoveRange(x.Steps);
-            x.Steps = [];
-            ApplyTask(x, input);
-            if (input.Parts is not null) UpdateParts(db, x, input.Parts);
+            UpdateTask(db, x, input);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { x.Id });
         }).RequirePermission(Permissions.PmManage);
@@ -197,12 +190,9 @@ public static class PmEndpoints
             if (!v.IsValid) return v.Problem();
             var code = input.Code.Clean() ?? await Numbering.NextAsync(db, "PmSchedule", "PM-", 5, n => db.PmSchedules.AnyAsync(x => x.Code == n, ct),
                 p => db.PmSchedules.Where(x => x.Code.StartsWith(p)).Select(x => x.Code).ToListAsync(ct), ct);
-            var s = new PmSchedule { Code = code, Name = input.Name.Trim() };
-            ApplySchedule(s, input);
-            s.NextDueDate = PmCalendar.UsesCalendar(s) ? input.NextDueDate ?? PmCalendar.FirstOnOrAfter(s, input.StartDate) : null;
+            var s = CreateSchedule(db, input, code);
             if (s.Type == PmScheduleType.Meter && s.MeterTrigger == MeterTrigger.Incremental && s.NextDueReading is null)
                 s.NextDueReading = (await db.Meters.Where(m => m.Id == s.MeterId).Select(m => m.CurrentReading).FirstOrDefaultAsync(ct) ?? 0) + (s.MeterInterval ?? 0);
-            db.PmSchedules.Add(s);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/pm-schedules/{s.Id}", new { s.Id, s.Code });
         }).RequirePermission(Permissions.PmManage);
@@ -220,13 +210,10 @@ public static class PmEndpoints
                 input = input with { AssetIds = before.Where(live.Contains).ToList() };
             }
             var v = await ValidateScheduleAsync(input, id, db, ct);
-            if (input.Basis != s.Basis && s.GenerationCount > 0) v.Add("basis", "The generation basis cannot change after work orders were generated (as in 4CSQL). Create a new schedule instead.");
+            v.Merge(ScheduleChangeRules(s, input));
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(s).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
-            s.Name = input.Name.Trim();
-            if (input.Code.Clean() is { } c) s.Code = c;
-            var wasActive = s.IsActive;
-            ApplySchedule(s, input);
+            UpdateSchedule(s, input);
             var after = s.Assets.OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList();
             if (!before.SequenceEqual(after))
             {
@@ -242,9 +229,6 @@ public static class PmEndpoints
                         JsonSerializerOptions.Web),
                 });
             }
-            if (PmCalendar.UsesCalendar(s))
-                s.NextDueDate = input.NextDueDate ?? (!wasActive && s.IsActive ? PmCalendar.FirstOnOrAfter(s, Today) : s.NextDueDate ?? (s.GenerationCount == 0 ? PmCalendar.FirstOnOrAfter(s, input.StartDate) : null));
-            else s.NextDueDate = null;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { s.Id });
         }).RequirePermission(Permissions.PmManage);
@@ -349,16 +333,42 @@ public static class PmEndpoints
         }
     }
 
+    /// <summary>The checks that need no database (shared with the import).</summary>
+    internal static Validator PmTaskRules(TaskInput i)
+    {
+        var parts = i.Parts ?? [];
+        return new Validator().Required("code", i.Code, "Task no.", 50).Required("name", i.Name, "Name", 300).MaxLength("safetyNotes", i.SafetyNotes, "Safety notes", 4000)
+            .When(i.EstimatedHours < 0, "estimatedHours", "Estimate cannot be negative.").When((i.Steps ?? []).Count > 300, "steps", "At most 300 steps.")
+            .When(parts.Count > 200, "parts", "At most 200 parts.")
+            .When(parts.Any(p => Math.Round(p.Quantity, 3) is <= 0 or > 1_000_000_000m), "parts", "Each part needs a quantity above zero.")
+            .When(parts.GroupBy(p => p.PartId).Any(g => g.Count() > 1), "parts", "List each part once.");
+    }
+
+    internal static PmTask CreateTask(CmmsDbContext db, TaskInput i)
+    {
+        var x = new PmTask { Code = i.Code.Trim(), Name = i.Name.Trim() };
+        ApplyTask(x, i);
+        SetParts(x, i.Parts);
+        db.PmTasks.Add(x);
+        return x;
+    }
+
+    /// <summary>Updates a task loaded with its steps and parts: the steps are replaced by the input's, the parts brought in line (null keeps them).</summary>
+    internal static void UpdateTask(CmmsDbContext db, PmTask x, TaskInput i)
+    {
+        x.Name = i.Name.Trim();
+        db.PmTaskSteps.RemoveRange(x.Steps);
+        x.Steps = [];
+        ApplyTask(x, i);
+        if (i.Parts is not null) UpdateParts(db, x, i.Parts);
+    }
+
     private static async Task<Validator> ValidateTaskAsync(TaskInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
-        var v = new Validator().Required("code", i.Code, "Task no.", 50).Required("name", i.Name, "Name", 300).MaxLength("safetyNotes", i.SafetyNotes, "Safety notes", 4000)
-            .When(i.EstimatedHours < 0, "estimatedHours", "Estimate cannot be negative.").When((i.Steps ?? []).Count > 300, "steps", "At most 300 steps.");
+        var v = PmTaskRules(i);
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.PmTasks.AnyAsync(x => x.Code == i.Code.Trim() && x.Id != id, ct)) v.Add("code", "Another task uses this number.");
         if (i.TradeId is not null && !await db.Trades.AnyAsync(x => x.Id == i.TradeId, ct)) v.Add("tradeId", "Unknown trade.");
         var parts = i.Parts ?? [];
-        v.When(parts.Count > 200, "parts", "At most 200 parts.")
-            .When(parts.Any(p => Math.Round(p.Quantity, 3) is <= 0 or > 1_000_000_000m), "parts", "Each part needs a quantity above zero.")
-            .When(parts.GroupBy(p => p.PartId).Any(g => g.Count() > 1), "parts", "List each part once.");
         var ids = parts.Select(p => p.PartId).Distinct().ToList();
         if (ids.Count > 0 && await db.Parts.CountAsync(p => ids.Contains(p.Id), ct) != ids.Count) v.Add("parts", "Unknown part.");
         return v;
@@ -384,7 +394,7 @@ public static class PmEndpoints
         foreach (var (partId, qty) in wanted) x.Parts.Add(new PmTaskPart { PmTaskId = x.Id, PartId = partId, Quantity = qty });
     }
 
-    private static void ApplyTask(PmTask x, TaskInput i)
+    internal static void ApplyTask(PmTask x, TaskInput i)
     {
         x.Description = i.Description.Clean(); x.TradeId = i.TradeId; x.EstimatedHours = i.EstimatedHours; x.SafetyNotes = i.SafetyNotes.Clean(); x.IsActive = i.IsActive;
         var seq = 0;
@@ -392,7 +402,8 @@ public static class PmEndpoints
             x.Steps.Add(new PmTaskStep { PmTaskId = x.Id, Sequence = ++seq, Description = step.Length > 2000 ? step[..2000] : step });
     }
 
-    private static async Task<Validator> ValidateScheduleAsync(ScheduleInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
+    /// <summary>The checks that need no database (shared with the import).</summary>
+    internal static Validator PmScheduleRules(ScheduleInput i, Guid? id)
     {
         var v = new Validator().Required("name", i.Name, "Name", 300).MaxLength("code", i.Code, "PM no.", 50)
             .When(!Enum.IsDefined(i.Type), "type", "Choose a schedule type.")
@@ -403,10 +414,51 @@ public static class PmEndpoints
             .When(i.Type == PmScheduleType.DayOfWeekInMonth && (i.WeekOfMonth is not (>= 1 and <= 5) || i.DayOfWeek is null), "weekOfMonth", "Choose the week and the day.")
             .When(i.Type == PmScheduleType.DateOfMonth && i.DayOfMonth is not (>= 1 and <= 31), "dayOfMonth", "Choose a day between 1 and 31.")
             .When(id is null && i.Type != PmScheduleType.Meter && i.StartDate < Today.AddDays(-366), "startDate", "Start date is more than a year in the past.");
+        var round = i.AssetIds ?? [];
+        if (i.AssetId is null && i.LocationId is null && round.Count == 0) v.Add("assetId", "Choose the asset or location to maintain.");
+        if ((i.ExtraTasks ?? []).Any(e => e.EveryNth is < 2 or > 1000)) v.Add("extraTasks", "\"Every Nth\" must be between 2 and 1000.");
+        if (i.Type == PmScheduleType.Meter)
+        {
+            if (i.MeterTrigger == MeterTrigger.Threshold && i.LowerLimit is null && i.UpperLimit is null) v.Add("lowerLimit", "Set a lower and/or upper limit.");
+            if (i.MeterTrigger == MeterTrigger.Threshold && i.LowerLimit >= i.UpperLimit) v.Add("upperLimit", "Upper limit must be above the lower limit.");
+            if (i.MeterTrigger != MeterTrigger.Threshold && i.MeterInterval is not > 0) v.Add("meterInterval", "Enter the meter interval (e.g. every 250 hours).");
+            if (i.TimeBased && i.MeterTrigger == MeterTrigger.Threshold) v.Add("timeBased", "Time-based generation is only available for incremental meters.");
+        }
+        return v;
+    }
+
+    /// <summary>What can't change on a schedule that has run: its generation basis (as in 4CSQL).</summary>
+    internal static Validator ScheduleChangeRules(PmSchedule s, ScheduleInput i) => new Validator()
+        .When(i.Basis != s.Basis && s.GenerationCount > 0, "basis", "The generation basis cannot change after work orders were generated (as in 4CSQL). Create a new schedule instead.");
+
+    /// <summary>A new schedule with its first due date (meter schedules: see the POST for their first reading).</summary>
+    internal static PmSchedule CreateSchedule(CmmsDbContext db, ScheduleInput i, string code)
+    {
+        var s = new PmSchedule { Code = code, Name = i.Name.Trim() };
+        ApplySchedule(s, i);
+        s.NextDueDate = PmCalendar.UsesCalendar(s) ? i.NextDueDate ?? PmCalendar.FirstOnOrAfter(s, i.StartDate) : null;
+        db.PmSchedules.Add(s);
+        return s;
+    }
+
+    /// <summary>Updates a schedule (loaded with its extra tasks and assets) and works out its next due date as the screen does.</summary>
+    internal static void UpdateSchedule(PmSchedule s, ScheduleInput i)
+    {
+        s.Name = i.Name.Trim();
+        if (i.Code.Clean() is { } c) s.Code = c;
+        var wasActive = s.IsActive;
+        ApplySchedule(s, i);
+        if (PmCalendar.UsesCalendar(s))
+            s.NextDueDate = i.NextDueDate ?? (!wasActive && s.IsActive ? PmCalendar.FirstOnOrAfter(s, Today) : s.NextDueDate ?? (s.GenerationCount == 0 ? PmCalendar.FirstOnOrAfter(s, i.StartDate) : null));
+        else s.NextDueDate = null;
+    }
+
+    private static async Task<Validator> ValidateScheduleAsync(ScheduleInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
+    {
+        var v = PmScheduleRules(i, id);
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.PmSchedules.AnyAsync(x => x.Code == i.Code.Trim() && x.Id != id, ct)) v.Add("code", "Another schedule uses this number.");
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         var round = i.AssetIds ?? [];
-        if (i.AssetId is null && i.LocationId is null && round.Count == 0) v.Add("assetId", "Choose the asset or location to maintain.");
         if (round.Count > 100) v.Add("assetIds", "List at most 100 assets.");
         else if (round.Count > 0)
         {
@@ -424,16 +476,8 @@ public static class PmEndpoints
         if (i.AssetId is not null && !await db.Assets.AnyAsync(a => a.Id == i.AssetId && a.SiteId == i.SiteId, ct)) v.Add("assetId", "Asset must belong to the selected site.");
         var taskIds = new[] { (Guid?)i.PmTaskId, i.LowerTaskId, i.UpperTaskId }.OfType<Guid>().Concat((i.ExtraTasks ?? []).Select(e => e.PmTaskId)).Distinct().ToList();
         if (await db.PmTasks.CountAsync(x => taskIds.Contains(x.Id), ct) != taskIds.Count) v.Add("pmTaskId", "Choose a valid PM task.");
-        if ((i.ExtraTasks ?? []).Any(e => e.EveryNth is < 2 or > 1000)) v.Add("extraTasks", "\"Every Nth\" must be between 2 and 1000.");
         if (i.TradeId is not null && !await db.Trades.AnyAsync(x => x.Id == i.TradeId, ct)) v.Add("tradeId", "Unknown trade.");
-        if (i.Type == PmScheduleType.Meter)
-        {
-            if (i.MeterId is null || !await db.Meters.AnyAsync(x => x.Id == i.MeterId, ct)) v.Add("meterId", "Choose a meter.");
-            if (i.MeterTrigger == MeterTrigger.Threshold && i.LowerLimit is null && i.UpperLimit is null) v.Add("lowerLimit", "Set a lower and/or upper limit.");
-            if (i.MeterTrigger == MeterTrigger.Threshold && i.LowerLimit >= i.UpperLimit) v.Add("upperLimit", "Upper limit must be above the lower limit.");
-            if (i.MeterTrigger != MeterTrigger.Threshold && i.MeterInterval is not > 0) v.Add("meterInterval", "Enter the meter interval (e.g. every 250 hours).");
-            if (i.TimeBased && i.MeterTrigger == MeterTrigger.Threshold) v.Add("timeBased", "Time-based generation is only available for incremental meters.");
-        }
+        if (i.Type == PmScheduleType.Meter && (i.MeterId is null || !await db.Meters.AnyAsync(x => x.Id == i.MeterId, ct))) v.Add("meterId", "Choose a meter.");
         return v;
     }
 
@@ -444,7 +488,7 @@ public static class PmEndpoints
         s.IsActive = active;
     }
 
-    private static void ApplySchedule(PmSchedule s, ScheduleInput i)
+    internal static void ApplySchedule(PmSchedule s, ScheduleInput i)
     {
         s.Description = i.Description.Clean(); s.SiteId = i.SiteId; s.LocationId = i.LocationId; s.AssetId = i.AssetId; s.TradeId = i.TradeId; s.Priority = i.Priority;
         s.AssigneeIds = (i.AssigneeIds ?? []).Distinct().ToList(); s.PmTaskId = i.PmTaskId; s.Type = i.Type; s.Basis = i.Basis; s.Frequency = i.Frequency;
