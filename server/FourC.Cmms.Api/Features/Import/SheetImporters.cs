@@ -17,7 +17,7 @@ internal static class SheetImporters
     [
         new SiteImporter(), new LocationImporter(), new CategoryImporter(), new TradeImporter(), new PartGroupImporter(),
         new SupplierImporter(), new StoreImporter(), new AssetImporter(), new PeopleImporter(), new PartImporter(), new StockImporter(),
-        new PmTaskImporter(), new PmStepImporter(), new PmPartImporter(), new PmScheduleImporter(),
+        new AssetPartImporter(), new PmTaskImporter(), new PmStepImporter(), new PmPartImporter(), new PmScheduleImporter(),
     ];
 
     /// <summary>The Assets sheet with one more column per custom field, headed by the field's label.</summary>
@@ -100,6 +100,7 @@ internal abstract class RecordImporter<TEntity> : ISheetImporter where TEntity :
     {
         string s => s.Replace("\r\n", "\n").Clean(), // a workbook brings line breaks back as \n; stored text may hold \r\n
         IEnumerable<string> list => ImportValues.Show(list.Select(x => x.Trim()).Where(x => x.Length > 0).Order(StringComparer.OrdinalIgnoreCase).ToList()).Clean(),
+        IEnumerable<Enum> choices => ImportValues.Show(choices),
         _ => ImportValues.Show(value),
     };
 
@@ -503,6 +504,7 @@ internal sealed class AssetImporter : RecordImporter<Asset>
             ["purchasePrice"] = a.PurchasePrice, ["currentValue"] = a.CurrentValue, ["salvageValue"] = a.SalvageValue, ["expectedLifeYears"] = a.ExpectedLifeYears,
             ["downtimeCostPerHour"] = a.DowntimeCostPerHour, ["warrantyType"] = a.WarrantyType, ["warrantyExpiresOn"] = a.WarrantyExpiresOn,
             ["warrantyNotes"] = a.WarrantyNotes, ["description"] = a.Description, ["notes"] = a.Notes, ["notesToTechnician"] = a.NotesToTechnician,
+            ["runsHoursPerDay"] = a.RunsHoursPerDay, ["runsOn"] = a.RunsOn.Cast<Enum>().ToList(),
         };
         foreach (var f in c.AssetFields) v["cf:" + f.Key] = a.CustomFields.GetValueOrDefault(f.Key);
         return v;
@@ -559,7 +561,8 @@ internal sealed class AssetImporter : RecordImporter<Asset>
             E(v, "status", AssetStatus.Active), E(v, "criticality", Criticality.Medium), S(v, "manufacturer"), S(v, "model"), S(v, "serialNumber"),
             S(v, "barcode"), S(v, "operationNumber"), D(v, "commissionedOn"), D(v, "disposedOn"), N(v, "purchasePrice"), N(v, "currentValue"),
             N(v, "salvageValue"), N(v, "expectedLifeYears"), N(v, "downtimeCostPerHour"), E(v, "warrantyType", WarrantyType.None),
-            D(v, "warrantyExpiresOn"), S(v, "warrantyNotes"), S(v, "notes"), S(v, "notesToTechnician"), custom);
+            D(v, "warrantyExpiresOn"), S(v, "warrantyNotes"), S(v, "notes"), S(v, "notesToTechnician"), custom,
+            RunsHoursPerDay: N(v, "runsHoursPerDay"), RunsOn: (v.GetValueOrDefault("runsOn") as IEnumerable<Enum>)?.Cast<DayOfWeek>().ToList());
         var rules = AssetEndpoints.AssetRules(input, existing?.Id, requireNumber);
         var values = AssetEndpoints.CustomFieldValues(rules, c.AssetFields, input);
         if (!Accept(row, rules)) return null;
@@ -802,51 +805,70 @@ internal sealed class PmTaskImporter : RecordImporter<PmTask>
 }
 
 /// <summary>
-/// A list belonging to a PM task (its steps, its parts), one row per item. Each row says whether its item is new, changed
-/// or the same; at the end every task named on the sheet gets the sheet's items as its whole list.
+/// A sheet of lists, one row per item, each list belonging to an owner (a PM task's steps or parts, an asset's spare parts).
+/// Each row says whether its item is new, changed or the same; at the end every owner named on the sheet gets the sheet's
+/// items as its whole list.
 /// </summary>
-internal abstract class PmTaskListImporter : ISheetImporter
+internal abstract class ListSheetImporter : ISheetImporter
 {
-    private readonly Dictionary<Guid, PmTask> _tasks = [];
+    /// <summary>The owner of the row's list, when its code is known.</summary>
+    protected abstract Guid? OwnerOf(ImportContext c, ImportRow row);
+
+    /// <summary>The problem put on the owner's other rows: "Not saved: fix row N of this … first.", in the request's language.</summary>
+    protected abstract string Blocked(int row);
 
     /// <summary>
-    /// A task with a problem row keeps its list as it is: its other rows become problems too ("fix row N first"). A task
+    /// An owner with a problem row keeps its list as it is: its other rows become problems too ("fix row N first"). An owner
     /// whose list loses items (or is renumbered) shows as changed, with its old and new list, on its first row.
     /// </summary>
     public IReadOnlyList<RowResult> Review(ImportContext c, IReadOnlyList<ImportRow> rows, IReadOnlyList<RowResult> results)
     {
-        var taskOf = new Dictionary<int, Guid>();
+        var ownerOf = new Dictionary<int, Guid>();
         foreach (var r in rows)
-            if (r.Get<string>("taskCode")?.Trim() is { } code && c.PmTasks.TryGetValue(code, out var id)) taskOf[r.Number] = id;
+            if (OwnerOf(c, r) is { } id) ownerOf[r.Number] = id;
         var blocked = new Dictionary<Guid, int>();
         foreach (var res in results.Where(r => r.Outcome == RowOutcome.Problem))
-            if (taskOf.TryGetValue(res.Row, out var id)) blocked[id] = Math.Min(blocked.GetValueOrDefault(id, int.MaxValue), res.Row);
+            if (ownerOf.TryGetValue(res.Row, out var id)) blocked[id] = Math.Min(blocked.GetValueOrDefault(id, int.MaxValue), res.Row);
         var output = results.Select(res =>
-            taskOf.TryGetValue(res.Row, out var id) && blocked.TryGetValue(id, out var first) && res.Outcome != RowOutcome.Problem
-                ? res with { Outcome = RowOutcome.Problem, Changes = [], Problems = [Translator.T($"Not saved: fix row {first} of this task first.")] }
+            ownerOf.TryGetValue(res.Row, out var id) && blocked.TryGetValue(id, out var first) && res.Outcome != RowOutcome.Problem
+                ? res with { Outcome = RowOutcome.Problem, Changes = [], Problems = [Blocked(first)] }
                 : res).ToList();
         foreach (var id in blocked.Keys) Forget(id);
         foreach (var (id, change) in ListChanges(c))
         {
-            var firstRow = taskOf.Where(x => x.Value == id).Select(x => x.Key).DefaultIfEmpty(-1).Min();
+            var firstRow = ownerOf.Where(x => x.Value == id).Select(x => x.Key).DefaultIfEmpty(-1).Min();
             var i = output.FindIndex(r => r.Row == firstRow);
             if (i >= 0) output[i] = output[i] with { Outcome = RowOutcome.Changed, Changes = [.. output[i].Changes, change] };
         }
         return output;
     }
 
-    /// <summary>Drops a task's collected rows: its list isn't replaced.</summary>
-    protected abstract void Forget(Guid taskId);
+    /// <summary>Drops an owner's collected rows: its list isn't replaced.</summary>
+    protected abstract void Forget(Guid ownerId);
 
-    /// <summary>The tasks whose list loses items (or is renumbered), with the old and new list.</summary>
-    protected abstract IEnumerable<(Guid TaskId, FieldChange Change)> ListChanges(ImportContext c);
+    /// <summary>The owners whose list loses items (or is renumbered), with the old and new list.</summary>
+    protected abstract IEnumerable<(Guid OwnerId, FieldChange Change)> ListChanges(ImportContext c);
 
     public abstract string Sheet { get; }
     public abstract IReadOnlyList<string> KeyColumns { get; }
     public string KeyOf(ImportRow row) => string.Join('|', KeyColumns.Select(k => ImportValues.Show(row.Value(k))?.Trim() ?? ""));
-    public Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct) => Task.CompletedTask;
+    public virtual Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct) => Task.CompletedTask;
     public abstract Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct);
     public abstract Task FinishAsync(ImportContext c, CancellationToken ct);
+
+    protected static RowResult Result(ImportRow row, string key, RowOutcome outcome, List<FieldChange>? changes = null) =>
+        row.HasProblems ? ImportRun.Problem(row, key) : new RowResult(row.Number, key, outcome, changes ?? [], []);
+}
+
+/// <summary>A list belonging to a PM task (its steps, its parts), one row per item.</summary>
+internal abstract class PmTaskListImporter : ListSheetImporter
+{
+    private readonly Dictionary<Guid, PmTask> _tasks = [];
+
+    protected override Guid? OwnerOf(ImportContext c, ImportRow row) =>
+        row.Get<string>("taskCode")?.Trim() is { } code && c.PmTasks.TryGetValue(code, out var id) ? id : null;
+
+    protected override string Blocked(int row) => Translator.T($"Not saved: fix row {row} of this task first.");
 
     /// <summary>The row's task, loaded once with its steps and parts; null with "PM task X not found." on the row.</summary>
     protected async Task<PmTask?> TaskAsync(ImportContext c, ImportRow row, CancellationToken ct)
@@ -867,9 +889,6 @@ internal abstract class PmTaskListImporter : ISheetImporter
 
     /// <summary>Replaces a task's lists through the screen's code, and makes sure the new step and part rows are inserted.</summary>
     internal static void Replace(ImportContext c, PmTask task, PmEndpoints.TaskInput input) => PmTaskImporter.Replace(c, task, input);
-
-    protected static RowResult Result(ImportRow row, string key, RowOutcome outcome, List<FieldChange>? changes = null) =>
-        row.HasProblems ? ImportRun.Problem(row, key) : new RowResult(row.Number, key, outcome, changes ?? [], []);
 }
 
 internal sealed class PmStepImporter : PmTaskListImporter
@@ -901,7 +920,7 @@ internal sealed class PmStepImporter : PmTaskListImporter
 
     protected override void Forget(Guid taskId) => _wanted.Remove(taskId);
 
-    protected override IEnumerable<(Guid TaskId, FieldChange Change)> ListChanges(ImportContext c)
+    protected override IEnumerable<(Guid OwnerId, FieldChange Change)> ListChanges(ImportContext c)
     {
         foreach (var (id, wanted) in _wanted)
         {
@@ -954,7 +973,7 @@ internal sealed class PmPartImporter : PmTaskListImporter
 
     protected override void Forget(Guid taskId) => _wanted.Remove(taskId);
 
-    protected override IEnumerable<(Guid TaskId, FieldChange Change)> ListChanges(ImportContext c)
+    protected override IEnumerable<(Guid OwnerId, FieldChange Change)> ListChanges(ImportContext c)
     {
         string Show(Dictionary<Guid, decimal> list) =>
             string.Join("; ", list.Select(x => $"{c.CodeOf.GetValueOrDefault(x.Key)} × {ImportValues.Plain(x.Value)}").Order(StringComparer.OrdinalIgnoreCase));
@@ -976,6 +995,83 @@ internal sealed class PmPartImporter : PmTaskListImporter
             Replace(c, task, InputOf(task, StepsOf(task), wanted.Select(x => new PmEndpoints.TaskPartInput(x.Key, x.Value)).ToList()));
         }
         return System.Threading.Tasks.Task.CompletedTask;
+    }
+}
+
+/// <summary>Each asset's spare-parts list (the Asset parts sheet), one row per part, like the PM parts sheet.</summary>
+internal sealed class AssetPartImporter : ListSheetImporter
+{
+    public const int MaxLines = 500;
+    private readonly Dictionary<Guid, Dictionary<Guid, (decimal Quantity, string? Note)>> _wanted = [];
+    private readonly Dictionary<Guid, Dictionary<Guid, (decimal Quantity, string? Note)>> _before = [];
+
+    public override string Sheet => "AssetParts";
+    public override IReadOnlyList<string> KeyColumns => ["assetNumber", "partNumber"];
+
+    protected override Guid? OwnerOf(ImportContext c, ImportRow row) =>
+        row.Get<string>("assetNumber")?.Trim() is { } number && c.Assets.TryGetValue(number, out var id) ? id : null;
+
+    protected override string Blocked(int row) => Translator.T($"Not saved: fix row {row} of this asset first.");
+
+    /// <summary>The lists of the assets named on the sheet, in one query.</summary>
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var ids = rows.Select(r => OwnerOf(c, r)).OfType<Guid>().Distinct().ToList();
+        var lines = await c.Db.AssetParts.AsNoTracking().Where(x => ids.Contains(x.AssetId)).Select(x => new { x.AssetId, x.PartId, x.Quantity, x.Note }).ToListAsync(ct);
+        foreach (var id in ids) _before[id] = lines.Where(l => l.AssetId == id).ToDictionary(l => l.PartId, l => (l.Quantity, l.Note));
+    }
+
+    public override Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        var number = row.Get<string>("assetNumber")?.Trim();
+        var partNumber = row.Get<string>("partNumber")?.Trim();
+        var shown = $"{number} · {partNumber}";
+        var assetId = OwnerOf(c, row);
+        if (number is null) row.Problem(Translator.T($"{row.Sheet.Column("assetNumber").Heading} is required."));
+        else if (assetId is null) row.Problem(Translator.T($"Asset {number} not found."));
+        Guid partId = Guid.Empty;
+        if (partNumber is null) row.Problem(Translator.T($"{row.Sheet.Column("partNumber").Heading} is required."));
+        else if (!c.Parts.TryGetValue(partNumber, out partId)) row.Problem(Translator.T($"Part {partNumber} not found."));
+        var before = assetId is { } a ? _before.TryGetValue(a, out var b) ? b : _before[a] = [] : [];
+        // No Note column in the file: notes stay as they are.
+        var note = row.Keys.Contains("note") ? row.Get<string>("note").Clean() : before.TryGetValue(partId, out var kept) ? kept.Note : null;
+        var line = new AssetPartInput(partId, Math.Round(row.Get<decimal?>("quantity") ?? 0, 3), note);
+        foreach (var m in AssetPartEndpoints.AssetPartRules([line]).Messages) row.Problem(Translator.T(m));
+        if (assetId is null || row.HasProblems) return System.Threading.Tasks.Task.FromResult(Result(row, shown, RowOutcome.Problem));
+        var wanted = _wanted.TryGetValue(assetId.Value, out var w) ? w : _wanted[assetId.Value] = [];
+        if (wanted.Count >= MaxLines)
+        {
+            row.Problem(Translator.T($"At most {MaxLines} parts."));
+            return System.Threading.Tasks.Task.FromResult(Result(row, shown, RowOutcome.Problem));
+        }
+        wanted[partId] = (line.Quantity, line.Note);
+        if (!before.TryGetValue(partId, out var old)) return System.Threading.Tasks.Task.FromResult(Result(row, shown, RowOutcome.New));
+        var changes = new List<FieldChange>();
+        if (old.Quantity != line.Quantity) changes.Add(new(row.Sheet.Column("quantity").Heading, ImportValues.Plain(old.Quantity), ImportValues.Plain(line.Quantity)));
+        if (old.Note != line.Note) changes.Add(new(row.Sheet.Column("note").Heading, old.Note, line.Note));
+        return System.Threading.Tasks.Task.FromResult(Result(row, shown, changes.Count == 0 ? RowOutcome.Unchanged : RowOutcome.Changed, changes));
+    }
+
+    protected override void Forget(Guid ownerId) => _wanted.Remove(ownerId);
+
+    protected override IEnumerable<(Guid OwnerId, FieldChange Change)> ListChanges(ImportContext c)
+    {
+        string Show(Dictionary<Guid, (decimal Quantity, string? Note)> list) =>
+            string.Join("; ", list.Select(x => $"{c.CodeOf.GetValueOrDefault(x.Key)} × {ImportValues.Plain(x.Value.Quantity)}").Order(StringComparer.OrdinalIgnoreCase));
+        foreach (var (id, wanted) in _wanted)
+            if (_before[id].Keys.Any(k => !wanted.ContainsKey(k)))
+                yield return (id, new FieldChange(Translator.T("Parts"), Show(_before[id]), Show(wanted)));
+    }
+
+    /// <summary>Each asset whose list differs gets the sheet's list, through the screen's code.</summary>
+    public override async Task FinishAsync(ImportContext c, CancellationToken ct)
+    {
+        var changed = _wanted.Where(x => x.Value.Count != _before[x.Key].Count || x.Value.Any(l => !_before[x.Key].TryGetValue(l.Key, out var o) || o != l.Value))
+            .Select(x => x.Key).ToList();
+        if (changed.Count == 0) return;
+        var tracked = (await c.Db.AssetParts.Where(x => changed.Contains(x.AssetId)).ToListAsync(ct)).ToLookup(x => x.AssetId);
+        foreach (var id in changed)
+            AssetPartEndpoints.Replace(c.Db, tracked[id].ToList(), id, _wanted[id].Select(x => new AssetPartInput(x.Key, x.Value.Quantity, x.Value.Note)).ToList());
     }
 }
 

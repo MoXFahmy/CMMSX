@@ -665,5 +665,7 @@
  "Assets stopped": "الأصول المتوقفة",
  "By hand": "يدويًا",
  "This part is on assets' spare-parts lists. Remove it from them, or mark it inactive instead.": "هذه القطعة مدرجة في قوائم قطع غيار الأصول. أزلها منها، أو اجعلها غير نشطة بدلًا من ذلك.",
- "Choose another asset to copy from.": "اختر أصلًا آخر للنسخ منه."
+ "Choose another asset to copy from.": "اختر أصلًا آخر للنسخ منه.",
+ "Not saved: fix row {0} of this asset first.": "لم يُحفظ: صحّح الصف {0} لهذا الأصل أولًا.",
+ "At most {0} parts.": "{0} قطعة على الأكثر."
 }

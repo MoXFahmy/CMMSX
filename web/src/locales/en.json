@@ -1453,6 +1453,7 @@
       "Assets": "Assets",
       "People": "People",
       "Parts": "Parts",
+      "AssetParts": "Asset parts",
       "Stock": "Stock",
       "PmTasks": "PM tasks",
       "PmSteps": "PM steps",
