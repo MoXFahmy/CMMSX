@@ -73,12 +73,22 @@ public class MainActivity extends BridgeActivity {
         });
 
         // Added before the first page finishes loading, so window.CmmsAndroid is there from the start.
-        webView.addJavascriptInterface(new AppBridge(this, webView), "CmmsAndroid");
+        AppBridge appBridge = new AppBridge(this, webView);
+        webView.addJavascriptInterface(appBridge, "CmmsAndroid");
+        String appUrl = bridge.getConfig().getServerUrl();
         bridge.addWebViewListener(new WebViewListener() {
+            @Override
+            public void onPageStarted(WebView view) {
+                appBridge.setForApp(Origins.sameOrigin(view.getUrl(), appUrl));
+            }
+
             @Override
             public void onPageLoaded(WebView view) {
                 if (offlineHistory.pageFinished(view.getUrl())) view.clearHistory(); // "Try again" reached the app
-                view.evaluateJavascript(shellScript(), null);
+                // The print/save helpers only go to the cloud app's own pages (not the offline page or anything else).
+                boolean app = Origins.sameOrigin(view.getUrl(), appUrl);
+                appBridge.setForApp(app);
+                if (app) view.evaluateJavascript(shellScript(), null);
             }
         });
 

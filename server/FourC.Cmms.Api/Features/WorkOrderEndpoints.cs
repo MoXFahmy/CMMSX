@@ -378,7 +378,7 @@ public static class WorkOrderEndpoints
         g.MapGet("/{id:guid}/activity", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
             var comments = await db.WorkOrderComments.AsNoTracking().Where(c => c.WorkOrderId == id)
-                .Select(c => new { c.Id, Kind = "comment", c.Body, From = (WorkOrderStatus?)null, To = (WorkOrderStatus?)null, HoldReason = (HoldReason?)null, By = c.UserName, At = c.CreatedAt }).ToListAsync(ct);
+                .Select(c => new { c.Id, Kind = "comment", Body = (string?)c.Body, From = (WorkOrderStatus?)null, To = (WorkOrderStatus?)null, HoldReason = (HoldReason?)null, By = c.UserName, At = c.CreatedAt }).ToListAsync(ct);
             var changes = await db.WorkOrderStatusChanges.AsNoTracking().Where(c => c.WorkOrderId == id)
                 .Select(c => new { c.Id, Kind = "status", Body = c.Note, From = c.FromStatus, To = (WorkOrderStatus?)c.ToStatus, c.HoldReason, By = c.ChangedByName, At = c.ChangedAt }).ToListAsync(ct);
             return comments.Concat(changes).OrderByDescending(x => x.At);

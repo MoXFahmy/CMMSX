@@ -26,15 +26,22 @@ final class AppBridge {
 
     private final Activity activity;
     private final WebView webView;
+    /** Whether the page showing is the cloud app's (set by MainActivity); other pages can't use the bridge. */
+    private volatile boolean forApp;
 
     AppBridge(Activity activity, WebView webView) {
         this.activity = activity;
         this.webView = webView;
     }
 
+    void setForApp(boolean value) {
+        forApp = value;
+    }
+
     /** Opens Android's print dialog for the current page (a printer, or "Save as PDF"). */
     @JavascriptInterface
     public void print(String jobName) {
+        if (!forApp) return;
         final String name = jobName == null || jobName.trim().isEmpty() ? "CMX" : jobName.trim();
         activity.runOnUiThread(() -> {
             PrintManager printManager = (PrintManager) activity.getSystemService(Context.PRINT_SERVICE);
@@ -45,6 +52,7 @@ final class AppBridge {
     /** Saves a file built in the browser (base64) to Downloads and says so. */
     @JavascriptInterface
     public void saveFile(String fileName, String mimeType, String base64) {
+        if (!forApp) return;
         String name = FileNames.safe(fileName, "CMX-file");
         String mime = FileNames.plainType(mimeType);
         try {
@@ -81,6 +89,7 @@ final class AppBridge {
     /** A file built in the page could not be read (assets/cmms-shell.js): say so rather than do nothing. */
     @JavascriptInterface
     public void couldNotSave(String fileName) {
+        if (!forApp) return;
         toast(activity.getString(R.string.could_not_save, FileNames.safe(fileName, "CMX-file")));
     }
 

@@ -24,11 +24,16 @@ public static class Sla
     public static TimeZoneInfo Zone(string? id) =>
         id is { Length: > 0 } && TimeZoneInfo.TryFindSystemTimeZoneById(id, out var z) ? z : TimeZoneInfo.Utc;
 
-    /// <summary>The last second of <paramref name="day"/> in <paramref name="zone"/>.</summary>
+    /// <summary>
+    /// The last second of <paramref name="day"/> in <paramref name="zone"/>. When clocks go back and 23:59:59 happens twice, the
+    /// later one; when they jump forward over the end of the day, the last second before the jump.
+    /// </summary>
     public static DateTimeOffset EndOfDay(DateOnly day, TimeZoneInfo zone)
     {
         var local = day.ToDateTime(new TimeOnly(23, 59, 59), DateTimeKind.Unspecified);
-        return new DateTimeOffset(TimeZoneInfo.ConvertTimeToUtc(local, zone), TimeSpan.Zero);
+        for (var i = 0; i < 24 * 60 && zone.IsInvalidTime(local); i++) local = local.AddMinutes(-1); // skipped: step back out of the gap
+        var offset = zone.IsAmbiguousTime(local) ? zone.GetAmbiguousTimeOffsets(local).Min() : zone.GetUtcOffset(local);
+        return new DateTimeOffset(local, offset).ToUniversalTime();
     }
 
     public static DateOnly LocalDay(DateTimeOffset at, TimeZoneInfo zone) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, zone).DateTime);

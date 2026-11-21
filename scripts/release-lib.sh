@@ -57,3 +57,15 @@ find_drive_dir() {
   [ "${#matches[@]}" -eq 1 ] || return 1
   echo "${matches[0]}"
 }
+
+# The release certificate's SHA-256 fingerprint (public; the key itself stays in Drive › _private). Phones only accept
+# updates signed with this certificate.
+# shellcheck disable=SC2034 # used by release.sh
+RELEASE_CERT_SHA256=8a39a5a907f74fe56ec8f1e9fd3bbc2bc39f4fe0b705b30e8455ecafd019e4b1
+
+# cert_matches <apksigner verify --print-certs output> <expected sha-256>: the first signer is the expected certificate.
+cert_matches() {
+  local got
+  got=$(printf '%s\n' "$1" | sed -n 's/^Signer #1 certificate SHA-256 digest: *\([0-9a-f]*\).*/\1/p' | head -1)
+  [ -n "$got" ] && [ "$got" = "$2" ]
+}

@@ -535,6 +535,59 @@ public class PlannedPartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Closed_cancelled_or_deleted_work_holds_no_stock()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        await ReceiveAsync(o.C, part, o.Main, 10);
+        var done = await WorkOrderAsync(o.C, o.SiteA);
+        var cancelled = await WorkOrderAsync(o.C, o.SiteA);
+        var deleted = await WorkOrderAsync(o.C, o.SiteA);
+        foreach (var wo in new[] { done, cancelled, deleted }) await PlanAsync(o.C, wo, part, 2);
+        Assert.Equal(6m, Dec(await Ok(await o.C.GetAsync($"/api/parts/{part}")), "reserved"));
+
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{done}/status", new { status = "Completed", completionNotes = "Done" }));
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{cancelled}/status", new { status = "Cancelled" }));
+        (await o.C.DeleteAsync($"/api/work-orders/{deleted}")).EnsureSuccessStatusCode();
+        var p = await Ok(await o.C.GetAsync($"/api/parts/{part}"));
+        Assert.Equal((0m, 10m), (Dec(p, "reserved"), Dec(p, "available")));
+        Assert.Empty(p.GetProperty("reservedFor").EnumerateArray());
+    }
+
+    [SkippableFact]
+    public async Task One_organizations_reservations_are_not_seen_by_another()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var a = await SetupAsync();
+        var b = await SetupAsync();
+        var partA = await PartAsync(a.C, "P-1", a.Main);
+        var partB = await PartAsync(b.C, "P-1", b.Main);
+        await PlanAsync(a.C, await WorkOrderAsync(a.C, a.SiteA), partA, 3);
+        Assert.Equal(0m, Dec(await Ok(await b.C.GetAsync($"/api/parts/{partB}")), "reserved"));
+        Assert.Equal(HttpStatusCode.NotFound, (await b.C.GetAsync($"/api/parts/{partA}")).StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task Saving_a_pm_task_again_keeps_its_parts_unless_they_are_changed()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        var task = await TaskAsync(o.C, "T1", [new { partId = part, quantity = 2 }]);
+        // Saved without a parts list (an older screen): the parts stay.
+        await Ok(await o.C.PutAsJsonAsync($"/api/pm-tasks/{task}", new { code = "T1", name = "Renamed", isActive = true }));
+        var kept = (await Ok(await o.C.GetAsync($"/api/pm-tasks/{task}"))).GetProperty("parts").EnumerateArray().ToList();
+        Assert.Equal(2m, Dec(Assert.Single(kept), "quantity"));
+        // Saved with the same list: still one line, same quantity.
+        await Ok(await o.C.PutAsJsonAsync($"/api/pm-tasks/{task}", new { code = "T1", name = "Renamed", isActive = true, parts = new[] { new { partId = part, quantity = 2 } } }));
+        Assert.Single((await Ok(await o.C.GetAsync($"/api/pm-tasks/{task}"))).GetProperty("parts").EnumerateArray());
+        // Saved with an empty list: the parts are removed.
+        await Ok(await o.C.PutAsJsonAsync($"/api/pm-tasks/{task}", new { code = "T1", name = "Renamed", isActive = true, parts = Array.Empty<object>() }));
+        Assert.Empty((await Ok(await o.C.GetAsync($"/api/pm-tasks/{task}"))).GetProperty("parts").EnumerateArray());
+    }
+
+    [SkippableFact]
     public async Task A_quantity_that_rounds_to_zero_is_refused()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

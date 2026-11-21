@@ -126,6 +126,16 @@ public class DeviceTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task An_administrator_sees_this_device_among_their_own_devices()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _) = await RegisterAsync();
+        var me = (await Ok(await admin.GetAsync("/api/auth/me"))).GetProperty("user").GetProperty("id").GetGuid();
+        var d = Assert.Single((await Ok(await admin.GetAsync($"/api/users/{me}/devices"))).EnumerateArray());
+        Assert.True(d.GetProperty("current").GetBoolean());
+    }
+
+    [SkippableFact]
     public async Task Administrators_see_and_sign_out_any_users_devices()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

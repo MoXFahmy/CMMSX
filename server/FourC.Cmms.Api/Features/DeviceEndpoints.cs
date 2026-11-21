@@ -35,8 +35,10 @@ public static class DeviceEndpoints
 
         var users = api.MapGroup("/users/{userId:guid}/devices").WithTags("Devices").RequirePermission(Permissions.UsersManage);
 
-        users.MapGet("/", async (Guid userId, CmmsDbContext db, CancellationToken ct) =>
-            await db.Users.AnyAsync(u => u.Id == userId && u.TenantId == db.CurrentTenantId, ct) ? Results.Ok(await ListAsync(db, userId, null, ct)) : Results.NotFound());
+        // An administrator looking at their own devices sees which one they're on.
+        users.MapGet("/", async (Guid userId, HttpContext http, CmmsDbContext db, CancellationToken ct) =>
+            await db.Users.AnyAsync(u => u.Id == userId && u.TenantId == db.CurrentTenantId, ct)
+                ? Results.Ok(await ListAsync(db, userId, await Sessions.CurrentAsync(http), ct)) : Results.NotFound());
 
         users.MapPost("/{id:guid}/sign-out", async (Guid userId, Guid id, CmmsDbContext db, IMemoryCache cache, CancellationToken ct) =>
         {
