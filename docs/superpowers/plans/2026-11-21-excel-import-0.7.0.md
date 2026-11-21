@@ -131,8 +131,8 @@ No behaviour changes. Every validator and save path the import needs is split in
 
 **Interfaces:**
 - Produces, for each kind `K` in {Site, Location, Category, Lookup (trades, part groups), Store, Supplier, Asset, Employee, Part, PmTask, PmSchedule}:
-  - `internal static Validator KRules(KInput i, Guid? id)`. Only the checks that need no database: required, lengths, ranges, enum defined, date order, own-parent, frequency rules and so on. The existing `Validate…Async` starts from it, so the screens' messages and field keys stay the same.
-  - `internal static void ApplyK(...)` (existing `Apply…`, made `internal`).
+  - `internal static Validator KRules(KInput i, Guid? id)`, named `SiteRules`, `LocationRules`, `CategoryRules`, `LookupRules`, `StoreRules`, `SupplierRules`, `AssetRules` (with an extra `bool requireNumber`), `EmployeeRules`, `PartRules`, `PmTaskRules` and `PmScheduleRules`. Only the checks that need no database: required, lengths, ranges, enum defined, date order, own-parent, frequency rules and so on. The existing `Validate…Async` starts from it, so the screens' messages and field keys stay the same.
+  - The existing apply methods keep their names and become `internal`: `LocationEndpoints.Apply(Site, SiteInput)` and `Apply(Location, LocationInput)`, `AssetEndpoints.Apply`, `PeopleEndpoints.Apply(Employee, EmployeeInput)`, `InventoryEndpoints.ApplyPart`, `PurchasingEndpoints.ApplySupplier`, `PmEndpoints.ApplyTask` and `ApplySchedule`. Categories, lookups and stores get the same treatment where their endpoint sets fields inline.
   - Save pieces lifted out of the endpoint lambdas, without `SaveChangesAsync` unless stated:
     - `internal static Task<Location> CreateLocationAsync(CmmsDbContext db, LocationInput i, CancellationToken ct)`, which adds and assigns the path;
     - `internal static Task UpdateLocationAsync(CmmsDbContext db, Location loc, LocationInput i, CancellationToken ct)`. When it moves the location it saves, rewrites descendants and moves assets, as the PUT does now;
@@ -216,7 +216,9 @@ No behaviour changes. Every validator and save path the import needs is split in
   - `Blank_rows_are_skipped`. Rows 3 and 5 blank: row numbers in results are 2 and 4, with no problems.
   - `A_key_twice_in_a_sheet_is_a_problem`. Two rows with `CAI`: the second has the problem "CAI appears twice in this sheet (row 2).".
   - `Rows_depending_on_a_problem_row_are_problems`. A location under a parent row that has a problem gets "Location B9 not found." (or the parent's code).
-  - `Unknown_lookup_codes_are_added_and_listed`. Stores `[["ST1","Main store","CAI"]]` plus Suppliers: a store whose site is unknown gets "Site XX not found.". The categories added through Task 5 are covered there.
+  - `An_unknown_site_on_a_store_is_a_problem`. Stores `[["ST1","Main store","XX"]]` gives "Site XX not found."; with `CAI` the row is New.
+  - `Unchanged_rows_are_not_written`. Importing the same Sites file twice: the second run is Unchanged, and the site's `updatedAt` (from `/api/sites/{id}`) is the same as after the first.
+  - `A_stopped_run_saves_nothing`. Call `ImportRun.RunAsync` directly with a `CmmsDbContext` for the test organization (`new CmmsDbContext(options, new FixedTenantContext(tenantId))`, options from `fx.Services`), `save: true` and `budget: TimeSpan.Zero`. Expect `Saved=false`, `Stopped` set, and `/api/sites` unchanged.
   - `Only_administrators_can_import`. A user without `settings.manage` gets 403 on `/check`.
   - `Limits_are_enforced`. 5,001 rows in Sites gives 400 with the limit message; an 11 MB body gives 400.
   - `Arabic_headings_work`. Sheet and headings in Arabic import the same rows.
@@ -233,7 +235,7 @@ No behaviour changes. Every validator and save path the import needs is split in
 - Test: `server/FourC.Cmms.Tests/ImportAssetTests.cs`
 
 **Interfaces:**
-- Consumes: Task 3 `CreateAssetAsync`, `UpdateAsset`, `CustomFieldValues`, `EmployeeRules`, `ApplyEmployee`; Task 4 contract.
+- Consumes: Task 3 `AssetRules`, `CreateAssetAsync`, `UpdateAsset`, `CustomFieldValues`, `EmployeeRules`, `PeopleEndpoints.Apply(Employee, EmployeeInput)`; Task 4 contract.
 - Produces: none for later tasks, except that `ImportSheets` gains the Assets custom-field columns at run time: `ColumnDef(Key: "cf:" + def.Key, English: def.Label, Arabic: def.Label, Kind: Text)`.
 
 - [ ] **Step 1: Write the failing tests:**
@@ -283,7 +285,7 @@ No behaviour changes. Every validator and save path the import needs is split in
 - Test: `server/FourC.Cmms.Tests/ImportPmTests.cs`
 
 **Interfaces:**
-- Consumes: Task 3 `PmTaskRules`, `ApplyTask`, `ApplyTaskLists`, `ScheduleRules`, `CreateSchedule`, `UpdateSchedule`, `ScheduleChangeRules`.
+- Consumes: Task 3 `PmTaskRules`, `ApplyTask`, `ApplyTaskLists`, `PmScheduleRules`, `ApplySchedule`, `CreateSchedule`, `UpdateSchedule`, `ScheduleChangeRules`.
 - PmSteps and PmParts collect their rows per task code. In `FinishAsync` each task that appears gets its whole list replaced through `ApplyTaskLists`, and the task counts as Changed when the list differs.
   - The results of those two sheets report per row: a step row is New when the task had no such step text at that number, and otherwise Unchanged or Changed.
   - Unknown task: `"PM task {0} not found."`.
