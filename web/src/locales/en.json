@@ -1286,7 +1286,7 @@
     "rule": {
       "notes": "Describe the work that was done.",
       "failureCode": "Choose a failure code for breakdown work.",
-      "labour": "Log your hours before completing.",
+      "labour": "Log hours on this job before completing.",
       "allSteps": "Tick every checklist step before completing."
     },
     "notOnPhone": "This isn't on your phone's list (it may be on another site). Try again with a connection.",

@@ -26,10 +26,17 @@ public sealed class EmailSenderService(IServiceScopeFactory scopes, IOptions<Ema
         var interval = TimeSpan.FromSeconds(Math.Max(1, o.PollSeconds));
         while (!stop.IsCancellationRequested)
         {
-            try { while (await RunOnceAsync(ct: stop) == BatchSize) { } } // keep going while there's a backlog
+            // Keep going while there's a backlog, with a short pause between batches so the mail service isn't hammered.
+            try { await SendBacklogAsync(() => RunOnceAsync(ct: stop), BatchSize, () => Task.Delay(TimeSpan.FromSeconds(Math.Max(0, o.BacklogPauseSeconds)), stop)); }
             catch (Exception ex) when (!stop.IsCancellationRequested) { log.LogError(ex, "E-mail sender run failed"); } // only shutdown ends the loop
             try { await Task.Delay(interval, stop); } catch (OperationCanceledException) { return; }
         }
+    }
+
+    /// <summary>Runs batches until one comes back short of a full batch, pausing between full ones.</summary>
+    public static async Task SendBacklogAsync(Func<Task<int>> runOnce, int batchSize, Func<Task> pause)
+    {
+        while (await runOnce() == batchSize) await pause();
     }
 
     /// <summary>Sends up to one batch of due e-mails; returns how many were sent. <paramref name="now"/> lets tests move the clock.</summary>

@@ -112,6 +112,30 @@ public class WorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Two_steps_ticked_at_the_same_moment_both_count_and_start_the_work_once()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, site) = await SetupAsync();
+        await TestSettings.SetSettingsAsync(admin, s => s["autoStartWork"] = true);
+        for (var round = 0; round < 6; round++)
+        {
+            var wo = (await Ok(await admin.PostAsJsonAsync("/api/work-orders", new { title = "Job", type = "Corrective", priority = "Medium", siteId = site, tasks = new[] { "A", "B" } })))
+                .GetProperty("id").GetGuid();
+            var steps = (await Ok(await admin.GetAsync($"/api/work-orders/{wo}"))).GetProperty("tasks").EnumerateArray().Select(t => t.GetProperty("id").GetGuid()).ToList();
+            var answers = await Task.WhenAll(
+                admin.PutAsJsonAsync($"/api/work-orders/{wo}/tasks/{steps[0]}", new { isDone = true }),
+                admin.PutAsJsonAsync($"/api/work-orders/{wo}/tasks/{steps[1]}", new { isDone = true }));
+            Assert.All(answers, r => Assert.True(r.IsSuccessStatusCode, $"tick failed: {(int)r.StatusCode}"));
+            var d = await Ok(await admin.GetAsync($"/api/work-orders/{wo}"));
+            Assert.Equal("InProgress", d.GetProperty("status").GetString());
+            Assert.All(d.GetProperty("tasks").EnumerateArray(), t => Assert.True(t.GetProperty("isDone").GetBoolean()));
+            var started = (await Ok(await admin.GetAsync($"/api/work-orders/{wo}/activity"))).EnumerateArray()
+                .Count(x => x.GetProperty("body").GetString() == "Started automatically: checklist step done");
+            Assert.Equal(1, started);
+        }
+    }
+
+    [SkippableFact]
     public async Task Auto_start_moves_open_work_to_in_progress_on_labour_or_step()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

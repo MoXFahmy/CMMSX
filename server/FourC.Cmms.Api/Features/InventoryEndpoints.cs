@@ -285,9 +285,11 @@ public static class InventoryEndpoints
         {
             if (Missing(i.PartId, i.StoreId) is { } bad) return bad;
             await RequireIssueTargetAsync(db, i.WorkOrderId, i.LocationId, ct);
+            var post = new StockPost(StockTransactionType.Issue, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
+                WorkOrderId: i.WorkOrderId, LocationId: i.LocationId, BatchNumber: i.BatchNumber, Notes: i.Notes);
+            await StockLedger.CheckAsync(db, post, ct); // a batch that expired or ran out is said before "Issue anyway?"
             if (!i.ConfirmReserved && await ReservedConflictAsync(db, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.WorkOrderId, ct) is { } reserved) return reserved;
-            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
-                WorkOrderId: i.WorkOrderId, LocationId: i.LocationId, BatchNumber: i.BatchNumber, Notes: i.Notes), tk), ct);
+            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, post, tk), ct);
             return Results.Ok(new { tx.Id });
         }).RequirePermission(Permissions.InventoryTransact);
 
@@ -321,6 +323,8 @@ public static class InventoryEndpoints
         {
             if (Missing(i.PartId, i.FromStoreId) is { } bad) return bad;
             if (i.ToStoreId is null) return new Validator().When(true, "toStoreId", "Choose the receiving store.").Problem();
+            await StockLedger.CheckAsync(db, new StockPost(StockTransactionType.TransferOut, i.PartId!.Value, i.FromStoreId!.Value, i.Quantity, i.Date ?? Today,
+                BatchNumber: i.BatchNumber.Clean()), ct);
             if (!i.ConfirmReserved && i.ToStoreId != i.FromStoreId && await ReservedConflictAsync(db, i.PartId!.Value, i.FromStoreId!.Value, i.Quantity, null, ct) is { } reserved) return reserved;
             var (o, _) = await db.InTransactionAsync(tk => StockLedger.TransferAsync(db, ctx, i.PartId!.Value, i.FromStoreId!.Value, i.ToStoreId.Value, i.Quantity, i.Date ?? Today, i.BatchNumber.Clean(), i.Notes, tk), ct);
             return Results.Ok(new { o.Id });

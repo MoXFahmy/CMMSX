@@ -31,6 +31,15 @@ final class FileNames {
         return notBlank(plain) ? plain.trim() : null;
     }
 
+    /**
+     * The type alone ("text/csv" from "text/csv; charset=utf-8"), lower-case, for Android's Downloads and download manager,
+     * which file a type with parameters under the wrong kind of file; "application/octet-stream" when there is none.
+     */
+    static String plainType(String mimeType) {
+        String t = mimeType == null ? "" : mimeType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
+        return t.matches("[a-z0-9][a-z0-9!#$&^_.+-]*/[a-z0-9][a-z0-9!#$&^_.+-]*") ? t : "application/octet-stream";
+    }
+
     /** {@code name} without the characters a file name cannot have, or {@code fallback} when nothing is left. */
     static String safe(String name, String fallback) {
         String cleaned = name == null ? "" : name.replaceAll("[\\\\/:*?\"<>|\\p{Cntrl}]", "_").trim();

@@ -543,15 +543,22 @@ public static class WorkOrderEndpoints
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         if (!settings.AutoStartWork) return;
-        var w = await db.WorkOrders.FirstOrDefaultAsync(x => x.Id == workOrderId, ct);
-        if (w is null || w.Status != WorkOrderStatus.Open) return;
         var now = DateTimeOffset.UtcNow;
+        var started = at ?? now; // work recorded offline started when it was done
+        // One guarded update, so two steps ticked at the same moment start the work once instead of clashing on the row version.
+        var moved = await db.WorkOrders.Where(x => x.Id == workOrderId && x.Status == WorkOrderStatus.Open).ExecuteUpdateAsync(s => s
+            .SetProperty(x => x.Status, WorkOrderStatus.InProgress)
+            .SetProperty(x => x.StartedAt, x => x.StartedAt ?? started)
+            .SetProperty(x => x.RespondedAt, x => x.RespondedAt ?? started)
+            .SetProperty(x => x.UpdatedAt, now).SetProperty(x => x.UpdatedById, ctx.UserId), ct);
+        // A copy of the work order this request already loaded is now out of date (status, row version): refresh it.
+        if (db.ChangeTracker.Entries<WorkOrder>().FirstOrDefault(e => e.Entity.Id == workOrderId) is { } loaded) await loaded.ReloadAsync(ct);
+        if (moved == 0) return;
         db.WorkOrderStatusChanges.Add(new WorkOrderStatusChange
         {
-            WorkOrderId = w.Id, FromStatus = w.Status, ToStatus = WorkOrderStatus.InProgress, Note = reason, ChangedAt = now, ChangedById = ctx.UserId, ChangedByName = ctx.UserName,
+            WorkOrderId = workOrderId, FromStatus = WorkOrderStatus.Open, ToStatus = WorkOrderStatus.InProgress, Note = reason, ChangedAt = now,
+            ChangedById = ctx.UserId, ChangedByName = ctx.UserName,
         });
-        w.Status = WorkOrderStatus.InProgress;
-        w.StartedAt ??= at ?? now; // work recorded offline started when it was done
     }
 
     public static async Task<Validator> ValidateAsync(WorkOrderInput i, CmmsDbContext db, CancellationToken ct)

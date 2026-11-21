@@ -48,10 +48,12 @@ export async function fetchMe(): Promise<{ userId: string; employeeId?: string |
   return { userId: me.user.id, employeeId: me.employeeId, fullName: me.user.fullName };
 }
 
-export async function fetchBundle(): Promise<TechBundle> {
-  const res = await call('/tech/bundle', undefined, LOAD_MS);
+/** My jobs, or null when the phone's copy (etag) is still current. */
+export async function fetchBundle(etag?: string): Promise<{ data: TechBundle; etag?: string } | null> {
+  const res = await call('/tech/bundle', { headers: etag ? { 'If-None-Match': etag } : {} }, LOAD_MS);
+  if (res.status === 304) return null;
   if (!res.ok) throw new Error(await title(res));
-  return res.json();
+  return { data: await res.json(), etag: res.headers.get('ETag') ?? undefined };
 }
 
 /** The places of my sites, or null when the phone's copy (etag) is still current. */

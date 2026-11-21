@@ -53,4 +53,14 @@ public class FileNamesTest {
         assertEquals("file", FileNames.safe("  ", "file"));
         assertEquals("file", FileNames.safe(null, "file"));
     }
+
+    @Test
+    public void savesFilesUnderTheirPlainTypeWithoutParameters() {
+        assertEquals("text/csv", FileNames.plainType("text/csv; charset=utf-8"));
+        assertEquals("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+            FileNames.plainType(" Application/vnd.openxmlformats-officedocument.spreadsheetml.sheet "));
+        assertEquals("application/octet-stream", FileNames.plainType(null));
+        assertEquals("application/octet-stream", FileNames.plainType(" ; charset=utf-8"));
+        assertEquals("application/octet-stream", FileNames.plainType("not a type"));
+    }
 }

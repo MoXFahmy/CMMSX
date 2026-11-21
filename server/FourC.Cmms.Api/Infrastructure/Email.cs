@@ -26,6 +26,8 @@ public sealed class EmailOptions
     /// <summary>SES region; defaults to the SDK's own region resolution.</summary>
     public string? Region { get; set; }
     public int PollSeconds { get; set; } = 15;
+    /// <summary>Pause between full batches while there is a backlog.</summary>
+    public double BacklogPauseSeconds { get; set; } = 2;
     /// <summary>Run the background sender (tests switch it off and send the queue themselves).</summary>
     public bool AutoSend { get; set; } = true;
     public SmtpOptions Smtp { get; set; } = new();
@@ -126,6 +128,18 @@ public static class EmailText
     {
         var org = OneLine(organization);
         return org.Length == 0 || string.Equals(org, app.Trim(), StringComparison.OrdinalIgnoreCase) ? OneLine(app) : OneLine($"{org} via {app}");
+    }
+
+    /// <summary>
+    /// A plain address (name@domain.tld) that can be sent to: no display name, spaces, line breaks or second address, at most
+    /// 254 characters. Imported data can hold "a@x.com; b@y.com" or half an address; those are left out instead of failing later.
+    /// </summary>
+    public static bool IsAddress(string? s)
+    {
+        if (string.IsNullOrWhiteSpace(s) || s.Length > 254 || s.Any(c => char.IsWhiteSpace(c) || c is ';' or ',' or '<' or '>')) return false;
+        if (!System.Net.Mail.MailAddress.TryCreate(s, out var a) || a.Address != s) return false;
+        var domain = a.Host;
+        return domain.Contains('.') && !domain.StartsWith('.') && !domain.EndsWith('.');
     }
 
     /// <summary>For HTML bodies.</summary>

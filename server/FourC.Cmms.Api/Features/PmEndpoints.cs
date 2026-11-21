@@ -362,7 +362,7 @@ public static class PmEndpoints
         if (i.TradeId is not null && !await db.Trades.AnyAsync(x => x.Id == i.TradeId, ct)) v.Add("tradeId", "Unknown trade.");
         var parts = i.Parts ?? [];
         v.When(parts.Count > 200, "parts", "At most 200 parts.")
-            .When(parts.Any(p => p.Quantity is <= 0 or > 1_000_000_000m), "parts", "Each part needs a quantity above zero.")
+            .When(parts.Any(p => Math.Round(p.Quantity, 3) is <= 0 or > 1_000_000_000m), "parts", "Each part needs a quantity above zero.")
             .When(parts.GroupBy(p => p.PartId).Any(g => g.Count() > 1), "parts", "List each part once.");
         var ids = parts.Select(p => p.PartId).Distinct().ToList();
         if (ids.Count > 0 && await db.Parts.CountAsync(p => ids.Contains(p.Id), ct) != ids.Count) v.Add("parts", "Unknown part.");

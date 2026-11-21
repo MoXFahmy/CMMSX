@@ -12,10 +12,12 @@ export type TechJob = {
   files: { id: string; fileName: string; contentType: string; isSignature: boolean; signedBy?: string | null }[];
   comments: { body: string; userName?: string | null; createdAt: string }[];
   myLabor: { workDate: string; hours: number; overtimeHours: number; notes?: string | null }[];
+  /** Anyone has logged hours on the job (copies saved before 0.5.5 don't say). */
+  hasLabor?: boolean;
 };
 
 export type TechBundle = {
-  employeeId: string; userId: string; generatedAt: string; jobs: TechJob[];
+  employeeId: string; userId: string; jobs: TechJob[];
   failureCodes: { id: string; code: string; name: string }[];
   completionRules: { notes: boolean; labour: boolean; allSteps: boolean; failureCodeOnBreakdown: boolean };
 };

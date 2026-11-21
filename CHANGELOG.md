@@ -4,6 +4,25 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.5.5] - 2026-11-21
+
+Small fixes people notice, left over from earlier releases.
+
+### Fixed
+- **Technician app**:
+  - The job list is only downloaded again when something changed (less data on weak signal).
+  - "Log hours before completing" is met by anyone's hours on the job, as in the office (it used to want your own).
+  - The app asks the phone's browser to keep its saved jobs and waiting changes, so they aren't cleared after a long
+    break (Safari clears site data after 7 days otherwise).
+- **Android app**: pinch to zoom; downloads and saved files are filed under the right kind of file.
+- **Parts**: a quantity that would be saved as 0 (more than three decimals) is refused. When issuing or transferring, an
+  expired or short batch is said before the "Issue anyway?" question about reserved stock.
+- **Importer**: repeated PM parts rows that are added together are no longer reported as skipped.
+- **E-mail**: a pause between batches when many e-mails are waiting; addresses that can't be sent to (for example two
+  addresses in one field) are left out instead of failing again and again, and "Send to supplier" says so.
+- **PM**: a due date no longer lands on a non-working day (a "whole month" ends on the month's last working day).
+- **Work orders**: two checklist steps ticked at the same moment no longer clash when work starts automatically.
+
 ## [0.5.4] - 2026-11-21
 
 Twelve more small fixes left over from earlier releases.

@@ -511,6 +511,41 @@ public class PlannedPartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal("400123", Assert.Single(found).GetProperty("barcode").GetString());
     }
 
+    [SkippableFact]
+    public async Task An_issue_that_cannot_go_through_says_why_before_asking_about_reserved_stock()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = Id(await Ok(await o.C.PostAsJsonAsync("/api/parts", new
+        {
+            partNumber = "GR-1", name = "Grease", unitOfMeasure = "EA", standardPrice = 10, isCritical = false, isShelfItem = true, allowNegativeStock = false,
+            levels = new[] { new { storeId = o.Main, bin = "A1", minLevel = 0, reorderLevel = 0, maxLevel = 0, reorderQuantity = 0 } },
+        })));
+        await Ok(await o.C.PostAsJsonAsync("/api/inventory/receive", new
+        {
+            partId = part, storeId = o.Main, quantity = 5, unitCost = 5, batchNumber = "B1", expiryDate = DateOnly.FromDateTime(DateTime.UtcNow).AddDays(-1),
+        }));
+        var reserving = await WorkOrderAsync(o.C, o.SiteA, dueInDays: 3);
+        await PlanAsync(o.C, reserving, part, 4);
+        var other = await WorkOrderAsync(o.C, o.SiteA);
+        // The batch has expired: no point asking "Issue anyway?" about reserved stock first.
+        var body = await Fails(await o.C.PostAsJsonAsync("/api/inventory/issue", new { partId = part, storeId = o.Main, quantity = 3, workOrderId = other, batchNumber = "B1" }),
+            HttpStatusCode.BadRequest);
+        Assert.Contains("expired", body);
+    }
+
+    [SkippableFact]
+    public async Task A_quantity_that_rounds_to_zero_is_refused()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        var wo = await WorkOrderAsync(o.C, o.SiteA);
+        // Quantities keep three decimals: 0.0004 would be saved as 0.
+        await Fails(await o.C.PostAsJsonAsync($"/api/work-orders/{wo}/planned-parts", new { partId = part, quantity = 0.0004m }), HttpStatusCode.BadRequest);
+        await Fails(await o.C.PostAsJsonAsync("/api/pm-tasks", new { code = "T0", name = "Tiny", parts = new[] { new { partId = part, quantity = 0.0004m } } }), HttpStatusCode.BadRequest);
+    }
+
     // ---- Final review fixes ----
 
     [SkippableFact]

@@ -227,6 +227,20 @@ public static class PmCalendar
     public static DateOnly DueDate(PmSchedule s, DateOnly targetStart) =>
         s.Type == PmScheduleType.DateOfMonth && s.WholeMonth ? targetStart.AddMonths(1).AddDays(-1) : targetStart.AddDays(Math.Max(1, s.WorkPeriodDays) - 1);
 
+    /// <summary>
+    /// The due date kept off non-working days: a work period ends on the next working day; a "whole month" ends on the last
+    /// working day of its month (never before the start).
+    /// </summary>
+    public static DateOnly DueDate(PmSchedule s, DateOnly targetStart, IReadOnlyCollection<DayOfWeek> nonWorking)
+    {
+        var due = DueDate(s, targetStart);
+        if (nonWorking.Count == 0 || !nonWorking.Contains(due.DayOfWeek)) return due;
+        if (!(s.Type == PmScheduleType.DateOfMonth && s.WholeMonth)) return NextWorkingDay(due, nonWorking);
+        for (var d = due; d >= targetStart; d = d.AddDays(-1))
+            if (!nonWorking.Contains(d.DayOfWeek)) return d;
+        return due;
+    }
+
     /// <summary>Upcoming target dates from NextDueDate. Actual-basis schedules only know their next date.</summary>
     public static IEnumerable<DateOnly> Forecast(PmSchedule s, DateOnly to, int max = 60)
     {
