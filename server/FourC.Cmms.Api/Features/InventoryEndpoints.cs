@@ -11,6 +11,9 @@ namespace FourC.Cmms.Api.Features;
 
 public static class InventoryEndpoints
 {
+    public sealed record PartLookupRow(Guid Id, string PartNumber, string Name, string? Barcode, string UnitOfMeasure, decimal AverageCost, decimal? LastPurchasePrice,
+        bool IsShelfItem, Guid? PreferredSupplierId, decimal OnHand, decimal? OnAsset);
+
     public sealed record StoreInput(string Code, string Name, Guid? SiteId, string? Description, bool IsActive = true);
     public sealed record PartInput(string PartNumber, string Name, string? Specification, string? Manufacturer, string? ManufacturerPartNumber, string UnitOfMeasure,
         Guid? GroupId, decimal StandardPrice, int? LeadTimeDays, bool IsCritical, bool IsShelfItem, bool AllowNegativeStock, Guid? PreferredSupplierId,
@@ -140,15 +143,19 @@ public static class InventoryEndpoints
             return Results.Ok(new BulkResult(rows.Count, ids.Except(rows.Select(r => r.Id)).Select(id => new BulkSkip(id, "", "Not found.")).ToList()));
         }).RequirePermission(Permissions.InventoryManage);
 
-        g.MapGet("/lookup", async (CmmsDbContext db, string? search, Guid? storeId, CancellationToken ct) =>
+        // With an asset (planning or issuing parts for its work): the asset's spare parts first, with the quantity from its list.
+        g.MapGet("/lookup", async (CmmsDbContext db, string? search, Guid? storeId, Guid? assetId, CancellationToken ct) =>
         {
             var q = db.Parts.AsNoTracking().Where(p => p.IsActive);
             if (search.Clean() is { } s) q = q.Where(p => p.PartNumber.Contains(s) || p.Name.Contains(s) || p.Barcode == s);
-            return await q.OrderBy(p => p.PartNumber).Take(30).Select(p => new
-            {
-                p.Id, p.PartNumber, p.Name, p.Barcode, p.UnitOfMeasure, p.AverageCost, p.LastPurchasePrice, p.IsShelfItem, p.PreferredSupplierId,
-                OnHand = db.StockLevels.Where(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId)).Sum(l => (decimal?)l.QuantityOnHand) ?? 0,
-            }).ToListAsync(ct);
+            var onAsset = assetId is { } aid ? await db.AssetParts.AsNoTracking().Where(x => x.AssetId == aid).ToDictionaryAsync(x => x.PartId, x => x.Quantity, ct) : [];
+            var listed = onAsset.Keys.ToList();
+            async Task<List<PartLookupRow>> Find(IQueryable<FourC.Cmms.Core.Inventory.Part> parts) => await parts.OrderBy(p => p.PartNumber).Take(30)
+                .Select(p => new PartLookupRow(p.Id, p.PartNumber, p.Name, p.Barcode, p.UnitOfMeasure, p.AverageCost, p.LastPurchasePrice, p.IsShelfItem, p.PreferredSupplierId,
+                    db.StockLevels.Where(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId)).Sum(l => (decimal?)l.QuantityOnHand) ?? 0, null))
+                .ToListAsync(ct);
+            var first = listed.Count == 0 ? [] : (await Find(q.Where(p => listed.Contains(p.Id)))).Select(r => r with { OnAsset = onAsset[r.Id] }).ToList();
+            return first.Concat(await Find(listed.Count == 0 ? q : q.Where(p => !listed.Contains(p.Id)))).ToList();
         }).RequirePermission(Permissions.InventoryView);
 
         g.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
@@ -182,6 +189,8 @@ public static class InventoryEndpoints
                 .SumAsync(x => (decimal?)(x.Quantity - x.QuantityReceived), ct) ?? 0;
             var onHand = levels.Sum(l => l.QuantityOnHand);
             var reservedTotal = levels.Sum(l => l.Reserved);
+            var usedOn = await db.AssetParts.AsNoTracking().Where(x => x.PartId == id).OrderBy(x => x.Asset!.AssetNumber)
+                .Select(x => new { x.AssetId, x.Asset!.AssetNumber, AssetName = x.Asset.Name, x.Quantity, x.Note }).ToListAsync(ct);
             return Results.Ok(new
             {
                 p.Id, p.PartNumber, p.Name, p.Specification, p.Manufacturer, p.ManufacturerPartNumber, p.UnitOfMeasure, p.GroupId, GroupName = p.Group?.Name, p.StandardPrice,
@@ -189,7 +198,7 @@ public static class InventoryEndpoints
                 p.Barcode, p.AlternatePartIds, Alternates = alternates, p.Notes, p.IsActive,
                 Levels = levels.Select(l => new { l.Id, l.StoreId, l.StoreCode, l.StoreName, l.Bin, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity, l.QuantityOnHand,
                     l.Reserved, Available = l.QuantityOnHand - l.Reserved }),
-                Batches = batches, ReservedFor = reservedFor,
+                Batches = batches, ReservedFor = reservedFor, UsedOn = usedOn,
                 OnHand = onHand, Reserved = reservedTotal, Available = onHand - reservedTotal, OnOrder = onOrder, StockValue = Math.Round(onHand * p.AverageCost, 2), p.LegacyRef, RowVersion = Convert.ToBase64String(p.RowVersion),
             });
         }).RequirePermission(Permissions.InventoryView);
@@ -241,6 +250,8 @@ public static class InventoryEndpoints
             if (await db.WorkOrderParts.AnyAsync(l => l.PartId == id && db.WorkOrders.Any(w => w.Id == l.WorkOrderId), ct)
                 || await db.PmTaskParts.AnyAsync(l => l.PartId == id && db.PmTasks.Any(x => x.Id == l.PmTaskId), ct))
                 throw new DomainException("This part is planned on work orders or PM tasks. Remove it from them, or mark it inactive instead.");
+            if (await db.AssetParts.AnyAsync(x => x.PartId == id, ct))
+                throw new DomainException("This part is on assets' spare-parts lists. Remove it from them, or mark it inactive instead.");
             await db.StockLevels.Where(l => l.PartId == id).ExecuteDeleteAsync(ct);
             db.Parts.Remove(p);
             await db.SaveChangesAsync(ct);

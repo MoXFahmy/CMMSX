@@ -158,6 +158,7 @@ public static class AssetEndpoints
             if (await db.Assets.AnyAsync(a => a.ParentAssetId == id, ct))
                 throw new DomainException("This asset has child assets. Re-assign or delete them first.");
             db.Assets.Remove(asset);
+            db.AssetParts.RemoveRange(await db.AssetParts.Where(x => x.AssetId == id).ToListAsync(ct)); // its spare-parts list goes with it
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.AssetsDelete);

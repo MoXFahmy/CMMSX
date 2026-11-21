@@ -663,5 +663,7 @@
  "Source": "المصدر",
  "Stops": "التوقفات",
  "Assets stopped": "الأصول المتوقفة",
- "By hand": "يدويًا"
+ "By hand": "يدويًا",
+ "This part is on assets' spare-parts lists. Remove it from them, or mark it inactive instead.": "هذه القطعة مدرجة في قوائم قطع غيار الأصول. أزلها منها، أو اجعلها غير نشطة بدلًا من ذلك.",
+ "Choose another asset to copy from.": "اختر أصلًا آخر للنسخ منه."
 }

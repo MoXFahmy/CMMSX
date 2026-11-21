@@ -136,6 +136,7 @@ api.MapAuthEndpoints();
 api.MapSiteEndpoints();
 api.MapLocationEndpoints();
 api.MapAssetEndpoints();
+api.MapAssetPartEndpoints();
 api.MapAssetCategoryEndpoints();
 api.MapCustomFieldEndpoints();
 api.MapAttachmentEndpoints();
