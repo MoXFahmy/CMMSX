@@ -176,7 +176,7 @@
   - `Manual_stops_are_checked_and_listed`. Add a closed stop, add an overlapping one (400 overlap), add one with end before start (400), then edit the first one's reason. The list shows the stops newest first, and the change history (`/api/audit?entityType=DowntimeEvent&entityId=…`) has the edit.
   - `Availability_uses_the_assets_running_time`. Set the asset to 8 h a day on all days and add a manual stop of 4 h yesterday: `plannedHours30` = 240, `downHours30` = 4, `availability30` = 98.3.
   - `Running_time_must_make_sense`. `runsHoursPerDay = 25` gives 400 with the hours message; `runsOn = []` gives 400 with the days message.
-  - `Down_assets_show_in_the_list_and_on_the_dashboard`. One asset down: `?downNow=true` returns it with `downSince`, the dashboard's `assetsDown` = 1, and its technician job (`/api/tech/jobs/{id}`) shows `asset.downSince`.
+  - `Down_assets_show_in_the_list_and_on_the_dashboard`. One asset down: `?downNow=true` returns it with `downSince`, the dashboard's `assetsDown` = 1, and its job in the technician bundle (`GET /api/tech/bundle`) shows `asset.downSince`.
   - `A_stop_links_to_its_records`. A stop started by a request and joined by its work order lists both in `links`.
 - [ ] **Step 2: Run** `$B/wt-test "FullyQualifiedName~DowntimeTests"`. Expected: the new tests fail.
 - [ ] **Step 3: Implement** the endpoints and the asset changes, with the messages in `ar.json`.
