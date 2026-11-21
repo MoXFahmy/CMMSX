@@ -1504,7 +1504,8 @@
     "fromLogEnded": "From the asset's downtime log: {{start}} to {{end}}.",
     "fromLogOpen": "From the asset's downtime log: down since {{start}}. Completing the work ends the stop at the actual end.",
     "stopFrom": "the stop from {{when}}",
-    "deleteBody": "Only for a stop that never happened (logged on the wrong asset, or a request ticked down by mistake). Its requests and work orders let go of it, and completed work on it no longer says the asset was down."
+    "deleteBody": "Only for a stop that never happened (logged on the wrong asset, or a request ticked down by mistake). Its requests and work orders let go of it, and completed work on it no longer says the asset was down.",
+    "assetMovesHint": "The stop this work order started moves to this asset and keeps its start. If this asset is already down, the work order joins that stop."
   },
   "assetParts": {
     "tab": "Parts",

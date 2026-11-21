@@ -176,18 +176,6 @@ public class DowntimeTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.False(IsNull(await WoAsync(o, wo3), "downtime"));
     }
 
-    [SkippableFact]
-    public async Task Changing_the_asset_leaves_the_stop_on_the_old_one()
-    {
-        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
-        var o = await SetupAsync();
-        var wo = await NewWoAsync(o, Wo(o, o.Asset));
-        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset2, down: null)));
-        Assert.Null(Assert.Single(await StopsAsync(o.Asset)).EndedAt);
-        Assert.Empty(await StopsAsync(o.Asset2));
-        Assert.True(IsNull(await WoAsync(o, wo), "downtime"));
-    }
-
     private static async Task<JsonElement> DowntimeAsync(Org o, Guid asset) => await Ok(await o.C.GetAsync($"/api/assets/{asset}/downtime"));
     private static object Stop(DateTimeOffset start, DateTimeOffset? end, string reason) => new { startedAt = start, endedAt = end, reason };
     private static readonly string[] AllDays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
@@ -331,15 +319,48 @@ public class DowntimeTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
-    public async Task Changing_the_asset_with_the_box_ticked_starts_a_stop_on_the_new_one()
+    public async Task Changing_the_asset_moves_the_stop_this_work_order_started()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
         var o = await SetupAsync();
+        foreach (var down in new bool?[] { null, true })
+        {
+            var wo = await NewWoAsync(o, Wo(o, o.Asset));
+            var before = Assert.Single(await StopsAsync(o.Asset));
+            await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset2, down: down)));
+            Assert.Empty(await StopsAsync(o.Asset));
+            var moved = Assert.Single(await StopsAsync(o.Asset2));
+            Assert.Equal(before.Id, moved.Id);
+            Assert.Equal(before.StartedAt, moved.StartedAt);
+            Assert.Equal(moved.Id, G((await WoAsync(o, wo)).GetProperty("downtime"), "id"));
+            // Ready for the next round: the moved stop is removed.
+            await Ok(await o.C.DeleteAsync($"/api/downtime/{moved.Id}"));
+        }
+    }
+
+    [SkippableFact]
+    public async Task Moving_onto_a_down_asset_joins_its_stop()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var manual = Id(await Ok(await o.C.PostAsJsonAsync($"/api/assets/{o.Asset2}/downtime", Stop(DateTimeOffset.UtcNow.AddHours(-2), null, "Already down"))));
         var wo = await NewWoAsync(o, Wo(o, o.Asset));
-        // The web form keeps the box ticked: the old stop stays open on the old asset, and the new asset gets a stop from now.
         await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset2, down: true)));
+        Assert.Empty(await StopsAsync(o.Asset));
+        Assert.Equal(manual, Assert.Single(await StopsAsync(o.Asset2)).Id);
+        Assert.Equal(manual, G((await WoAsync(o, wo)).GetProperty("downtime"), "id"));
+    }
+
+    [SkippableFact]
+    public async Task A_requests_stop_stays_when_the_work_order_moves()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var rid = await NewRequestAsync(o, Request(o, o.Asset));
+        var wo = (await Ok(await o.C.PostAsJsonAsync($"/api/work-requests/{rid}/approve", new { }))).GetProperty("workOrderId").GetGuid();
+        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset2, down: null)));
         Assert.Null(Assert.Single(await StopsAsync(o.Asset)).EndedAt);
-        var moved = Assert.Single(await StopsAsync(o.Asset2));
-        Assert.Equal(moved.Id, G((await WoAsync(o, wo)).GetProperty("downtime"), "id"));
+        Assert.Empty(await StopsAsync(o.Asset2));
+        Assert.True(IsNull(await WoAsync(o, wo), "downtime"));
     }
 }

@@ -50,6 +50,25 @@ internal static class Downtime
         if (!shared) db.DowntimeEvents.Remove(stop);
     }
 
+    /// <summary>
+    /// After a work order's asset changed: the stop this work order started (still open, nothing else on it) goes with it and keeps its
+    /// start; if the new asset is already down, the work order joins that stop and its own is removed. Any other stop stays where it is
+    /// and the work order lets go of it. Not saved.
+    /// </summary>
+    public static async Task FollowAssetAsync(CmmsDbContext db, WorkOrder w, CancellationToken ct)
+    {
+        if (w.DowntimeEventId is not { } id) return;
+        var stop = await db.DowntimeEvents.FirstOrDefaultAsync(e => e.Id == id, ct);
+        var own = stop is { EndedAt: null, Source: DowntimeSource.WorkOrder } && stop.SourceNumber == w.Number
+                  && !await db.WorkRequests.AnyAsync(r => r.DowntimeEventId == id, ct)
+                  && !await db.WorkOrders.AnyAsync(o => o.DowntimeEventId == id && o.Id != w.Id, ct);
+        if (!own || w.AssetId is not { } asset) { w.DowntimeEventId = null; return; }
+        var there = await db.DowntimeEvents.FirstOrDefaultAsync(e => e.AssetId == asset && e.EndedAt == null && e.Id != id, ct);
+        if (there is null) { stop!.AssetId = asset; return; }
+        w.DowntimeEventId = there.Id;
+        db.DowntimeEvents.Remove(stop!);
+    }
+
     /// <summary>On completion: ends the work order's open stop at the completion time and fills its downtime from the stop. Not saved.</summary>
     public static async Task OnCompletedAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, CancellationToken ct)
     {
