@@ -16,3 +16,17 @@ public class SenderNameTests
     public void Without_an_organization_name_the_app_name_is_used() =>
         Assert.Equal("CMX", EmailText.SenderName(null, "CMX"));
 }
+
+public class EmailAddressTests
+{
+    [Theory]
+    [InlineData("ann@example.com", true)]
+    [InlineData("a.b+c@sub.example.eg", true)]
+    [InlineData("ann@example", false)]
+    [InlineData("ann example.com", false)]
+    [InlineData("Ann <ann@example.com>", false)]
+    [InlineData("ann@example.com\r\nBcc: x@y.com", false)]
+    [InlineData("", false)]
+    [InlineData(null, false)]
+    public void Only_plain_addresses_are_used(string? address, bool ok) => Assert.Equal(ok, EmailText.IsAddress(address));
+}

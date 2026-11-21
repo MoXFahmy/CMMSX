@@ -8,6 +8,20 @@ public class PmCalendarTests
     private static DateOnly D(int y, int m, int d) => new(y, m, d);
 
     [Fact]
+    public void A_due_date_on_a_non_working_day_moves_to_a_working_day()
+    {
+        DayOfWeek[] weekend = [DayOfWeek.Friday, DayOfWeek.Saturday];
+        // Two days from Thursday 19 November ends on Friday: due on Sunday instead.
+        var period = S(x => { x.Type = PmScheduleType.FixedInterval; x.WorkPeriodDays = 2; });
+        Assert.Equal(D(2026, 11, 22), PmCalendar.DueDate(period, D(2026, 11, 19), weekend));
+        // "Whole month" stays in its month: Friday 31 July becomes Thursday 30 July.
+        var month = S(x => { x.Type = PmScheduleType.DateOfMonth; x.WholeMonth = true; });
+        Assert.Equal(D(2026, 7, 30), PmCalendar.DueDate(month, D(2026, 7, 1), weekend));
+        // No non-working days: as before.
+        Assert.Equal(D(2026, 11, 20), PmCalendar.DueDate(period, D(2026, 11, 19), []));
+    }
+
+    [Fact]
     public void NextWorkingDay_skips_listed_weekdays()
     {
         var weekend = new[] { DayOfWeek.Saturday, DayOfWeek.Sunday };

@@ -6,6 +6,7 @@ import { stillShown, type SentChange } from './overlay';
 import { enqueue, getMeta, idbOutboxStore, loadBundle, loadPlaces, queued, saveBundle, savePlaces, setMeta, techDb, wipeCopy } from './store';
 import type { TechBundle, TechPlaces } from './types';
 import { registerTechWorker } from './worker';
+import { keepData } from './persist';
 
 /** starting → ready; or why the technician view can't show jobs. */
 export type Phase = 'starting' | 'ready' | 'signedOut' | 'revoked' | 'locked' | 'noCopy';
@@ -96,11 +97,14 @@ export function TechProvider({ children }: { children: ReactNode }) {
     setBusy(true);
     try {
       const started = Date.now();
-      const b = await fetchBundle();
-      await saveBundle(id, b);
-      setBundle(b);
-      setFetchedAt(started);
-      setSent((s) => stillShown(s, started));
+      const current = await loadBundle(id);
+      const fresh = await fetchBundle(current?.etag);
+      if (fresh) {
+        await saveBundle(id, fresh.data, fresh.etag);
+        setBundle(fresh.data);
+        setFetchedAt(started);
+        setSent((s) => stillShown(s, started));
+      }
       const saved = await loadPlaces(id);
       const p = await fetchPlaces(saved?.etag);
       if (p) { await savePlaces(id, p.data, p.etag); setPlaces(p.data); } else if (saved) setPlaces(saved.data);
@@ -139,6 +143,7 @@ export function TechProvider({ children }: { children: ReactNode }) {
   // Start: who is signed in (with signal) or who used this phone last (without).
   useEffect(() => {
     void registerTechWorker();
+    void keepData(); // ask the browser not to clear the saved jobs and waiting changes
     (async () => {
       try {
         // Records who is signed in before anything else (wiping someone else's copy), even if this goes on to the full app.

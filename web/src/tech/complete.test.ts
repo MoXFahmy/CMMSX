@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { alreadySigned, staleCompletions } from './complete';
+import { alreadySigned, staleCompletions, needsLabour } from './complete';
 import type { QueuedChange } from './outbox';
 
 const q = (clientId: string, extra: Partial<QueuedChange>): QueuedChange => ({
@@ -19,5 +19,16 @@ describe('completing again', () => {
   it('finds the earlier completions of this job that were refused', () => {
     const queue = [q('a', {}), q('b', { state: 'waiting' }), q('c', { workOrderId: 'w2' }), q('d', { payload: { status: 'OnHold' } })];
     expect(staleCompletions(queue, 'w1').map((c) => c.clientId)).toEqual(['a']);
+  });
+});
+
+describe('needsLabour', () => {
+  it('is satisfied by anyone\'s hours, as on the server', () => {
+    expect(needsLabour({ hasLabor: true, myLabor: [] })).toBe(false);
+    expect(needsLabour({ hasLabor: false, myLabor: [{ workDate: '2026-11-21', hours: 1, overtimeHours: 0 }] })).toBe(false);
+    expect(needsLabour({ hasLabor: false, myLabor: [] })).toBe(true);
+  });
+  it('falls back to my hours on a copy saved before the server said', () => {
+    expect(needsLabour({ myLabor: [] })).toBe(true);
   });
 });

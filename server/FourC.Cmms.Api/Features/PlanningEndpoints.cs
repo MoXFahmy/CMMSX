@@ -103,7 +103,7 @@ public static class PlanningEndpoints
     }
 
     private static Validator Validate(PlannedPartInput i) => new Validator()
-        .When(i.Quantity <= 0, "quantity", "Enter a quantity above zero.")
+        .When(Math.Round(i.Quantity, 3) <= 0, "quantity", "Enter a quantity above zero.") // checked as it will be saved (3 decimals)
         .When(i.Quantity > MaxQuantity, "quantity", "This quantity is too large.")
         .When(i.Notes?.Trim().Length > 500, "notes", "Keep the notes to 500 characters.");
 

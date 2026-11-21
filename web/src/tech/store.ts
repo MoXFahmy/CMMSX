@@ -7,7 +7,7 @@ import type { TechBundle, TechPlaces } from './types';
  * photos, and a few markers (last contact with the server). Survives closing the app and restarting the phone.
  */
 interface TechDb extends DBSchema {
-  bundle: { key: string; value: { userId: string; savedAt: number; data: TechBundle } };
+  bundle: { key: string; value: { userId: string; savedAt: number; etag?: string; data: TechBundle } };
   places: { key: string; value: { userId: string; savedAt: number; etag?: string; data: TechPlaces } };
   outbox: { key: string; value: QueuedChange; indexes: { byUser: string } };
   files: { key: string; value: Blob };
@@ -25,7 +25,7 @@ export const techDb = () => (opening ??= openDB<TechDb>('cmms-tech', 1, {
   },
 }));
 
-export async function saveBundle(userId: string, data: TechBundle) { await (await techDb()).put('bundle', { userId, savedAt: Date.now(), data }); }
+export async function saveBundle(userId: string, data: TechBundle, etag?: string) { await (await techDb()).put('bundle', { userId, savedAt: Date.now(), etag, data }); }
 export async function loadBundle(userId: string) { return (await techDb()).get('bundle', userId); }
 export async function savePlaces(userId: string, data: TechPlaces, etag?: string) { await (await techDb()).put('places', { userId, savedAt: Date.now(), etag, data }); }
 export async function loadPlaces(userId: string) { return (await techDb()).get('places', userId); }

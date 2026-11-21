@@ -20,3 +20,8 @@ export function staleCompletions(queue: QueuedChange[], jobId: string): QueuedCh
   return queue.filter((c) => c.workOrderId === jobId && c.type === 'status.change' && c.state === 'failed'
     && (c.payload as { status?: string } | null)?.status === 'Completed');
 }
+
+/** "Log labour before completing" isn't met yet: nobody's hours on the job (as the server checks), and none of mine waiting. */
+export function needsLabour(job: { hasLabor?: boolean; myLabor: unknown[] }): boolean {
+  return !job.hasLabor && job.myLabor.length === 0;
+}

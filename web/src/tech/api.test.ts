@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchMe, Offline, refreshProblem, sendChange, ServerError, SignedOut } from './api';
+import { fetchBundle, fetchMe, Offline, refreshProblem, sendChange, ServerError, SignedOut } from './api';
 import type { QueuedChange } from './outbox';
 
 const change = (extra: Partial<QueuedChange> = {}): QueuedChange => ({
@@ -18,6 +18,21 @@ describe('api', () => {
     const check = expect(me).rejects.toBeInstanceOf(Offline);
     await vi.advanceTimersByTimeAsync(6_000);
     await check;
+  });
+
+  it('asks for the jobs only if they changed since the copy on the phone', async () => {
+    let sent: string | null = null;
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => {
+      sent = new Headers(init.headers).get('If-None-Match');
+      return new Response(null, { status: 304 });
+    });
+    expect(await fetchBundle('"v1"')).toBeNull();
+    expect(sent).toBe('"v1"');
+  });
+
+  it('returns new jobs with their version', async () => {
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ jobs: [] }), { status: 200, headers: { ETag: '"v2"' } }));
+    expect(await fetchBundle('"v1"')).toEqual({ data: { jobs: [] }, etag: '"v2"' });
   });
 
   it('a queued change says who made it', async () => {

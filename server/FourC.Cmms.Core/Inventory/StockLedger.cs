@@ -17,7 +17,13 @@ public sealed record StockPost(
 /// </summary>
 public static class StockLedger
 {
-    public static async Task<StockTransaction> PostAsync(CmmsDbContext db, ITenantContext ctx, StockPost p, CancellationToken ct = default)
+    /// <summary>
+    /// The checks a post fails on before it moves anything (quantity, store, shelf-life batch and expiry), without posting.
+    /// Lets a caller ask "Issue anyway?" about reserved stock only when the issue could actually go through.
+    /// </summary>
+    public static async Task CheckAsync(CmmsDbContext db, StockPost p, CancellationToken ct = default) => await ValidateAsync(db, p, ct);
+
+    private static async Task<(Part Part, Store Store, decimal Delta, string? Batch)> ValidateAsync(CmmsDbContext db, StockPost p, CancellationToken ct)
     {
         if (p.Quantity == 0) throw new DomainException("Quantity must not be zero.");
         if (p.Type != StockTransactionType.Adjustment && p.Quantity < 0) throw new DomainException("Quantity must be positive.");
@@ -43,6 +49,12 @@ public static class StockLedger
                 if (b.Expiry is { } exp && exp < p.Date && p.Type == StockTransactionType.Issue) throw new DomainException($"Batch {batch} expired on {exp:yyyy-MM-dd} and cannot be issued.");
             }
         }
+        return (part, store, delta, batch);
+    }
+
+    public static async Task<StockTransaction> PostAsync(CmmsDbContext db, ITenantContext ctx, StockPost p, CancellationToken ct = default)
+    {
+        var (part, store, delta, batch) = await ValidateAsync(db, p, ct);
 
         // Unit cost: receipts at the purchase price (recomputing the weighted average); everything else at average cost.
         var unitCost = p.UnitCost ?? part.AverageCost;

@@ -165,6 +165,44 @@ public class TechTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task The_job_list_says_when_someone_else_logged_hours()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var wo = await WorkOrderAsync(o.C, o.SiteA, [o.Me]);
+        Job(await Ok(await o.C.GetAsync("/api/tech/bundle")), wo, out var before);
+        Assert.False(before.GetProperty("hasLabor").GetBoolean());
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{wo}/labor", new { employeeId = o.Other, workDate = Today, hours = 2, overtimeHours = 0 }));
+        Job(await Ok(await o.C.GetAsync("/api/tech/bundle")), wo, out var after);
+        Assert.True(after.GetProperty("hasLabor").GetBoolean());
+        Assert.Equal(0, after.GetProperty("myLabor").GetArrayLength());
+    }
+    private static void Job(JsonElement bundle, Guid id, out JsonElement job) =>
+        job = bundle.GetProperty("jobs").EnumerateArray().Single(j => j.GetProperty("id").GetGuid() == id);
+
+    [SkippableFact]
+    public async Task The_job_list_is_not_sent_again_when_nothing_changed()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var wo = await WorkOrderAsync(o.C, o.SiteA, [o.Me]);
+        var first = await o.C.GetAsync("/api/tech/bundle");
+        await Ok(first);
+        var etag = first.Headers.ETag;
+        Assert.NotNull(etag);
+
+        var again = new HttpRequestMessage(HttpMethod.Get, "/api/tech/bundle");
+        again.Headers.IfNoneMatch.Add(etag!);
+        Assert.Equal(HttpStatusCode.NotModified, (await o.C.SendAsync(again)).StatusCode);
+
+        // A change to one of my jobs makes it a new version.
+        Assert.Equal("done", Status(await SendAsync(o.C, Guid.NewGuid(), DateTimeOffset.UtcNow, "comment.add", wo, new { body = "On my way" })));
+        var changed = new HttpRequestMessage(HttpMethod.Get, "/api/tech/bundle");
+        changed.Headers.IfNoneMatch.Add(etag!);
+        Assert.Equal(HttpStatusCode.OK, (await o.C.SendAsync(changed)).StatusCode);
+    }
+
+    [SkippableFact]
     public async Task An_empty_photo_is_called_empty_not_too_large()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

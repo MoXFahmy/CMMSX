@@ -290,6 +290,25 @@ public class EmailTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task A_supplier_address_that_is_not_an_address_is_said_not_queued()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _, _, _, site) = await OrgAsync();
+        var supplier = await SupplierAsync(admin, null);
+        // Imported data can hold two addresses in one field, or half of one.
+        using (var scope = fx.Factory!.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<CmmsDbContext>();
+            await db.Suppliers.IgnoreQueryFilters().Where(x => x.Id == supplier).ExecuteUpdateAsync(x => x.SetProperty(v => v.Email, "sales@filters.com; ahmed@filters"));
+        }
+        var po = await PurchaseOrderAsync(admin, site, supplier, "Belt", 1, 10);
+        await Ok(await admin.PostAsync($"/api/purchase-orders/{po}/approve", null));
+        var refused = await admin.PostAsync($"/api/purchase-orders/{po}/send", null);
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.Contains("isn't a valid e-mail address", await refused.Content.ReadAsStringAsync());
+    }
+
+    [SkippableFact]
     public async Task Technicians_hear_when_parts_for_their_job_arrive()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

@@ -11,7 +11,7 @@ import { fmtDate, fmtDateTime, fmtQty, notifyError } from '@/components/utils';
 import { withQueued } from './overlay';
 import { shrink } from './photos';
 import { dueLabel } from './due';
-import { alreadySigned, staleCompletions } from './complete';
+import { alreadySigned, needsLabour, staleCompletions } from './complete';
 import { SignaturePad, type SignatureHandle } from './SignaturePad';
 import { useTech } from './useTech';
 import type { TechJob } from './types';
@@ -213,7 +213,7 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
   const problems = [
     rules?.notes && !notes.trim() && t('tech.rule.notes'),
     rules?.failureCodeOnBreakdown && job.type === 'Breakdown' && !failure && t('tech.rule.failureCode'),
-    rules?.labour && job.myLabor.length === 0 && t('tech.rule.labour'),
+    rules?.labour && needsLabour(job) && t('tech.rule.labour'),
     rules?.allSteps && job.tasks.some((x) => !x.isDone) && t('tech.rule.allSteps'),
   ].filter(Boolean) as string[];
 

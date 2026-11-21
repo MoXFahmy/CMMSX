@@ -84,6 +84,11 @@ public class MainActivity extends BridgeActivity {
 
         webView.setDownloadListener(this::download);
 
+        // Pinch to zoom (drawings, photos, small print), without the old on-screen zoom buttons.
+        webView.getSettings().setSupportZoom(true);
+        webView.getSettings().setBuiltInZoomControls(true);
+        webView.getSettings().setDisplayZoomControls(false);
+
         webView.setWebChromeClient(new BridgeWebChromeClient(bridge) {
             @Override
             public boolean onShowFileChooser(WebView view, ValueCallback<Uri[]> callback, FileChooserParams params) {
@@ -140,7 +145,7 @@ public class MainActivity extends BridgeActivity {
             if (cookies != null) request.addRequestHeader("Cookie", cookies); // the file needs the user's sign-in
             request.addRequestHeader("User-Agent", userAgent);
             request.setTitle(name);
-            if (mimeType != null) request.setMimeType(mimeType);
+            if (mimeType != null) request.setMimeType(FileNames.plainType(mimeType));
             request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
                 request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, name);

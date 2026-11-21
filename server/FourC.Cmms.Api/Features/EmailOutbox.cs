@@ -135,6 +135,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         if (!settings.EmailEnabled) return "E-mail is switched off for this organization. Switch it on in Settings › Notifications.";
         var supplier = po.Supplier ?? await db.Suppliers.AsNoTracking().FirstAsync(x => x.Id == po.SupplierId, ct);
         if (string.IsNullOrWhiteSpace(supplier.Email)) return "The supplier has no e-mail address.";
+        if (!EmailText.IsAddress(supplier.Email.Trim())) return $"The supplier's e-mail ({supplier.Email}) isn't a valid e-mail address. Correct it on the supplier first.";
         string Money(decimal v) => $"{v:N2} {po.Currency}";
         var doc = new PoDocument(po.Number, po.OrderDate.ToString("d MMM yyyy"), po.ExpectedDate?.ToString("d MMM yyyy"), po.DeliverTo, po.PaymentTerms, po.SupplierQuoteRef,
             po.RequestedBy,
@@ -182,7 +183,8 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         if (!ignoreToggles && (tenant.Settings.DisabledEmails ?? []).Contains(eventKey)) return;
 
         var actorEmail = ctx.UserId is { } uid ? await db.Users.Where(u => u.Id == uid).Select(u => u.Email).FirstOrDefaultAsync(ct) : null;
-        var list = to.Where(r => !string.IsNullOrWhiteSpace(r.Email))
+        // Only addresses that can be sent to: a broken one would fail at the mail service on every retry.
+        var list = to.Where(r => EmailText.IsAddress(r.Email?.Trim()))
             .Select(r => r with { Email = r.Email!.Trim() })
             .Where(r => keepActor || ((r.UserId is null || r.UserId != ctx.UserId) && !string.Equals(r.Email, actorEmail, StringComparison.OrdinalIgnoreCase)))
             .DistinctBy(r => r.Email!.ToLowerInvariant()).ToList();
@@ -199,8 +201,9 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         foreach (var r in list)
             db.OutboundEmails.Add(new OutboundEmail
             {
-                TenantId = tenant.Id, EventKey = eventKey, ToAddress = r.Email!.Length > 320 ? r.Email[..320] : r.Email,
-                ToName = r.Name is null ? null : EmailText.OneLine(r.Name), ReplyTo = actorEmail, Subject = EmailText.OneLine(content.Subject),
+                TenantId = tenant.Id, EventKey = eventKey, ToAddress = r.Email!,
+                ToName = r.Name is null ? null : EmailText.OneLine(r.Name), ReplyTo = EmailText.IsAddress(actorEmail) ? actorEmail : null,
+                Subject = EmailText.OneLine(content.Subject),
                 HtmlBody = content.Html, TextBody = content.Text, EntityType = entityType, EntityId = entityId,
             });
     }

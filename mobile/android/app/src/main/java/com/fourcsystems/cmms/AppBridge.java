@@ -46,7 +46,7 @@ final class AppBridge {
     @JavascriptInterface
     public void saveFile(String fileName, String mimeType, String base64) {
         String name = FileNames.safe(fileName, "CMX-file");
-        String mime = mimeType == null || mimeType.trim().isEmpty() ? "application/octet-stream" : mimeType;
+        String mime = FileNames.plainType(mimeType);
         try {
             byte[] data = Base64.decode(base64, Base64.DEFAULT);
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {

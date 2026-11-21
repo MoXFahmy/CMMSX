@@ -35,7 +35,8 @@ public static partial class TechEndpoints
     {
         var g = api.MapGroup("/tech").WithTags("Technician app");
 
-        g.MapGet("/bundle", async (CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        // My open jobs. Answers 304 when the phone already has this version (it asks every 15 minutes).
+        g.MapGet("/bundle", async (HttpContext http, CmmsDbContext db, ITenantContext ctx, IOptions<JsonOptions> json, CancellationToken ct) =>
         {
             var me = await EmployeeAsync(db, ctx, ct);
             if (me is null) return NotLinked();
@@ -61,12 +62,14 @@ public static partial class TechEndpoints
                 .Select(a => new { a.EntityId, a.Id, a.FileName, a.ContentType, a.IsSignature, a.SignedBy }).ToListAsync(ct)).ToLookup(a => a.EntityId);
             var comments = (await db.WorkOrderComments.AsNoTracking().Where(c => ids.Contains(c.WorkOrderId)).OrderByDescending(c => c.CreatedAt)
                 .Select(c => new { c.WorkOrderId, c.Body, c.UserName, c.CreatedAt }).ToListAsync(ct)).ToLookup(c => c.WorkOrderId);
+            // Anyone's hours satisfy "log labour before completing" (as on the server); the phone lists only mine.
+            var withLabor = (await db.WorkOrderLabor.AsNoTracking().Where(l => ids.Contains(l.WorkOrderId)).Select(l => l.WorkOrderId).Distinct().ToListAsync(ct)).ToHashSet();
             var labor = (await db.WorkOrderLabor.AsNoTracking().Where(l => ids.Contains(l.WorkOrderId) && l.EmployeeId == me.EmployeeId).OrderByDescending(l => l.WorkDate)
                 .Select(l => new { l.WorkOrderId, l.WorkDate, l.Hours, l.OvertimeHours, l.Notes }).ToListAsync(ct)).ToLookup(l => l.WorkOrderId);
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
-            return Results.Ok(new
+            var body = new
             {
-                me.EmployeeId, ctx.UserId, GeneratedAt = DateTimeOffset.UtcNow,
+                me.EmployeeId, ctx.UserId,
                 Jobs = jobs.Select(j => new
                 {
                     j.Id, j.Number, j.Title, j.Description, j.Type, j.Priority, j.Status, j.HoldReason, j.DueDate, j.DueAt, j.PlannedStart, j.SiteId, j.Asset,
@@ -77,6 +80,7 @@ public static partial class TechEndpoints
                     Files = files[j.Id].Select(f => new { f.Id, f.FileName, f.ContentType, f.IsSignature, f.SignedBy }),
                     Comments = comments[j.Id].Take(CommentsPerJob).Select(c => new { c.Body, c.UserName, c.CreatedAt }),
                     MyLabor = labor[j.Id].Select(l => new { l.WorkDate, l.Hours, l.OvertimeHours, l.Notes }),
+                    HasLabor = withLabor.Contains(j.Id),
                 }),
                 FailureCodes = await db.FailureCodes.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
                 CompletionRules = new
@@ -84,7 +88,8 @@ public static partial class TechEndpoints
                     Notes = settings.RequireCompletionNotes, Labour = settings.RequireLaborToComplete, AllSteps = settings.RequireAllTasksDone,
                     FailureCodeOnBreakdown = settings.RequireFailureCodeForBreakdowns,
                 },
-            });
+            };
+            return Versioned(http, JsonSerializer.SerializeToUtf8Bytes(body, json.Value.SerializerOptions));
         }).RequirePermission(Permissions.WorkOrdersView);
 
         // The places of my sites, for scanning offline. Answers 304 when the phone already has this version.
@@ -106,12 +111,17 @@ public static partial class TechEndpoints
                 Locations = locs.OrderBy(l => l.Path).Select(l => new { l.Id, l.Name, Path = PathText(l.Path, names), l.SiteId, l.NotesToTechnician }),
                 Meters = meters,
             };
-            var bytes = JsonSerializer.SerializeToUtf8Bytes(body, json.Value.SerializerOptions);
-            var etag = $"\"{Convert.ToBase64String(SHA256.HashData(bytes))[..22].Replace('+', '-').Replace('/', '_')}\"";
-            http.Response.Headers.ETag = etag;
-            if (http.Request.Headers.IfNoneMatch.Contains(etag)) return Results.StatusCode(StatusCodes.Status304NotModified);
-            return Results.Bytes(bytes, "application/json");
+            return Versioned(http, JsonSerializer.SerializeToUtf8Bytes(body, json.Value.SerializerOptions));
         }).RequirePermission(Permissions.AssetsView);
+    }
+
+    /// <summary>The JSON with an ETag of its content, or 304 when the phone sent that ETag (its copy is current).</summary>
+    private static IResult Versioned(HttpContext http, byte[] bytes)
+    {
+        var etag = $"\"{Convert.ToBase64String(SHA256.HashData(bytes))[..22].Replace('+', '-').Replace('/', '_')}\"";
+        http.Response.Headers.ETag = etag;
+        if (http.Request.Headers.IfNoneMatch.Contains(etag)) return Results.StatusCode(StatusCodes.Status304NotModified);
+        return Results.Bytes(bytes, "application/json");
     }
 
     private static async Task<Dictionary<Guid, string>> LocationNamesAsync(CmmsDbContext db, List<Guid> ids, CancellationToken ct) =>
