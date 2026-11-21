@@ -652,5 +652,16 @@
  "The asset is already down.": "الأصل متوقف بالفعل.",
  "This stop overlaps another stop of this asset.": "هذا التوقف يتداخل مع توقف آخر لهذا الأصل.",
  "Running hours must be between 0.5 and 24.": "يجب أن تكون ساعات التشغيل بين 0.5 و24.",
- "Choose at least one running day.": "اختر يوم تشغيل واحدًا على الأقل."
+ "Choose at least one running day.": "اختر يوم تشغيل واحدًا على الأقل.",
+ "Downtime log": "سجل التوقفات",
+ "Every stop in the period with how long the asset was stopped during its running time.": "كل توقف في الفترة ومدة توقف الأصل خلال وقت تشغيله.",
+ "{0} · breakdowns are stops that began in the period; downtime counts each asset's running time only": "{0} · الأعطال هي التوقفات التي بدأت في الفترة، ويُحسب التوقف خلال وقت تشغيل كل أصل فقط",
+ "{0} · hours count each asset's running time only": "{0} · تُحسب الساعات خلال وقت تشغيل كل أصل فقط",
+ "Start": "البداية",
+ "End": "النهاية",
+ "Hours": "الساعات",
+ "Source": "المصدر",
+ "Stops": "التوقفات",
+ "Assets stopped": "الأصول المتوقفة",
+ "By hand": "يدويًا"
 }
