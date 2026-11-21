@@ -103,6 +103,8 @@ if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
     using var scope = app.Services.CreateScope();
     var db = scope.ServiceProvider.GetRequiredService<CmmsDbContext>();
     await db.Database.MigrateAsync();
+    if (await FourC.Cmms.Core.Services.DatabaseSettings.EnsureReadCommittedSnapshotAsync(db))
+        app.Logger.LogInformation("Turned on READ_COMMITTED_SNAPSHOT: reads no longer wait for other people's unsaved work.");
     await FourC.Cmms.Core.Services.DueBackfill.RunAsync(db);
 }
 

@@ -4,6 +4,15 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.7.1] - 2026-11-21
+
+### Changed
+- **Nobody waits for someone else's unsaved work.** When the app starts, it makes sure the database reads the last
+  saved version of a record instead of waiting while another person's change, or an import check, is still in
+  progress (SQL Server's READ_COMMITTED_SNAPSHOT). Databases CMX created already work this way; a database that
+  doesn't is switched over once, which ends other open connections for a moment (anyone using CMX right then
+  retries once).
+
 ## [0.7.0] - 2026-11-21
 
 Customers who never used 4CSQL can load their own data from Excel.
