@@ -68,13 +68,114 @@ internal static class Downtime
 
     public static decimal Hours(DateTimeOffset start, DateTimeOffset end) => Math.Round((decimal)(end - start).TotalHours, 2);
 
+    public static TimeZoneInfo Zone(string? id) => TimeZoneInfo.TryFindSystemTimeZoneById(id ?? "UTC", out var tz) ? tz : TimeZoneInfo.Utc;
+
+    public static DateOnly LocalDay(DateTimeOffset at, TimeZoneInfo tz) => DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(at, tz).DateTime);
+
+    /// <summary>What availability is measured from, for some assets over local days [from, to].</summary>
+    public sealed record History(List<StopSpan> Stops, List<(DateOnly Day, decimal Hours)> Typed, List<(DateOnly Day, decimal Hours)> OldBreakdowns);
+
+    /// <summary>
+    /// The stops touching the period, plus work completed without a stop but with "Asset was down" ticked (data from before 0.8.0, or typed by
+    /// hand): its typed hours count on its completion day.
+    /// </summary>
+    public static async Task<Dictionary<Guid, History>> LoadAsync(CmmsDbContext db, IReadOnlyCollection<Guid> assetIds, DateOnly from, DateOnly to, TimeZoneInfo tz,
+        CancellationToken ct)
+    {
+        var start = DowntimeMath.Midnight(from, tz);
+        var end = DowntimeMath.Midnight(to.AddDays(1), tz);
+        var ids = assetIds.Distinct().ToList();
+        var stops = await db.DowntimeEvents.AsNoTracking().Where(e => ids.Contains(e.AssetId) && e.StartedAt < end && (e.EndedAt == null || e.EndedAt > start))
+            .Select(e => new { e.AssetId, e.StartedAt, e.EndedAt }).ToListAsync(ct);
+        var typed = await db.WorkOrders.AsNoTracking()
+            .Where(w => w.AssetId != null && ids.Contains(w.AssetId.Value) && w.AssetWasDown && w.DowntimeEventId == null && w.CompletedAt >= start && w.CompletedAt < end)
+            .Select(w => new { AssetId = w.AssetId!.Value, CompletedAt = w.CompletedAt!.Value, Hours = w.DowntimeHours ?? 0 }).ToListAsync(ct);
+        return ids.ToDictionary(id => id, id => new History(
+            stops.Where(s => s.AssetId == id).Select(s => new StopSpan(s.StartedAt, s.EndedAt)).ToList(),
+            typed.Where(t => t.AssetId == id && t.Hours > 0).Select(t => (LocalDay(t.CompletedAt, tz), t.Hours)).ToList(),
+            typed.Where(t => t.AssetId == id).Select(t => (LocalDay(t.CompletedAt, tz), t.Hours)).ToList()));
+    }
+
+    /// <summary>The asset's open stop start for each asset that is down now.</summary>
+    public static async Task<Dictionary<Guid, DateTimeOffset>> DownSinceAsync(CmmsDbContext db, IReadOnlyCollection<Guid> assetIds, CancellationToken ct)
+    {
+        var ids = assetIds.Distinct().ToList();
+        return await db.DowntimeEvents.AsNoTracking().Where(e => e.EndedAt == null && ids.Contains(e.AssetId))
+            .ToDictionaryAsync(e => e.AssetId, e => e.StartedAt, ct);
+    }
+
     private static string? Shorten(string? s, int max) => s.Clean() is { } t && t.Length > max ? t[..max] : s.Clean();
 }
 
 public static class DowntimeEndpoints
 {
+    public sealed record StopInput(DateTimeOffset StartedAt, DateTimeOffset? EndedAt, string? Reason);
+
     public static void MapDowntimeEndpoints(this RouteGroupBuilder api)
     {
+        // The asset's Downtime tab: down since, running time, availability over the last 30 days and the stops, newest first.
+        api.MapGet("/assets/{id:guid}/downtime", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var asset = await db.Assets.AsNoTracking().Where(a => a.Id == id).Select(a => new { a.RunsHoursPerDay, a.RunsOn }).FirstOrDefaultAsync(ct);
+            if (asset is null) return Results.NotFound();
+            var tz = Downtime.Zone((await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings.TimeZone);
+            var now = DateTimeOffset.UtcNow;
+            var today = Downtime.LocalDay(now, tz);
+            var from = today.AddDays(-29);
+            var h = (await Downtime.LoadAsync(db, [id], from, today, tz, ct))[id];
+            var m = DowntimeMath.Measure(h.Stops, h.Typed, from, today, now, asset.RunsHoursPerDay, asset.RunsOn, tz);
+
+            var stops = await db.DowntimeEvents.AsNoTracking().Where(e => e.AssetId == id).OrderByDescending(e => e.StartedAt).Take(500)
+                .Select(e => new { e.Id, e.StartedAt, e.EndedAt, e.Reason, e.Source, e.SourceNumber }).ToListAsync(ct);
+            var stopIds = stops.Select(s => (Guid?)s.Id).ToList();
+            var requests = await db.WorkRequests.AsNoTracking().Where(r => stopIds.Contains(r.DowntimeEventId))
+                .Select(r => new { StopId = r.DowntimeEventId!.Value, Kind = "request", r.Id, r.Number }).ToListAsync(ct);
+            var orders = await db.WorkOrders.AsNoTracking().Where(w => stopIds.Contains(w.DowntimeEventId))
+                .Select(w => new { StopId = w.DowntimeEventId!.Value, Kind = "workOrder", w.Id, w.Number }).ToListAsync(ct);
+            var links = requests.Concat(orders).ToLookup(l => l.StopId);
+            return Results.Ok(new
+            {
+                DownSince = stops.FirstOrDefault(s => s.EndedAt == null)?.StartedAt,
+                asset.RunsHoursPerDay, asset.RunsOn,
+                Availability30 = m.PlannedHours > 0 ? Math.Round((m.PlannedHours - m.DownHours) / m.PlannedHours * 100, 1) : (decimal?)null,
+                PlannedHours30 = m.PlannedHours, DownHours30 = m.DownHours,
+                Stops = stops.Select(s => new
+                {
+                    s.Id, s.StartedAt, s.EndedAt, Hours = Downtime.Hours(s.StartedAt, s.EndedAt ?? now), s.Reason, s.Source, s.SourceNumber,
+                    Links = links[s.Id].Select(l => new { l.Kind, l.Id, l.Number }),
+                }),
+            });
+        }).RequirePermission(Permissions.AssetsView).WithTags("Downtime");
+
+        // A stop logged by hand (one that never became a request or work order, or one entered afterwards).
+        api.MapPost("/assets/{id:guid}/downtime", async (Guid id, StopInput input, CmmsDbContext db, CancellationToken ct) =>
+        {
+            if (!await db.Assets.AnyAsync(a => a.Id == id, ct)) return Results.NotFound();
+            var v = await CheckAsync(db, id, null, input, ct);
+            if (!v.IsValid) return v.Problem();
+            var stop = new DowntimeEvent { AssetId = id, StartedAt = input.StartedAt, EndedAt = input.EndedAt, Reason = input.Reason.Clean(), Source = DowntimeSource.Manual };
+            db.DowntimeEvents.Add(stop);
+            await db.SaveChangesAsync(ct);
+            return Results.Created($"/api/downtime/{stop.Id}", new { stop.Id });
+        }).RequirePermission(Permissions.AssetsEdit).WithTags("Downtime");
+
+        // Correcting any stop's start, end or reason; the change history keeps each edit.
+        api.MapPut("/downtime/{id:guid}", async (Guid id, StopInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        {
+            var stop = await db.DowntimeEvents.FirstOrDefaultAsync(e => e.Id == id, ct);
+            if (stop is null) return Results.NotFound();
+            var v = await CheckAsync(db, stop.AssetId, id, input, ct);
+            if (!v.IsValid) return v.Problem();
+            if (stop.EndedAt is null && input.EndedAt is not null) stop.EndedById = ctx.UserId;
+            stop.StartedAt = input.StartedAt; stop.EndedAt = input.EndedAt; stop.Reason = input.Reason.Clean();
+            // Completed work on this stop shows its new length.
+            if (stop.EndedAt is { } end)
+                foreach (var w in await db.WorkOrders.Where(w => w.DowntimeEventId == id && w.CompletedAt != null).ToListAsync(ct))
+                    w.DowntimeHours = Downtime.Hours(stop.StartedAt, end);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { stop.Id });
+        }).RequirePermission(Permissions.AssetsEdit).WithTags("Downtime");
+
         api.MapPost("/assets/{id:guid}/back-running", async (Guid id, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             if (!await db.Assets.AnyAsync(a => a.Id == id, ct)) return Results.NotFound();
@@ -82,5 +183,22 @@ public static class DowntimeEndpoints
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.WorkOrdersExecute).WithTags("Downtime");
+    }
+
+    private static async Task<Validator> CheckAsync(CmmsDbContext db, Guid assetId, Guid? stopId, StopInput i, CancellationToken ct)
+    {
+        var now = DateTimeOffset.UtcNow;
+        var v = new Validator().MaxLength("reason", i.Reason, "Reason", 500)
+            .When(i.StartedAt > now.AddMinutes(1), "startedAt", "The start can't be in the future.")
+            .When(i.EndedAt is { } e && e <= i.StartedAt, "endedAt", "The end must be after the start.")
+            .When(i.EndedAt > now.AddMinutes(1), "endedAt", "The end can't be in the future.");
+        if (!v.IsValid) return v;
+        var others = db.DowntimeEvents.Where(e => e.AssetId == assetId && e.Id != stopId);
+        if (i.EndedAt is null && await others.AnyAsync(e => e.EndedAt == null, ct)) v.Add("endedAt", "The asset is already down.");
+        else if (i.EndedAt is { } end
+                     ? await others.AnyAsync(e => e.StartedAt < end && (e.EndedAt == null || e.EndedAt > i.StartedAt), ct)
+                     : await others.AnyAsync(e => e.EndedAt == null || e.EndedAt > i.StartedAt, ct))
+            v.Add("startedAt", "This stop overlaps another stop of this asset.");
+        return v;
     }
 }

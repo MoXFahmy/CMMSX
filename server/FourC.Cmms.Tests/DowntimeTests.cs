@@ -187,4 +187,119 @@ public class DowntimeTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Empty(await StopsAsync(o.Asset2));
         Assert.True(IsNull(await WoAsync(o, wo), "downtime"));
     }
+
+    private static async Task<JsonElement> DowntimeAsync(Org o, Guid asset) => await Ok(await o.C.GetAsync($"/api/assets/{asset}/downtime"));
+    private static object Stop(DateTimeOffset start, DateTimeOffset? end, string reason) => new { startedAt = start, endedAt = end, reason };
+    private static readonly string[] AllDays = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+
+    [SkippableFact]
+    public async Task Manual_stops_are_checked_and_listed()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var now = DateTimeOffset.UtcNow;
+        var url = $"/api/assets/{o.Asset}/downtime";
+        var first = Id(await Ok(await o.C.PostAsJsonAsync(url, Stop(now.AddHours(-10), now.AddHours(-8), "Power cut"))));
+        Assert.Contains("This stop overlaps another stop of this asset.", await Refused(await o.C.PostAsJsonAsync(url, Stop(now.AddHours(-9), now.AddHours(-7), "Again"))));
+        Assert.Contains("The end must be after the start.", await Refused(await o.C.PostAsJsonAsync(url, Stop(now.AddHours(-5), now.AddHours(-6), "Backwards"))));
+        Assert.Contains("The start can't be in the future.", await Refused(await o.C.PostAsJsonAsync(url, Stop(now.AddHours(2), null, "Later"))));
+        await Ok(await o.C.PutAsJsonAsync($"/api/downtime/{first}", Stop(now.AddHours(-10), now.AddHours(-8), "Power cut (grid)")));
+        var open = Id(await Ok(await o.C.PostAsJsonAsync(url, Stop(now.AddHours(-3), null, "Belt snapped"))));
+        Assert.Contains("The asset is already down.", await Refused(await o.C.PostAsJsonAsync(url, Stop(now.AddHours(-1), null, "Belt again"))));
+
+        var d = await DowntimeAsync(o, o.Asset);
+        var stops = d.GetProperty("stops");
+        Assert.Equal(2, stops.GetArrayLength());
+        Assert.Equal(open, Id(stops[0]));
+        Assert.Equal("Power cut (grid)", stops[1].GetProperty("reason").GetString());
+        Assert.Equal("Manual", stops[1].GetProperty("source").GetString());
+        Assert.Equal(2m, stops[1].GetProperty("hours").GetDecimal());
+        Assert.NotNull(At(d, "downSince"));
+
+        var history = await Ok(await o.C.GetAsync($"/api/audit?entityType=DowntimeEvent&entityId={first}"));
+        Assert.Contains(history.EnumerateArray(), h => h.GetProperty("action").GetString() == "Updated");
+    }
+
+    [SkippableFact]
+    public async Task Availability_uses_the_assets_running_time()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var asset = Id(await Ok(await o.C.PostAsJsonAsync("/api/assets", new { name = "Mixer", siteId = o.Site, status = "Active", criticality = "High", warrantyType = "None",
+            runsHoursPerDay = 8, runsOn = AllDays })));
+        var yesterday = DateTimeOffset.UtcNow.Date.AddDays(-1);
+        await Ok(await o.C.PostAsJsonAsync($"/api/assets/{asset}/downtime", Stop(new DateTimeOffset(yesterday.AddHours(10), TimeSpan.Zero), new DateTimeOffset(yesterday.AddHours(14), TimeSpan.Zero), "Jam")));
+        var d = await DowntimeAsync(o, asset);
+        Assert.Equal(8m, d.GetProperty("runsHoursPerDay").GetDecimal());
+        Assert.Equal(240m, d.GetProperty("plannedHours30").GetDecimal());
+        Assert.Equal(4m, d.GetProperty("downHours30").GetDecimal());
+        Assert.Equal(98.3m, d.GetProperty("availability30").GetDecimal());
+
+        // Work completed the old way (hours typed, no stop) still counts.
+        var wo = await NewWoAsync(o, Wo(o, asset, down: false));
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{wo}/status", new { status = "Completed", completionNotes = "Cleared", assetWasDown = true, downtimeHours = 2 }));
+        d = await DowntimeAsync(o, asset);
+        Assert.Equal(6m, d.GetProperty("downHours30").GetDecimal());
+        Assert.Equal(97.5m, d.GetProperty("availability30").GetDecimal());
+    }
+
+    [SkippableFact]
+    public async Task Running_time_must_make_sense()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        object Body(object? hours, object? days) => new { name = "Kiln", siteId = o.Site, status = "Active", criticality = "High", warrantyType = "None", runsHoursPerDay = hours, runsOn = days };
+        Assert.Contains("Running hours must be between 0.5 and 24.", await Refused(await o.C.PostAsJsonAsync("/api/assets", Body(25, null))));
+        Assert.Contains("Running hours must be between 0.5 and 24.", await Refused(await o.C.PostAsJsonAsync("/api/assets", Body(0.25, null))));
+        Assert.Contains("Choose at least one running day.", await Refused(await o.C.PostAsJsonAsync("/api/assets", Body(null, Array.Empty<string>()))));
+
+        var kiln = Id(await Ok(await o.C.PostAsJsonAsync("/api/assets", Body(16, new[] { "Monday", "Tuesday" }))));
+        var detail = await Ok(await o.C.GetAsync($"/api/assets/{kiln}"));
+        Assert.Equal(16m, detail.GetProperty("runsHoursPerDay").GetDecimal());
+        Assert.Equal(2, detail.GetProperty("runsOn").GetArrayLength());
+        // An edit that leaves the running time out keeps it.
+        await Ok(await o.C.PutAsJsonAsync($"/api/assets/{kiln}", new { assetNumber = detail.GetProperty("assetNumber").GetString(), name = "Kiln 2", siteId = o.Site,
+            status = "Active", criticality = "High", warrantyType = "None" }));
+        detail = await Ok(await o.C.GetAsync($"/api/assets/{kiln}"));
+        Assert.Equal(16m, detail.GetProperty("runsHoursPerDay").GetDecimal());
+        Assert.Equal(2, detail.GetProperty("runsOn").GetArrayLength());
+    }
+
+    [SkippableFact]
+    public async Task Down_assets_show_in_the_list_and_on_the_dashboard()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var user = (await Ok(await o.C.GetAsync("/api/auth/me"))).GetProperty("user").GetProperty("id").GetGuid();
+        var me = Id(await Ok(await o.C.PostAsJsonAsync("/api/employees", new { code = "E1", fullName = "Dina Down", isContractor = false, userId = user, siteIds = new[] { o.Site } })));
+        var wo = await NewWoAsync(o, new { title = "Fix the press", siteId = o.Site, assetId = o.Asset, type = "Breakdown", priority = "High", tasks = Array.Empty<string>(),
+            assigneeIds = new[] { me }, assetIsDown = true });
+
+        var list = await Ok(await o.C.GetAsync("/api/assets?downNow=true"));
+        Assert.Equal(1, list.GetProperty("total").GetInt32());
+        Assert.Equal(o.Asset, Id(list.GetProperty("items")[0]));
+        Assert.NotNull(At(list.GetProperty("items")[0], "downSince"));
+        var all = await Ok(await o.C.GetAsync("/api/assets"));
+        Assert.Contains(all.GetProperty("items").EnumerateArray(), a => Id(a) == o.Asset2 && IsNull(a, "downSince"));
+
+        var dash = await Ok(await o.C.GetAsync("/api/dashboard"));
+        Assert.Equal(1, dash.GetProperty("totals").GetProperty("assetsDown").GetInt32());
+
+        var bundle = await Ok(await o.C.GetAsync("/api/tech/bundle"));
+        var job = bundle.GetProperty("jobs").EnumerateArray().Single(j => Id(j) == wo);
+        Assert.NotNull(At(job.GetProperty("asset"), "downSince"));
+    }
+
+    [SkippableFact]
+    public async Task A_stop_links_to_its_records()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var rid = await NewRequestAsync(o, Request(o, o.Asset));
+        var approved = await Ok(await o.C.PostAsJsonAsync($"/api/work-requests/{rid}/approve", new { }));
+        var links = (await DowntimeAsync(o, o.Asset)).GetProperty("stops")[0].GetProperty("links").EnumerateArray().ToList();
+        Assert.Contains(links, l => l.GetProperty("kind").GetString() == "request" && Id(l) == rid);
+        Assert.Contains(links, l => l.GetProperty("kind").GetString() == "workOrder" && Id(l) == approved.GetProperty("workOrderId").GetGuid()
+            && l.GetProperty("number").GetString() == approved.GetProperty("number").GetString());
+    }
 }

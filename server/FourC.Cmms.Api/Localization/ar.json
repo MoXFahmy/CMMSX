@@ -645,5 +645,12 @@
  "{0} must be a number, with . for decimals and no thousands separators.": "يجب أن يكون {0} رقمًا، باستخدام . للكسور العشرية ودون فواصل للآلاف.",
  "Not saved: fix row {0} of this task first.": "لم يُحفظ: صحّح الصف {0} لهذه المهمة أولًا.",
  "Steps": "الخطوات",
- "The asset isn't down.": "الأصل ليس متوقفًا."
+ "The asset isn't down.": "الأصل ليس متوقفًا.",
+ "The start can't be in the future.": "لا يمكن أن تكون البداية في المستقبل.",
+ "The end must be after the start.": "يجب أن تكون النهاية بعد البداية.",
+ "The end can't be in the future.": "لا يمكن أن تكون النهاية في المستقبل.",
+ "The asset is already down.": "الأصل متوقف بالفعل.",
+ "This stop overlaps another stop of this asset.": "هذا التوقف يتداخل مع توقف آخر لهذا الأصل.",
+ "Running hours must be between 0.5 and 24.": "يجب أن تكون ساعات التشغيل بين 0.5 و24.",
+ "Choose at least one running day.": "اختر يوم تشغيل واحدًا على الأقل."
 }

@@ -245,6 +245,7 @@ public static class DashboardEndpoints
                     UnderRepair = byStatus.Where(x => x.Status == AssetStatus.UnderRepair).Sum(x => x.Count),
                     WarrantyExpiring90 = await db.Assets.CountAsync(a => a.WarrantyExpiresOn != null && a.WarrantyExpiresOn >= today && a.WarrantyExpiresOn <= in90, ct),
                     AssetValue = await db.Assets.SumAsync(a => a.CurrentValue ?? 0, ct),
+                    AssetsDown = await db.DowntimeEvents.CountAsync(e => e.EndedAt == null && db.Assets.Any(a => a.Id == e.AssetId), ct),
                 },
                 ByStatus = byStatus, ByCriticality = byCriticality, ByCategory = byCategory, BySite = bySite,
                 WarrantyExpiring = expiring, RecentAssets = recent,
