@@ -75,6 +75,9 @@ public sealed class ImportContext(CmmsDbContext db, ITenantContext tenant, Tenan
     /// <summary>Each asset's parent, to catch an asset put under its own child.</summary>
     public Dictionary<Guid, Guid?> AssetParents { get; } = [];
 
+    /// <summary>Each asset's site, to check a PM schedule's asset is in the schedule's site.</summary>
+    public Dictionary<Guid, Guid> AssetSites { get; } = [];
+
     /// <summary>Each location's site and parent, to catch a location put under its own descendant.</summary>
     public Dictionary<Guid, (Guid SiteId, Guid? ParentId)> LocationTree { get; } = [];
 
@@ -295,10 +298,11 @@ public static class ImportRun
         foreach (var x in await db.PartGroups.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.PartGroups, x.Code, x.Id);
         foreach (var x in await db.Suppliers.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.Suppliers, x.Code, x.Id);
         foreach (var x in await db.Stores.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.Stores, x.Code, x.Id);
-        foreach (var x in await db.Assets.AsNoTracking().Select(x => new { x.Id, x.AssetNumber, x.ParentAssetId }).ToListAsync(ct))
+        foreach (var x in await db.Assets.AsNoTracking().Select(x => new { x.Id, x.AssetNumber, x.ParentAssetId, x.SiteId }).ToListAsync(ct))
         {
             c.Remember(c.Assets, x.AssetNumber, x.Id);
             c.AssetParents[x.Id] = x.ParentAssetId;
+            c.AssetSites[x.Id] = x.SiteId;
         }
         foreach (var x in await db.Employees.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.Employees, x.Code, x.Id);
         foreach (var x in await db.Parts.AsNoTracking().Select(x => new { x.Id, x.PartNumber }).ToListAsync(ct)) c.Remember(c.Parts, x.PartNumber, x.Id);

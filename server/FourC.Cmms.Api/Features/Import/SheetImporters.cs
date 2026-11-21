@@ -3,6 +3,8 @@ using FourC.Cmms.Core.Assets;
 using FourC.Cmms.Core.Inventory;
 using FourC.Cmms.Core.Locations;
 using FourC.Cmms.Core.People;
+using FourC.Cmms.Core.Pm;
+using FourC.Cmms.Core.Work;
 using FourC.Cmms.Core.Purchasing;
 using Microsoft.EntityFrameworkCore;
 
@@ -15,6 +17,7 @@ internal static class SheetImporters
     [
         new SiteImporter(), new LocationImporter(), new CategoryImporter(), new TradeImporter(), new PartGroupImporter(),
         new SupplierImporter(), new StoreImporter(), new AssetImporter(), new PeopleImporter(), new PartImporter(), new StockImporter(),
+        new PmTaskImporter(), new PmStepImporter(), new PmPartImporter(), new PmScheduleImporter(),
     ];
 
     /// <summary>The Assets sheet with one more column per custom field, headed by the field's label.</summary>
@@ -507,6 +510,7 @@ internal sealed class AssetImporter : RecordImporter<Asset>
         {
             AssetEndpoints.UpdateAsset(c.Db, existing, input, values, c.Tenant);
             c.AssetParents[existing.Id] = existing.ParentAssetId;
+            c.AssetSites[existing.Id] = existing.SiteId;
             return null;
         }
         var asset = await AssetEndpoints.CreateAssetAsync(c.Db, input, values, c.Settings, ct);
@@ -520,6 +524,7 @@ internal sealed class AssetImporter : RecordImporter<Asset>
     {
         c.Remember(c.Assets, a.AssetNumber, a.Id);
         c.AssetParents[a.Id] = a.ParentAssetId;
+        c.AssetSites[a.Id] = a.SiteId;
     }
 }
 
@@ -677,5 +682,238 @@ internal sealed class StockImporter : RecordImporter<StockLevel>
         foreach (var (partId, storeId, quantity, batch, expiry) in _opening)
             await StockLedger.PostAsync(c.Db, c.Tenant, new StockPost(StockTransactionType.Adjustment, partId, storeId, quantity, c.Today,
                 BatchNumber: batch, ExpiryDate: expiry, Notes: OpeningNote), ct);
+    }
+}
+
+// ---------------- PM ----------------
+
+internal sealed class PmTaskImporter : RecordImporter<PmTask>
+{
+    public override string Sheet => "PmTasks";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.PmTasks.Include(t => t.Steps).Include(t => t.Parts).Where(t => codes.Contains(t.Code)), t => t.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, PmTask t) => new()
+    {
+        ["code"] = t.Code, ["name"] = t.Name, ["description"] = t.Description, ["tradeCode"] = t.TradeId is { } tr ? c.CodeOf.GetValueOrDefault(tr) : null,
+        ["estimatedHours"] = t.EstimatedHours, ["safetyNotes"] = t.SafetyNotes, ["active"] = t.IsActive,
+    };
+
+    protected override Task<PmTask?> SaveAsync(ImportContext c, ImportRow row, PmTask? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var tradeCode = S(v, "tradeCode");
+        Guid? tradeId = tradeCode is not null && c.Trades.TryGetValue(tradeCode, out var known) ? known : null;
+        var steps = existing?.Steps.OrderBy(s => s.Sequence).Select(s => s.Description).ToList() ?? [];
+        var input = new PmEndpoints.TaskInput(S(v, "code")!, S(v, "name") ?? "", S(v, "description"), tradeId, N(v, "estimatedHours"), S(v, "safetyNotes"),
+            steps, B(v, "active", true));
+        if (!Accept(row, PmEndpoints.PmTaskRules(input))) return Task.FromResult<PmTask?>(null);
+        if (tradeCode is not null && tradeId is null) input = input with { TradeId = c.EnsureLookup(c.Trades, tradeCode, "Trades") };
+        if (existing is not null) { Replace(c, existing, input); return Task.FromResult<PmTask?>(null); }
+        return Task.FromResult<PmTask?>(PmEndpoints.CreateTask(c.Db, input));
+    }
+
+    /// <summary>
+    /// Updates a task through the screen's code. Step and part rows it creates have their ids set already, so a task saved
+    /// earlier in the same run would take them for existing rows: they are marked new here.
+    /// </summary>
+    internal static void Replace(ImportContext c, PmTask task, PmEndpoints.TaskInput input)
+    {
+        var steps = task.Steps.ToHashSet();
+        var parts = task.Parts.ToHashSet();
+        PmEndpoints.UpdateTask(c.Db, task, input);
+        foreach (var s in task.Steps.Where(s => !steps.Contains(s))) c.Db.Entry(s).State = EntityState.Added;
+        foreach (var p in task.Parts.Where(p => !parts.Contains(p))) c.Db.Entry(p).State = EntityState.Added;
+    }
+
+    protected override void Remember(ImportContext c, PmTask t, Dictionary<string, object?> v) => c.Remember(c.PmTasks, t.Code, t.Id);
+}
+
+/// <summary>
+/// A list belonging to a PM task (its steps, its parts), one row per item. Each row says whether its item is new, changed
+/// or the same; at the end every task named on the sheet gets the sheet's items as its whole list.
+/// </summary>
+internal abstract class PmTaskListImporter : ISheetImporter
+{
+    private readonly Dictionary<Guid, PmTask> _tasks = [];
+
+    public abstract string Sheet { get; }
+    public abstract IReadOnlyList<string> KeyColumns { get; }
+    public string KeyOf(ImportRow row) => string.Join('|', KeyColumns.Select(k => ImportValues.Show(row.Value(k))?.Trim() ?? ""));
+    public Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct) => Task.CompletedTask;
+    public abstract Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct);
+    public abstract Task FinishAsync(ImportContext c, CancellationToken ct);
+
+    /// <summary>The row's task, loaded once with its steps and parts; null with "PM task X not found." on the row.</summary>
+    protected async Task<PmTask?> TaskAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        var code = row.Get<string>("taskCode")?.Trim();
+        if (code is null || !c.PmTasks.TryGetValue(code, out var id)) { row.Problem(Translator.T($"PM task {code} not found.")); return null; }
+        if (!_tasks.TryGetValue(id, out var task))
+            _tasks[id] = task = await c.Db.PmTasks.Include(t => t.Steps).Include(t => t.Parts).FirstAsync(t => t.Id == id, ct);
+        return task;
+    }
+
+    protected PmTask TaskById(Guid id) => _tasks[id];
+
+    protected static PmEndpoints.TaskInput InputOf(PmTask t, List<string> steps, List<PmEndpoints.TaskPartInput>? parts) =>
+        new(t.Code, t.Name, t.Description, t.TradeId, t.EstimatedHours, t.SafetyNotes, steps, t.IsActive, null, parts);
+
+    protected static List<string> StepsOf(PmTask t) => t.Steps.OrderBy(s => s.Sequence).Select(s => s.Description).ToList();
+
+    /// <summary>Replaces a task's lists through the screen's code, and makes sure the new step and part rows are inserted.</summary>
+    internal static void Replace(ImportContext c, PmTask task, PmEndpoints.TaskInput input) => PmTaskImporter.Replace(c, task, input);
+
+    protected static RowResult Result(ImportRow row, string key, RowOutcome outcome, List<FieldChange>? changes = null) =>
+        row.HasProblems ? ImportRun.Problem(row, key) : new RowResult(row.Number, key, outcome, changes ?? [], []);
+}
+
+internal sealed class PmStepImporter : PmTaskListImporter
+{
+    private readonly Dictionary<Guid, SortedDictionary<int, string>> _wanted = [];
+    private readonly Dictionary<Guid, List<string>> _before = [];
+
+    public override string Sheet => "PmSteps";
+    public override IReadOnlyList<string> KeyColumns => ["taskCode", "step"];
+
+    public override async Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        var shown = $"{row.Get<string>("taskCode")} · {row.Get<int?>("step")}";
+        var task = await TaskAsync(c, row, ct);
+        var step = row.Get<int?>("step") ?? 0;
+        var text = row.Get<string>("description");
+        if (step < 1) row.Problem(Translator.T("Steps are numbered from 1."));
+        if (text is null) row.Problem(Translator.T($"{row.Sheet.Column("description").Heading} is required."));
+        if (task is null || row.HasProblems) return Result(row, shown, RowOutcome.Problem);
+        var before = _before.TryGetValue(task.Id, out var b) ? b : _before[task.Id] = StepsOf(task);
+        var wanted = _wanted.TryGetValue(task.Id, out var w) ? w : _wanted[task.Id] = [];
+        if (wanted.Count >= 300) { row.Problem(Translator.T("At most 300 steps.")); return Result(row, shown, RowOutcome.Problem); }
+        wanted[step] = text!;
+        var old = step <= before.Count ? before[step - 1] : null;
+        if (old is null) return Result(row, shown, RowOutcome.New);
+        return old == text ? Result(row, shown, RowOutcome.Unchanged)
+            : Result(row, shown, RowOutcome.Changed, [new FieldChange(row.Sheet.Column("description").Heading, old, text)]);
+    }
+
+    public override Task FinishAsync(ImportContext c, CancellationToken ct)
+    {
+        foreach (var (id, wanted) in _wanted)
+        {
+            var task = TaskById(id);
+            var steps = wanted.Values.ToList();
+            if (steps.SequenceEqual(_before[id])) continue;
+            Replace(c, task, InputOf(task, steps, null));
+        }
+        return System.Threading.Tasks.Task.CompletedTask;
+    }
+}
+
+internal sealed class PmPartImporter : PmTaskListImporter
+{
+    private readonly Dictionary<Guid, Dictionary<Guid, decimal>> _wanted = [];
+    private readonly Dictionary<Guid, Dictionary<Guid, decimal>> _before = [];
+
+    public override string Sheet => "PmParts";
+    public override IReadOnlyList<string> KeyColumns => ["taskCode", "partNumber"];
+
+    public override async Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        var shown = $"{row.Get<string>("taskCode")} · {row.Get<string>("partNumber")}";
+        var task = await TaskAsync(c, row, ct);
+        var partNumber = row.Get<string>("partNumber")?.Trim();
+        Guid partId = Guid.Empty;
+        if (partNumber is not null && !c.Parts.TryGetValue(partNumber, out partId)) row.Problem(Translator.T($"Part {partNumber} not found."));
+        var quantity = Math.Round(row.Get<decimal?>("quantity") ?? 0, 3);
+        if (quantity is <= 0 or > 1_000_000_000m) row.Problem(Translator.T("Each part needs a quantity above zero."));
+        if (task is null || row.HasProblems) return Result(row, shown, RowOutcome.Problem);
+        var before = _before.TryGetValue(task.Id, out var b) ? b : _before[task.Id] = task.Parts.ToDictionary(p => p.PartId, p => p.Quantity);
+        var wanted = _wanted.TryGetValue(task.Id, out var w) ? w : _wanted[task.Id] = [];
+        if (wanted.Count >= 200) { row.Problem(Translator.T("At most 200 parts.")); return Result(row, shown, RowOutcome.Problem); }
+        wanted[partId] = quantity;
+        if (!before.TryGetValue(partId, out var old)) return Result(row, shown, RowOutcome.New);
+        return old == quantity ? Result(row, shown, RowOutcome.Unchanged)
+            : Result(row, shown, RowOutcome.Changed, [new FieldChange(row.Sheet.Column("quantity").Heading, ImportValues.Plain(old), ImportValues.Plain(quantity))]);
+    }
+
+    public override Task FinishAsync(ImportContext c, CancellationToken ct)
+    {
+        foreach (var (id, wanted) in _wanted)
+        {
+            var before = _before[id];
+            if (wanted.Count == before.Count && wanted.All(x => before.TryGetValue(x.Key, out var q) && q == x.Value)) continue;
+            var task = TaskById(id);
+            Replace(c, task, InputOf(task, StepsOf(task), wanted.Select(x => new PmEndpoints.TaskPartInput(x.Key, x.Value)).ToList()));
+        }
+        return System.Threading.Tasks.Task.CompletedTask;
+    }
+}
+
+internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
+{
+    public override string Sheet => "PmSchedules";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Assets).Where(s => codes.Contains(s.Code)), s => s.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, PmSchedule s) => new()
+    {
+        ["code"] = s.Code, ["name"] = s.Name, ["taskCode"] = c.CodeOf.GetValueOrDefault(s.PmTaskId), ["siteCode"] = c.CodeOf.GetValueOrDefault(s.SiteId),
+        ["locationCode"] = s.LocationId is { } l ? c.CodeOf.GetValueOrDefault(l) : null, ["assetNumber"] = s.AssetId is { } a ? c.CodeOf.GetValueOrDefault(a) : null,
+        ["tradeCode"] = s.TradeId is { } t ? c.CodeOf.GetValueOrDefault(t) : null, ["priority"] = s.Priority,
+        ["schedule"] = s.Type == PmScheduleType.Meter ? null : s.Type, ["every"] = s.Frequency, ["unit"] = s.Unit, ["countFrom"] = s.Basis,
+        ["weekOfMonth"] = s.WeekOfMonth is { } w ? (WeekOfMonth)w : null, ["weekday"] = s.DayOfWeek, ["dayOfMonth"] = s.DayOfMonth,
+        ["startDate"] = s.StartDate, ["leadDays"] = s.LeadDays, ["workPeriodDays"] = s.WorkPeriodDays,
+        ["assignees"] = s.AssigneeIds.Select(id => c.CodeOf.GetValueOrDefault(id)).OfType<string>().ToList(), ["description"] = s.Description, ["active"] = s.IsActive,
+    };
+
+    protected override Dictionary<string, object?> Defaults() => new()
+    {
+        ["priority"] = WorkPriority.Medium, ["every"] = 1, ["unit"] = FrequencyUnit.Month, ["countFrom"] = PmBasis.Scheduled, ["leadDays"] = 7,
+        ["workPeriodDays"] = 1, ["active"] = true,
+    };
+
+    protected override Task<PmSchedule?> SaveAsync(ImportContext c, ImportRow row, PmSchedule? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var type = v.GetValueOrDefault("schedule") as PmScheduleType? ?? existing?.Type;
+        if (existing is null && type is null or PmScheduleType.Meter) row.Problem(Translator.T("Set up meter-based schedules on screen."));
+        if (existing is null && D(v, "startDate") is null) row.Problem(Translator.T($"{row.Sheet.Column("startDate").Heading} is required."));
+        var taskId = Ref(row, c.PmTasks, S(v, "taskCode"), "PM task");
+        var siteId = Ref(row, c.Sites, S(v, "siteCode"), "Site");
+        Guid? locationId = null;
+        if (siteId is { } site && S(v, "locationCode") is { } locationCode)
+        {
+            if (c.Locations.TryGetValue(ImportContext.LocationKey(site, locationCode), out var lid)) locationId = lid;
+            else row.Problem(Translator.T($"Location {locationCode} not found."));
+        }
+        var assetId = Ref(row, c.Assets, S(v, "assetNumber"), "Asset");
+        if (assetId is { } asset && siteId is { } s2 && c.AssetSites.TryGetValue(asset, out var assetSite) && assetSite != s2)
+            row.Problem(Translator.T("Asset must belong to the selected site."));
+        var assignees = L(v, "assignees").Select(code => Ref(row, c.Employees, code, "Person")).OfType<Guid>().ToList();
+        var tradeCode = S(v, "tradeCode");
+        Guid? tradeId = tradeCode is not null && c.Trades.TryGetValue(tradeCode, out var known) ? known : null;
+        if (row.HasProblems || taskId is null || siteId is null || type is null) return Task.FromResult<PmSchedule?>(null);
+
+        var round = existing?.Assets.OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList();
+        var input = new PmEndpoints.ScheduleInput(S(v, "code"), S(v, "name") ?? "", S(v, "description"), siteId.Value, locationId, assetId, tradeId,
+            E(v, "priority", WorkPriority.Medium), assignees, taskId.Value, existing?.ExtraTasks.Select(e => new PmEndpoints.ExtraTaskInput(e.PmTaskId, e.EveryNth)).ToList(),
+            type.Value, E(v, "countFrom", PmBasis.Scheduled), I(v, "every") ?? 1, E(v, "unit", FrequencyUnit.Month),
+            v.GetValueOrDefault("weekOfMonth") is WeekOfMonth w ? (int)w : null, v.GetValueOrDefault("weekday") as DayOfWeek?, I(v, "dayOfMonth"),
+            I(v, "workPeriodDays") ?? 1, existing?.WholeMonth ?? false, I(v, "leadDays") ?? 7, D(v, "startDate") ?? existing!.StartDate, null,
+            existing?.MeterId, existing?.MeterTrigger, existing?.MeterInterval, null, existing?.LowerLimit, existing?.UpperLimit,
+            existing?.LowerTaskId, existing?.UpperTaskId, existing?.TimeBased ?? false, B(v, "active", true), null, round is { Count: > 0 } ? round : null);
+        var rules = PmEndpoints.PmScheduleRules(input, existing?.Id);
+        if (existing is not null) rules.Merge(PmEndpoints.ScheduleChangeRules(existing, input));
+        if (!Accept(row, rules)) return Task.FromResult<PmSchedule?>(null);
+        if (tradeCode is not null && tradeId is null) input = input with { TradeId = c.EnsureLookup(c.Trades, tradeCode, "Trades") };
+        if (existing is not null) { PmEndpoints.UpdateSchedule(existing, input); return Task.FromResult<PmSchedule?>(null); }
+        return Task.FromResult<PmSchedule?>(PmEndpoints.CreateSchedule(c.Db, input, input.Code!.Trim()));
     }
 }

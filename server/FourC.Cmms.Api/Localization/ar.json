@@ -629,5 +629,7 @@
  "PM task {0} not found.": "مهمة الصيانة الوقائية {0} غير موجودة.",
  "{0} is a shelf-life item: enter the batch and expiry.": "{0} صنف له صلاحية: أدخل الدفعة وتاريخ الانتهاء.",
  "Opening quantity ignored for existing stock: use a stock take to change quantities.": "تم تجاهل الرصيد الافتتاحي للمخزون الموجود: استخدم الجرد لتغيير الكميات.",
- "Opening balance (import)": "رصيد افتتاحي (استيراد)"
+ "Opening balance (import)": "رصيد افتتاحي (استيراد)",
+ "Set up meter-based schedules on screen.": "أنشئ جداول العدادات من الشاشة.",
+ "Steps are numbered from 1.": "تُرقَّم الخطوات بدءًا من 1."
 }
