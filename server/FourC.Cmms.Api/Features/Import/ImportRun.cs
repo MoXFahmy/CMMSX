@@ -33,6 +33,9 @@ public sealed class ImportRow(int number, SheetDef sheet, Dictionary<string, obj
     public T? Get<T>(string key) => values.TryGetValue(key, out var v) && v is not null ? (T?)v : default;
 
     public object? Value(string key) => values.GetValueOrDefault(key);
+
+    /// <summary>Replaces a cell's value (an importer putting it in the form the screen stores).</summary>
+    public void Set(string key, object? value) => values[key] = value;
     public IEnumerable<string> Keys => values.Keys;
     public string? Raw(string key) => raw.GetValueOrDefault(key);
     public void Problem(string message) { if (!_problems.Contains(message)) _problems.Add(message); }
@@ -65,6 +68,12 @@ public sealed class ImportContext(CmmsDbContext db, ITenantContext tenant, Tenan
 
     /// <summary>Code by id, for showing a record's current references ("old" values) as codes.</summary>
     public Dictionary<Guid, string> CodeOf { get; } = [];
+
+    /// <summary>The organization's custom fields on assets (columns of the Assets sheet).</summary>
+    public IReadOnlyList<CustomFieldDefinition> AssetFields { get; set; } = [];
+
+    /// <summary>Each asset's parent, to catch an asset put under its own child.</summary>
+    public Dictionary<Guid, Guid?> AssetParents { get; } = [];
 
     /// <summary>Each location's site and parent, to catch a location put under its own descendant.</summary>
     public Dictionary<Guid, (Guid SiteId, Guid? ParentId)> LocationTree { get; } = [];
@@ -187,6 +196,7 @@ public static class ImportRun
         var c = new ImportContext(db, ctx, tenant.Settings, DateOnly.FromDateTime(DateTime.UtcNow));
         await LoadCodesAsync(c, ct);
         var customFields = await db.CustomFields.AsNoTracking().Where(f => f.EntityType == "Asset").OrderBy(f => f.SortOrder).ToListAsync(ct);
+        c.AssetFields = customFields;
         var importers = SheetImporters.All(customFields).ToDictionary(i => i.Sheet);
         var results = new List<SheetResult>();
 
@@ -285,7 +295,11 @@ public static class ImportRun
         foreach (var x in await db.PartGroups.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.PartGroups, x.Code, x.Id);
         foreach (var x in await db.Suppliers.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.Suppliers, x.Code, x.Id);
         foreach (var x in await db.Stores.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.Stores, x.Code, x.Id);
-        foreach (var x in await db.Assets.AsNoTracking().Select(x => new { x.Id, x.AssetNumber }).ToListAsync(ct)) c.Remember(c.Assets, x.AssetNumber, x.Id);
+        foreach (var x in await db.Assets.AsNoTracking().Select(x => new { x.Id, x.AssetNumber, x.ParentAssetId }).ToListAsync(ct))
+        {
+            c.Remember(c.Assets, x.AssetNumber, x.Id);
+            c.AssetParents[x.Id] = x.ParentAssetId;
+        }
         foreach (var x in await db.Employees.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.Employees, x.Code, x.Id);
         foreach (var x in await db.Parts.AsNoTracking().Select(x => new { x.Id, x.PartNumber }).ToListAsync(ct)) c.Remember(c.Parts, x.PartNumber, x.Id);
         foreach (var x in await db.PmTasks.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.PmTasks, x.Code, x.Id);
