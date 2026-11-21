@@ -7,7 +7,7 @@ import dayjs from 'dayjs';
 import { IconCamera, IconPhoto, IconCheck, IconChevronLeft, IconClock, IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react';
 import { HOLD_REASONS, type HoldReason } from '@/api/types';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
-import { fmtDate, fmtDateTime, fmtQty, notifyError } from '@/components/utils';
+import { fmtDate, fmtDateTime, fmtQty, hoursText, notifyError } from '@/components/utils';
 import { withQueued } from './overlay';
 import { shrink } from './photos';
 import { dueLabel } from './due';
@@ -52,7 +52,7 @@ export function JobPage() {
 
   return (
     <Stack gap="sm">
-      <Anchor fz="sm" onClick={() => navigate('/tech')}><Group gap={2}><IconChevronLeft size={14} />{t('tech.myJobs')}</Group></Anchor>
+      <Anchor fz="sm" onClick={() => navigate('/tech')}><Group gap={2}><IconChevronLeft size={14} className="mirror-rtl" />{t('tech.myJobs')}</Group></Anchor>
       <Card withBorder p="sm">
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <div style={{ minWidth: 0 }}>
@@ -99,10 +99,10 @@ export function JobPage() {
 
       <Card withBorder p="sm">
         <Group justify="space-between" mb={6}>
-          <Text fw={600}>{t('tech.myHours')} · {job.myLabor.reduce((a, l) => a + l.hours + l.overtimeHours, 0)} h</Text>
+          <Text fw={600}>{t('tech.myHours')} · {hoursText(job.myLabor.reduce((a, l) => a + l.hours + l.overtimeHours, 0))}</Text>
           <Button size="compact-xs" variant="light" leftSection={<IconClock size={12} />} onClick={() => setHoursOpen(true)}>{t('tech.logHours')}</Button>
         </Group>
-        {job.myLabor.map((l, i) => <Text key={i} fz="sm">{fmtDate(l.workDate)} · {l.hours} h{l.overtimeHours ? ` + ${l.overtimeHours} h OT` : ''}{l.notes ? ` · ${l.notes}` : ''}</Text>)}
+        {job.myLabor.map((l, i) => <Text key={i} fz="sm">{fmtDate(l.workDate)} · {hoursText(l.hours)}{l.overtimeHours ? ` + ${hoursText(l.overtimeHours)} ${t('unit.overtime')}` : ''}{l.notes ? ` · ${l.notes}` : ''}</Text>)}
       </Card>
 
       <Card withBorder p="sm">

@@ -529,6 +529,10 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("Language")
+                        .HasMaxLength(5)
+                        .HasColumnType("nvarchar(5)");
+
                     b.Property<DateTimeOffset?>("LastLoginAt")
                         .HasColumnType("datetimeoffset");
 

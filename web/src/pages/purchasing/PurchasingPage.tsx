@@ -108,7 +108,7 @@ function OrdersTab() {
         <DataTable<PoListItem>
           minHeight={260} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []} columns={cols.columns}
           noRecordsText={t('po.empty')} totalRecords={data?.total ?? 0} recordsPerPage={lp.pageSize} page={lp.page} onPageChange={(n) => set({ page: String(n) })}
-          recordsPerPageOptions={[25, 50, 100]} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
+          recordsPerPageOptions={[25, 50, 100]} recordsPerPageLabel={t('common.perPage')} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
           sortStatus={lp.sort} onSortStatusChange={lp.setSort}
           rowClassName={() => 'clickable-row'} onRowClick={({ record }) => navigate(`/purchasing/orders/${record.id}`)}
           paginationText={({ from, to, totalRecords }) => `${from}–${to} / ${totalRecords}`}
@@ -245,7 +245,7 @@ function SuppliersTab() {
           <SimpleGrid cols={{ base: 1, sm: 3 }}><TextInput label={t('po.contact')} {...form.getInputProps('contactName')} /><TextInput label={t('settings.email')} type="email" {...form.getInputProps('email')} /><TextInput label={t('settings.phone')} {...form.getInputProps('phone')} /></SimpleGrid>
           <Textarea label={t('po.address')} autosize minRows={2} {...form.getInputProps('address')} />
           <SimpleGrid cols={{ base: 1, sm: 3 }}><TextInput label={t('po.city')} {...form.getInputProps('city')} /><TextInput label={t('po.country')} {...form.getInputProps('country')} /><TextInput label={t('po.taxNumber')} {...form.getInputProps('taxNumber')} /></SimpleGrid>
-          <SimpleGrid cols={{ base: 1, sm: 2 }}><TextInput label={t('po.paymentTerms')} placeholder="Net 30" {...form.getInputProps('paymentTerms')} /><TextInput label={t('po.currency')} placeholder={currency} maxLength={3} {...form.getInputProps('currency')} /></SimpleGrid>
+          <SimpleGrid cols={{ base: 1, sm: 2 }}><TextInput label={t('po.paymentTerms')} placeholder={t('po.termsPlaceholder')} {...form.getInputProps('paymentTerms')} /><TextInput label={t('po.currency')} placeholder={currency} maxLength={3} {...form.getInputProps('currency')} /></SimpleGrid>
           <Textarea label={t('common.notes')} autosize minRows={2} {...form.getInputProps('notes')} />
           <Group><Switch label={t('po.contractor')} {...form.getInputProps('isContractor', { type: 'checkbox' })} /><Switch label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} /></Group>
           <Group justify="flex-end"><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>

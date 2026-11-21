@@ -135,10 +135,12 @@ public static class AdminEndpoints
             // A list sent as null means "none"; never store null where generation expects a list.
             input.Settings.PmNonWorkingDays ??= [];
             input.Settings.PmSkipAssetStatuses ??= [];
+            input.Settings.TerminologyArabic ??= Terminology.Arabic();
             input.Settings.SlaTargets ??= [];
             var v = new Validator().Required("name", input.Name, "Organization name", 200)
                 .MaxLength("settings.assetNumberPrefix", input.Settings.AssetNumberPrefix, "Asset number prefix", 20)
                 .When(input.Settings.AssetNumberPadding is < 1 or > 12, "settings.assetNumberPadding", "Padding must be between 1 and 12.")
+                .When(!Languages.IsSupported(input.Settings.DefaultLanguage), "settings.defaultLanguage", "Choose a language CMX has.")
                 .When(input.Settings.PmNonWorkingDays.Distinct().Count() >= 7, "settings.pmNonWorkingDays", "Leave at least one working day.")
                 .When(!TimeZoneInfo.TryFindSystemTimeZoneById(input.Settings.TimeZone ?? "", out _), "settings.timeZone", "Choose a time zone from the list.")
                 .When(input.Settings.DailyCapacityHours is < 1 or > 24, "settings.dailyCapacityHours", "Hours per day must be between 1 and 24.")

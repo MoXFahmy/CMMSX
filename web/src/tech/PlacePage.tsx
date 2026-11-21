@@ -37,7 +37,7 @@ export function PlacePage() {
 
   return (
     <Stack gap="sm">
-      <Anchor fz="sm" onClick={() => navigate('/tech/scan')}><Group gap={2}><IconChevronLeft size={14} />{t('tech.scan')}</Group></Anchor>
+      <Anchor fz="sm" onClick={() => navigate('/tech/scan')}><Group gap={2}><IconChevronLeft size={14} className="mirror-rtl" />{t('tech.scan')}</Group></Anchor>
       <Card withBorder p="sm">
         <Text fz="xs" c="dimmed">{asset ? asset.assetNumber : t('tech.location')}</Text>
         <Title order={4}>{asset ? asset.name : location!.name}</Title>

@@ -29,7 +29,7 @@ public static partial class TechEndpoints
         await db.Employees.AsNoTracking().Where(e => e.UserId == ctx.UserId && e.IsActive).Select(e => new Me(e.Id, e.SiteIds)).FirstOrDefaultAsync(ct);
 
     private static IResult NotLinked() =>
-        Results.Problem(title: "Your account isn't linked to an employee. Ask an administrator to link it under People.", statusCode: 404);
+        Results.Problem(title: Translator.T("Your account isn't linked to an employee. Ask an administrator to link it under People."), statusCode: 404);
 
     public static void MapTechEndpoints(this RouteGroupBuilder api)
     {

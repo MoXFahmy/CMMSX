@@ -291,7 +291,7 @@ public sealed class ApiExceptionHandler(ILogger<ApiExceptionHandler> log) : IExc
         if (status == 500) log.LogError(ex, "Unhandled error on {Path}", ctx.Request.Path);
         else if (ex is BadHttpRequestException) log.LogWarning("Bad request on {Path}: {Message}", ctx.Request.Path, ex.Message);
         ctx.Response.StatusCode = status;
-        await ctx.Response.WriteAsJsonAsync(new { status, title }, ct);
+        await ctx.Response.WriteAsJsonAsync(new { status, title = Translator.T(title) }, ct);
         return true;
     }
 }
@@ -329,7 +329,8 @@ public sealed class Validator
         list.Add(message);
     }
 
-    public IResult Problem() => Results.ValidationProblem(_errors.ToDictionary(k => k.Key, v => v.Value.ToArray()));
+    public IResult Problem() => Results.ValidationProblem(_errors.ToDictionary(k => k.Key, v => v.Value.Select(m => Translator.T(m)).ToArray()),
+        title: Translator.T("One or more validation errors occurred."));
 }
 
 public static class QueryExtensions

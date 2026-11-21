@@ -1,3 +1,4 @@
+import i18n from '@/i18n';
 import type { QueuedChange, SendResult } from './outbox';
 import type { TechBundle, TechPlaces } from './types';
 
@@ -30,7 +31,7 @@ async function call(path: string, init: RequestInit | undefined, timeoutMs: numb
   let res: Response;
   const abort = new AbortController();
   const timer = setTimeout(() => abort.abort(), timeoutMs);
-  try { res = await fetch(`/api${path}`, { credentials: 'same-origin', ...init, signal: abort.signal, headers: { Accept: 'application/json', ...(init?.headers ?? {}) } }); }
+  try { res = await fetch(`/api${path}`, { credentials: 'same-origin', ...init, signal: abort.signal, headers: { Accept: 'application/json', 'Accept-Language': i18n.language || 'en', ...(init?.headers ?? {}) } }); }
   catch { throw new Offline(); }
   finally { clearTimeout(timer); }
   if (res.status === 401) throw new SignedOut(res.headers.get('X-Session-Revoked') === '1');

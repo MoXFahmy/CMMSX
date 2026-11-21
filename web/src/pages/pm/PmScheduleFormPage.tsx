@@ -127,7 +127,7 @@ export function PmScheduleFormPage() {
           <Stack gap="lg">
             <Card><Stack gap="sm">
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
-                <TextInput label={t('pm.code')} placeholder="Auto" {...form.getInputProps('code')} />
+                <TextInput label={t('pm.code')} placeholder={t('pm.autoPlaceholder')} {...form.getInputProps('code')} />
                 <TextInput label={t('common.name')} required style={{ gridColumn: 'span 2' }} {...form.getInputProps('name')} />
               </SimpleGrid>
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
@@ -168,7 +168,7 @@ export function PmScheduleFormPage() {
                   {v.meterTrigger === 'Incremental' ? (
                     <SimpleGrid cols={{ base: 1, sm: 3 }}>
                       <NumberInput label={t('pm.meterInterval')} min={0} decimalScale={3} {...form.getInputProps('meterInterval')} />
-                      <NumberInput label={t('pm.nextDueReading')} min={0} decimalScale={3} {...form.getInputProps('nextDueReading')} placeholder="current + interval" />
+                      <NumberInput label={t('pm.nextDueReading')} min={0} decimalScale={3} {...form.getInputProps('nextDueReading')} placeholder={t('pm.nextReadingPlaceholder')} />
                       <Switch label={t('pm.timeBased')} mt={28} {...form.getInputProps('timeBased', { type: 'checkbox' })} />
                     </SimpleGrid>
                   ) : (

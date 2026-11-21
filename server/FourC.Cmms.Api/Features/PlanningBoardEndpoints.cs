@@ -112,11 +112,11 @@ public static class PlanningBoardEndpoints
             var w = await db.WorkOrders.Include(x => x.Assignees).FirstOrDefaultAsync(x => x.Id == input.WorkOrderId, ct);
             if (w is null) return Results.NotFound();
             if (!WorkOrderWorkflow.IsActive(w.Status))
-                return Results.Problem(title: $"This work order is {w.Status.ToString().ToLowerInvariant()}, so it isn't planned any more.", statusCode: 400);
+                return Results.Problem(title: Translator.T($"This work order is {w.Status.ToString().ToLowerInvariant()}, so it isn't planned any more."), statusCode: 400);
             if (input.ToEmployeeId is { } to && !await db.Employees.AnyAsync(e => e.Id == to && e.IsActive, ct))
-                return Results.Problem(title: "Choose an active person.", statusCode: 400);
+                return Results.Problem(title: Translator.T("Choose an active person."), statusCode: 400);
             if (input.FromEmployeeId is { } gone && w.Assignees.All(a => a.EmployeeId != gone))
-                return Results.Problem(title: "That person is no longer on this work order. Refresh the board.", statusCode: 400);
+                return Results.Problem(title: Translator.T("That person is no longer on this work order. Refresh the board."), statusCode: 400);
 
             string? warning = null;
             if (input.Day is { } day)

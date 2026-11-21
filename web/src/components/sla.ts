@@ -1,19 +1,22 @@
 import dayjs from 'dayjs';
 import type { TFunction } from 'i18next';
+import i18n from '@/i18n';
+import { dateTimeFormat } from './utils';
 
 /** Where a record stands against a deadline (the server works it out; see Sla.State). */
 export type SlaState = 'None' | 'OnTrack' | 'DueSoon' | 'Late' | 'Met' | 'Missed';
 
-/** "40 min", "2 h 30 min", "3 h", "1 d 2 h": short and plain. */
+/** "40 min", "2 h 30 min", "3 h", "1 d 2 h": short and plain (the unit letters follow the language). */
 export function span(ms: number): string {
+  const [d, hr, min] = [i18n.t('unit.d'), i18n.t('unit.h'), i18n.t('unit.min')];
   const minutes = Math.max(1, Math.round(Math.abs(ms) / 60_000));
-  if (minutes < 60) return `${minutes} min`;
+  if (minutes < 60) return `${minutes} ${min}`;
   const hours = Math.floor(minutes / 60);
   const rest = minutes % 60;
-  if (hours < 24) return hours < 3 && rest > 0 ? `${hours} h ${rest} min` : `${hours} h`;
+  if (hours < 24) return hours < 3 && rest > 0 ? `${hours} ${hr} ${rest} ${min}` : `${hours} ${hr}`;
   const days = Math.floor(hours / 24);
   const h = hours % 24;
-  return h > 0 ? `${days} d ${h} h` : `${days} d`;
+  return h > 0 ? `${days} ${d} ${h} ${hr}` : `${days} ${d}`;
 }
 
 /** Deadlines further off than this show their date instead of "due in …". */
@@ -26,7 +29,7 @@ export function deadlineText(deadline: string | null | undefined, state: SlaStat
   if (state === 'Missed') return t('sla.missed');
   const left = new Date(deadline).getTime() - now.getTime();
   if (left < 0) return t('sla.late', { by: span(left) });
-  if (left > NEAR_MS) return t('sla.dueOn', { date: dayjs(deadline).format('DD MMM YYYY, HH:mm') });
+  if (left > NEAR_MS) return t('sla.dueOn', { date: dayjs(deadline).format(dateTimeFormat()) });
   return t('sla.dueIn', { when: span(left) });
 }
 

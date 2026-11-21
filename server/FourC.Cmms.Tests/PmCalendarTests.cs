@@ -8,6 +8,25 @@ public class PmCalendarTests
     private static DateOnly D(int y, int m, int d) => new(y, m, d);
 
     [Fact]
+    public void Schedules_are_described_in_arabic_with_the_right_number_forms()
+    {
+        PmSchedule Every(int n, FrequencyUnit u) => S(x => { x.Type = PmScheduleType.FixedInterval; x.Frequency = n; x.Unit = u; });
+        Assert.Equal("كل شهر", PmCalendar.Describe(Every(1, FrequencyUnit.Month), "ar"));
+        Assert.Equal("كل شهرين", PmCalendar.Describe(Every(2, FrequencyUnit.Month), "ar"));
+        Assert.Equal("كل 3 أشهر", PmCalendar.Describe(Every(3, FrequencyUnit.Month), "ar"));
+        Assert.Equal("كل 12 شهرًا", PmCalendar.Describe(Every(12, FrequencyUnit.Month), "ar"));
+        Assert.Equal("كل أسبوعين", PmCalendar.Describe(Every(2, FrequencyUnit.Week), "ar"));
+        Assert.Equal("كل 10 أيام", PmCalendar.Describe(Every(10, FrequencyUnit.Day), "ar"));
+        Assert.Equal("كل سنة بعد الإنجاز", PmCalendar.Describe(S(x => { x.Type = PmScheduleType.FixedInterval; x.Frequency = 1; x.Unit = FrequencyUnit.Year; x.Basis = PmBasis.Actual; }), "ar"));
+        Assert.Equal("الإثنين الأول · كل شهر", PmCalendar.Describe(S(x => { x.Type = PmScheduleType.DayOfWeekInMonth; x.WeekOfMonth = 1; x.DayOfWeek = DayOfWeek.Monday; x.Frequency = 1; }), "ar"));
+        Assert.Equal("اليوم 15 · كل 3 أشهر", PmCalendar.Describe(S(x => { x.Type = PmScheduleType.DateOfMonth; x.DayOfMonth = 15; x.Frequency = 3; }), "ar"));
+        Assert.Equal("كل 500 أو كل 6 أشهر", PmCalendar.Describe(S(x => { x.Type = PmScheduleType.Meter; x.MeterInterval = 500; x.TimeBased = true; x.Frequency = 6; x.Unit = FrequencyUnit.Month; }), "ar"));
+        Assert.Equal("عند الخروج عن 10–20", PmCalendar.Describe(S(x => { x.Type = PmScheduleType.Meter; x.MeterTrigger = MeterTrigger.Threshold; x.LowerLimit = 10; x.UpperLimit = 20; }), "ar"));
+        // English is unchanged.
+        Assert.Equal("Every 3 months", PmCalendar.Describe(Every(3, FrequencyUnit.Month)));
+    }
+
+    [Fact]
     public void A_due_date_on_a_non_working_day_moves_to_a_working_day()
     {
         DayOfWeek[] weekend = [DayOfWeek.Friday, DayOfWeek.Saturday];

@@ -17,6 +17,10 @@ public class Tenant : Entity
 public class TenantSettings
 {
     public Terminology Terminology { get; set; } = new();
+    /// <summary>The same terms shown in Arabic.</summary>
+    public Terminology TerminologyArabic { get; set; } = Terminology.Arabic();
+    /// <summary>Language for people who haven't chosen one, and for e-mails to suppliers ("en" or "ar").</summary>
+    public string DefaultLanguage { get; set; } = "en";
     public string AssetNumberPrefix { get; set; } = "AST-";
     public int AssetNumberPadding { get; set; } = 5;
     public bool AutoNumberAssets { get; set; } = true;
@@ -68,4 +72,7 @@ public class Terminology
     public string Locations { get; set; } = "Locations";
     public string Asset { get; set; } = "Asset";
     public string Assets { get; set; } = "Assets";
+
+    /// <summary>The Arabic defaults (with the article, as they read in labels and sentences).</summary>
+    public static Terminology Arabic() => new() { Site = "الموقع", Sites = "المواقع", Location = "المكان", Locations = "الأماكن", Asset = "الأصل", Assets = "الأصول" };
 }

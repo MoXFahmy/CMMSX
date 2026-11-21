@@ -267,6 +267,47 @@ public class EmailTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Each_person_gets_e_mails_in_their_own_language()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _, _, _, site) = await OrgAsync();
+        var arabicMail = Addr("arabic"); var englishMail = Addr("english");
+        var (arabicUser, arabicId) = await UserAsync(admin, "Technician", arabicMail);
+        var (englishUser, englishId) = await UserAsync(admin, "Technician", englishMail);
+        await Ok(await arabicUser.PutAsJsonAsync("/api/auth/me/language", new { language = "ar" }));
+        var a = await EmployeeAsync(admin, "E1", "Amal", null, arabicId);
+        var b = await EmployeeAsync(admin, "E2", "Ben", null, englishId);
+        var wo = (await NewWorkOrderAsync(admin, site, [a, b], "Replace seal")).GetProperty("number").GetString();
+        await Sender.RunOnceAsync();
+
+        var ar = Assert.Single(fx.Emails.To(arabicMail));
+        Assert.Equal($"أمر عمل {wo}: Replace seal", ar.Subject);
+        Assert.Contains("dir=\"rtl\"", ar.Html);
+        Assert.Contains("أُسند إليك أمر عمل", ar.Html);
+        Assert.Contains("عالية", ar.Html); // the priority, in Arabic
+        var en = Assert.Single(fx.Emails.To(englishMail));
+        Assert.Equal($"Work order {wo}: Replace seal", en.Subject);
+        Assert.DoesNotContain("rtl", en.Html);
+    }
+
+    [SkippableFact]
+    public async Task A_supplier_gets_the_order_in_the_organizations_language()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _, _, _, site) = await OrgAsync();
+        await TestSettings.SetSettingsAsync(admin, s => s["defaultLanguage"] = "ar");
+        var s = Addr("supplier");
+        var po = await PurchaseOrderAsync(admin, site, await SupplierAsync(admin, s), "Filter element", 2, 25);
+        await Ok(await admin.PostAsync($"/api/purchase-orders/{po}/approve", null));
+        await Ok(await admin.PostAsync($"/api/purchase-orders/{po}/send", null));
+        await Sender.RunOnceAsync();
+        var m = Assert.Single(fx.Emails.To(s));
+        Assert.StartsWith("أمر شراء ", m.Subject);
+        Assert.Contains("سعر الوحدة", m.Html);
+        Assert.Contains("Filter element", m.Html);
+    }
+
+    [SkippableFact]
     public async Task Supplier_gets_the_order_when_sent()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

@@ -133,7 +133,7 @@ export function AssetsPage() {
           minHeight={260} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching}
           records={data?.items ?? []} columns={cols.columns} idAccessor="id" noRecordsText={t('common.noRecords')}
           totalRecords={data?.total ?? 0} recordsPerPage={pageSize} page={page} onPageChange={(n) => set({ page: String(n) })}
-          recordsPerPageOptions={PAGE_SIZES} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
+          recordsPerPageOptions={PAGE_SIZES} recordsPerPageLabel={t('common.perPage')} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
           sortStatus={sort} onSortStatusChange={lp.setSort}
           selectedRecords={can(P.assetsEdit) ? selected : undefined} onSelectedRecordsChange={can(P.assetsEdit) ? setSelected : undefined}
           rowClassName={() => 'clickable-row'} onRowClick={({ record }) => navigate(`/assets/${record.id}`)}

@@ -137,14 +137,15 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         if (string.IsNullOrWhiteSpace(supplier.Email)) return "The supplier has no e-mail address.";
         if (!EmailText.IsAddress(supplier.Email.Trim())) return $"The supplier's e-mail ({supplier.Email}) isn't a valid e-mail address. Correct it on the supplier first.";
         string Money(decimal v) => $"{v:N2} {po.Currency}";
-        var doc = new PoDocument(po.Number, po.OrderDate.ToString("d MMM yyyy"), po.ExpectedDate?.ToString("d MMM yyyy"), po.DeliverTo, po.PaymentTerms, po.SupplierQuoteRef,
-            po.RequestedBy,
+        // Built in the e-mail's language (dates and labels), which for a supplier is the organization's.
+        PoDocument Doc() => new(po.Number, Translator.Date(po.OrderDate), po.ExpectedDate is { } ed ? Translator.Date(ed) : null, po.DeliverTo, po.PaymentTerms,
+            po.SupplierQuoteRef, po.RequestedBy,
             [.. po.Lines.OrderBy(l => l.LineNumber).Select(l => new PoDocumentLine(l.LineNumber, l.Description,
                 $"{l.Quantity:0.###} {l.UnitOfMeasure}".Trim(), Money(l.NetUnitPrice), Money(l.LineTotal)))],
-            [("Subtotal", Money(PurchaseOrderMath.Subtotal(po))), ($"Tax ({po.TaxPercent:0.##}%)", Money(PurchaseOrderMath.Tax(po))),
-             ("Shipping", Money(po.ShippingCost)), ("Total", Money(PurchaseOrderMath.Total(po)))]);
+            [(Translator.T("Subtotal"), Money(PurchaseOrderMath.Subtotal(po))), (Translator.T($"Tax ({po.TaxPercent:0.##}%)"), Money(PurchaseOrderMath.Tax(po))),
+             (Translator.T("Shipping"), Money(po.ShippingCost)), (Translator.T("Total"), Money(PurchaseOrderMath.Total(po)))]);
         await QueueAsync(db, ctx, EmailEvents.PoSent, [new EmailRecipient(supplier.Email, supplier.ContactName ?? supplier.Name, null)],
-            org => EmailTemplates.PurchaseOrder(org, doc), "PurchaseOrder", po.Id, ct, ignoreToggles: true);
+            org => EmailTemplates.PurchaseOrder(org, Doc()), "PurchaseOrder", po.Id, ct, ignoreToggles: true);
         return null;
     }
 
@@ -197,15 +198,23 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         }
         if (list.Count == 0) return;
 
-        var content = build(tenant.Name);
-        foreach (var r in list)
-            db.OutboundEmails.Add(new OutboundEmail
-            {
-                TenantId = tenant.Id, EventKey = eventKey, ToAddress = r.Email!,
-                ToName = r.Name is null ? null : EmailText.OneLine(r.Name), ReplyTo = EmailText.IsAddress(actorEmail) ? actorEmail : null,
-                Subject = EmailText.OneLine(content.Subject),
-                HtmlBody = content.Html, TextBody = content.Text, EntityType = entityType, EntityId = entityId,
-            });
+        // Each person in their own language (their choice, else the organization's); people without an account (suppliers,
+        // requesters by e-mail) in the organization's.
+        var userIdsToAsk = list.Where(r => r.UserId is not null).Select(r => r.UserId!.Value).ToList();
+        var chosen = userIdsToAsk.Count == 0 ? [] : await db.Users.Where(u => userIdsToAsk.Contains(u.Id)).Select(u => new { u.Id, u.Language }).ToDictionaryAsync(u => u.Id, u => u.Language, ct);
+        foreach (var group in list.GroupBy(r => Languages.Effective(r.UserId is { } id ? chosen.GetValueOrDefault(id) : null, tenant.Settings.DefaultLanguage)))
+        {
+            EmailContent content;
+            using (Translator.Use(group.Key)) content = build(tenant.Name);
+            foreach (var r in group)
+                db.OutboundEmails.Add(new OutboundEmail
+                {
+                    TenantId = tenant.Id, EventKey = eventKey, ToAddress = r.Email!,
+                    ToName = r.Name is null ? null : EmailText.OneLine(r.Name), ReplyTo = EmailText.IsAddress(actorEmail) ? actorEmail : null,
+                    Subject = EmailText.OneLine(content.Subject),
+                    HtmlBody = content.Html, TextBody = content.Text, EntityType = entityType, EntityId = entityId,
+                });
+        }
     }
 
     // ---------------- Recipients and facts ----------------

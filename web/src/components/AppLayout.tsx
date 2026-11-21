@@ -1,10 +1,11 @@
-import { AppShell, Avatar, Badge, Burger, Divider, Group, Menu, NavLink, ScrollArea, Text, UnstyledButton, useMantineColorScheme, Modal, PasswordInput, Button, Stack, Alert, Anchor } from '@mantine/core';
+import { AppShell, Avatar, Badge, Burger, Divider, Group, Menu, NavLink, ScrollArea, Text, UnstyledButton, useMantineColorScheme, Modal, PasswordInput, Button, Stack, Alert, Anchor, Box } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useForm } from '@mantine/form';
 import { useQueryClient } from '@tanstack/react-query';
 import { Link, Outlet, useLocation, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DevicesModal } from './DevicesModal';
+import { LanguageSwitch } from './LanguageSwitch';
 import { useOnline } from './useOnline';
 import { appVersionLabel } from '@/components/utils';
 import { AlertBell } from '@/components/AlertBell';
@@ -75,7 +76,7 @@ export function AppLayout() {
       <AppShell.Header>
         <Group h="100%" px="md" justify="space-between" wrap="nowrap">
           <Group gap="sm" wrap="nowrap">
-            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label="Toggle navigation" />
+            <Burger opened={opened} onClick={toggle} hiddenFrom="sm" size="sm" aria-label={t('common.toggleNavigation')} />
             <img src="/favicon.svg" width={28} height={28} alt="" />
             <Text fw={700} visibleFrom="xs">{t('app.name')}</Text>
             <Divider orientation="vertical" visibleFrom="md" />
@@ -83,7 +84,7 @@ export function AppLayout() {
           </Group>
           <Group gap="xs" wrap="nowrap">
             <AlertBell />
-            <UnstyledButton onClick={() => toggleColorScheme()} aria-label="Toggle color scheme" p={6}>
+            <UnstyledButton onClick={() => toggleColorScheme()} aria-label={t('common.toggleColorScheme')} p={6}>
               {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}
             </UnstyledButton>
             <Menu position="bottom-end" width={220} shadow="md">
@@ -98,6 +99,7 @@ export function AppLayout() {
               </Menu.Target>
               <Menu.Dropdown>
                 <Menu.Label>{me?.user.email}</Menu.Label>
+                <Box px="sm" py={6}><LanguageSwitch /></Box>
                 <Menu.Item leftSection={<IconKey size={16} />} onClick={pw.open}>{t('common.changePassword')}</Menu.Item>
                 <Menu.Item leftSection={<IconMail size={16} />} onClick={mailPrefs.open}>{t('email.myTitle')}</Menu.Item>
                 <Menu.Item leftSection={<IconDevices size={16} />} onClick={devices.open}>{t('devices.title')}</Menu.Item>

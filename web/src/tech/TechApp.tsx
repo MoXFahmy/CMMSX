@@ -8,6 +8,7 @@ import { notifications } from '@mantine/notifications';
 import { IconCloudOff, IconCloudCheck, IconList, IconLogout, IconRefresh, IconScan, IconSearch, IconTransferVertical } from '@tabler/icons-react';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDateTime, fromNow } from '@/components/utils';
+import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { dueLabel } from './due';
 import { JobPage } from './JobPage';
 import { PlacePage } from './PlacePage';
@@ -192,6 +193,7 @@ function SyncPage() {
           </div>
           <Button size="xs" variant="default" leftSection={<IconRefresh size={14} />} loading={busy} onClick={() => { void drainNow(true); void refresh(); }}>{t('tech.refreshNow')}</Button>
         </Group>
+        {online && <Group mt="xs" justify="space-between"><Text fz="sm">{t('common.language')}</Text><LanguageSwitch /></Group>}
         {problem && <Alert color="orange" mt="xs" p="xs">{problem === 'server' ? t('tech.refreshServerProblem') : problem}</Alert>}
       </Card>
       <Text fz="xs" fw={700} tt="uppercase" c="dimmed">{t('tech.waiting')} · {sorted.length}</Text>

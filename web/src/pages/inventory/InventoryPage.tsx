@@ -145,7 +145,7 @@ function PartsTab() {
         <DataTable<PartListItem>
           minHeight={260} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []} columns={cols.columns}
           noRecordsText={t('inv.noParts')} totalRecords={data?.total ?? 0} recordsPerPage={lp.pageSize} page={lp.page} onPageChange={(n) => set({ page: String(n) })}
-          recordsPerPageOptions={[25, 50, 100]} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
+          recordsPerPageOptions={[25, 50, 100]} recordsPerPageLabel={t('common.perPage')} onRecordsPerPageChange={(n) => set({ pageSize: String(n) })}
           sortStatus={lp.sort} onSortStatusChange={lp.setSort}
           selectedRecords={canManage ? selected : undefined} onSelectedRecordsChange={canManage ? setSelected : undefined}
           rowClassName={() => 'clickable-row'} onRowClick={({ record }) => navigate(`/inventory/parts/${record.id}`)}

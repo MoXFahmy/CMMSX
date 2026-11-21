@@ -40,7 +40,7 @@ public static partial class TechEndpoints
     /// <summary>409 "otherUser": the change was queued by another person; the phone keeps it until they sign in again.</summary>
     private static IResult? OtherUser(Guid? queuedBy, ITenantContext ctx) =>
         queuedBy is { } q && q != ctx.UserId
-            ? Results.Json(new Answer("otherUser", "This change was made by someone else on this phone. It waits until they sign in again.", "otherUser"), statusCode: 409)
+            ? Results.Json(new Answer("otherUser", Translator.T("This change was made by someone else on this phone. It waits until they sign in again."), "otherUser"), statusCode: 409)
             : null;
 
     /// <summary>When the technician made the change, never later than now and never more than 30 days back.</summary>
@@ -54,7 +54,7 @@ public static partial class TechEndpoints
         g.MapPost("/actions", async (ActionInput input, CmmsDbContext db, ITenantContext ctx, PermissionService perms, EmailOutbox mail, IOptions<JsonOptions> json,
             CancellationToken ct) =>
         {
-            if (input.ClientId == Guid.Empty || string.IsNullOrWhiteSpace(input.Type)) return Results.Problem(title: "A change needs an id and a type.", statusCode: 400);
+            if (input.ClientId == Guid.Empty || string.IsNullOrWhiteSpace(input.Type)) return Results.Problem(title: Translator.T("A change needs an id and a type."), statusCode: 400);
             if (OtherUser(input.UserId, ctx) is { } other) return other;
             var at = Clamp(input.At, DateTimeOffset.UtcNow);
             var allowed = await perms.GetAsync(ctx.UserId!.Value);
@@ -63,9 +63,9 @@ public static partial class TechEndpoints
 
         g.MapPost("/files", async (HttpRequest req, CmmsDbContext db, ITenantContext ctx, PermissionService perms, IFileStorage storage, CancellationToken ct) =>
         {
-            if (!req.HasFormContentType) return Results.Problem(title: "Upload must be multipart/form-data.", statusCode: 400);
+            if (!req.HasFormContentType) return Results.Problem(title: Translator.T("Upload must be multipart/form-data."), statusCode: 400);
             var form = await req.ReadFormAsync(ct);
-            if (!Guid.TryParse(form["clientId"], out var clientId) || clientId == Guid.Empty) return Results.Problem(title: "A file needs an id.", statusCode: 400);
+            if (!Guid.TryParse(form["clientId"], out var clientId) || clientId == Guid.Empty) return Results.Problem(title: Translator.T("A file needs an id."), statusCode: 400);
             if (OtherUser(Guid.TryParse(form["userId"], out var by) ? by : null, ctx) is { } other) return other;
             var at = Clamp(DateTimeOffset.TryParse(form["at"], out var a) ? a : null, DateTimeOffset.UtcNow);
             var signature = form["kind"].ToString() == "signature";
@@ -97,7 +97,14 @@ public static partial class TechEndpoints
     /// Applies a change once per (user, client id): a repeat gets the stored answer. The change and its record commit together;
     /// a rejection rolls the change back and is recorded on its own, so a retry gets the same answer.
     /// </summary>
+    /// <summary>Runs a change once (see <see cref="RunOnceAsync"/>); the answer is kept in English and said in the phone's language.</summary>
     private static async Task<Answer> RunAsync(CmmsDbContext db, ITenantContext ctx, Guid clientId, string type, DateTimeOffset at, Func<Task<Answer>> apply, CancellationToken ct)
+    {
+        var answer = await RunOnceAsync(db, ctx, clientId, type, at, apply, ct);
+        return answer.Message is null ? answer : answer with { Message = Translator.T(answer.Message) };
+    }
+
+    private static async Task<Answer> RunOnceAsync(CmmsDbContext db, ITenantContext ctx, Guid clientId, string type, DateTimeOffset at, Func<Task<Answer>> apply, CancellationToken ct)
     {
         var userId = ctx.UserId!.Value;
         if (await PriorAsync(db, userId, clientId, ct) is { } prior) return prior;

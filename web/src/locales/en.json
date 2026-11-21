@@ -25,7 +25,14 @@
     "insights": "Insights",
     "planning": "Planning"
   },
+  "unit": {
+    "overtime": "overtime",
+    "d": "d",
+    "h": "h",
+    "min": "min"
+  },
   "common": {
+    "perPage": "Per page",
     "save": "Save",
     "saveChanges": "Save changes",
     "cancel": "Cancel",
@@ -74,7 +81,10 @@
     "selected": "{{count}} selected",
     "version": "Version {{v}}",
     "androidApp": "Android app {{v}}",
-    "refresh": "Refresh"
+    "refresh": "Refresh",
+    "language": "Language",
+    "toggleNavigation": "Show or hide the menu",
+    "toggleColorScheme": "Switch between light and dark"
   },
   "auth": {
     "signIn": "Sign in",
@@ -94,7 +104,8 @@
     "currentPassword": "Current password",
     "newPassword": "New password",
     "passwordChanged": "Password changed",
-    "registrationClosed": "New organizations can't be created on this server. Ask your administrator to invite you."
+    "registrationClosed": "New organizations can't be created on this server. Ask your administrator to invite you.",
+    "passwordRule": "8+ characters with upper, lower case and a digit"
   },
   "status": {
     "Active": "Active",
@@ -183,7 +194,8 @@
     "collapseAll": "Collapse all",
     "locationsCount": "Locations",
     "noSites": "No sites yet",
-    "noSitesBody": "Create your first site to start building the location hierarchy."
+    "noSitesBody": "Create your first site to start building the location hierarchy.",
+    "toggleChildren": "Show or hide sub-locations"
   },
   "assets": {
     "title": "Assets",
@@ -258,7 +270,8 @@
     "years": "{{count}} yrs",
     "workOrders": "Work orders",
     "requestWork": "Request work",
-    "legacyRef": "4CSQL reference"
+    "legacyRef": "4CSQL reference",
+    "mainPhoto": "Main photo"
   },
   "settings": {
     "title": "Settings",
@@ -268,9 +281,14 @@
     "users": "Users",
     "roles": "Roles & permissions",
     "terminology": "Terminology",
-    "terminologyHint": "Rename hierarchy levels to match how your teams talk.",
+    "terminologyHint": "Rename hierarchy levels to match how your teams talk, in English and in Arabic.",
     "singular": "Singular",
     "plural": "Plural",
+    "levels": {
+      "site": "Site",
+      "location": "Location",
+      "asset": "Asset"
+    },
     "numbering": "Asset numbering",
     "autoNumber": "Generate asset numbers automatically",
     "prefix": "Prefix",
@@ -346,7 +364,10 @@
     "hours": "hours",
     "days": "days",
     "dailyCapacityHours": "Working hours per technician per day",
-    "dailyCapacityHint": "Used by the planning board to show who is overloaded."
+    "dailyCapacityHint": "Used by the planning board to show who is overloaded.",
+    "defaultLanguage": "Default language",
+    "defaultLanguageHint": "For people who haven't chosen one, and for e-mails to suppliers. Each person can choose their own from their name's menu.",
+    "currencyHint": "ISO code, e.g. USD, EGP, AED"
   },
   "audit": {
     "Created": "created this record",
@@ -717,7 +738,10 @@
     "openWorkOrders": "Open work orders",
     "showing": "Showing",
     "activeAndPaused": "active and paused",
-    "saveFirst": "Save your changes first"
+    "saveFirst": "Save your changes first",
+    "unitPlaceholder": "h, km, cycles, °C",
+    "autoPlaceholder": "Auto",
+    "nextReadingPlaceholder": "current + interval"
   },
   "txType": {
     "Receipt": "Receipt",
@@ -986,7 +1010,8 @@
     "sendTitle": "E-mail this order to the supplier?",
     "sendBody": "Send {{number}} to {{email}}? Replies come back to you.",
     "sentTo": "Order e-mailed to {{email}}",
-    "noSupplierEmail": "This supplier has no e-mail address. Add one on the supplier first."
+    "noSupplierEmail": "This supplier has no e-mail address. Add one on the supplier first.",
+    "termsPlaceholder": "Net 30"
   },
   "rep": {
     "title": "Reports",

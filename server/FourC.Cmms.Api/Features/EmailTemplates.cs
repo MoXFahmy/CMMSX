@@ -28,7 +28,7 @@ public sealed record RequestFacts(string Number, string Title, string Priority, 
 public static class EmailTemplates
 {
     public static EmailContent Assigned(string org, WorkOrderFacts w, string? link, bool pm) => Layout(org,
-        $"{(pm ? "PM work" : "Work order")} {w.Number}: {w.Title}",
+        pm ? $"PM work {w.Number}: {w.Title}" : $"Work order {w.Number}: {w.Title}",
         pm ? "Preventive maintenance has been assigned to you" : "A work order has been assigned to you",
         WorkOrderLines(w), w.Description, link, "Open the work order");
 
@@ -74,19 +74,20 @@ public static class EmailTemplates
     public static EmailContent PurchaseOrder(string org, PoDocument po)
     {
         var table = new StringBuilder("<table role=\"presentation\" style=\"width:100%;border-collapse:collapse;margin:8px 0 16px;font-size:14px\">");
-        table.Append("<tr style=\"background:#e9edf1\"><th align=\"left\" style=\"padding:6px\">#</th><th align=\"left\" style=\"padding:6px\">Item</th>"
-            + "<th align=\"right\" style=\"padding:6px\">Qty</th><th align=\"right\" style=\"padding:6px\">Unit price</th><th align=\"right\" style=\"padding:6px\">Total</th></tr>");
+        var (start, end) = Translator.CurrentLanguage == "ar" ? ("right", "left") : ("left", "right");
+        table.Append($"<tr style=\"background:#e9edf1\"><th align=\"{start}\" style=\"padding:6px\">#</th><th align=\"{start}\" style=\"padding:6px\">{EmailText.Html(Translator.T("Item"))}</th>"
+            + $"<th align=\"{end}\" style=\"padding:6px\">{EmailText.Html(Translator.T("Qty"))}</th><th align=\"{end}\" style=\"padding:6px\">{EmailText.Html(Translator.T("Unit price"))}</th><th align=\"{end}\" style=\"padding:6px\">{EmailText.Html(Translator.T("Total"))}</th></tr>");
         var text = new StringBuilder();
         foreach (var l in po.Lines)
         {
             table.Append($"<tr><td style=\"padding:6px;border-top:1px solid #d3dae1\">{l.Number}</td><td style=\"padding:6px;border-top:1px solid #d3dae1\">{EmailText.Html(l.Description)}</td>"
-                + $"<td align=\"right\" style=\"padding:6px;border-top:1px solid #d3dae1\">{EmailText.Html(l.Quantity)}</td><td align=\"right\" style=\"padding:6px;border-top:1px solid #d3dae1\">{EmailText.Html(l.UnitPrice)}</td>"
-                + $"<td align=\"right\" style=\"padding:6px;border-top:1px solid #d3dae1\">{EmailText.Html(l.Total)}</td></tr>");
+                + $"<td align=\"{end}\" style=\"padding:6px;border-top:1px solid #d3dae1\">{EmailText.Html(l.Quantity)}</td><td align=\"{end}\" style=\"padding:6px;border-top:1px solid #d3dae1\">{EmailText.Html(l.UnitPrice)}</td>"
+                + $"<td align=\"{end}\" style=\"padding:6px;border-top:1px solid #d3dae1\">{EmailText.Html(l.Total)}</td></tr>");
             text.AppendLine($"{l.Number}. {l.Description} — {l.Quantity} × {l.UnitPrice} = {l.Total}");
         }
         foreach (var (label, value) in po.Totals)
         {
-            table.Append($"<tr><td colspan=\"4\" align=\"right\" style=\"padding:6px\">{EmailText.Html(label)}</td><td align=\"right\" style=\"padding:6px\">{EmailText.Html(value)}</td></tr>");
+            table.Append($"<tr><td colspan=\"4\" align=\"{end}\" style=\"padding:6px\">{EmailText.Html(label)}</td><td align=\"{end}\" style=\"padding:6px\">{EmailText.Html(value)}</td></tr>");
             text.AppendLine($"{label}: {value}");
         }
         table.Append("</table>");
@@ -97,29 +98,36 @@ public static class EmailTemplates
     }
 
     private static (string, string?)[] WorkOrderLines(WorkOrderFacts w) =>
-        [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority), ("Due", w.DueDate?.ToString("d MMM yyyy")), ("Where", w.Place)];
+        [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority), ("Due", w.DueDate is { } d ? Translator.Date(d) : null), ("Where", w.Place)];
 
     /// <summary>Builds both bodies. Facts with no value are left out.</summary>
     public static EmailContent Layout(string org, string subject, string heading, IEnumerable<(string Label, string? Value)> facts, string? paragraph,
         string? link, string linkText, string? extraHtml = null, string? extraText = null)
     {
-        var rows = facts.Where(f => !string.IsNullOrWhiteSpace(f.Value)).ToList();
+        // In the language set for this recipient (EmailOutbox): fixed words translated, people's own text left as typed.
+        subject = Translator.T(subject); heading = Translator.T(heading); linkText = Translator.T(linkText);
+        paragraph = paragraph is null ? null : Translator.T(paragraph);
+        var rtl = Translator.CurrentLanguage == "ar";
+        var rows = facts.Where(f => !string.IsNullOrWhiteSpace(f.Value)).Select(f => (Label: Translator.T(f.Label), Value: TranslateFixed(f.Label, f.Value))).ToList();
+        var footer = $"{org} · {Translator.T("Change your e-mail settings in CMX.")}";
         var h = new StringBuilder();
-        h.Append("<!doctype html><html><body style=\"margin:0;padding:24px;background:#f4f6f8;font-family:Segoe UI,Arial,sans-serif;color:#17212b\">");
+        h.Append(rtl
+            ? "<!doctype html><html dir=\"rtl\" lang=\"ar\"><body dir=\"rtl\" style=\"margin:0;padding:24px;background:#f4f6f8;font-family:Segoe UI,Tahoma,Arial,sans-serif;color:#17212b;text-align:right\">"
+            : "<!doctype html><html><body style=\"margin:0;padding:24px;background:#f4f6f8;font-family:Segoe UI,Arial,sans-serif;color:#17212b\">");
         h.Append("<table role=\"presentation\" width=\"100%\" style=\"max-width:600px;margin:0 auto;background:#fff;border-radius:8px;border:1px solid #d3dae1\"><tr><td style=\"padding:24px\">");
         h.Append($"<h1 style=\"font-size:20px;margin:0 0 16px\">{EmailText.Html(heading)}</h1>");
         if (rows.Count > 0)
         {
             h.Append("<table role=\"presentation\" style=\"border-collapse:collapse;margin-bottom:16px\">");
             foreach (var (label, value) in rows)
-                h.Append($"<tr><td style=\"padding:4px 16px 4px 0;color:#56636f;vertical-align:top\">{EmailText.Html(label)}</td><td style=\"padding:4px 0\">{EmailText.Html(value)}</td></tr>");
+                h.Append($"<tr><td style=\"padding:{(rtl ? "4px 0 4px 16px" : "4px 16px 4px 0")};color:#56636f;vertical-align:top\">{EmailText.Html(label)}</td><td style=\"padding:4px 0\">{EmailText.Html(value)}</td></tr>");
             h.Append("</table>");
         }
         if (paragraph is { Length: > 0 }) h.Append($"<p style=\"margin:0 0 16px;white-space:pre-wrap\">{EmailText.Html(paragraph)}</p>");
         if (extraHtml is not null) h.Append(extraHtml);
         if (link is not null)
             h.Append($"<p style=\"margin:8px 0 0\"><a href=\"{EmailText.Html(link)}\" style=\"display:inline-block;background:#0b6b88;color:#fff;text-decoration:none;padding:10px 16px;border-radius:6px\">{EmailText.Html(linkText)}</a></p>");
-        h.Append($"</td></tr></table><p style=\"max-width:600px;margin:12px auto 0;font-size:12px;color:#56636f\">{EmailText.Html(org)} · Change your e-mail settings in CMX.</p></body></html>");
+        h.Append($"</td></tr></table><p style=\"max-width:600px;margin:12px auto 0;font-size:12px;color:#56636f\">{EmailText.Html(footer)}</p></body></html>");
 
         var t = new StringBuilder();
         t.AppendLine(heading).AppendLine();
@@ -127,7 +135,10 @@ public static class EmailTemplates
         if (paragraph is { Length: > 0 }) t.AppendLine().AppendLine(paragraph);
         if (extraText is not null) t.AppendLine().AppendLine(extraText);
         if (link is not null) t.AppendLine().AppendLine($"{linkText}: {link}");
-        t.AppendLine().AppendLine($"{org} · Change your e-mail settings in CMX.");
+        t.AppendLine().AppendLine(footer);
         return new EmailContent(EmailText.OneLine(subject), h.ToString(), t.ToString());
     }
+
+    /// <summary>Fixed values are translated (a priority such as "High"); names, numbers and text people typed are not.</summary>
+    private static string? TranslateFixed(string label, string? value) => label == "Priority" ? Translator.T(value) : value;
 }

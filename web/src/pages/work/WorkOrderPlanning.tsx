@@ -8,7 +8,7 @@ import { del, post, put } from '@/api/client';
 import type { PlannedPart, WorkOrderDetail } from '@/api/types';
 import { confirmDelete } from '@/components/confirm';
 import { PartPicker, useStores } from '@/components/PartPicker';
-import { fmtMoney, fmtPrice, fmtQty, handleFormError, notifyError, notifySuccess } from '@/components/utils';
+import { fmtMoney, fmtPrice, fmtQty, handleFormError, hoursText, notifyError, notifySuccess } from '@/components/utils';
 
 /** The parts a job needs, planned before anyone goes to the store; what is not yet issued is reserved for it. */
 export function PlannedPartsCard({ w, canPlan, canIssue, onChange, onIssue, currency }: {
@@ -143,9 +143,9 @@ export function PlannedHoursCard({ w, canPlan, onChange, currency }: { w: WorkOr
                 {canPlan
                   ? <NumberInput size="xs" min={0} max={10000} step={0.5} decimalScale={2} suffix=" h" value={hours[a.employeeId] ?? ''} aria-label={t('plan.hours')}
                       onChange={(x) => setHours((h) => ({ ...h, [a.employeeId]: x }))} />
-                  : <Text fz="sm" ta="right">{a.plannedHours != null ? `${a.plannedHours} h` : '—'}</Text>}
+                  : <Text fz="sm" ta="right">{a.plannedHours != null ? hoursText(a.plannedHours) : '—'}</Text>}
               </Table.Td>
-              <Table.Td ta="right" c="dimmed" fz="sm">{a.hourlyRate != null ? `${fmtMoney(a.hourlyRate, currency)}/h` : '—'}</Table.Td>
+              <Table.Td ta="right" c="dimmed" fz="sm">{a.hourlyRate != null ? `${fmtMoney(a.hourlyRate, currency)}/${t('unit.h')}` : '—'}</Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>
@@ -159,7 +159,7 @@ export function PlanVsActualCard({ w, currency }: { w: WorkOrderDetail; currency
   const { t } = useTranslation();
   const money = (x: number) => fmtMoney(x, currency);
   const rows: { label: string; planned: number | null; actual: number; fmt: (x: number) => string; bold?: boolean }[] = [
-    { label: t('plan.laborHours'), planned: w.planned.laborHours, actual: w.totals.laborHours, fmt: (x) => `${fmtQty(x)} h` },
+    { label: t('plan.laborHours'), planned: w.planned.laborHours, actual: w.totals.laborHours, fmt: (x) => hoursText(fmtQty(x)) },
     { label: t('plan.laborCost'), planned: w.planned.laborCost, actual: w.totals.laborCost, fmt: money },
     { label: t('plan.parts'), planned: w.planned.partsCost, actual: w.totals.partsCost, fmt: money },
     { label: t('plan.other'), planned: null, actual: w.totals.otherCost, fmt: money },

@@ -8,7 +8,7 @@ import './styles.css';
 import './i18n';
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import { MantineProvider } from '@mantine/core';
+import { DirectionProvider, MantineProvider } from '@mantine/core';
 import { Notifications } from '@mantine/notifications';
 import { ModalsProvider } from '@mantine/modals';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
@@ -16,6 +16,12 @@ import { BrowserRouter } from 'react-router';
 import { theme } from './theme';
 import { AuthProvider } from './auth/AuthContext';
 import { App } from './App';
+import { LocaleProviders } from './LocaleProviders';
+import { applyLanguage, directionOf, savedLanguage } from './language';
+
+// The language last used on this device, until the account says otherwise (sign-in page, technician app offline).
+const startLanguage = savedLanguage();
+applyLanguage(startLanguage);
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -25,7 +31,9 @@ const queryClient = new QueryClient({
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
+    <DirectionProvider initialDirection={directionOf(startLanguage)} detectDirection={false}>
     <MantineProvider theme={theme} defaultColorScheme="light">
+      <LocaleProviders>
       <QueryClientProvider client={queryClient}>
         <ModalsProvider>
           <Notifications position="top-right" />
@@ -36,6 +44,8 @@ createRoot(document.getElementById('root')!).render(
           </BrowserRouter>
         </ModalsProvider>
       </QueryClientProvider>
+      </LocaleProviders>
     </MantineProvider>
+    </DirectionProvider>
   </StrictMode>,
 );
