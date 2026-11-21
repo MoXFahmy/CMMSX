@@ -145,6 +145,7 @@ api.MapPeopleEndpoints();
 api.MapImportEndpoints();
 api.MapWorkRequestEndpoints();
 api.MapWorkOrderEndpoints();
+api.MapDowntimeEndpoints();
 api.MapPlanningEndpoints();
 api.MapPlanningBoardEndpoints();
 api.MapPmEndpoints();

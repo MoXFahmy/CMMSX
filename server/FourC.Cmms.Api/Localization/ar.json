@@ -644,5 +644,6 @@
  "Cut off at 5,000 rows: {0}.": "قُطعت عند 5,000 صف: {0}.",
  "{0} must be a number, with . for decimals and no thousands separators.": "يجب أن يكون {0} رقمًا، باستخدام . للكسور العشرية ودون فواصل للآلاف.",
  "Not saved: fix row {0} of this task first.": "لم يُحفظ: صحّح الصف {0} لهذه المهمة أولًا.",
- "Steps": "الخطوات"
+ "Steps": "الخطوات",
+ "The asset isn't down.": "الأصل ليس متوقفًا."
 }
