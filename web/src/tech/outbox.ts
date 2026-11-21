@@ -63,7 +63,7 @@ export async function drain(
   send: (c: QueuedChange, file?: Blob) => Promise<SendResult>,
   now: () => number,
   onNote?: (c: QueuedChange, message: string) => void,
-  options: { ignoreBackoff?: boolean } = {},
+  options: { ignoreBackoff?: boolean; onSent?: (c: QueuedChange) => void } = {},
 ): Promise<DrainResult> {
   const queue = (await store.list(userId)).filter((c) => c.userId === userId).sort((a, b) => a.seq - b.seq);
   let sent = 0;
@@ -80,6 +80,7 @@ export async function drain(
         await store.remove(c.clientId);
         if (c.fileKey) await store.removeFile(c.fileKey);
         if (r.message) onNote?.(c, r.message);
+        options.onSent?.(c);
         sent++;
         break;
       case 'rejected':

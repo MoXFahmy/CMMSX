@@ -77,7 +77,8 @@ public static partial class TechEndpoints
                 var file = form.Files.GetFile("file") ?? throw new Rejected("The file is missing.");
                 if (!ImageTypes.Contains(AttachmentEndpoints.ContentTypeOf(file.FileName, file.ContentType)))
                     throw new Rejected($"{file.FileName} isn't a photo (JPEG, PNG or WebP).");
-                if (file.Length is 0 or > MaxImageBytes) throw new Rejected($"{file.FileName} is larger than 10 MB.");
+                if (file.Length == 0) throw new Rejected($"{file.FileName} is empty.");
+                if (file.Length > MaxImageBytes) throw new Rejected($"{file.FileName} is larger than 10 MB.");
                 var att = await AttachmentEndpoints.SaveAttachmentAsync(db, storage, "WorkOrder", w.Id, file, ct);
                 if (signature)
                 {
@@ -187,8 +188,13 @@ public static partial class TechEndpoints
                 RequireNotClosed(w);
                 var p = Read<LaborPayload>(input.Payload, options);
                 var me = await EmployeeAsync(db, ctx, ct) ?? throw new Rejected("Your account isn't linked to an employee.");
+                // Like the changes themselves: hours for the last 30 days (a day of slack for time zones), never for days to come.
+                var day = DateOnly.FromDateTime(at.UtcDateTime);
+                var workDate = p.WorkDate ?? day;
+                if (workDate < day.AddDays(-OldestChange.Days) || workDate > day.AddDays(1))
+                    throw new Rejected("The work date must be within the last 30 days.");
                 var (v, _) = await WorkOrderEndpoints.AddLaborAsync(db, ctx, w.Id,
-                    new WorkOrderEndpoints.LaborInput(me.EmployeeId, p.WorkDate ?? DateOnly.FromDateTime(at.UtcDateTime), p.Hours, p.OvertimeHours, p.Notes), ct, at);
+                    new WorkOrderEndpoints.LaborInput(me.EmployeeId, workDate, p.Hours, p.OvertimeHours, p.Notes), ct, at);
                 Ensure(v);
                 await db.SaveChangesAsync(ct);
                 return new Answer("done");

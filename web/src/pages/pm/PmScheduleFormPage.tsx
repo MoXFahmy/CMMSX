@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { ActionIcon, Anchor, Badge, Button, Card, Center, Checkbox, Grid, Group, Loader, NumberInput, Radio, SegmentedControl, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { ActionIcon, Anchor, Badge, Button, Card, Center, Checkbox, Grid, Group, Loader, NumberInput, Radio, SegmentedControl, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { useDebouncedValue } from '@mantine/hooks';
@@ -69,7 +69,8 @@ export function PmScheduleFormPage() {
 
   useEffect(() => {
     if (s) {
-      form.setValues({
+      const saved: V = {
+        ...blank,
         code: s.code, name: s.name, description: s.description ?? '', siteId: s.siteId, locationId: s.locationId ?? null, assetId: s.assetId ?? null, tradeId: s.tradeId ?? null,
         priority: s.priority, assigneeIds: s.assigneeIds, pmTaskId: s.pmTaskId, extraTasks: s.extraTasks.map((x) => ({ pmTaskId: x.pmTaskId, everyNth: x.everyNth })), type: s.type,
         basis: s.basis, frequency: s.frequency, unit: s.unit, weekOfMonth: s.weekOfMonth ? String(s.weekOfMonth) : '1', dayOfWeek: s.dayOfWeek ?? 'Monday', dayOfMonth: s.dayOfMonth ?? 1,
@@ -77,8 +78,9 @@ export function PmScheduleFormPage() {
         meterTrigger: s.meterTrigger ?? 'Incremental', meterInterval: s.meterInterval ?? '', nextDueReading: s.nextDueReading ?? '', lowerLimit: s.lowerLimit ?? '', upperLimit: s.upperLimit ?? '',
         lowerTaskId: s.lowerTaskId ?? null, upperTaskId: s.upperTaskId ?? null, timeBased: s.timeBased, isActive: s.isActive,
         target: s.assets.length > 0 ? 'several' : s.assetId ? 'asset' : 'location', roundAssets: s.assets,
-      });
-      form.resetDirty();
+      };
+      form.setValues(saved);
+      form.resetDirty(saved); // the saved schedule is the baseline: "unsaved changes" means edits since
     } else if (asset) form.setValues({ ...blank, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id, name: `PM · ${asset.name}` });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [s, asset]);
@@ -111,9 +113,12 @@ export function PmScheduleFormPage() {
         badge={editing && <Badge color={s?.isActive ? 'teal' : 'gray'}>{s?.isActive ? t('common.active') : t('common.inactive')}</Badge>}
         subtitle={editing && s ? `${s.schedule} · ${t('pm.generatedCount', { count: s.generationCount })}` : undefined}
         actions={(editable || canGenerateNext) && <>
-          {canGenerateNext && <Button variant="light" onClick={() => generateNow(s!.id, s!.nextDueDate!, () => Promise.all([
-            qc.invalidateQueries({ queryKey: ['pm-schedule', id] }), qc.invalidateQueries({ queryKey: ['pm-forecast'] }), qc.invalidateQueries({ queryKey: ['work-orders'] })]))}>
-            {t('pm.generateNextNow')}</Button>}
+          {/* Generating reloads the schedule, which would replace edits not saved yet: save them first. */}
+          {canGenerateNext && <Tooltip label={t('pm.saveFirst')} disabled={!form.isDirty()}>
+            <Button variant="light" disabled={form.isDirty()} onClick={() => generateNow(s!.id, s!.nextDueDate!, () => Promise.all([
+              qc.invalidateQueries({ queryKey: ['pm-schedule', id] }), qc.invalidateQueries({ queryKey: ['pm-forecast'] }), qc.invalidateQueries({ queryKey: ['work-orders'] })]))}>
+              {t('pm.generateNextNow')}</Button>
+          </Tooltip>}
           {editable && editing && <Button variant="subtle" color="red" onClick={() => confirmDelete(s!.code, async () => { try { await del(`/pm-schedules/${id}`); await qc.invalidateQueries({ queryKey: ['pm-schedules'] }); navigate('/pm/schedules'); } catch (e) { notifyError(e); } })}>{t('common.delete')}</Button>}
           {editable && <><Button variant="default" onClick={() => navigate(-1)}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{editing ? t('common.saveChanges') : t('common.create')}</Button></>}
         </>} />

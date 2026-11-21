@@ -147,7 +147,7 @@ public static class InventoryEndpoints
             if (search.Clean() is { } s) q = q.Where(p => p.PartNumber.Contains(s) || p.Name.Contains(s) || p.Barcode == s);
             return await q.OrderBy(p => p.PartNumber).Take(30).Select(p => new
             {
-                p.Id, p.PartNumber, p.Name, p.UnitOfMeasure, p.AverageCost, p.LastPurchasePrice, p.IsShelfItem, p.PreferredSupplierId,
+                p.Id, p.PartNumber, p.Name, p.Barcode, p.UnitOfMeasure, p.AverageCost, p.LastPurchasePrice, p.IsShelfItem, p.PreferredSupplierId,
                 OnHand = db.StockLevels.Where(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId)).Sum(l => (decimal?)l.QuantityOnHand) ?? 0,
             }).ToListAsync(ct);
         }).RequirePermission(Permissions.InventoryView);
@@ -241,7 +241,9 @@ public static class InventoryEndpoints
             if (p is null) return Results.NotFound();
             if (await db.StockTransactions.AnyAsync(t => t.PartId == id, ct) || await db.PurchaseOrderLines.AnyAsync(l => l.PartId == id, ct))
                 throw new DomainException("This part has stock or purchasing history. Mark it inactive instead.");
-            if (await db.WorkOrderParts.AnyAsync(l => l.PartId == id, ct) || await db.PmTaskParts.AnyAsync(l => l.PartId == id, ct))
+            // Only work orders and PM tasks still in use count (deleted ones keep their rows but are filtered out of WorkOrders/PmTasks).
+            if (await db.WorkOrderParts.AnyAsync(l => l.PartId == id && db.WorkOrders.Any(w => w.Id == l.WorkOrderId), ct)
+                || await db.PmTaskParts.AnyAsync(l => l.PartId == id && db.PmTasks.Any(x => x.Id == l.PmTaskId), ct))
                 throw new DomainException("This part is planned on work orders or PM tasks. Remove it from them, or mark it inactive instead.");
             await db.StockLevels.Where(l => l.PartId == id).ExecuteDeleteAsync(ct);
             db.Parts.Remove(p);

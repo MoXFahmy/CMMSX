@@ -3,6 +3,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Services;
+using FourC.Cmms.Core.Work;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -356,6 +357,29 @@ public class SlaWorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal((2, 4), (urgent.GetProperty("responseMet").GetInt32(), urgent.GetProperty("responseTotal").GetInt32()));
         // Completion: the completed job (met), the overdue one (missed); the PM job and pending deadlines aren't counted.
         Assert.Equal((1, 2), (urgent.GetProperty("completionMet").GetInt32(), urgent.GetProperty("completionTotal").GetInt32()));
+    }
+
+    [SkippableFact]
+    public async Task Targets_met_report_leaves_out_finished_work_with_no_recorded_times()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        // Imported history: finished, but the old system kept no completion or decision time, so in time or late can't be told.
+        var job = await CreateAsync(o.C, Wo(o.Site));
+        await WithDbAsync(db => db.WorkOrders.IgnoreQueryFilters().Where(w => w.Id == job).ExecuteUpdateAsync(s => s
+            .SetProperty(w => w.Status, WorkOrderStatus.Closed).SetProperty(w => w.CompletedAt, (DateTimeOffset?)null)
+            .SetProperty(w => w.RespondedAt, (DateTimeOffset?)null)
+            .SetProperty(w => w.StartBy, DateTimeOffset.UtcNow.AddHours(-3)).SetProperty(w => w.DueAt, DateTimeOffset.UtcNow.AddHours(-1))));
+        var req = Id(await Ok(await o.C.PostAsJsonAsync("/api/work-requests", new { title = "Old", siteId = o.Site, priority = "Urgent", type = "Corrective" })));
+        await WithDbAsync(db => db.WorkRequests.IgnoreQueryFilters().Where(r => r.Id == req).ExecuteUpdateAsync(s => s
+            .SetProperty(r => r.Status, WorkRequestStatus.Rejected).SetProperty(r => r.DecidedAt, (DateTimeOffset?)null)
+            .SetProperty(r => r.RespondBy, DateTimeOffset.UtcNow.AddHours(-1))));
+
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var report = await Ok(await o.C.GetAsync($"/api/reports/targets-met?from={today.AddDays(-2):yyyy-MM-dd}&to={today.AddDays(2):yyyy-MM-dd}&groupBy=priority"));
+        var urgent = report.GetProperty("rows").EnumerateArray().Single(r => r.GetProperty("priority").GetString() == "Urgent");
+        Assert.Equal(0, urgent.GetProperty("responseTotal").GetInt32());
+        Assert.Equal(0, urgent.GetProperty("completionTotal").GetInt32());
     }
 
     // ---- Final review fixes ----

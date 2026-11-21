@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchMe, Offline, sendChange } from './api';
+import { fetchMe, Offline, refreshProblem, sendChange, ServerError, SignedOut } from './api';
 import type { QueuedChange } from './outbox';
 
 const change = (extra: Partial<QueuedChange> = {}): QueuedChange => ({
@@ -52,5 +52,17 @@ describe('api', () => {
     vi.stubGlobal('navigator', { onLine: false });
     await expect(fetchMe()).rejects.toBeInstanceOf(Offline);
     expect(fetch).not.toHaveBeenCalled();
+  });
+});
+
+describe('refreshProblem', () => {
+  it('says why the jobs could not be refreshed, in the server\'s words', () => {
+    expect(refreshProblem(new Error("Your account isn't linked to an employee. Ask an administrator to link it under People.")))
+      .toBe("Your account isn't linked to an employee. Ask an administrator to link it under People.");
+  });
+  it('tells a server failure apart from no signal', () => {
+    expect(refreshProblem(new ServerError())).toBe('server');
+    expect(refreshProblem(new Offline())).toBeNull();
+    expect(refreshProblem(new SignedOut(false))).toBeNull();
   });
 });

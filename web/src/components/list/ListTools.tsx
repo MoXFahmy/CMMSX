@@ -15,13 +15,14 @@ export const EXPORT_MAX = 10_000;
 
 type Query = Record<string, string | number | boolean | null | undefined | string[]>;
 
-/** What a column puts in the export file, in screen order. */
+/** What a column puts in the export file, in screen order; a field two shown columns both carry goes in once, at its first place. */
 function exportColumns<T>(cols: ListColumn<T>[]): ExportSpec[] {
+  const seen = new Set<string>();
   return cols.flatMap((c) => {
     if (c.export === false) return [];
     const title = typeof c.title === 'string' ? c.title : String(c.accessor);
     return (c.export ?? [{ key: String(c.accessor) }]).map((e) => ({ key: e.key, title: e.title ?? title }));
-  });
+  }).filter((e) => !seen.has(e.key) && !!seen.add(e.key));
 }
 
 /** The address of an export: the list's own query, the format, then one c (key) and t (title) per column. */

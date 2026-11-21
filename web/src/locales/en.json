@@ -328,7 +328,7 @@
     "autoStartWork": "Start work automatically when labour is logged or a checklist step is ticked",
     "autoGeneratePm": "Generate PM work orders automatically (within each schedule's lead time)",
     "pmRules": "Preventive maintenance",
-    "pmRulesHint": "Rules for generating PM work. Leave them empty or off to keep generating every occurrence.",
+    "pmRulesHint": "Rules for generating PM work by date. Leave them empty or off to keep generating every occurrence. Work started by a meter reading doesn't follow them: it is created when the reading is due, one open work order at a time.",
     "pmSkipAssetStatuses": "Don't generate PM work for assets that are",
     "pmNonWorkingDays": "Non-working days (PM work moves to the next working day)",
     "pmNoStacking": "Don't generate new PM work while the previous work order is still open",
@@ -716,7 +716,8 @@
     "lastGenerated": "Last generated",
     "openWorkOrders": "Open work orders",
     "showing": "Showing",
-    "activeAndPaused": "active and paused"
+    "activeAndPaused": "active and paused",
+    "saveFirst": "Save your changes first"
   },
   "txType": {
     "Receipt": "Receipt",
@@ -1289,8 +1290,10 @@
       "allSteps": "Tick every checklist step before completing."
     },
     "notOnPhone": "This isn't on your phone's list (it may be on another site). Try again with a connection.",
+    "openInFullApp": "Open it in the full app",
     "partOnline": "Parts open when you have a connection.",
     "unknownCode": "No asset found for \"{{code}}\".",
+    "unknownCodeOnline": "No asset or part found for \"{{code}}\".",
     "cameraProblem": "The camera couldn't start. Allow camera access, or type the number instead.",
     "scanLabel": "Scan a label",
     "stopCamera": "Stop the camera",
@@ -1312,7 +1315,8 @@
     "signOutWaiting_other": "Your jobs are removed from this phone. {{count}} changes have not been sent yet: they stay on this phone and are sent when you sign in here again.",
     "signOutNeedsSignal": "Signing out needs a connection. Try again when you have signal.",
     "takePhoto": "Camera",
-    "pickPhoto": "Gallery"
+    "pickPhoto": "Gallery",
+    "refreshServerProblem": "The server couldn't send your jobs just now. Your phone keeps working from its copy; try again in a few minutes."
   },
   "labels": {
     "title": "QR labels",

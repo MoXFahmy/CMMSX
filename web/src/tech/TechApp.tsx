@@ -133,7 +133,7 @@ function groupOf(j: TechJob): 'overdue' | 'today' | 'week' | 'later' {
 
 function MyJobsPage() {
   const { t } = useTranslation();
-  const { bundle, queue, lastRefresh } = useTech();
+  const { bundle, queue, lastRefresh, problem } = useTech();
   const [search, setSearch] = useState('');
   const navigate = useNavigate();
   const pending = useMemo(() => new Set(queue.map((c) => c.workOrderId).filter(Boolean)), [queue]);
@@ -144,6 +144,7 @@ function MyJobsPage() {
   const groups = (['overdue', 'today', 'week', 'later'] as const).map((g) => ({ g, items: jobs.filter((j) => groupOf(j) === g) })).filter((x) => x.items.length > 0);
   return (
     <Stack gap="sm">
+      {problem && <Alert color="orange" p="xs">{problem === 'server' ? t('tech.refreshServerProblem') : problem}</Alert>}
       <TextInput leftSection={<IconSearch size={16} />} placeholder={t('tech.searchJobs')} value={search} onChange={(e) => setSearch(e.currentTarget.value)} />
       {groups.length === 0 && <Text c="dimmed" ta="center" py="xl">{t('tech.noJobs')}</Text>}
       {groups.map(({ g, items }) => (
@@ -174,7 +175,7 @@ function MyJobsPage() {
 
 function SyncPage() {
   const { t } = useTranslation();
-  const { queue, bundle, online, lastRefresh, notes, busy, refresh, drainNow, retry, discard } = useTech();
+  const { queue, bundle, online, lastRefresh, notes, busy, problem, refresh, drainNow, retry, discard } = useTech();
   const jobNo = (id?: string) => bundle?.jobs.find((j) => j.id === id)?.number ?? '';
   const sorted = [...queue].sort((a, b) => a.seq - b.seq);
   const confirmDiscard = (c: QueuedChange) => modals.openConfirmModal({
@@ -191,6 +192,7 @@ function SyncPage() {
           </div>
           <Button size="xs" variant="default" leftSection={<IconRefresh size={14} />} loading={busy} onClick={() => { void drainNow(true); void refresh(); }}>{t('tech.refreshNow')}</Button>
         </Group>
+        {problem && <Alert color="orange" mt="xs" p="xs">{problem === 'server' ? t('tech.refreshServerProblem') : problem}</Alert>}
       </Card>
       <Text fz="xs" fw={700} tt="uppercase" c="dimmed">{t('tech.waiting')} · {sorted.length}</Text>
       {sorted.length === 0 && <Text c="dimmed" fz="sm" ta="center" py="md">{t('tech.allSent')}</Text>}

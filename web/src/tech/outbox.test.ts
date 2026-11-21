@@ -35,6 +35,14 @@ describe('drain', () => {
     expect(store.items.size).toBe(0);
   });
 
+  it('tells the view which changes the server took', async () => {
+    const store = memoryStore([change('a', 1), change('b', 2)]);
+    const { send } = answers({ b: { kind: 'rejected', message: 'No', code: undefined } });
+    const took: string[] = [];
+    await drain(store, 'u1', send, () => 0, undefined, { onSent: (c) => took.push(c.clientId) });
+    expect(took).toEqual(['a']);
+  });
+
   it('keeps a rejected change as failed with the reason and goes on to the next', async () => {
     const store = memoryStore([change('a', 1), change('b', 2)]);
     const { sent, send } = answers({ a: { kind: 'rejected', message: 'This work order is cancelled.', code: undefined } });

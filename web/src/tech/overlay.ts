@@ -37,3 +37,14 @@ export function withQueued(job: TechJob, queue: QueuedChange[]): TechJob & { pen
   }
   return { ...j, pendingPhotos, pendingSignatures };
 }
+
+/** A change the server took, with when: the view keeps showing it until a copy of the jobs fetched after that arrives. */
+export type SentChange = QueuedChange & { sentAt: number };
+
+/**
+ * The sent changes still to show on top of the phone's copy: those sent after the copy was fetched (`fetchedAt`, the
+ * time the fetch started). A sent photo isn't shown as waiting; it appears with the job's files on the next copy.
+ */
+export function stillShown(sent: SentChange[], fetchedAt: number | undefined): SentChange[] {
+  return sent.filter((c) => c.type !== 'photo.add' && (fetchedAt === undefined || c.sentAt > fetchedAt));
+}

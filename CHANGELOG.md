@@ -4,6 +4,29 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.5.4] - 2026-11-21
+
+Twelve more small fixes left over from earlier releases.
+
+### Fixed
+- **Targets met report**: finished work imported without a completion or decision time is no longer counted as missed.
+- **Technician app**:
+  - Hours can only be logged for the last 30 days (the date picker and the server agree).
+  - The 30-day sign-in now counts from the last time the app was used (it used to renew only every 15 days or so).
+  - Scanning a label of an asset on another site opens it in the full app when there is signal, instead of saying it
+    isn't on the phone. A part's number or barcode opens the part. Leaving the scan page while the phone asks for camera
+    permission no longer leaves the camera on.
+  - A change that has just been sent no longer looks undone until the next refresh.
+  - When the jobs can't be refreshed for a reason other than missing signal (for example, the account isn't linked to an
+    employee), the app says why.
+  - An empty photo is called empty, not "larger than 10 MB".
+  - The Android app's "Can't reach CMX" page also covers the server being briefly unavailable.
+- **Printing a work order** no longer waits forever when an image doesn't load.
+- **Parts**: a part used only on deleted work orders or PM tasks can now be deleted.
+- **Exports** no longer repeat a field when two shown columns both carry it (parts, purchase orders).
+- **PM**: "Generate next now" waits until schedule changes are saved, so they aren't lost; the PM rules hint says that
+  work started by a meter reading doesn't follow the rules.
+
 ## [0.5.3] - 2026-11-21
 
 ### Changed

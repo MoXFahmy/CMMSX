@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { lookupCode, parseCode } from './scan';
+import { exactPart, lookupCode, parseCode, placeTarget } from './scan';
 import type { TechPlaces } from './types';
 
 const id = '01a1f8ce-0029-7cb1-8581-bffede8b3599';
@@ -30,5 +30,31 @@ describe('lookupCode', () => {
     expect(lookupCode(places, '4006381333931')).toEqual({ kind: 'asset', id: 'a2' }); // the number wins over another asset's barcode
     expect(lookupCode({ ...places, assets: [places.assets[0]] }, '4006381333931')).toEqual({ kind: 'asset', id: 'a1' });
     expect(lookupCode(places, 'nothing')).toBeNull();
+  });
+});
+
+describe('placeTarget', () => {
+  const places = { assets: [{ id: 'a1', assetNumber: 'AST-1', name: 'Pump', siteId: 's1' }], locations: [{ id: 'l1', name: 'Hall', siteId: 's1' }], meters: [] } as unknown as TechPlaces;
+  it('opens what is on the phone in the technician view', () => {
+    expect(placeTarget('asset', 'a1', places, false)).toEqual({ tech: '/tech/place/asset/a1' });
+    expect(placeTarget('location', 'l1', places, false)).toEqual({ tech: '/tech/place/location/l1' });
+  });
+  it('opens an asset from another site in the full app when online', () => {
+    expect(placeTarget('asset', 'zz', places, true)).toEqual({ full: '/assets/zz' });
+    expect(placeTarget('location', 'zz', places, true)).toEqual({ full: '/locations' });
+  });
+  it('says it is not on the phone when offline', () => {
+    expect(placeTarget('asset', 'zz', places, false)).toEqual({ problem: 'notOnPhone' });
+  });
+});
+
+describe('exactPart', () => {
+  const found = [{ id: 'p1', partNumber: 'BRG-6205', barcode: '400123' }, { id: 'p2', partNumber: 'BRG-6205-2RS', barcode: null }];
+  it('matches a part number or barcode exactly, ignoring case', () => {
+    expect(exactPart(found, 'brg-6205')).toBe('p1');
+    expect(exactPart(found, '400123')).toBe('p1');
+  });
+  it('does not pick a part that only contains the code', () => {
+    expect(exactPart(found, 'BRG')).toBeNull();
   });
 });

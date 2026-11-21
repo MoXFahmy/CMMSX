@@ -483,6 +483,34 @@ public class PlannedPartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Fails(await o.C.DeleteAsync($"/api/parts/{part}"), HttpStatusCode.BadRequest);
     }
 
+    [SkippableFact]
+    public async Task A_part_used_only_on_deleted_work_orders_and_tasks_can_be_deleted()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var part = await PartAsync(o.C, "P-1", o.Main);
+        var wo = await WorkOrderAsync(o.C, o.SiteA);
+        await PlanAsync(o.C, wo, part, 1);
+        var task = await TaskAsync(o.C, "T1", [new { partId = part, quantity = 1 }]);
+        (await o.C.DeleteAsync($"/api/work-orders/{wo}")).EnsureSuccessStatusCode();
+        (await o.C.DeleteAsync($"/api/pm-tasks/{task}")).EnsureSuccessStatusCode();
+        Assert.Equal(HttpStatusCode.NoContent, (await o.C.DeleteAsync($"/api/parts/{part}")).StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task Part_lookup_by_barcode_returns_the_barcode()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        await Ok(await o.C.PostAsJsonAsync("/api/parts", new
+        {
+            partNumber = "BRG-1", name = "Bearing", unitOfMeasure = "EA", standardPrice = 10, barcode = "400123", isCritical = false, isShelfItem = false,
+            allowNegativeStock = false, levels = Array.Empty<object>(),
+        }));
+        var found = (await Ok(await o.C.GetAsync("/api/parts/lookup?search=400123"))).EnumerateArray().ToList();
+        Assert.Equal("400123", Assert.Single(found).GetProperty("barcode").GetString());
+    }
+
     // ---- Final review fixes ----
 
     [SkippableFact]

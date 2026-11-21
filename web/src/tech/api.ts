@@ -8,6 +8,16 @@ export class ServerError extends Offline {}
 /** Thrown on 401: the sign-in ended, or (revoked) this device was signed out. */
 export class SignedOut extends Error { constructor(public revoked: boolean) { super('Signed out'); } }
 
+/**
+ * What to tell the technician when refreshing the jobs failed: the server's reason (e.g. the account isn't linked to an
+ * employee), 'server' when the server failed, or null when there is simply no signal or the sign-in ended (shown elsewhere).
+ */
+export function refreshProblem(e: unknown): string | null {
+  if (e instanceof ServerError) return 'server';
+  if (e instanceof Offline || e instanceof SignedOut) return null;
+  return e instanceof Error && e.message ? e.message : 'server';
+}
+
 /** How long to wait for an answer: with one bar of signal a request can hang for minutes; the phone's copy is better. */
 const QUICK_MS = 5_000;
 const SEND_MS = 20_000;

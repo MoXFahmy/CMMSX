@@ -165,6 +165,31 @@ public class TechTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task An_empty_photo_is_called_empty_not_too_large()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var wo = await WorkOrderAsync(o.C, o.SiteA, [o.Me]);
+        var a = await UploadAsync(o.C, Guid.NewGuid(), wo, "photo", [], "image/png", "blank.png");
+        Assert.Equal("rejected", Status(a));
+        Assert.Equal("blank.png is empty.", a.GetProperty("message").GetString());
+    }
+
+    [SkippableFact]
+    public async Task Hours_from_the_phone_must_be_for_the_last_30_days()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var wo = await WorkOrderAsync(o.C, o.SiteA, [o.Me]);
+        var old = await SendAsync(o.C, Guid.NewGuid(), DateTimeOffset.UtcNow, "labor.add", wo, new { workDate = Today.AddDays(-40), hours = 2, overtimeHours = 0 });
+        Assert.Equal("rejected", Status(old));
+        var later = await SendAsync(o.C, Guid.NewGuid(), DateTimeOffset.UtcNow, "labor.add", wo, new { workDate = Today.AddDays(5), hours = 2, overtimeHours = 0 });
+        Assert.Equal("rejected", Status(later));
+        Assert.Equal("done", Status(await SendAsync(o.C, Guid.NewGuid(), DateTimeOffset.UtcNow, "labor.add", wo, new { workDate = Today.AddDays(-30), hours = 1, overtimeHours = 0 })));
+        Assert.Equal(1, (await Ok(await o.C.GetAsync($"/api/work-orders/{wo}"))).GetProperty("labor").GetArrayLength());
+    }
+
+    [SkippableFact]
     public async Task A_step_changed_in_the_office_after_the_technician_is_a_conflict()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

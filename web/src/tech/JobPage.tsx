@@ -21,9 +21,10 @@ export function JobPage() {
   const { t } = useTranslation();
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { bundle, queue, add, online } = useTech();
+  const { bundle, queue, sent, add, online } = useTech();
   const base = bundle?.jobs.find((j) => j.id === id);
-  const job = useMemo(() => (base ? withQueued(base, queue) : undefined), [base, queue]);
+  // Sent changes first (they are older), then those still waiting.
+  const job = useMemo(() => (base ? withQueued(base, [...sent, ...queue]) : undefined), [base, sent, queue]);
   const [hoursOpen, setHoursOpen] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
@@ -165,7 +166,7 @@ function HoursModal({ opened, onClose, onSave }: { opened: boolean; onClose: () 
   return (
     <Modal opened={opened} onClose={onClose} title={t('tech.logHours')}>
       <Stack>
-        <DateInput label={t('tech.date')} value={date} onChange={(v) => setDate(v ? new Date(v) : null)} maxDate={new Date()} valueFormat="DD MMM YYYY" />
+        <DateInput label={t('tech.date')} value={date} onChange={(v) => setDate(v ? new Date(v) : null)} minDate={dayjs().subtract(30, 'day').toDate()} maxDate={new Date()} valueFormat="DD MMM YYYY" />
         <Group grow>
           <NumberInput label={t('tech.hours')} min={0} max={24} step={0.25} decimalScale={2} value={hours} onChange={setHours} data-autofocus />
           <NumberInput label={t('tech.overtime')} min={0} max={24} step={0.25} decimalScale={2} value={ot} onChange={setOt} />
