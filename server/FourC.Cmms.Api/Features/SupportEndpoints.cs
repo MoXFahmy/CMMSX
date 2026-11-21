@@ -234,16 +234,13 @@ public static class AttachmentEndpoints
                 _ => false,
             };
             if (!exists) return Results.NotFound();
-            var saved = new List<object>();
-            foreach (var file in form.Files)
-            {
-                if (file.Length == 0) continue;
-                if (file.Length > MaxSize) throw new DomainException($"{file.FileName} is larger than 25 MB.");
-                var att = await SaveAttachmentAsync(db, storage, entityType, entityId, file, ct);
-                saved.Add(new { att.Id, att.FileName });
-            }
-            await db.SaveChangesAsync(ct);
-            return Results.Ok(saved);
+            // Sizes are checked before anything is stored, so a too-large third file doesn't leave the first two behind.
+            if (form.Files.FirstOrDefault(f => f.Length > MaxSize) is { } tooLarge) throw new DomainException($"{tooLarge.FileName} is larger than 25 MB.");
+            var saved = new List<Attachment>();
+            foreach (var file in form.Files.Where(f => f.Length > 0))
+                saved.Add(await SaveAttachmentAsync(db, storage, entityType, entityId, file, ct));
+            await Housekeeping.SaveOrRemoveFilesAsync(storage, saved.Select(a => a.StorageKey).ToList(), () => db.SaveChangesAsync(ct), ct);
+            return Results.Ok(saved.Select(a => new { a.Id, a.FileName }));
         }).DisableAntiforgery();
 
         g.MapGet("/{id:guid}/content", async (Guid id, bool? download, CmmsDbContext db, IFileStorage storage, HttpContext http, PermissionService perms, CancellationToken ct) =>

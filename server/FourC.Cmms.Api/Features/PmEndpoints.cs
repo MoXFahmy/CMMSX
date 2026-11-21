@@ -125,12 +125,7 @@ public static class PmEndpoints
             db.PmTaskSteps.RemoveRange(x.Steps);
             x.Steps = [];
             ApplyTask(x, input);
-            if (input.Parts is not null)
-            {
-                db.PmTaskParts.RemoveRange(x.Parts);
-                x.Parts = [];
-                SetParts(x, input.Parts);
-            }
+            if (input.Parts is not null) UpdateParts(db, x, input.Parts);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { x.Id });
         }).RequirePermission(Permissions.PmManage);
@@ -372,6 +367,21 @@ public static class PmEndpoints
     private static void SetParts(PmTask x, List<TaskPartInput>? parts)
     {
         foreach (var p in parts ?? []) x.Parts.Add(new PmTaskPart { PmTaskId = x.Id, PartId = p.PartId, Quantity = Math.Round(p.Quantity, 3) });
+    }
+
+    /// <summary>
+    /// Brings a saved task's parts in line with the list: changes quantities in place, removes parts no longer listed and adds
+    /// new ones. (Removing every line and adding the same parts again collides with the one-line-per-part rule.)
+    /// </summary>
+    private static void UpdateParts(CmmsDbContext db, PmTask x, List<TaskPartInput> parts)
+    {
+        var wanted = parts.ToDictionary(p => p.PartId, p => Math.Round(p.Quantity, 3));
+        foreach (var line in x.Parts.ToList())
+        {
+            if (wanted.Remove(line.PartId, out var qty)) line.Quantity = qty;
+            else { x.Parts.Remove(line); db.PmTaskParts.Remove(line); }
+        }
+        foreach (var (partId, qty) in wanted) x.Parts.Add(new PmTaskPart { PmTaskId = x.Id, PartId = partId, Quantity = qty });
     }
 
     private static void ApplyTask(PmTask x, TaskInput i)

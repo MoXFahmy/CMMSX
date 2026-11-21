@@ -64,6 +64,8 @@ APK="mobile/out/CMX-$NEW.apk"
 BUILT_CODE=$(docker run --rm -v "$ROOT/mobile/out":/out:ro cmms-android-build sh -c "aapt2 dump badging /out/CMX-$NEW.apk" \
   | sed -n "s/.*versionCode='\([0-9]*\)'.*/\1/p" | head -1)
 [ "$BUILT_CODE" = "$(version_code "$NEW")" ] || die "APK versionCode $BUILT_CODE, expected $(version_code "$NEW")."
+CERTS=$(docker run --rm -v "$ROOT/mobile/out":/out:ro cmms-android-build sh -c "apksigner verify --print-certs /out/CMX-$NEW.apk" 2>&1 || true)
+cert_matches "$CERTS" "$RELEASE_CERT_SHA256" || die "the APK is not signed with the release certificate (${RELEASE_CERT_SHA256:0:8}…). Check the signing key in Drive › _private."
 trap - ERR
 
 if [ "$MODE" != "--no-bump" ]; then

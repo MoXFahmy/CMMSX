@@ -14,6 +14,26 @@ public class SlaTests
     private static DateTimeOffset U(string iso) => DateTimeOffset.Parse(iso);
 
     [Fact]
+    public void End_of_day_on_cairos_last_thursday_of_october_is_after_the_repeated_hour()
+    {
+        // Summer time ends at midnight: 23:00-23:59 on Thursday 29 October 2026 happens twice. The day ends after the second time.
+        Assert.Equal(U("2026-10-29T21:59:59Z"), Sla.EndOfDay(new DateOnly(2026, 10, 29), Cairo));
+        Assert.Equal(new DateOnly(2026, 10, 29), Sla.LocalDay(U("2026-10-29T21:30:00Z"), Cairo)); // second 23:30
+        Assert.Equal(new DateOnly(2026, 10, 29), Sla.LocalDay(U("2026-10-29T20:30:00Z"), Cairo)); // first 23:30
+    }
+
+    [Fact]
+    public void End_of_day_in_a_zone_that_skips_the_last_half_hour_is_just_before_the_jump()
+    {
+        // A zone whose clocks jump from 23:30 to 00:30 on 1 March 2026: 23:59:59 doesn't exist that day.
+        var rule = TimeZoneInfo.AdjustmentRule.CreateAdjustmentRule(new DateTime(2026, 1, 1), new DateTime(2026, 12, 31), TimeSpan.FromHours(1),
+            TimeZoneInfo.TransitionTime.CreateFixedDateRule(new DateTime(1, 1, 1, 23, 30, 0), 3, 1),
+            TimeZoneInfo.TransitionTime.CreateFixedDateRule(new DateTime(1, 1, 1, 1, 0, 0), 10, 1));
+        var zone = TimeZoneInfo.CreateCustomTimeZone("Test/Jump", TimeSpan.Zero, "Jump", "Jump", "Jump summer", [rule]);
+        Assert.Equal(U("2026-03-01T23:29:59Z"), Sla.EndOfDay(new DateOnly(2026, 3, 1), zone));
+    }
+
+    [Fact]
     public void End_of_day_is_the_last_second_of_the_local_day()
     {
         Assert.Equal(U("2026-11-20T21:59:59Z"), Sla.EndOfDay(new DateOnly(2026, 11, 20), Cairo));

@@ -30,6 +30,15 @@ check "1.0.0 > 0.99.99"           0 version_gt 1.0.0 0.99.99
 check "0.0.0 is not > 0.0.0"      1 version_gt 0.0.0 0.0.0
 check "0.0.1 is not > 0.1.0"      1 version_gt 0.0.1 0.1.0
 
+# The APK must be signed with the release certificate (a lost or swapped key would make phones refuse the update).
+signed_ok='Signer #1 certificate DN: CN=4C Systems
+Signer #1 certificate SHA-256 digest: 8a39a5a907f74fe56ec8f1e9fd3bbc2bc39f4fe0b705b30e8455ecafd019e4b1
+Signer #1 certificate SHA-1 digest: 0000'
+signed_other='Signer #1 certificate SHA-256 digest: 1111111111111111111111111111111111111111111111111111111111111111'
+check "the release certificate is accepted"     0 cert_matches "$signed_ok" 8a39a5a907f74fe56ec8f1e9fd3bbc2bc39f4fe0b705b30e8455ecafd019e4b1
+check "another certificate is refused"          1 cert_matches "$signed_other" 8a39a5a907f74fe56ec8f1e9fd3bbc2bc39f4fe0b705b30e8455ecafd019e4b1
+check "an unsigned APK is refused"              1 cert_matches "DOES NOT VERIFY" 8a39a5a907f74fe56ec8f1e9fd3bbc2bc39f4fe0b705b30e8455ecafd019e4b1
+
 tmp=$(mktemp -d)
 trap 'rm -rf "$tmp"' EXIT
 cat > "$tmp/CHANGELOG.md" <<'EOF'

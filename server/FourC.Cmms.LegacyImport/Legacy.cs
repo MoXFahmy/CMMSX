@@ -160,19 +160,19 @@ public sealed class LegacyData
 }
 
 // ---------- Materials & purchasing ----------
-public sealed class LSubStore { public string SubStoreCode { get; set; } public string? SubStoreDesc { get; set; } public string? SiteCode { get; set; } public int? isDefault { get; set; } }
+public sealed class LSubStore { public string SubStoreCode { get; set; } = ""; public string? SubStoreDesc { get; set; } public string? SiteCode { get; set; } public int? isDefault { get; set; } }
 public sealed class LStock
 {
-    public string StockNo { get; set; } public string? StockDescription { get; set; } public string? UOM { get; set; } public string? AttrGroup { get; set; } public string? Status { get; set; }
+    public string StockNo { get; set; } = ""; public string? StockDescription { get; set; } public string? UOM { get; set; } public string? AttrGroup { get; set; } public string? Status { get; set; }
     public string? Location { get; set; } public double? Price2 { get; set; } public string? Notes { get; set; } public string? SiteCode { get; set; } public int? LeadTime { get; set; }
     public double? AvgPrice { get; set; } public double? StockBalance { get; set; } public double? MinLevel { get; set; } public double? MaxLevel { get; set; } public string? Specification { get; set; }
     public string? Manufacturer { get; set; } public string? SAPNo { get; set; } public string? BarcodeId { get; set; } public short? Criticality { get; set; } public short? ShelfItem { get; set; }
     public bool? allow_negative_value { get; set; } public string? supplier_no { get; set; }
 }
-public sealed class LStockLevel { public string stock_no { get; set; } public string? sub_store_code { get; set; } public double? max_level { get; set; } public double? re_order_level { get; set; } public double? min_level { get; set; } public int? location { get; set; } public double? reorder_qty { get; set; } }
+public sealed class LStockLevel { public string stock_no { get; set; } = ""; public string? sub_store_code { get; set; } public double? max_level { get; set; } public double? re_order_level { get; set; } public double? min_level { get; set; } public int? location { get; set; } public double? reorder_qty { get; set; } }
 public sealed class LSupplier
 {
-    public string SupplierNo { get; set; } public string? SupplierName { get; set; } public string? ContactName { get; set; } public string? Address { get; set; } public string? City { get; set; }
+    public string SupplierNo { get; set; } = ""; public string? SupplierName { get; set; } public string? ContactName { get; set; } public string? Address { get; set; } public string? City { get; set; }
     public string? PostalCode { get; set; } public string? StateOrProvince { get; set; } public string? Country { get; set; } public string? PhoneNumber { get; set; } public string? FaxNumber { get; set; }
     public string? Services { get; set; } public string? AccountNo { get; set; } public short? Active { get; set; } public string? EmailAddress { get; set; }
 }
@@ -182,13 +182,13 @@ public sealed class LReturn { public long ReturnID { get; set; } public string? 
 public sealed class LAdjust { public long AdjustmentID { get; set; } public string? StockNo { get; set; } public DateTime? Date { get; set; } public string? Person { get; set; } public decimal? QtyAdj { get; set; } public string? Comment { get; set; } public double? Price4 { get; set; } public string? SiteCode { get; set; } public string? SubStoreCode { get; set; } public string? BatchNo { get; set; } }
 public sealed class LPrMaster
 {
-    public string pr_no { get; set; } public DateTime? pr_date { get; set; } public DateTime? order_date { get; set; } public int? status_id { get; set; } public int? auth_status { get; set; }
+    public string pr_no { get; set; } = ""; public DateTime? pr_date { get; set; } public DateTime? order_date { get; set; } public int? status_id { get; set; } public int? auth_status { get; set; }
     public string? order_by { get; set; } public string? req_by { get; set; } public string? del_to { get; set; } public decimal? delivery_charges { get; set; } public int? pay_term_id { get; set; }
     public string? supplier_no { get; set; } public DateTime? exp_del_date { get; set; } public string? order_notes { get; set; } public DateTime? cancel_date { get; set; } public string? cancel_notes { get; set; }
     public string? po_no { get; set; } public string? sitecode { get; set; } public string? quote_ref { get; set; } public long? ship_id { get; set; } public double? freight { get; set; } public long? currency_id { get; set; }
     public double? conv_rate { get; set; } public double? gst_percent { get; set; } public double? LumpDiscount { get; set; } public double? TaxRate { get; set; } public double? MiscValue { get; set; }
 }
-public sealed class LPrDetail { public string? pr_id { get; set; } public string po_req_no { get; set; } public string? part_no { get; set; } public string? part_desc { get; set; } public decimal? qty { get; set; } public decimal? unit_price { get; set; } public decimal? disc { get; set; } public string? uom { get; set; } public string? wo_no { get; set; } public decimal? received_qty { get; set; } public string? SubStoreCode { get; set; } }
+public sealed class LPrDetail { public string? pr_id { get; set; } public string po_req_no { get; set; } = ""; public string? part_no { get; set; } public string? part_desc { get; set; } public decimal? qty { get; set; } public decimal? unit_price { get; set; } public decimal? disc { get; set; } public string? uom { get; set; } public string? wo_no { get; set; } public decimal? received_qty { get; set; } public string? SubStoreCode { get; set; } }
 
 public sealed class LegacyMaterials
 {

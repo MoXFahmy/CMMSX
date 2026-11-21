@@ -43,6 +43,11 @@ android {
         }
     }
     buildTypes {
+        // Test builds install beside the real app (their own app id), so a phone can have both.
+        debug {
+            applicationIdSuffix ".debug"
+            versionNameSuffix "-debug"
+        }
         release {
             if (keystoreFile.exists()) { signingConfig signingConfigs.release }
             minifyEnabled false

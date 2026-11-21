@@ -107,6 +107,9 @@ jobs:
           url=$(aws cloudformation describe-stacks --stack-name "$STACK" \
             --query "Stacks[0].Outputs[?OutputKey=='Url'].OutputValue" --output text)
           echo "url=$url" >> "$GITHUB_OUTPUT"
+          cloudfront=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+            --query "Stacks[0].Outputs[?OutputKey=='DistributionDomain'].OutputValue" --output text)
+          echo "cloudfront=$cloudfront" >> "$GITHUB_OUTPUT"
 
       - name: Show why the deployment failed
         if: failure() && steps.deploy.outcome == 'failure'
@@ -136,6 +139,8 @@ jobs:
             echo "**${{ steps.deploy.outputs.url }}**"
             echo ""
             echo "Version \`$(cat VERSION 2>/dev/null || echo unknown)\` · commit \`$COMMIT\` · region \`$AWS_REGION\` · stack \`$STACK\` · database \`$DB_INSTANCE_CLASS\` · sign-up open: \`$ALLOW_REGISTRATION\`"
+            echo ""
+            echo "CloudFront address: \`${{ steps.deploy.outputs.cloudfront }}\`${DOMAIN:+ (own address: \`$DOMAIN\`)} · e-mail: ${MAIL_FROM_ADDRESS:-off}"
           } >> "$GITHUB_STEP_SUMMARY"
 
   tag:

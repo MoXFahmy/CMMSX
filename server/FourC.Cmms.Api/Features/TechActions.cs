@@ -87,7 +87,7 @@ public static partial class TechEndpoints
                     att.SignedBy = by is { Length: > 200 } ? by[..200] : by;
                     att.Description = $"Signature — {att.SignedBy}";
                 }
-                await db.SaveChangesAsync(ct);
+                await Housekeeping.SaveOrRemoveFileAsync(storage, att.StorageKey, () => db.SaveChangesAsync(ct), ct);
                 return new Answer("done");
             }, ct));
         }).DisableAntiforgery();

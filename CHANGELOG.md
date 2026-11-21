@@ -4,6 +4,26 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.5.6] - 2026-11-21
+
+Clean-ups under the hood, and one real fix found by the new tests.
+
+### Fixed
+- **PM tasks**: saving a task that has parts again (for example after renaming it) no longer fails with "changed by
+  someone else".
+- **Devices**: an administrator looking at their own devices under Settings › Users sees which one is "This device".
+- **Files**: a photo or attachment whose record couldn't be saved is removed again instead of being left in storage; an
+  upload with one file over 25 MB stores none of them.
+- **Deadlines**: the end of a day is also right in time zones whose clocks jump forward over midnight.
+
+### Changed
+- Records of handled phone changes are kept for 90 days, then removed.
+- The work order page loads planned parts' stock with two queries in all, instead of two per part.
+- Android: test builds have their own app id (they install beside the real app); the print and save helpers only work
+  on the cloud app's own pages; releases check the APK is signed with the release certificate.
+- CI also runs the web app's unit tests and the Android app's checks on every push.
+- The deploy summary shows both web addresses and whether e-mail is on; the server builds without warnings.
+
 ## [0.5.5] - 2026-11-21
 
 Small fixes people notice, left over from earlier releases.

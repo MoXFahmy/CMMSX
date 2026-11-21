@@ -46,6 +46,24 @@ public static class Planning
         return rows.Select(r => new PlanLine(r.Id, r.WorkOrderId, r.Number, r.DueDate, r.PlannedStart, Reservations.StillReserved(r.Quantity, r.Net, r.Status))).ToList();
     }
 
+    /// <summary>
+    /// <see cref="OpenLinesAsync(CmmsDbContext, Guid, Guid, CancellationToken)"/> for several parts and stores in one query,
+    /// by (part, store).
+    /// </summary>
+    public static async Task<ILookup<(Guid PartId, Guid StoreId), PlanLine>> OpenLinesAsync(CmmsDbContext db, IReadOnlyCollection<Guid> partIds,
+        IReadOnlyCollection<Guid> storeIds, CancellationToken ct)
+    {
+        var rows = await db.WorkOrderParts.AsNoTracking().Where(p => partIds.Contains(p.PartId) && p.StoreId != null && storeIds.Contains(p.StoreId.Value))
+            .Join(db.WorkOrders.Where(w => OpenStatuses.Contains(w.Status)), p => p.WorkOrderId, w => w.Id, (p, w) => new
+            {
+                p.Id, p.PartId, StoreId = p.StoreId!.Value, p.Quantity, WorkOrderId = w.Id, w.Number, w.DueDate, w.PlannedStart, w.Status,
+                Net = -(db.StockTransactions.Where(t => t.WorkOrderId == w.Id && t.PartId == p.PartId && (t.Type == StockTransactionType.Issue || t.Type == StockTransactionType.Return))
+                    .Sum(t => (decimal?)t.Quantity) ?? 0),
+            }).ToListAsync(ct);
+        return rows.ToLookup(r => (r.PartId, r.StoreId),
+            r => new PlanLine(r.Id, r.WorkOrderId, r.Number, r.DueDate, r.PlannedStart, Reservations.StillReserved(r.Quantity, r.Net, r.Status)));
+    }
+
     /// <summary>Net quantity issued to a work order per part (issues less returns), from any store.</summary>
     public static async Task<Dictionary<Guid, decimal>> NetIssuedAsync(CmmsDbContext db, Guid workOrderId, CancellationToken ct) =>
         (await db.StockTransactions.AsNoTracking().Where(t => t.WorkOrderId == workOrderId && (t.Type == StockTransactionType.Issue || t.Type == StockTransactionType.Return))
@@ -63,14 +81,20 @@ public static class Planning
             .ToListAsync(ct);
         if (lines.Count == 0) return [];
         var issued = await NetIssuedAsync(db, w.Id, ct);
+        // Stock and the other open work holding these parts, fetched once for all lines (not two queries per line).
+        var partIds = lines.Where(l => l.StoreId != null).Select(l => l.PartId).Distinct().ToList();
+        var storeIds = lines.Where(l => l.StoreId != null).Select(l => l.StoreId!.Value).Distinct().ToList();
+        var onHand = partIds.Count == 0 ? [] : (await db.StockLevels.AsNoTracking().Where(l => partIds.Contains(l.PartId) && storeIds.Contains(l.StoreId))
+            .Select(l => new { l.PartId, l.StoreId, l.QuantityOnHand }).ToListAsync(ct)).ToDictionary(x => (x.PartId, x.StoreId), x => x.QuantityOnHand);
+        var open = partIds.Count == 0 ? null : await OpenLinesAsync(db, partIds, storeIds, ct);
         var result = new List<PlannedPartView>();
         foreach (var l in lines)
         {
             var net = issued.GetValueOrDefault(l.PartId);
             var reserved = l.StoreId is null ? 0 : Reservations.StillReserved(l.Quantity, net, w.Status);
             var shortQty = 0m;
-            if (l.StoreId is { } store && reserved > 0)
-                shortQty = Reservations.Shortages(await OnHandAsync(db, l.PartId, store, ct), await OpenLinesAsync(db, l.PartId, store, ct)).GetValueOrDefault(l.Id);
+            if (l.StoreId is { } store && reserved > 0 && open is not null)
+                shortQty = Reservations.Shortages(onHand.GetValueOrDefault((l.PartId, store)), open[(l.PartId, store)]).GetValueOrDefault(l.Id);
             result.Add(new PlannedPartView(l.Id, l.PartId, l.PartNumber, l.Name, l.UnitOfMeasure, l.StoreId, l.StoreCode, l.Quantity, net, reserved, shortQty,
                 l.AverageCost, Math.Round(l.Quantity * l.AverageCost, 2), l.Notes));
         }
