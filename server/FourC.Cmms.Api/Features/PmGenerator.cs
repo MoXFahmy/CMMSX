@@ -136,6 +136,9 @@ public static class PmGenerator
         if (s.Assets.Count > 0) round ??= await RoundAssetsAsync(db, s, ct);
         else round = null;
         var assignees = s.AssigneeIds.Count == 0 ? [] : await db.Employees.Where(e => s.AssigneeIds.Contains(e.Id) && e.IsActive).Select(e => e.Id).ToListAsync(ct);
+        // Told about the work (0.12.0): the template's and the PM's recipients who are still active users.
+        var wanted = task.RecipientIds.Concat(s.RecipientIds).Distinct().ToList();
+        var recipients = wanted.Count == 0 ? [] : await db.Users.Where(u => wanted.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId).Select(u => u.Id).ToListAsync(ct);
         var description = string.Join("\n\n", new[] { task.Description ?? s.Description, task.SafetyNotes is { Length: > 0 } sn ? $"Safety: {sn}" : null, trigger }.Where(x => !string.IsNullOrWhiteSpace(x)));
         // The template's own title wins (0.12.0); otherwise the PM's name, with the template's for an every-Nth one.
         var title = task.Title is { Length: > 0 } tt ? tt : task.Id == s.PmTaskId ? s.Name : $"{s.Name} — {task.Name}";
@@ -151,7 +154,7 @@ public static class PmGenerator
             planned.Add(new WorkOrderPart { PartId = tp.PartId, Quantity = tp.Quantity * (round?.Count ?? 1), StoreId = await Planning.DefaultStoreAsync(db, tp.PartId, s.SiteId, ct) });
         return await WorkOrderEndpoints.CreateAsync(db, ctx, input, null, ct, w =>
         {
-            w.PmScheduleId = s.Id; w.PmTaskId = task.Id; w.PmDueDate = due; w.OnlyWhenStopped = s.OnlyWhenStopped;
+            w.PmScheduleId = s.Id; w.PmTaskId = task.Id; w.PmDueDate = due; w.OnlyWhenStopped = s.OnlyWhenStopped; w.RecipientIds = recipients;
             foreach (var p in planned) { p.WorkOrderId = w.Id; db.WorkOrderParts.Add(p); }
             if (round is null) return;
             for (var n = 0; n < round.Count; n++) w.Assets.Add(new WorkOrderAsset { WorkOrderId = w.Id, AssetId = round[n].Id, Sequence = n + 1 });
