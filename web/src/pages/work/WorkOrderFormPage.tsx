@@ -9,7 +9,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { get, post, put } from '@/api/client';
-import { WORK_PRIORITIES, WORK_TYPES, type AssetDetail, type Lookup, type WorkOrderDetail } from '@/api/types';
+import { WORK_PRIORITIES, WORK_TYPES, type AssetDetail, type Lookup, type PmTaskDetail, type PmTaskListItem, type WorkOrderDetail } from '@/api/types';
 import type { AccessWindow } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { LocationPicker } from '@/components/LocationPicker';
@@ -17,7 +17,7 @@ import { AssetPicker } from '@/components/AssetPicker';
 import { EmployeePicker } from '@/components/EmployeePicker';
 import { AssetCheck } from '@/components/AssetCheck';
 import { teamOptions, useTeams } from '@/components/teams';
-import { dateTimeFormat, handleFormError, notifySuccess, toIsoDate } from '@/components/utils';
+import { dateTimeFormat, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 
 type Values = {
   title: string; description: string; type: string; priority: string; siteId: string | null; locationId: string | null; assetId: string | null;
@@ -30,9 +30,11 @@ type Values = {
   accessWindows: AccessWindow[];
   /** Only while the asset is stopped; null on a new work order = take it from the asset. */
   onlyWhenStopped: boolean | null;
+  /** The work template it is made from (0.12.0): its parts, recipients and documents come along. */
+  templateId: string | null;
 };
 const empty: Values = { title: '', description: '', type: 'Corrective', priority: 'Medium', siteId: null, locationId: null, assetId: null, tradeId: null, teamId: null,
-  assigneeIds: [], plannedStart: null, dueAt: null, estimatedHours: '', tasks: [], requestedBy: '', assetIsDown: false, accessWindows: [], onlyWhenStopped: null };
+  assigneeIds: [], plannedStart: null, dueAt: null, estimatedHours: '', tasks: [], requestedBy: '', assetIsDown: false, accessWindows: [], onlyWhenStopped: null, templateId: null };
 const local = (v?: string | null) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : null);
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 
@@ -51,6 +53,25 @@ export function WorkOrderFormPage() {
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
   const form = useForm<Values>({ initialValues: empty });
   const { data: teams } = useTeams(form.values.siteId);
+  const { data: templates } = useQuery({ queryKey: ['pm-tasks'], queryFn: () => get<PmTaskListItem[]>('/pm-tasks'), enabled: !editing });
+  // From a work template (0.12.0): fills what the job is; on save its parts and recipients come along and its documents show.
+  const applyTemplate = async (templateId: string | null) => {
+    form.setFieldValue('templateId', templateId);
+    if (!templateId) return;
+    try {
+      const x = await get<PmTaskDetail>(`/pm-tasks/${templateId}`);
+      const v = form.values;
+      form.setValues({
+        templateId, title: x.title || x.name, description: [x.description, x.safetyNotes ? `${t('pm.safetyNotes')}: ${x.safetyNotes}` : null].filter(Boolean).join('\n\n'),
+        type: x.workType ?? v.type, priority: x.priority ?? v.priority, tradeId: x.tradeId ?? v.tradeId, estimatedHours: x.estimatedHours ?? v.estimatedHours, tasks: x.steps,
+      });
+    } catch (e) { notifyError(e); }
+  };
+  useEffect(() => {
+    const fromTemplate = params.get('templateId');
+    if (!editing && fromTemplate) void applyTemplate(fromTemplate);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     if (wo) {
@@ -85,6 +106,7 @@ export function WorkOrderFormPage() {
       tasks: v.tasks.filter((x) => x.trim()), rowVersion: wo?.rowVersion, assetIsDown: v.assetId ? v.assetIsDown : null,
       // Duplicate: the source's planned parts and hours come along (server side).
       copyPlanFromId: !editing && source ? source.id : undefined,
+      templateId: !editing ? v.templateId : undefined,
       managesTeam: true, // this form shows the team: an empty one clears it
     };
     try {
@@ -109,6 +131,10 @@ export function WorkOrderFormPage() {
         <Grid.Col span={{ base: 12, lg: 8 }}>
           <Stack gap="lg">
             <Card><Stack gap="sm">
+              {!editing && !source && (templates?.length ?? 0) > 0 && (
+                <Select label={t('pm12.fromTemplate')} placeholder={t('pm12.fromTemplatePlaceholder')} clearable searchable value={form.values.templateId} onChange={(x) => void applyTemplate(x)}
+                  data={(templates ?? []).filter((x) => x.isActive).map((x) => ({ value: x.id, label: `${x.code} · ${x.name}` }))} />
+              )}
               <TextInput label={t('wr.whatsWrong')} required data-autofocus {...form.getInputProps('title')} />
               <Textarea label={t('wo.description')} autosize minRows={3} {...form.getInputProps('description')} />
               <SimpleGrid cols={{ base: 1, sm: 3 }}>

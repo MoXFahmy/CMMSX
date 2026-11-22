@@ -17,6 +17,7 @@ import { WorkRequestsPage } from './pages/work/WorkRequestsPage';
 import { PeoplePage } from './pages/people/PeoplePage';
 import { PmPage } from './pages/pm/PmPage';
 import { PmScheduleFormPage } from './pages/pm/PmScheduleFormPage';
+import { TemplatePage } from './pages/pm/TemplatePage';
 import { InventoryPage } from './pages/inventory/InventoryPage';
 import { PartDetailPage } from './pages/inventory/PartDetailPage';
 import { PartFormPage } from './pages/inventory/PartFormPage';
@@ -71,6 +72,7 @@ export function App() {
         <Route path="pm" element={<PmPage />} />
         <Route path="pm/schedules/new" element={<PmScheduleFormPage />} />
         <Route path="pm/schedules/:id" element={<PmScheduleFormPage />} />
+        <Route path="pm/templates/:id" element={<TemplatePage />} />
         <Route path="pm/:tab" element={<PmPage />} />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="inventory/parts/new" element={<PartFormPage />} />

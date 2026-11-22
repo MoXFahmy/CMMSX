@@ -178,6 +178,8 @@ export type WorkOrderListItem = {
   siteId: string; siteName: string; locationId?: string; locationPath?: string; assetId?: string; assetNumber?: string; assetName?: string;
   tradeName?: string; teamName?: string | null; cancelReasonName?: string | null; onlyWhenStopped?: boolean; assignees: string[]; dueDate?: string; createdAt: string; completedAt?: string; isOverdue: boolean;
   dueAt?: string | null; startBy?: string | null; respondedAt?: string | null; responseState: SlaState; completionState: SlaState;
+  /** Its group (0.12.0). */
+  groupId?: string | null; groupNumber?: string | null;
 };
 export type WorkOrderDetail = {
   id: string; number: string; title: string; description?: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
@@ -208,6 +210,10 @@ export type WorkOrderDetail = {
   planned: { laborHours: number; laborCost: number; partsCost: number; totalCost: number };
   dueAt?: string | null; dueFromTarget: boolean; startBy?: string | null; respondedAt?: string | null; sla: SlaView;
   allowedTransitions: WorkOrderStatus[]; isOverdue: boolean; createdAt: string; updatedAt?: string; legacyRef?: string; rowVersion: string;
+  /** 0.12.0: the work template it was made from (documents shown, not copied), its own recipients, its group and the group's comments. */
+  template?: { id: string; code: string; name: string; expectedStopHours?: number | null; documents: { id: string; fileName: string; contentType: string; size: number }[] } | null;
+  recipients?: { id: string; fullName: string }[];
+  group?: { id: string; number: string; title: string; comments: { id: string; body: string; userName?: string; createdAt: string }[] } | null;
 };
 /** A part planned on a work order: what is still reserved for it and how short its store is (stock goes to the earliest due job first). */
 export type PlannedPart = {
@@ -246,19 +252,23 @@ export type AssetOpenWork = {
 };
 
 // ---------------- Preventive maintenance ----------------
-export type PmScheduleType = 'FixedInterval' | 'DayOfWeekInMonth' | 'DateOfMonth' | 'Meter';
+export type PmScheduleType = 'FixedInterval' | 'DayOfWeekInMonth' | 'DateOfMonth' | 'Meter' | 'Calendar';
 export type PmBasis = 'Scheduled' | 'Actual';
 export type FrequencyUnit = 'Day' | 'Week' | 'Month' | 'Year';
 export type MeterTrigger = 'Incremental' | 'Threshold';
 export type DayName = 'Sunday' | 'Monday' | 'Tuesday' | 'Wednesday' | 'Thursday' | 'Friday' | 'Saturday';
-export const PM_TYPES: PmScheduleType[] = ['FixedInterval', 'DayOfWeekInMonth', 'DateOfMonth', 'Meter'];
+export const PM_TYPES: PmScheduleType[] = ['FixedInterval', 'DayOfWeekInMonth', 'DateOfMonth', 'Meter', 'Calendar'];
 export const FREQ_UNITS: FrequencyUnit[] = ['Day', 'Week', 'Month', 'Year'];
 export const DAY_NAMES: DayName[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 
 export type PmTaskListItem = { id: string; code: string; name: string; tradeId?: string; estimatedHours?: number; isActive: boolean; stepCount: number; scheduleCount: number };
 export type PmTaskPart = { partId: string; partNumber: string; partName: string; unitOfMeasure: string; quantity: number; unitCost: number };
 export type PmTaskDetail = { id: string; code: string; name: string; description?: string; tradeId?: string; estimatedHours?: number; safetyNotes?: string; isActive: boolean; steps: string[];
-  parts: PmTaskPart[]; partsCost: number; rowVersion: string };
+  parts: PmTaskPart[]; partsCost: number; rowVersion: string;
+  /** Work template fields (0.12.0). */
+  title?: string | null; workType: WorkType; priority?: WorkPriority | null; recipientIds: string[]; expectedStopHours?: number | null;
+  usedBy: { schedules: { id: string; code: string; name: string; role: 'routine' | 'everyNth' | 'lower' | 'upper' | 'asset' }[];
+    checklists: { id: string; assetId?: string | null; assetCategoryId?: string | null; name?: string | null }[]; openWorkOrders: number } };
 /** Estimated cost of one PM visit: parts at current average cost plus estimated hours at the technicians' average rate. */
 export type VisitCost = { parts: number; labour: number; total: number };
 export type PmScheduleListItem = {
@@ -273,7 +283,7 @@ export type PmScheduleDetail = {
   onlyWhenStopped?: boolean;
   id: string; code: string; name: string; description?: string; siteId: string; locationId?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
   /** A round's assets in order (empty for single-asset/location schedules). */
-  assets: { id: string; assetNumber: string; name: string }[];
+  assets: { id: string; assetNumber: string; name: string; pmTaskId?: string | null }[];
   tradeId?: string; teamId?: string | null; priority: WorkPriority; assigneeIds: string[]; pmTaskId: string; task: { id: string; code: string; name: string };
   extraTasks: { pmTaskId: string; everyNth: number }[]; type: PmScheduleType; basis: PmBasis; frequency: number; unit: FrequencyUnit;
   weekOfMonth?: number; dayOfWeek?: DayName; dayOfMonth?: number; workPeriodDays: number; wholeMonth: boolean; leadDays: number; startDate: string;
@@ -282,14 +292,42 @@ export type PmScheduleDetail = {
   nextDueReading?: number; lowerLimit?: number; upperLimit?: number; lowerTaskId?: string; upperTaskId?: string; timeBased: boolean; isActive: boolean;
   schedule: string; upcoming: string[]; recentWorkOrders: { id: string; number: string; title: string; status: WorkOrderStatus; pmDueDate?: string; completedAt?: string }[];
   visitCost: VisitCost; legacyRef?: string; rowVersion: string;
+  /** 0.12.0 */
+  recipientIds: string[]; skipStatusesOverride?: AssetStatus[] | null; nonWorkingDaysOverride?: DayName[] | null; noStackingOverride?: boolean | null;
+  multiAssetMode: MultiAssetMode; groupPlan: GroupPlan; spreadParts?: number | null; calendarIds: string[]; calendars: { id: string; code: string; name: string }[];
+  extraMeters: { meterId: string; code: string; name: string; unit: string; currentReading?: number | null; interval: number; nextDueReading?: number | null }[];
 };
-export type PmRunResult = { scheduleId: string; code: string; name: string; dueDate?: string; taskName?: string; assetNumber?: string; workOrderId?: string; workOrderNumber?: string; skipped?: string };
+export type MultiAssetMode = 'Round' | 'Group';
+export type GroupPlan = 'Copy' | 'Split';
+export type CalendarKind = 'Interval' | 'Dates';
+export type ScheduleCalendarItem = { id: string; code: string; name: string; kind: CalendarKind; frequency: number; unit: FrequencyUnit; anchorDate?: string | null;
+  dateCount: number; isActive: boolean; scheduleCount: number; next?: string | null };
+export type ScheduleCalendarDetail = Omit<ScheduleCalendarItem, 'next'> & { dates: string[]; next: string[]; usedBy: { id: string; code: string; name: string }[]; rowVersion: string };
+export type OccurrenceList = {
+  dates: { date: string; dueDate: string; templateName?: string; status: 'Planned' | 'Generated'; workOrderId?: string; workOrderNumber?: string; workOrderStatus?: WorkOrderStatus;
+    groupId?: string; groupNumber?: string }[];
+  readings: { reading: number; estimatedDate?: string | null }[];
+};
+export type WorkGroupStatus = 'Open' | 'InProgress' | 'Completed' | 'Closed' | 'Cancelled';
+export type WorkGroupListItem = { id: string; number: string; title: string; siteId: string; siteName: string; pmScheduleId?: string; pmCode?: string; dueDate?: string;
+  plannedStart?: string; status: WorkGroupStatus; total: number; done: number };
+export type WorkGroupDetail = {
+  id: string; number: string; title: string; siteId: string; siteName: string; pmDueDate?: string; plannedStart?: string; dueDate?: string; dueAt?: string; createdAt: string;
+  pm?: { id: string; code: string; name: string } | null; status: WorkGroupStatus;
+  children: { id: string; number: string; title: string; status: WorkOrderStatus; assetId?: string; assetNumber?: string; assetName?: string; dueDate?: string; completedAt?: string;
+    assignees: { employeeId: string; fullName: string }[]; stepsDone: number; stepsTotal: number; laborHours: number; cost: number }[];
+  totals: { laborHours: number; laborCost: number; partsCost: number; otherCost: number; totalCost: number };
+  comments: { id: string; body: string; userName?: string; createdAt: string }[];
+};
+export type PmRunResult = { scheduleId: string; code: string; name: string; dueDate?: string; taskName?: string; assetNumber?: string; workOrderId?: string; workOrderNumber?: string; skipped?: string; groupId?: string; groupNumber?: string };
 export type ForecastItem = { date: string; id: string; code: string; name: string; assetNumber?: string; siteName: string; type: PmScheduleType; taskName: string; overdue: boolean;
   /** The schedule's next occurrence: generating it creates no other work order. */
   isNext: boolean;
   /** Estimated cost of the visit. */
   cost: number };
-export type MeterItem = { id: string; code: string; name: string; assetId: string; assetNumber: string; assetName: string; unit: string; currentReading?: number; lastReadAt?: string; maxDailyIncrement?: number; isActive: boolean; schedules: number };
+export type MeterItem = { id: string; code: string; name: string; assetId: string; assetNumber: string; assetName: string; unit: string; currentReading?: number; lastReadAt?: string; maxDailyIncrement?: number; isActive: boolean; schedules: number;
+  /** Meter propagation (0.12.0): the meter this one follows, and how many follow it. */
+  sourceMeterId?: string | null; sourceCode?: string | null; followers?: number };
 export type MeterReadingItem = { id: string; value: number; readAt: string; note?: string; source: string; byName?: string; workOrderId?: string };
 
 // ---------------- Inventory ----------------

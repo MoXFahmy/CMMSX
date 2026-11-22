@@ -39,6 +39,11 @@ export function notifySuccess(message: string) {
   notifications.show({ color: 'teal', message, autoClose: 3000 });
 }
 
+/** Something worth knowing after a save that still worked (e.g. a PM's assets with no checklist steps). */
+export function notifyWarning(message: string) {
+  notifications.show({ color: 'yellow', message, autoClose: 8000 });
+}
+
 export function notifyError(err: unknown) {
   const message = err instanceof Error ? err.message : 'Something went wrong';
   notifications.show({ color: 'red', title: 'Could not complete the action', message, autoClose: 6000 });
