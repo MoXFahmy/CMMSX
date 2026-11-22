@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Common;
+using FourC.Cmms.Core.Pm;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
@@ -351,11 +352,11 @@ public static partial class TechEndpoints
                 var w = await WorkOrderAsync(db, input.WorkOrderId, ct);
                 RequireNotClosed(w);
                 var p = Read<PmTasksPayload>(input.Payload, options);
-                var steps = await db.PmTaskSteps.AsNoTracking().Where(s => s.PmTaskId == p.PmTaskId).OrderBy(s => s.Sequence).Select(s => s.Description).ToListAsync(ct);
+                var steps = await db.PmTaskSteps.AsNoTracking().Where(s => s.PmTaskId == p.PmTaskId).OrderBy(s => s.Sequence).ToListAsync(ct);
                 if (steps.Count == 0 && !await db.PmTasks.AnyAsync(t => t.Id == p.PmTaskId, ct)) throw new Rejected("This checklist no longer exists.");
                 var next = (await db.WorkOrderTasks.Where(t => t.WorkOrderId == w.Id).MaxAsync(t => (int?)t.Sequence, ct) ?? 0) + 1;
-                foreach (var step in steps)
-                    db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = next++, Description = step.Length > 1000 ? step[..1000] : step });
+                foreach (var step in steps) db.WorkOrderTasks.Add(StepCopy.ToWorkOrder(step, w.Id, next++, null));
+                await Checklists.ResolveMetersAsync(db, w, ct);
                 await db.SaveChangesAsync(ct);
                 return new Answer("done");
             }

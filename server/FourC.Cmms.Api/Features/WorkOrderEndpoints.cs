@@ -2,6 +2,7 @@ using System.Linq.Expressions;
 using System.Security.Claims;
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Common;
+using FourC.Cmms.Core.Pm;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Services;
@@ -685,7 +686,8 @@ public static class WorkOrderEndpoints
     }
 
     public static async Task<WorkOrder> CreateAsync(CmmsDbContext db, ITenantContext ctx, WorkOrderInput input, Guid? requestId, CancellationToken ct,
-        Action<WorkOrder>? configure = null, string? note = null, EmailOutbox? mail = null, bool applyTargets = true, DateTimeOffset? raisedAt = null)
+        Action<WorkOrder>? configure = null, string? note = null, EmailOutbox? mail = null, bool applyTargets = true, DateTimeOffset? raisedAt = null,
+        IReadOnlyList<PmTaskStep>? typedSteps = null)
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var (sequence, prefix) = Numbering.For(settings, await db.Sites.AllSites().AsNoTracking().FirstOrDefaultAsync(s => s.Id == input.SiteId, ct), NumberKind.WorkOrder);
@@ -707,18 +709,20 @@ public static class WorkOrderEndpoints
         {
             w.PmTaskId = template.Id;
             w.RecipientIds = [.. template.RecipientIds];
-            if (input.Tasks is null) input = input with { Tasks = template.Steps.OrderBy(x => x.Sequence).Select(x => x.Description).ToList() };
+            // Typed steps (0.13.0): the template's own, or the form's texts matched to them.
+            typedSteps ??= input.Tasks is null ? template.Steps.OrderBy(x => x.Sequence).ToList() : StepCopy.Match(input.Tasks.Select(x => x.Clean()).OfType<string>(), template.Steps);
             foreach (var tp in template.Parts)
                 db.WorkOrderParts.Add(new WorkOrderPart { WorkOrderId = w.Id, PartId = tp.PartId, Quantity = tp.Quantity, StoreId = await Planning.DefaultStoreAsync(db, tp.PartId, w.SiteId, ct) });
         }
         configure?.Invoke(w);
         db.WorkOrders.Add(w);
         if (mail is not null) { await mail.WorkOrderCreatedAsync(db, ctx, w, ct); await mail.TeamGivenAsync(db, ctx, w, ct); }
-        var seq = 0;
-        foreach (var t in (input.Tasks ?? []).Select(x => x.Clean()).OfType<string>())
-            db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = ++seq, Description = t.Length > 1000 ? t[..1000] : t });
+        var seq = db.ChangeTracker.Entries<WorkOrderTask>().Where(e => e.State == EntityState.Added && e.Entity.WorkOrderId == w.Id).Select(e => e.Entity.Sequence).DefaultIfEmpty(0).Max();
+        foreach (var st in typedSteps ?? (input.Tasks ?? []).Select(x => x.Clean()).OfType<string>().Select(x => new PmTaskStep { Description = x }).ToList())
+            db.WorkOrderTasks.Add(StepCopy.ToWorkOrder(st, w.Id, ++seq, null));
         // Checklists on the asset or its category (0.12.0), after the work order's own steps.
         await AssetChecklists.AppendAsync(db, w, w.Assets.Count > 0 ? w.Assets.OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList() : w.AssetId is { } onAsset ? [onAsset] : [], ct);
+        await Checklists.ResolveMetersAsync(db, w, ct);
         db.WorkOrderStatusChanges.Add(new WorkOrderStatusChange { WorkOrderId = w.Id, ToStatus = WorkOrderStatus.Open, ChangedAt = DateTimeOffset.UtcNow,
             ChangedById = ctx.UserId, ChangedByName = ctx.UserName, Note = note ?? (requestId is null ? null : "Created from work request") });
         await db.SaveChangesAsync(ct);

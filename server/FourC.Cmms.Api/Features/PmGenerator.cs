@@ -258,18 +258,18 @@ public static class PmGenerator
         // The template's own title wins (0.12.0); otherwise the PM's name, with the template's for an every-Nth one.
         var title = task.Title is { Length: > 0 } tt ? tt : task.Id == s.PmTaskId ? s.Name : $"{s.Name} — {task.Name}";
         var start = PmCalendar.NextWorkingDay(due ?? Today, nonWorkingDays ?? []);
-        var steps = task.Steps.OrderBy(x => x.Sequence).Select(x => x.Description).ToList();
+        var steps = task.Steps.OrderBy(x => x.Sequence).ToList();
         // A round's assets with their own template (0.12.0) use it on routine visits; an every-Nth visit uses the Nth template for all.
         var own = round is null || task.Id != s.PmTaskId ? [] : s.Assets.Where(a => a.PmTaskId is not null && round.Any(r => r.Id == a.AssetId))
             .ToDictionary(a => a.AssetId, a => a.PmTaskId!.Value);
         var ownIds = own.Values.Distinct().ToList();
         var ownTemplates = ownIds.Count == 0 ? [] : await db.PmTasks.AsNoTracking().Include(t => t.Steps).Include(t => t.Parts).Where(t => ownIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
-        IReadOnlyList<string> StepsFor(Guid assetId) => own.TryGetValue(assetId, out var tid) && ownTemplates.TryGetValue(tid, out var ot)
-            ? ot.Steps.OrderBy(x => x.Sequence).Select(x => x.Description).ToList() : steps;
+        IReadOnlyList<PmTaskStep> StepsFor(Guid assetId) => own.TryGetValue(assetId, out var tid) && ownTemplates.TryGetValue(tid, out var ot)
+            ? ot.Steps.OrderBy(x => x.Sequence).ToList() : steps;
         // A round's work order has no single asset: it lists the covered assets and repeats the steps for each of them.
         var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description.Length == 0 ? null : description, task.WorkType, task.Priority ?? s.Priority,
             s.SiteId, round is null ? s.LocationId : s.LocationId ?? PmRound.CommonLocationId(round), round is null ? s.AssetId : null, s.TradeId ?? task.TradeId, assignees,
-            start, PmCalendar.DueDate(s, start, nonWorkingDays ?? []), task.EstimatedHours, round is null ? steps : null, TeamId: s.TeamId);
+            start, PmCalendar.DueDate(s, start, nonWorkingDays ?? []), task.EstimatedHours, null, TeamId: s.TeamId);
         // The template's parts come along as planned parts (once per covered asset on a round, from that asset's own template where
         // it has one), reserved in the default store for the site.
         var taskParts = await db.PmTaskParts.AsNoTracking().Where(p => p.PmTaskId == task.Id).Select(p => new { p.PartId, p.Quantity }).ToListAsync(ct);
@@ -289,9 +289,8 @@ public static class PmGenerator
             foreach (var p in planned) { p.WorkOrderId = w.Id; db.WorkOrderParts.Add(p); }
             if (round is null) return;
             for (var n = 0; n < round.Count; n++) w.Assets.Add(new WorkOrderAsset { WorkOrderId = w.Id, AssetId = round[n].Id, Sequence = n + 1 });
-            foreach (var st in PmRound.Steps(round, StepsFor))
-                db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = st.Sequence, AssetId = st.AssetId, Description = st.Description.Length > 1000 ? st.Description[..1000] : st.Description });
-        }, $"Generated from PM {s.Code}", mail, applyTargets: false);
+            foreach (var st in PmRound.TypedSteps(round, StepsFor)) db.WorkOrderTasks.Add(StepCopy.ToWorkOrder(st.Step, w.Id, st.Sequence, st.AssetId));
+        }, $"Generated from PM {s.Code}", mail, applyTargets: false, typedSteps: round is null ? steps : []);
     }
 
     /// <summary>The assets a round's next work order covers (deleted assets drop out through the organization filter; site limits don't apply).</summary>
