@@ -433,7 +433,8 @@
     "New": "New",
     "Approved": "Approved",
     "Rejected": "Rejected",
-    "Cancelled": "Cancelled"
+    "Cancelled": "Cancelled",
+    "Closed": "Closed"
   },
   "transition": {
     "InProgress": "Start work",
@@ -1639,6 +1640,49 @@
     "autoApprove": "Approve automatically",
     "autoApproveHint": "Requests of this type become work orders at once, for the default trade or the team below.",
     "team": "Give the work to team",
-    "teamHint": "Used when the team can work at the request's site."
+    "teamHint": "Used when the team can work at the request's site.",
+    "label": "Request type"
+  },
+  "accessWindows": {
+    "title": "When can the work be done?",
+    "hint": "Times the place is free; leave empty if any time is fine.",
+    "add": "Add a time",
+    "from": "From",
+    "to": "To",
+    "note": "Note",
+    "outside": "Planned outside these times",
+    "onlyWhenStopped": "Only while stopped",
+    "endAfterStart": "A time must end after it starts.",
+    "tooMany": "Give at most 10 times.",
+    "noteTooLong": "A note can be at most 200 characters."
+  },
+  "requestLoop": {
+    "comments": "Comments",
+    "fromRequest": "From the request (read-only)",
+    "noComments": "No comments yet.",
+    "requester": "requester",
+    "writeComment": "Write a comment…",
+    "send": "Send",
+    "accepted": "Accepted",
+    "refused": "Refused",
+    "howDidWeDo": "How was the work?",
+    "yourComment": "Your comment",
+    "refuseNeedsReason": "To refuse, say what is still wrong.",
+    "ratingNeeded": "Choose a rating to accept the work.",
+    "reasonNeeded": "Say what is still wrong to refuse the work.",
+    "accept": "Accept the work",
+    "refuse": "Refuse the work",
+    "thanksAccepted": "Thank you. The request is closed.",
+    "thanksRefused": "Thank you. The work was reopened and the team was told.",
+    "finishedWork": "The finished work",
+    "pleaseAnswer": "The work you asked for is done. Please accept it or refuse it.",
+    "waitingForRequester": "Waiting for the requester to accept or refuse the work.",
+    "keepInformed": "Keep informed",
+    "keepInformedHint": "People who hear about this request and its comments.",
+    "linkGoneTitle": "This link no longer works",
+    "linkGone": "It was already used, or it has expired.",
+    "publicTitle": "Is the work done?",
+    "workDone": "Work done",
+    "answer": "Requester's answer"
   }
 }

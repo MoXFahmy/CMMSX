@@ -30,11 +30,14 @@ import { TechApp } from './tech/TechApp';
 import { LabelsPage } from './pages/labels/LabelsPage';
 import { PlanningPage } from './pages/planning/PlanningPage';
 import { QrRedirect } from './pages/QrRedirect';
+import { RequestFeedbackPage } from './pages/work/RequestFeedbackPage';
 export function App() {
   const { me, loading } = useAuth();
   const location = useLocation();
   // The technician view's start page works without a connection or a sign-in check (the Android app opens here).
   if (location.pathname === '/tech' || location.pathname.startsWith('/tech/')) return <TechApp />;
+  // The requester's single-use answer page works with or without a sign-in (0.10.0).
+  if (location.pathname.startsWith('/feedback/')) return <Routes><Route path="/feedback/:token" element={<RequestFeedbackPage />} /></Routes>;
   if (loading) return <Center h="100vh"><Loader /></Center>;
   if (!me) {
     return (

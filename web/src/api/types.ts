@@ -156,12 +156,12 @@ export type WorkType = 'Corrective' | 'Preventive' | 'Breakdown' | 'Inspection' 
 export type WorkPriority = 'Low' | 'Medium' | 'High' | 'Urgent';
 export type WorkOrderStatus = 'Open' | 'InProgress' | 'OnHold' | 'Completed' | 'Closed' | 'Cancelled';
 export type HoldReason = 'WaitingForParts' | 'WaitingForApproval' | 'WaitingForAccess' | 'WaitingForContractor' | 'Other';
-export type WorkRequestStatus = 'New' | 'Approved' | 'Rejected' | 'Cancelled';
+export type WorkRequestStatus = 'New' | 'Approved' | 'Rejected' | 'Cancelled' | 'Closed';
 export const WORK_TYPES: WorkType[] = ['Corrective', 'Preventive', 'Breakdown', 'Inspection', 'Predictive', 'Project', 'Safety', 'Other'];
 export const WORK_PRIORITIES: WorkPriority[] = ['Low', 'Medium', 'High', 'Urgent'];
 export const WO_STATUSES: WorkOrderStatus[] = ['Open', 'InProgress', 'OnHold', 'Completed', 'Closed', 'Cancelled'];
 export const HOLD_REASONS: HoldReason[] = ['WaitingForParts', 'WaitingForApproval', 'WaitingForAccess', 'WaitingForContractor', 'Other'];
-export const WR_STATUSES: WorkRequestStatus[] = ['New', 'Approved', 'Rejected', 'Cancelled'];
+export const WR_STATUSES: WorkRequestStatus[] = ['New', 'Approved', 'Closed', 'Rejected', 'Cancelled'];
 
 export type Lookup = { id: string; code: string; name: string; color?: string; isActive: boolean };
 export type Employee = {
@@ -218,6 +218,7 @@ export type WorkRequestListItem = {
   locationName?: string; assetId?: string; assetNumber?: string; assetName?: string; requesterName?: string; requiredBy?: string; createdAt: string;
   workOrderId?: string; workOrderNumber?: string;
   respondBy?: string | null; dueAt?: string | null; responseState: SlaState; completionState: SlaState;
+  requestTypeName?: string | null;
 };
 export type WorkRequestDetail = {
   id: string; number: string; title: string; description?: string; status: WorkRequestStatus; priority: WorkPriority; type: WorkType;
@@ -225,6 +226,9 @@ export type WorkRequestDetail = {
   requesterName?: string; requesterEmail?: string; requesterPhone?: string; requiredBy?: string; decisionNote?: string; decidedAt?: string; decidedBy?: string;
   workOrder?: { id: string; number: string; status: WorkOrderStatus }; createdAt: string; createdBy?: string; canCancel: boolean; downtimeEventId?: string | null;
   respondBy?: string | null; dueAt?: string | null; dueFromTarget: boolean; sla: SlaView;
+  /** 0.10.0 */
+  requestTypeId?: string | null; requestType?: { id: string; name: string; defaultTradeId?: string | null } | null; extraRecipients: { id: string; name: string }[];
+  accessWindows: AccessWindow[]; onlyWhenStopped: boolean; awaitingFeedback: boolean; canAnswer: boolean; feedback: RequestFeedback[];
 };
 export type WorkDashboard = {
   open: number; overdue: number; completedLast30: number; requestsAwaiting: number; late: number; dueSoon: number; responseLate: number;
