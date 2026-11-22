@@ -79,6 +79,11 @@ The phone keeps a copy of the parts and stock of the stores at your sites, refre
 - **Hours for the crew:** with *Log hours for others* (Maintenance Managers have it), *Log hours* asks whose hours;
   pick anyone on the job's crew.
 - **Cancel the job:** with permission to close work orders; pick the reason when the organization uses cancel reasons.
+- **Smart checklists (0.13.0):** each step asks for what it needs — OK / Not OK / N/A, a number (with its level shown as you type),
+  a meter reading (pick the meter if the step doesn't name one) or text — all offline. Safety steps come first: the other steps and
+  *Start* wait until they are answered. *All OK* answers the remaining plain steps; the camera button on a step takes a photo for that
+  step (needed before completing when the step asks for one). Follow-up work for a Not OK answer or an alert/alarm reading is raised
+  when the change reaches the office, and shows on the step after the next refresh.
 - **Group jobs (0.12.0):** a job that belongs to a work group shows *Group GRP-00012* and the group's comments
   (read-only; write them on the web). Its due date comes from the group.
 - **Work template documents (0.12.0):** a job made from a work template lists the template's manuals and procedures
