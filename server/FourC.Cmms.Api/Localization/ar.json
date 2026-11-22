@@ -927,5 +927,6 @@
  "Symptom": "العَرَض",
  "Cause": "السبب",
  "Remedy": "المعالجة",
- "with its components": "مع مكوناته"
+ "with its components": "مع مكوناته",
+ "{0} · the first 5,000": "{0} · أول 5,000"
 }

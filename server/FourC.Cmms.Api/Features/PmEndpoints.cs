@@ -949,7 +949,8 @@ public static class PmEndpoints
         public List<Guid> AssigneeIds { get; init; } = [];
     }
 
-    internal static async Task<List<ForecastRow>> ForecastAsync(CmmsDbContext db, DateOnly from, DateOnly to, Guid? siteId, CancellationToken ct)
+    /// <param name="perSchedule">At most this many occurrences per PM; <paramref name="total"/>: at most this many rows, earliest first (0.14.0: the annual plan asks for all).</param>
+    internal static async Task<List<ForecastRow>> ForecastAsync(CmmsDbContext db, DateOnly from, DateOnly to, Guid? siteId, CancellationToken ct, int perSchedule = 400, int total = 5000)
     {
         var q = db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Assets).Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= to);
         if (siteId is not null) q = q.Where(x => x.SiteId == siteId);
@@ -962,7 +963,7 @@ public static class PmEndpoints
         var links = (await db.PmScheduleCalendars.AsNoTracking().Where(x => ids.Contains(x.PmScheduleId)).ToListAsync(ct)).ToLookup(x => x.PmScheduleId, x => x.ScheduleCalendarId);
         var calendars = (await CalendarsAsync(db, links.SelectMany(x => x), ct)).ToDictionary(c => c.Id);
         IReadOnlyList<ScheduleCalendar> CalendarsOf(Guid id) => links[id].Where(calendars.ContainsKey).Select(c => calendars[c]).ToList();
-        return list.SelectMany(i => PmTriggers.Forecast(i.S, to, 400, CalendarsOf(i.S.Id)).Select((d, k) => new ForecastRow
+        return list.SelectMany(i => PmTriggers.Forecast(i.S, to, perSchedule, CalendarsOf(i.S.Id)).Select((d, k) => new ForecastRow
         {
             Date = d, Id = i.S.Id, Code = i.S.Code, Name = i.S.Name, AssetId = i.S.AssetId, AssetNumber = i.AssetNumber, SiteId = i.S.SiteId, SiteName = i.SiteName, Type = i.S.Type,
             TaskName = taskNames.GetValueOrDefault(PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + PmTriggers.PeriodOffset(i.S, k))) ?? i.TaskName,
@@ -971,6 +972,6 @@ public static class PmEndpoints
             // The schedule's next occurrence: generating it creates no other work order.
             IsNext = k == 0,
             AssigneeIds = i.S.AssigneeIds,
-        })).Where(x => x.Date >= from || x.Overdue).OrderBy(x => x.Date).Take(5000).ToList();
+        })).Where(x => x.Date >= from || x.Overdue).OrderBy(x => x.Date).Take(total).ToList();
     }
 }

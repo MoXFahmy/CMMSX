@@ -106,6 +106,7 @@ public class FailureCodeModelTests(ApiFixture fx) : IClassFixture<ApiFixture>
     [InlineData("Cause")]
     [InlineData("Remedy")]
     [InlineData("with its components")]
+    [InlineData("1 Jan 2026 – 31 Dec 2026 · the first 5,000")]
     public void New_texts_have_Arabic(string english) =>
         Assert.NotEqual(english, FourC.Cmms.Api.Infrastructure.Translator.T(english, "ar"));
 }

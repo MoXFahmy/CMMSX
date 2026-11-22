@@ -34,3 +34,13 @@ describe('Arabic wording', () => {
     expect(wrong).toEqual([]);
   });
 });
+
+describe('cause labels (0.14.0)', () => {
+  it('keeps the cause notes apart from the cause code, in both languages', () => {
+    for (const l of [en, ar] as Record<string, Record<string, unknown>>[]) {
+      const wo = l.wo as Record<string, string>, codes = l.codes as Record<string, string>, tech = l.tech as Record<string, string>;
+      expect(wo.causeNotes).not.toBe(codes.cause);
+      expect(tech.cause).not.toBe(tech.failureCode);
+    }
+  });
+});

@@ -72,7 +72,9 @@ public class FailureTreeTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var org = await TreeAsync();
         foreach (var row in Rows(await Ok(await org.Admin.GetAsync($"/api/reports/failure-tree?{Period}"))))
         {
-            var list = await Ok(await org.Admin.GetAsync($"/api/work-orders?pageSize=1&{row.GetProperty("listQuery").GetString()}"));
+            var query = row.GetProperty("listQuery").GetString()!;
+            Assert.StartsWith("tab=all&", query); // the list page shows the All tab, not only open work
+            var list = await Ok(await org.Admin.GetAsync($"/api/work-orders?pageSize=1&{query}"));
             Assert.Equal(row.GetProperty("workOrders").GetInt32(), list.GetProperty("total").GetInt32());
         }
     }

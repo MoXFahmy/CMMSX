@@ -534,7 +534,8 @@ public static class ReportEndpoints
         var counted = items.Where(x => x.DowntimeEventId != null).GroupBy(x => x.DowntimeEventId)
             .Select(g => g.OrderBy(x => x.CompletedAt ?? DateTimeOffset.MaxValue).ThenBy(x => x.CreatedAt).First().Id).ToHashSet();
         decimal Down(Guid id, Guid? stop, decimal? hours) => stop is null || counted.Contains(id) ? hours ?? 0 : 0;
-        var query = $"inFailureTree=true&completedFrom={a.From:yyyy-MM-dd}&completedTo={a.To:yyyy-MM-dd}" + (a.SiteId is { } site ? $"&siteId={site}" : "");
+        // tab=all: the list page shows every status (its default tab is open work only); the API ignores it.
+        var query = $"tab=all&inFailureTree=true&completedFrom={a.From:yyyy-MM-dd}&completedTo={a.To:yyyy-MM-dd}" + (a.SiteId is { } site ? $"&siteId={site}" : "");
         static string Q(Guid? id) => id?.ToString() ?? "none";
         var rows = new List<Dictionary<string, object?>>();
         void Line<T>(int level, string node, List<T> group, Func<T, Guid> id, Func<T, Guid?> stop, Func<T, decimal?> hours, string filter) => rows.Add(Row(
@@ -726,7 +727,9 @@ public static class ReportEndpoints
         static int Rank(string o) => o switch { "missed" => 4, "late" => 3, "planned" => 2, "done" => 1, _ => 0 };
         // A group's work orders are one visit: the worst outcome among them counts.
         var visits = generated.GroupBy(w => (w.Pm, w.Key)).Select(g => (g.Key.Pm, Due: g.Min(x => x.Due), Outcome: g.Select(x => Outcome(x.Due, x.CompletedAt, x.Status)).MaxBy(Rank)!))
-            .Concat((await PmEndpoints.ForecastAsync(db, first, last, a.SiteId, ct)).Where(f => f.Date >= first && f.Date <= last).Select(f => (Pm: f.Id, Due: f.Date, Outcome: "planned")))
+            // Every visit of the year (no 400-per-PM or 5,000-row cap); a visit due before today that was never made is missed.
+            .Concat((await PmEndpoints.ForecastAsync(db, first, last, a.SiteId, ct, perSchedule: 2000, total: int.MaxValue)).Where(f => f.Date >= first && f.Date <= last)
+                .Select(f => (Pm: f.Id, Due: f.Date, Outcome: f.Date < today ? "missed" : "planned")))
             .ToList();
         var ids = visits.Select(v => v.Pm).Distinct().ToList();
         var pms = await db.PmSchedules.AsNoTracking().Where(p => ids.Contains(p.Id))

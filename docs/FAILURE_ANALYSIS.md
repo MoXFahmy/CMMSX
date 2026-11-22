@@ -32,8 +32,9 @@ even if someone made it inactive in the meantime.
   the target, when it was answered or completed, the time taken and *Met*, *Missed* or *Pending*. Group by priority or
   trade for averages and the share met.
 - **PM annual plan** (Work): one row per PM, a column per month of the chosen year. Past months show what happened (done
-  on time, late, missed, cancelled); this month and later ones show what is still planned. A group's work orders for one
-  visit count once.
+  on time, late, missed, cancelled; a visit due before today that was never made counts as missed); this month and later
+  ones show what is still planned. A group's work orders for one visit count once. Meter-based PMs and PMs counted from
+  the last completion show only their next visit, since later ones can't be known yet.
 - **Asset work history** (Assets): every work order raised on one asset in the period (with its components if asked),
   with its codes, labour hours, cost and downtime.
 - **PM compliance** can be grouped by asset category, and **Maintenance costs** shows labour hours and can be grouped by

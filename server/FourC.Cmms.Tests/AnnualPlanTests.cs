@@ -85,6 +85,33 @@ public class AnnualPlanTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Annual_plan_keeps_every_planned_visit()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var asset = await AssetAsync(org.Admin, org.Site, "Line");
+        var task = await TemplateAsync(org.Admin, "DPM");
+        var next = Now.Year + 1;
+        for (var n = 0; n < 14; n++) // 14 daily PMs: 5,110 visits next year
+            await SaveScheduleAsync(org.Admin, Schedule(org.Site, task, new DateOnly(next, 1, 1), asset, extra: new() { ["unit"] = "Day", ["name"] = $"Daily {n}" }));
+        var rows = await PlanAsync(org.Admin, next);
+        Assert.Equal(14, rows.Count);
+        Assert.Equal(14 * 31, rows.Sum(r => Cell(r, 12).Planned));
+    }
+
+    [SkippableFact]
+    public async Task A_past_visit_never_made_counts_as_missed()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var asset = await AssetAsync(org.Admin, org.Site, "Chiller");
+        var due = new DateOnly(Now.Year, Now.Month, 1).AddMonths(-1);
+        var pm = Id(await SaveScheduleAsync(org.Admin, Schedule(org.Site, await TemplateAsync(org.Admin, "OPM"), due, asset)));
+        var row = (await PlanAsync(org.Admin, due.Year)).Single(r => r.GetProperty("pmId").GetGuid() == pm);
+        Assert.Equal((0, 0, 1, 0, 0), Cell(row, due.Month));
+    }
+
+    [SkippableFact]
     public async Task Year_is_checked()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
