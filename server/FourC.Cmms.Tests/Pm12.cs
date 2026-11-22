@@ -38,5 +38,5 @@ public static class Pm12
 
     /// <summary>Generates every schedule's occurrences up to <paramref name="until"/>; returns the results.</summary>
     public static async Task<JsonElement> GenerateAsync(HttpClient c, DateOnly until, params Guid[] schedules) =>
-        await Ok(await c.PostAsJsonAsync("/api/pm/generate", new { until = Iso(until), scheduleIds = schedules }));
+        (await Ok(await c.PostAsJsonAsync("/api/pm/generate", new { until = Iso(until), scheduleIds = schedules }))).GetProperty("results");
 }

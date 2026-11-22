@@ -137,11 +137,12 @@ public static class PmGenerator
         else round = null;
         var assignees = s.AssigneeIds.Count == 0 ? [] : await db.Employees.Where(e => s.AssigneeIds.Contains(e.Id) && e.IsActive).Select(e => e.Id).ToListAsync(ct);
         var description = string.Join("\n\n", new[] { task.Description ?? s.Description, task.SafetyNotes is { Length: > 0 } sn ? $"Safety: {sn}" : null, trigger }.Where(x => !string.IsNullOrWhiteSpace(x)));
-        var title = task.Id == s.PmTaskId ? s.Name : $"{s.Name} — {task.Name}";
+        // The template's own title wins (0.12.0); otherwise the PM's name, with the template's for an every-Nth one.
+        var title = task.Title is { Length: > 0 } tt ? tt : task.Id == s.PmTaskId ? s.Name : $"{s.Name} — {task.Name}";
         var start = PmCalendar.NextWorkingDay(due ?? Today, nonWorkingDays ?? []);
         var steps = task.Steps.OrderBy(x => x.Sequence).Select(x => x.Description).ToList();
         // A round's work order has no single asset: it lists the covered assets and repeats the steps for each of them.
-        var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description.Length == 0 ? null : description, WorkType.Preventive, s.Priority,
+        var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description.Length == 0 ? null : description, task.WorkType, task.Priority ?? s.Priority,
             s.SiteId, round is null ? s.LocationId : s.LocationId ?? PmRound.CommonLocationId(round), round is null ? s.AssetId : null, s.TradeId ?? task.TradeId, assignees,
             start, PmCalendar.DueDate(s, start, nonWorkingDays ?? []), task.EstimatedHours, round is null ? steps : null, TeamId: s.TeamId);
         // The task's parts come along as planned parts (× covered assets on a round), reserved in the default store for the site.

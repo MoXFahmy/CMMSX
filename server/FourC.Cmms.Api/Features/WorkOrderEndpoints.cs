@@ -16,7 +16,7 @@ public static class WorkOrderEndpoints
     public sealed record WorkOrderInput(string Title, string? Description, WorkType Type, WorkPriority Priority, Guid SiteId, Guid? LocationId, Guid? AssetId,
         Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? PlannedStart, DateOnly? DueDate, decimal? EstimatedHours, List<string>? Tasks, string? RowVersion = null,
         string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null, bool? AssetIsDown = null, Guid? TeamId = null,
-        bool? ManagesTeam = null, List<AccessWindow>? AccessWindows = null, bool? OnlyWhenStopped = null);
+        bool? ManagesTeam = null, List<AccessWindow>? AccessWindows = null, bool? OnlyWhenStopped = null, Guid? TemplateId = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
         DateTimeOffset? At = null, Guid? CancelReasonId = null);
@@ -153,6 +153,13 @@ public static class WorkOrderEndpoints
             var labour = Planning.Labour(w.Assignees.Select(a => (a.PlannedHours, a.Employee?.HourlyRate)).ToList(), w.EstimatedHours);
             var plannedParts = planned.Sum(p => p.PlannedCost);
             var pm = w.PmScheduleId is { } pmId ? await db.PmSchedules.AsNoTracking().Where(p => p.Id == pmId).Select(p => new { p.Id, p.Code, p.Name }).FirstOrDefaultAsync(ct) : null;
+            // The work template it was made from (0.12.0): its documents are shown, not copied, so they follow changes.
+            var template = w.PmTaskId is { } tplId ? await db.PmTasks.AsNoTracking().Where(t => t.Id == tplId)
+                .Select(t => new { t.Id, t.Code, t.Name, t.ExpectedStopHours }).FirstOrDefaultAsync(ct) : null;
+            var templateDocuments = template is null ? [] : await db.Attachments.AsNoTracking().Where(a => a.EntityType == "PmTask" && a.EntityId == template.Id)
+                .OrderBy(a => a.FileName).Select(a => new { a.Id, a.FileName, a.ContentType, a.Size }).ToListAsync(ct);
+            var recipients = w.RecipientIds.Count == 0 ? [] : await db.Users.AsNoTracking().Where(u => w.RecipientIds.Contains(u.Id) && u.TenantId == db.CurrentTenantId)
+                .OrderBy(u => u.FullName).Select(u => new { u.Id, u.FullName }).ToListAsync(ct);
             return Results.Ok(new
             {
                 w.Id, w.Number, w.Title, w.Description, w.Type, w.Priority, w.Status, w.HoldReason,
@@ -174,6 +181,8 @@ public static class WorkOrderEndpoints
                     Feedback = feedback, Comments = requestComments,
                 },
                 Pm = pm, w.PmDueDate, w.AccessWindows, w.OnlyWhenStopped,
+                Template = template is null ? null : new { template.Id, template.Code, template.Name, template.ExpectedStopHours, Documents = templateDocuments },
+                Recipients = recipients,
                 Assets = roundAssets,
                 Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName }),
                 Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned, Signatures = signatures,
@@ -659,6 +668,7 @@ public static class WorkOrderEndpoints
         if (AccessWindows.Problem(i.AccessWindows) is { } windows) v.Add("accessWindows", windows);
         var who = (i.AssigneeIds ?? []).Distinct().ToList();
         if (who.Count > 0 && await db.Employees.CountAsync(e => who.Contains(e.Id), ct) != who.Count) v.Add("assigneeIds", "Unknown person.");
+        if (i.TemplateId is { } tpl && !await db.PmTasks.AnyAsync(t => t.Id == tpl, ct)) v.Add("templateId", "Unknown work template.");
         return v;
     }
 
@@ -679,6 +689,16 @@ public static class WorkOrderEndpoints
             w.OnlyWhenStopped = await db.Assets.AllSites().Where(a => a.Id == stopAsset).Select(a => a.OnlyWhenStopped).FirstOrDefaultAsync(ct);
         Deadlines.OnCreate(w, input.DueAt, input.DueDate, settings, raisedAt ?? DateTimeOffset.UtcNow, requestId is not null, applyTargets);
         SyncAssignees(w, input.AssigneeIds);
+        // From a work template (0.12.0): linked (its documents show on the work order), its parts planned, its recipients told.
+        var template = input.TemplateId is { } tid ? await db.PmTasks.AsNoTracking().Include(t => t.Steps).Include(t => t.Parts).FirstOrDefaultAsync(t => t.Id == tid, ct) : null;
+        if (template is not null)
+        {
+            w.PmTaskId = template.Id;
+            w.RecipientIds = [.. template.RecipientIds];
+            if (input.Tasks is null) input = input with { Tasks = template.Steps.OrderBy(x => x.Sequence).Select(x => x.Description).ToList() };
+            foreach (var tp in template.Parts)
+                db.WorkOrderParts.Add(new WorkOrderPart { WorkOrderId = w.Id, PartId = tp.PartId, Quantity = tp.Quantity, StoreId = await Planning.DefaultStoreAsync(db, tp.PartId, w.SiteId, ct) });
+        }
         configure?.Invoke(w);
         db.WorkOrders.Add(w);
         if (mail is not null) { await mail.WorkOrderCreatedAsync(db, ctx, w, ct); await mail.TeamGivenAsync(db, ctx, w, ct); }

@@ -16,7 +16,8 @@ public static class PmEndpoints
 {
     /// <param name="Parts">The parts each generated work order needs; null on an update keeps the task's parts.</param>
     public sealed record TaskInput(string Code, string Name, string? Description, Guid? TradeId, decimal? EstimatedHours, string? SafetyNotes, List<string>? Steps, bool IsActive = true,
-        string? RowVersion = null, List<TaskPartInput>? Parts = null);
+        string? RowVersion = null, List<TaskPartInput>? Parts = null, string? Title = null, WorkType? WorkType = null, WorkPriority? Priority = null,
+        List<Guid>? RecipientIds = null, decimal? ExpectedStopHours = null);
     public sealed record TaskPartInput(Guid PartId, decimal Quantity);
     public sealed record ExtraTaskInput(Guid PmTaskId, int EveryNth);
     public sealed record ScheduleInput(string? Code, string Name, string? Description, Guid SiteId, Guid? LocationId, Guid? AssetId, Guid? TradeId, WorkPriority Priority,
@@ -102,6 +103,7 @@ public static class PmEndpoints
             {
                 x.Id, x.Code, x.Name, x.Description, x.TradeId, x.EstimatedHours, x.SafetyNotes, x.IsActive, Steps = x.Steps.OrderBy(s => s.Sequence).Select(s => s.Description),
                 Parts = parts, PartsCost = Math.Round(parts.Sum(p => p.Quantity * p.UnitCost), 2), RowVersion = Convert.ToBase64String(x.RowVersion),
+                x.Title, x.WorkType, x.Priority, x.RecipientIds, x.ExpectedStopHours, UsedBy = await UsedByAsync(db, id, ct),
             });
         }).RequirePermission(Permissions.PmView);
         t.MapPost("/", async (TaskInput input, CmmsDbContext db, CancellationToken ct) =>
@@ -263,6 +265,31 @@ public static class PmEndpoints
         }).RequirePermission(Permissions.PmManage);
 
         // ---------------- Generation & forecast ----------------
+        // "Make a copy for this PM" (0.12.0): later edits to the shared template no longer reach this PM.
+        g.MapPost("/{id:guid}/own-template", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var sch = await db.PmSchedules.FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (sch is null) return Results.NotFound();
+            var src = await db.PmTasks.AsNoTracking().Include(x => x.Steps).Include(x => x.Parts).FirstAsync(x => x.Id == sch.PmTaskId, ct);
+            var stem = $"{src.Code}-{sch.Code}";
+            stem = stem.Length > 46 ? stem[..46] : stem;
+            var code = stem;
+            for (var n = 2; await db.PmTasks.AnyAsync(x => x.Code == code, ct); n++) code = $"{stem}-{n}";
+            var name = $"{src.Name} ({sch.Code})";
+            var copy = new PmTask
+            {
+                Code = code, Name = name.Length > 300 ? name[..300] : name, Description = src.Description, TradeId = src.TradeId, EstimatedHours = src.EstimatedHours,
+                SafetyNotes = src.SafetyNotes, IsActive = true, Title = src.Title, WorkType = src.WorkType, Priority = src.Priority, RecipientIds = [.. src.RecipientIds],
+                ExpectedStopHours = src.ExpectedStopHours,
+            };
+            foreach (var st in src.Steps.OrderBy(x => x.Sequence)) copy.Steps.Add(new PmTaskStep { PmTaskId = copy.Id, Sequence = st.Sequence, Description = st.Description });
+            foreach (var pt in src.Parts) copy.Parts.Add(new PmTaskPart { PmTaskId = copy.Id, PartId = pt.PartId, Quantity = pt.Quantity });
+            db.PmTasks.Add(copy);
+            sch.PmTaskId = copy.Id;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { PmTaskId = copy.Id, copy.Code });
+        }).RequirePermission(Permissions.PmManage);
+
         var pm = api.MapGroup("/pm").WithTags("PM generation");
         pm.MapGet("/preview", async (DateOnly until, Guid? siteId, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
             await PmGenerator.RunAsync(db, ctx, until, siteId, null, dryRun: true, ct)).RequirePermission(Permissions.PmView);
@@ -357,6 +384,10 @@ public static class PmEndpoints
     {
         var parts = i.Parts ?? [];
         return new Validator().Required("code", i.Code, "Task no.", 50).Required("name", i.Name, "Name", 300).MaxLength("safetyNotes", i.SafetyNotes, "Safety notes", 4000)
+            .MaxLength("title", i.Title, "Title", 300)
+            .When(i.WorkType is { } wt && !Enum.IsDefined(wt), "workType", "Choose a work type.").When(i.Priority is { } pr && !Enum.IsDefined(pr), "priority", "Choose a priority.")
+            .When(i.ExpectedStopHours is < 0 or > 10_000, "expectedStopHours", "Enter between 0 and 10,000 hours.")
+            .When((i.RecipientIds ?? []).Distinct().Count() > 20, "recipientIds", "At most 20 recipients.")
             .When(i.EstimatedHours < 0, "estimatedHours", "Estimate cannot be negative.").When((i.Steps ?? []).Count > 300, "steps", "At most 300 steps.")
             .When(parts.Count > 200, "parts", "At most 200 parts.")
             .When(parts.Any(p => Math.Round(p.Quantity, 3) is <= 0 or > 1_000_000_000m), "parts", "Each part needs a quantity above zero.")
@@ -379,6 +410,8 @@ public static class PmEndpoints
         db.PmTaskSteps.RemoveRange(x.Steps);
         x.Steps = [];
         ApplyTask(x, i);
+        // The new steps already have ids, so EF would take them for existing rows and update nothing (a 409): they are new.
+        foreach (var st in x.Steps) db.Entry(st).State = EntityState.Added;
         if (i.Parts is not null) UpdateParts(db, x, i.Parts);
     }
 
@@ -390,7 +423,37 @@ public static class PmEndpoints
         var parts = i.Parts ?? [];
         var ids = parts.Select(p => p.PartId).Distinct().ToList();
         if (ids.Count > 0 && await db.Parts.CountAsync(p => ids.Contains(p.Id), ct) != ids.Count) v.Add("parts", "Unknown part.");
+        await CheckRecipientsAsync(db, v, i.RecipientIds, ct);
         return v;
+    }
+
+    /// <summary>Recipients must be users of this organization.</summary>
+    internal static async Task CheckRecipientsAsync(CmmsDbContext db, Validator v, List<Guid>? recipientIds, CancellationToken ct)
+    {
+        var who = (recipientIds ?? []).Distinct().ToList();
+        if (who.Count > 0 && await db.Users.CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId, ct) != who.Count) v.Add("recipientIds", "Unknown user.");
+    }
+
+    /// <summary>Where a template is used: the PMs (and how), the asset checklists, and its open work orders.</summary>
+    private static async Task<object> UsedByAsync(CmmsDbContext db, Guid id, CancellationToken ct)
+    {
+        var rows = await db.PmSchedules.AsNoTracking().Where(s => s.PmTaskId == id || s.LowerTaskId == id || s.UpperTaskId == id || s.ExtraTasks.Any(e => e.PmTaskId == id)
+                || s.Assets.Any(a => a.PmTaskId == id))
+            .OrderBy(s => s.Code).Select(s => new { s.Id, s.Code, s.Name, s.PmTaskId, s.LowerTaskId, s.UpperTaskId, Nth = s.ExtraTasks.Any(e => e.PmTaskId == id) }).ToListAsync(ct);
+        var schedules = rows.Select(s => new
+        {
+            s.Id, s.Code, s.Name,
+            Role = s.PmTaskId == id ? "routine" : s.Nth ? "everyNth" : s.LowerTaskId == id ? "lower" : s.UpperTaskId == id ? "upper" : "asset",
+        });
+        var checklists = await db.AssetChecklists.AsNoTracking().Where(c => c.PmTaskId == id)
+            .Select(c => new
+            {
+                c.Id, c.AssetId, c.AssetCategoryId,
+                Name = c.AssetId != null ? db.Assets.Where(a => a.Id == c.AssetId).Select(a => a.AssetNumber + " · " + a.Name).FirstOrDefault()
+                    : db.AssetCategories.Where(k => k.Id == c.AssetCategoryId).Select(k => k.Name).FirstOrDefault(),
+            }).ToListAsync(ct);
+        var open = await db.WorkOrders.CountAsync(w => w.PmTaskId == id && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold), ct);
+        return new { Schedules = schedules, Checklists = checklists, OpenWorkOrders = open };
     }
 
     private static void SetParts(PmTask x, List<TaskPartInput>? parts)
@@ -416,6 +479,10 @@ public static class PmEndpoints
     internal static void ApplyTask(PmTask x, TaskInput i)
     {
         x.Description = i.Description.Clean(); x.TradeId = i.TradeId; x.EstimatedHours = i.EstimatedHours; x.SafetyNotes = i.SafetyNotes.Clean(); x.IsActive = i.IsActive;
+        // Template fields (0.12.0): a type or recipient list left out keeps what is there.
+        x.Title = i.Title.Clean(); x.Priority = i.Priority; x.ExpectedStopHours = i.ExpectedStopHours is { } esh ? Math.Round(esh, 2) : null;
+        if (i.WorkType is { } wt) x.WorkType = wt;
+        if (i.RecipientIds is not null) x.RecipientIds = i.RecipientIds.Distinct().ToList();
         var seq = 0;
         foreach (var step in (i.Steps ?? []).Select(s => s.Clean()).OfType<string>())
             x.Steps.Add(new PmTaskStep { PmTaskId = x.Id, Sequence = ++seq, Description = step.Length > 2000 ? step[..2000] : step });
