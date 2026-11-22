@@ -54,6 +54,10 @@ public static class EmailTemplates
         [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place)],
         notes is { } n ? $"Work done: {n}" : null, link, "View your request");
 
+    public static EmailContent RequestComment(string org, RequestFacts r, string? author, string body, string? link) => Layout(org,
+        $"New comment on request {r.Number}", "A new comment on the request",
+        [("Request", $"{r.Number} · {r.Title}"), ("Where", r.Place), ("From", author), ("Comment", body)], null, link, "View the request");
+
     public static EmailContent PoSubmitted(string org, PoFacts po, string? link) => Layout(org,
         $"Approve purchase order {po.Number} ({po.Total})", "A purchase order is waiting for your approval",
         [("Order", po.Number), ("Supplier", po.Supplier), ("Total", po.Total), ("Requested by", po.RequestedBy)], null, link, "Review the order");

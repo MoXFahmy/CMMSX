@@ -706,5 +706,20 @@
  "Choose the team's site.": "اختر موقع الفريق.",
  "This team has open work or PM schedules at another site.": "لدى هذا الفريق أعمال مفتوحة أو جداول صيانة وقائية في موقع آخر.",
  "Choose people who can see all of this site.": "اختر أشخاصًا يمكنهم رؤية هذا الموقع كاملًا.",
- "This round also covers assets in parts of the site you can't see.": "تغطي هذه الجولة أيضًا أصولًا في أجزاء من الموقع لا يمكنك رؤيتها."
+ "This round also covers assets in parts of the site you can't see.": "تغطي هذه الجولة أيضًا أصولًا في أجزاء من الموقع لا يمكنك رؤيتها.",
+ "View the request": "عرض الطلب",
+ "New comment on request {0}": "تعليق جديد على الطلب {0}",
+ "A new comment on the request": "تعليق جديد على الطلب",
+ "Unknown team.": "فريق غير معروف.",
+ "Choose a request type.": "اختر نوع الطلب.",
+ "Choose the trade or team the work goes to.": "اختر الحرفة أو الفريق الذي يُسند إليه العمل.",
+ "Choose people who can see this place.": "اختر أشخاصًا يمكنهم رؤية هذا المكان.",
+ "Choose at most {0} people.": "اختر {0} أشخاص على الأكثر.",
+ "Choose active people of this organization.": "اختر أشخاصًا نشطين في هذه المؤسسة.",
+ "Unknown action: {0}.": "إجراء غير معروف: {0}.",
+ "Unknown e-mail: {0}.": "رسالة بريد غير معروفة: {0}.",
+ "Unknown recipient: {0}.": "مستلم غير معروف: {0}.",
+ "Give at most {0} access windows.": "أدخل {0} فترات وصول على الأكثر.",
+ "An access window must end after it starts.": "يجب أن تنتهي فترة الوصول بعد بدايتها.",
+ "An access window's note can be at most {0} characters.": "ملاحظة فترة الوصول لا تتجاوز {0} حرفًا."
 }

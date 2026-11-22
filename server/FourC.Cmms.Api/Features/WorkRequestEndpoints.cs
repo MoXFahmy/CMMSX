@@ -21,6 +21,7 @@ public static class WorkRequestEndpoints
     /// <summary>At most this many extra recipients on one request.</summary>
     public const int MaxExtraRecipients = 10;
     public sealed record DecisionInput(string? Note);
+    public sealed record CommentInput(string? Body);
 
     private static readonly Dictionary<string, Expression<Func<WorkRequest, object?>>> SortMap = new(StringComparer.OrdinalIgnoreCase)
     {
@@ -166,6 +167,31 @@ public static class WorkRequestEndpoints
             return Results.Ok(new { r.Id });
         }).RequirePermission(Permissions.RequestsManage);
 
+        // ---- The thread between the requester and maintenance ----
+        g.MapGet("/{id:guid}/comments", async (Guid id, CmmsDbContext db, HttpContext http, PermissionService perms, ITenantContext ctx, CancellationToken ct) =>
+        {
+            if (!await (await VisibleAsync(db, http, perms, ctx)).AnyAsync(r => r.Id == id, ct)) return Results.NotFound();
+            return Results.Ok(await CommentsAsync(db, id, ct));
+        }).RequireAuthorization();
+
+        g.MapPost("/{id:guid}/comments", async (Guid id, CommentInput input, CmmsDbContext db, HttpContext http, PermissionService perms, ITenantContext ctx, EmailOutbox mail,
+            CancellationToken ct) =>
+        {
+            var r = await (await VisibleAsync(db, http, perms, ctx)).FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (r is null) return Results.NotFound();
+            var v = new Validator().Required("body", input.Body, "Comment", 4000);
+            if (!v.IsValid) return v.Problem();
+            var c = new WorkRequestComment
+            {
+                WorkRequestId = r.Id, Body = input.Body!.Trim(), UserId = ctx.UserId, UserName = ctx.UserName, ByRequester = r.CreatedById == ctx.UserId,
+                CreatedAt = DateTimeOffset.UtcNow,
+            };
+            db.WorkRequestComments.Add(c);
+            await mail.RequestCommentAsync(db, ctx, r, c, ct);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { c.Id });
+        }).RequireAuthorization();
+
         g.MapPost("/{id:guid}/cancel", async (Guid id, DecisionInput input, CmmsDbContext db, ITenantContext ctx, HttpContext http, PermissionService perms, CancellationToken ct) =>
         {
             var r = await db.WorkRequests.FirstOrDefaultAsync(x => x.Id == id, ct);
@@ -180,6 +206,13 @@ public static class WorkRequestEndpoints
     }
 
     private static Guid UserId(HttpContext http) => Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
+
+    /// <summary>A request's thread, oldest first (the request page, and read-only on its work order).</summary>
+    internal static async Task<List<RequestCommentView>> CommentsAsync(CmmsDbContext db, Guid requestId, CancellationToken ct) =>
+        await db.WorkRequestComments.AsNoTracking().Where(c => c.WorkRequestId == requestId).OrderBy(c => c.CreatedAt)
+            .Select(c => new RequestCommentView(c.Id, c.Body, c.UserName, c.ByRequester, c.CreatedAt)).ToListAsync(ct);
+
+    public sealed record RequestCommentView(Guid Id, string Body, string? UserName, bool ByRequester, DateTimeOffset CreatedAt);
 
     /// <summary>Runs <paramref name="work"/> in a transaction, or in the caller's when one is already open (a phone change).</summary>
     private static Task<T> AtomicallyAsync<T>(CmmsDbContext db, Func<CancellationToken, Task<T>> work, CancellationToken ct) =>

@@ -119,6 +119,8 @@ public static class WorkOrderEndpoints
                 .Select(t => new { t.Id, t.Type, t.Date, t.PartId, t.Part!.PartNumber, PartName = t.Part.Name, t.Part.UnitOfMeasure, t.StoreId, StoreCode = t.Store!.Code,
                     Quantity = -t.Quantity, t.UnitCost, Total = Math.Round(-t.Quantity * t.UnitCost, 2), t.BatchNumber, t.Notes, t.CreatedByName }).ToListAsync(ct);
             var request = w.WorkRequestId is { } rid ? await db.WorkRequests.AsNoTracking().Where(r => r.Id == rid).Select(r => new { r.Id, r.Number, r.RequesterName, r.RespondBy, r.DecidedAt }).FirstOrDefaultAsync(ct) : null;
+            // The request's thread, shown read-only (not copied).
+            var requestComments = request is null ? [] : await WorkRequestEndpoints.CommentsAsync(db, request.Id, ct);
             var downtime = w.DowntimeEventId is { } did ? await db.DowntimeEvents.AsNoTracking().Where(e => e.Id == did)
                 .Select(e => new { e.Id, e.StartedAt, e.EndedAt, e.Source, e.SourceNumber }).FirstOrDefaultAsync(ct) : null;
             var assetDownSince = w.AssetId is { } aid ? await db.DowntimeEvents.AsNoTracking().Where(e => e.AssetId == aid && e.EndedAt == null)
@@ -154,7 +156,9 @@ public static class WorkOrderEndpoints
                 Assignees = w.Assignees.Select(a => new { a.EmployeeId, a.Employee!.FullName, a.Employee.Code, a.PlannedHours, a.Employee.HourlyRate }),
                 w.PlannedStart, w.DueDate, w.DueAt, w.DueFromTarget, w.StartBy, w.RespondedAt, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 Downtime = downtime, AssetDownSince = assetDownSince,
-                LocationNotesToTechnician = locationNotes, Request = request, Pm = pm, w.PmDueDate, w.AccessWindows, w.OnlyWhenStopped,
+                LocationNotesToTechnician = locationNotes,
+                Request = request is null ? null : new { request.Id, request.Number, request.RequesterName, request.RespondBy, request.DecidedAt, Comments = requestComments },
+                Pm = pm, w.PmDueDate, w.AccessWindows, w.OnlyWhenStopped,
                 Assets = roundAssets,
                 Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName }),
                 Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned, Signatures = signatures,

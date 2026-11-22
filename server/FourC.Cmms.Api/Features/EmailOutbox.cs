@@ -106,6 +106,34 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
     }
 
+    /// <summary>
+    /// A new comment on a request goes to the other side: the requester's to the maintenance side switched on in the grid, maintenance's to
+    /// the requester. A requester without a login gets the text without a link (there is no page for them).
+    /// </summary>
+    public async Task RequestCommentAsync(CmmsDbContext db, ITenantContext ctx, WorkRequest r, WorkRequestComment c, CancellationToken ct)
+    {
+        if (!Available) return;
+        var w = r.WorkOrderId is { } wid ? await db.WorkOrders.AllSites().AsNoTracking().Include(x => x.Assignees).FirstOrDefaultAsync(x => x.Id == wid, ct) : null;
+        var groups = await GroupsAsync(db, EmailEvents.RequestComment, w, r, null, ct);
+        if (groups.Count == 0) return;
+        var facts = await FactsAsync(db, r, ct);
+        EmailContent Build(string org, string? link) => EmailTemplates.RequestComment(org, facts, c.UserName, c.Body, link);
+        if (c.ByRequester)
+        {
+            var office = (groups.GetValueOrDefault(EmailRecipientKinds.RequestRecipients) ?? []).ToList();
+            if (office.Count > 0)
+                await QueueAsync(db, ctx, EmailEvents.RequestComment, office, org => Build(org, Link($"/work-requests?open={r.Id}")), "WorkRequest", r.Id, ct,
+                    siteId: r.SiteId, locationId: r.LocationId);
+            var workers = (groups.GetValueOrDefault(EmailRecipientKinds.Technicians) ?? []).Concat(groups.GetValueOrDefault(EmailRecipientKinds.Contractors) ?? []).ToList();
+            if (workers.Count > 0 && w is not null)
+                await QueueAsync(db, ctx, EmailEvents.RequestComment, workers, org => Build(org, Link($"/work-orders/{w.Id}")), "WorkRequest", r.Id, ct,
+                    siteId: r.SiteId, locationId: r.LocationId);
+        }
+        else if (groups.GetValueOrDefault(EmailRecipientKinds.Requester) is [var requester])
+            await QueueAsync(db, ctx, EmailEvents.RequestComment, [requester], org => Build(org, requester.UserId is null ? null : Link($"/work-requests?open={r.Id}")),
+                "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
+    }
+
     // ---------------- Who gets each e-mail (0.10.0 grid) ----------------
 
     /// <summary>
