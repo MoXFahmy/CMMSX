@@ -32,6 +32,8 @@ public static partial class TechEndpoints
     private sealed record RequestPayload(string? Title, string? Description, WorkPriority? Priority, Guid? AssetId, Guid? LocationId, Guid? SiteId, bool? AssetIsDown = null,
         Guid? RequestTypeId = null);
 
+    /// <summary>A part used on, returned from or issued to a job (0.11.0); a planned line's store is used when no store is given.</summary>
+    private sealed record PartPayload(Guid PartId, Guid? StoreId, decimal Quantity, Guid? LineId = null, Guid? WorkOrderId = null);
     /// <summary>A change that can't be applied; rolls back anything it did and is answered "rejected".</summary>
     private sealed class Rejected(string message, string? code = null) : Exception(message) { public string? Code { get; } = code; }
 
@@ -156,6 +158,15 @@ public static partial class TechEndpoints
         if (!allowed.Contains(permission)) throw new Rejected("You don't have permission to do this.");
     }
 
+    /// <summary>The store a part change uses: the one sent, else its planned line's, else the job site's default store.</summary>
+    private static async Task<Guid> StoreOfAsync(CmmsDbContext db, WorkOrder w, PartPayload p, CancellationToken ct)
+    {
+        if (p.StoreId is { } given) return given;
+        if (p.LineId is { } lineId && await db.WorkOrderParts.Where(l => l.Id == lineId && l.WorkOrderId == w.Id).Select(l => l.StoreId).FirstOrDefaultAsync(ct) is { } lineStore)
+            return lineStore;
+        return await db.Sites.AllSites().Where(s => s.Id == w.SiteId).Select(s => s.Settings.DefaultStoreId).FirstOrDefaultAsync(ct) ?? throw new Rejected("Choose the store.");
+    }
+
     private static async Task<WorkOrder> WorkOrderAsync(CmmsDbContext db, Guid? id, CancellationToken ct) =>
         (id is { } wid ? await db.WorkOrders.FirstOrDefaultAsync(w => w.Id == wid, ct) : null) ?? throw new Rejected("This work order no longer exists.");
 
@@ -227,6 +238,35 @@ public static partial class TechEndpoints
             }
             case "status.change":
                 return await ChangeStatusAsync(db, ctx, mail, allowed, Read<StatusPayload>(input.Payload, options), input.WorkOrderId, at, ct);
+            case "part.use":
+            case "part.return":
+            {
+                Require(allowed, Permissions.WorkOrdersExecute);
+                var w = await WorkOrderAsync(db, input.WorkOrderId, ct);
+                RequireNotClosed(w);
+                var p = Read<PartPayload>(input.Payload, options);
+                var store = await StoreOfAsync(db, w, p, ct);
+                if (input.Type == "part.return")
+                {
+                    Require(allowed, Permissions.InventoryTransact);
+                    await PhoneStock.ReturnAsync(db, ctx, w, p.PartId, store, p.Quantity, at, ct);
+                    return new Answer("done");
+                }
+                // Someone who can't take parts from the store asks for them instead (the store keeper issues them).
+                var note = allowed.Contains(Permissions.InventoryTransact)
+                    ? await PhoneStock.UseAsync(db, ctx, w, p.PartId, store, p.Quantity, at, ct)
+                    : await PhoneStock.AskAsync(db, w, p.PartId, store, p.Quantity, ct);
+                return new Answer("done", note);
+            }
+            case "stock.issue":
+            {
+                Require(allowed, Permissions.InventoryTransact);
+                var p = Read<PartPayload>(input.Payload, options);
+                var w = await WorkOrderAsync(db, p.WorkOrderId ?? input.WorkOrderId, ct);
+                RequireNotClosed(w);
+                var store = p.StoreId ?? throw new Rejected("Choose the store.");
+                return new Answer("done", await PhoneStock.UseAsync(db, ctx, w, p.PartId, store, p.Quantity, at, ct));
+            }
             case "request.create":
             {
                 Require(allowed, Permissions.RequestsCreate);

@@ -366,6 +366,37 @@ public static class InventoryEndpoints
             return Results.Ok(new { adjusted });
         }).RequirePermission(Permissions.InventoryTransact);
 
+        // Short for work (0.11.0): planned parts on open work that their store can't cover, in order of need — the store keeper's list.
+        t.MapGet("/shortages", async (Guid? storeId, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var pairs = await db.WorkOrderParts.AsNoTracking().Where(p => p.StoreId != null && (storeId == null || p.StoreId == storeId)
+                    && db.WorkOrders.Any(w => w.Id == p.WorkOrderId && (w.Status == FourC.Cmms.Core.Work.WorkOrderStatus.Open
+                        || w.Status == FourC.Cmms.Core.Work.WorkOrderStatus.InProgress || w.Status == FourC.Cmms.Core.Work.WorkOrderStatus.OnHold))
+                    && db.Stores.Any(s => s.Id == p.StoreId))
+                .Select(p => new { p.PartId, StoreId = p.StoreId!.Value }).Distinct().Take(2000).ToListAsync(ct);
+            if (pairs.Count == 0) return Results.Ok(Array.Empty<object>());
+            var partIds = pairs.Select(p => p.PartId).Distinct().ToList();
+            var storeIds = pairs.Select(p => p.StoreId).Distinct().ToList();
+            var lines = await Planning.OpenLinesAsync(db, partIds, storeIds, ct);
+            var onHand = await db.StockLevels.AsNoTracking().Where(l => partIds.Contains(l.PartId) && storeIds.Contains(l.StoreId))
+                .ToDictionaryAsync(l => (l.PartId, l.StoreId), l => l.QuantityOnHand, ct);
+            var shorts = new List<(Guid LineId, Guid PartId, Guid StoreId, decimal Short)>();
+            foreach (var pair in pairs)
+                foreach (var (lineId, qty) in Reservations.Shortages(onHand.GetValueOrDefault((pair.PartId, pair.StoreId)), lines[(pair.PartId, pair.StoreId)]))
+                    if (qty > 0) shorts.Add((lineId, pair.PartId, pair.StoreId, qty));
+            var lineIds = shorts.Select(s => s.LineId).ToList();
+            var info = await db.WorkOrderParts.AsNoTracking().Where(p => lineIds.Contains(p.Id))
+                .Select(p => new { p.Id, p.WorkOrderId, WorkOrderNumber = db.WorkOrders.Where(w => w.Id == p.WorkOrderId).Select(w => w.Number).FirstOrDefault(),
+                    DueDate = db.WorkOrders.Where(w => w.Id == p.WorkOrderId).Select(w => w.DueDate).FirstOrDefault(),
+                    p.Part!.PartNumber, PartName = p.Part.Name, p.Part.UnitOfMeasure, StoreCode = p.Store!.Code })
+                .ToDictionaryAsync(p => p.Id, ct);
+            return Results.Ok(shorts.Where(s => info.ContainsKey(s.LineId)).Select(s => new
+            {
+                info[s.LineId].WorkOrderId, info[s.LineId].WorkOrderNumber, info[s.LineId].DueDate, s.PartId, info[s.LineId].PartNumber, info[s.LineId].PartName,
+                info[s.LineId].UnitOfMeasure, s.StoreId, info[s.LineId].StoreCode, Short = s.Short,
+            }).OrderBy(x => x.DueDate ?? DateOnly.MaxValue).ThenBy(x => x.WorkOrderNumber));
+        }).RequirePermission(Permissions.InventoryView);
+
         // Purchase proposal (4CSQL): store levels at or below re-order, considering quantity already on order.
         t.MapGet("/proposal", async (CmmsDbContext db, Guid? siteId, Guid? storeId, CancellationToken ct) =>
         {

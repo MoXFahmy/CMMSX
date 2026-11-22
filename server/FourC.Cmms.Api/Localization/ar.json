@@ -753,5 +753,10 @@
  "No reason": "بدون سبب",
  "Cancelled work": "الأعمال الملغاة",
  "Work orders cancelled in the period, by reason.": "أوامر العمل الملغاة في الفترة، حسب السبب.",
- "Without a reason": "بدون سبب"
+ "Without a reason": "بدون سبب",
+ "Only {0} in the store; the rest is on the store keeper's list.": "يوجد {0} فقط في المخزن؛ الباقي في قائمة أمين المخزن.",
+ "This took parts reserved for {0}.": "استُخدمت قطع محجوزة لـ {0}.",
+ "Added to the job's parts; the store keeper issues them.": "أُضيفت إلى قطع العمل؛ يصرفها أمين المخزن.",
+ "{0} is a shelf-life item: issue it with its batch in the office.": "{0} صنف له مدة صلاحية: اصرفه مع رقم دفعته من المكتب.",
+ "Choose the store.": "اختر المخزن."
 }
