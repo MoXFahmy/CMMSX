@@ -371,7 +371,19 @@
     "defaultLanguage": "Default language",
     "defaultLanguageHint": "For people who haven't chosen one, and for e-mails to suppliers. Each person can choose their own from their name's menu.",
     "currencyHint": "ISO code, e.g. USD, EGP, AED",
-    "import": "Import"
+    "import": "Import",
+    "cancelReasons": "Cancel reasons",
+    "newCancelReason": "New cancel reason",
+    "requiredComments": "Required comments",
+    "requiredCommentsHint": "Choose which actions need a comment, on the web and on the phone.",
+    "commentFor": {
+      "reject": "Rejecting a request",
+      "refuse": "Refusing finished work (the requester)",
+      "hold": "Putting work on hold",
+      "reopen": "Reopening work",
+      "cancel": "Cancelling work",
+      "complete": "Completing work (the \"work done\" report)"
+    }
   },
   "audit": {
     "Created": "created this record",
@@ -1111,8 +1123,8 @@
         "description": "To the requester, with the reason."
       },
       "request_completed": {
-        "label": "Requested work done",
-        "description": "To the requester, when the work order is completed."
+        "label": "Finished work: accept or refuse",
+        "description": "To the requester when their work is done, to accept or refuse it."
       },
       "workorder_assigned": {
         "label": "Work assigned",
@@ -1145,10 +1157,38 @@
       "parts_received": {
         "label": "Parts arrived",
         "description": "To the technicians of a work order when parts ordered for it are received."
+      },
+      "request_comment": {
+        "label": "Comments on requests",
+        "description": "A new comment on a request goes to the other side."
+      },
+      "request_refused": {
+        "label": "Finished work refused",
+        "description": "When the requester refuses the finished work (it is reopened)."
+      },
+      "workorder_cancelled": {
+        "label": "Work cancelled",
+        "description": "When a work order is cancelled, with the reason."
+      },
+      "workorder_overdue": {
+        "label": "Work overdue",
+        "description": "Once, when a work order passes its due time."
       }
     },
     "notAllowedTitle": "E-mail isn't available for this organization yet",
-    "notAllowedBody": "Anyone can sign up on this server, so e-mail is only sent for organizations its operator allows. Ask them to allow \"{{slug}}\"."
+    "notAllowedBody": "Anyone can sign up on this server, so e-mail is only sent for organizations its operator allows. Ask them to allow \"{{slug}}\".",
+    "whoGetsWhich": "Who gets which e-mail",
+    "gridHint": "Rows are e-mails, columns are who gets them. Switch an e-mail off, or choose its recipients.",
+    "event": "E-mail",
+    "on": "On",
+    "purchasingEmails": "Purchasing e-mails",
+    "kinds": {
+      "requester": "Requester",
+      "requestRecipients": "Request recipients",
+      "technicians": "Technicians",
+      "contractors": "Contractors",
+      "issuer": "Issuer"
+    }
   },
   "plan": {
     "plannedParts": "Planned parts",
@@ -1587,5 +1627,18 @@
     "recipientsHint": "Instead of everyone who can manage requests. Empty: everyone who can manage requests and can see this site.",
     "senderName": "E-mail sender name",
     "senderNameHint": "E-mails about this site come from \"<name> via CMX\"."
+  },
+  "requestTypes": {
+    "title": "Request types",
+    "new": "New request type",
+    "hint": "Each type can set a default trade and priority, tell extra people about new requests, and approve them automatically.",
+    "defaultTrade": "Default trade",
+    "defaultPriority": "Default priority",
+    "recipients": "Told about new requests",
+    "recipientsHint": "On top of the site's request recipients.",
+    "autoApprove": "Approve automatically",
+    "autoApproveHint": "Requests of this type become work orders at once, for the default trade or the team below.",
+    "team": "Give the work to team",
+    "teamHint": "Used when the team can work at the request's site."
   }
 }

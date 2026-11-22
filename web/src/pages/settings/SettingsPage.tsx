@@ -16,6 +16,7 @@ import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField
 import { P, useAuth } from '@/auth/AuthContext';
 import { NotificationSettings } from './NotificationSettings';
 import { ImportSettings } from './ImportSettings';
+import { RequestTypesSettings } from './RequestTypesSettings';
 import { PageHeader } from '@/components/PageHeader';
 import { LookupTable } from '@/components/LookupTable';
 import { locationOptions } from '@/components/LocationPicker';
@@ -33,6 +34,8 @@ export function SettingsPage() {
     { value: 'fields', label: t('settings.customFields'), show: can(P.settingsManage) },
     { value: 'notifications', label: t('settings.notifications'), show: can(P.settingsManage) },
     { value: 'failure-codes', label: t('settings.failureCodes'), show: can(P.woView) },
+    { value: 'request-types', label: t('requestTypes.title'), show: can(P.settingsManage) },
+    { value: 'cancel-reasons', label: t('settings.cancelReasons'), show: can(P.woView) },
     { value: 'users', label: t('settings.users'), show: can(P.usersManage) },
     { value: 'roles', label: t('settings.roles'), show: can(P.usersManage) },
     { value: 'import', label: t('settings.import'), show: can(P.settingsManage) },
@@ -48,6 +51,8 @@ export function SettingsPage() {
         <Tabs.Panel value="fields"><FieldSettings /></Tabs.Panel>
         <Tabs.Panel value="notifications"><NotificationSettings /></Tabs.Panel>
         <Tabs.Panel value="failure-codes"><LookupTable path="/failure-codes" title={t('settings.failureCodes')} newLabel={t('settings.newFailureCode')} editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="request-types"><RequestTypesSettings editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="cancel-reasons"><LookupTable path="/cancel-reasons" title={t('settings.cancelReasons')} newLabel={t('settings.newCancelReason')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="users"><UserSettings /></Tabs.Panel>
         <Tabs.Panel value="roles"><RoleSettings /></Tabs.Panel>
         <Tabs.Panel value="import"><ImportSettings /></Tabs.Panel>
@@ -75,7 +80,7 @@ function OrganizationSettings() {
     try {
       // E-mail settings belong to the Notifications tab: keep what is saved now, not what this form loaded.
       const now = await get<{ settings: TenantSettings }>('/settings');
-      await put('/settings', { ...v, settings: { ...v.settings, emailEnabled: now.settings.emailEnabled, disabledEmails: now.settings.disabledEmails } });
+      await put('/settings', { ...v, settings: { ...v.settings, emailEnabled: now.settings.emailEnabled, disabledEmails: now.settings.disabledEmails, emailRecipients: now.settings.emailRecipients } });
       notifySuccess(t('common.saved')); await refresh(); await qc.invalidateQueries({ queryKey: ['settings'] });
     } catch (e) { handleFormError(form, e); }
   });
@@ -120,12 +125,21 @@ function OrganizationSettings() {
             <TextInput label={t('settings.woPrefix')} disabled={!editable} {...form.getInputProps('settings.workOrderNumberPrefix')} />
             <TextInput label={t('settings.wrPrefix')} disabled={!editable} {...form.getInputProps('settings.workRequestNumberPrefix')} />
           </SimpleGrid>
-          <Switch label={t('settings.requireCompletionNotes')} disabled={!editable} {...form.getInputProps('settings.requireCompletionNotes', { type: 'checkbox' })} />
           <Switch label={t('settings.requireLaborToComplete')} disabled={!editable} {...form.getInputProps('settings.requireLaborToComplete', { type: 'checkbox' })} />
           <Switch label={t('settings.requireAllTasksDone')} disabled={!editable} {...form.getInputProps('settings.requireAllTasksDone', { type: 'checkbox' })} />
           <Switch label={t('settings.requireFailureCodeForBreakdowns')} disabled={!editable} {...form.getInputProps('settings.requireFailureCodeForBreakdowns', { type: 'checkbox' })} />
           <Switch label={t('settings.autoStartWork')} disabled={!editable} {...form.getInputProps('settings.autoStartWork', { type: 'checkbox' })} />
           <Switch label={t('settings.autoGeneratePm')} disabled={!editable} {...form.getInputProps('settings.autoGeneratePm', { type: 'checkbox' })} />
+        </Stack></Card>
+        <Card><Stack gap="xs">
+          <Title order={5}>{t('settings.requiredComments')}</Title>
+          <Text fz="sm" c="dimmed">{t('settings.requiredCommentsHint')}</Text>
+          <Checkbox.Group value={s.commentRequiredFor ?? []} onChange={(v) => form.setFieldValue('settings.commentRequiredFor', v)}>
+            <Stack gap={6} mt={4}>
+              {['reject', 'refuse', 'hold', 'reopen', 'cancel'].map((a) => <Checkbox key={a} value={a} disabled={!editable} label={t(`settings.commentFor.${a}`)} />)}
+            </Stack>
+          </Checkbox.Group>
+          <Checkbox label={t('settings.commentFor.complete')} disabled={!editable} {...form.getInputProps('settings.requireCompletionNotes', { type: 'checkbox' })} />
         </Stack></Card>
         <Card><Stack>
           <div><Title order={5}>{t('settings.pmRules')}</Title><Text c="dimmed" fz="sm">{t('settings.pmRulesHint')}</Text></div>

@@ -21,6 +21,10 @@ export type TenantSettings = {
   purchaseOrderNumberPrefix: string; defaultTaxPercent: number; currency: string; dateFormat: string; timeZone: string;
   requireLaborToComplete: boolean; requireAllTasksDone: boolean; requireFailureCodeForBreakdowns: boolean; autoStartWork: boolean;
   emailEnabled: boolean; disabledEmails: string[];
+  /** Who gets each work and request e-mail (0.10.0): event key → recipient kinds; an event not listed uses its defaults. */
+  emailRecipients?: Record<string, string[]>;
+  /** Actions that need a comment (0.10.0): reject, refuse, hold, reopen, cancel; completing follows requireCompletionNotes. */
+  commentRequiredFor?: string[];
   pmSkipAssetStatuses: AssetStatus[]; pmNonWorkingDays: DayName[]; pmNoStacking: boolean;
   /** Response and completion targets per priority, in minutes (0.5.0). */
   slaTargets: SlaTarget[]; dailyCapacityHours: number;
@@ -30,7 +34,21 @@ export type TenantSettings = {
 export type SlaTarget = { priority: WorkPriority; respondMinutes?: number | null; completeMinutes?: number | null };
 /** Deadlines of one record and where it stands against them. */
 export type SlaView = { response: SlaState; completion: SlaState; respondBy?: string | null; dueAt?: string | null; respondedAt?: string | null };
-export type EmailStatusInfo = { available: boolean; allowed: boolean; slug: string; from?: string; enabled: boolean; events: string[] };
+export type EmailStatusInfo = {
+  available: boolean; allowed: boolean; slug: string; from?: string; enabled: boolean; events: string[];
+  grid: { key: string; applicable: string[]; defaults: string[] }[];
+};
+/** A request type (0.10.0): default trade and priority, recipients, optional automatic approval. */
+export type RequestType = {
+  id: string; code: string; name: string; isActive: boolean; defaultTradeId?: string | null; defaultPriority?: WorkPriority | null;
+  recipientIds: string[]; autoApprove: boolean; teamId?: string | null;
+};
+/** When the work may be done (0.10.0). */
+export type AccessWindow = { start: string; end: string; note?: string | null };
+/** The requester's answer to finished work (0.10.0). */
+export type RequestFeedback = { id?: string; accepted: boolean; rating?: number | null; comment?: string | null; byName?: string | null; answeredAt: string; viaLink?: boolean };
+/** A message on a request's thread (0.10.0). */
+export type RequestComment = { id: string; body: string; userName?: string | null; byRequester: boolean; createdAt: string };
 export type EmailLogItem = {
   id: string; createdAt: string; sentAt?: string; eventKey: string; toAddress: string; subject: string; status: 'Pending' | 'Sent' | 'Failed'; attempts: number; lastError?: string;
 };
