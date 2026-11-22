@@ -29,7 +29,8 @@ public static partial class TechEndpoints
     private sealed record StatusPayload(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes, Guid? FailureCodeId,
         bool? AssetWasDown, decimal? DowntimeHours);
     /// <summary>AssetIsDown: "The asset is down" (0.8.1); older app versions don't send it.</summary>
-    private sealed record RequestPayload(string? Title, string? Description, WorkPriority? Priority, Guid? AssetId, Guid? LocationId, Guid? SiteId, bool? AssetIsDown = null);
+    private sealed record RequestPayload(string? Title, string? Description, WorkPriority? Priority, Guid? AssetId, Guid? LocationId, Guid? SiteId, bool? AssetIsDown = null,
+        Guid? RequestTypeId = null);
 
     /// <summary>A change that can't be applied; rolls back anything it did and is answered "rejected".</summary>
     private sealed class Rejected(string message, string? code = null) : Exception(message) { public string? Code { get; } = code; }
@@ -52,14 +53,14 @@ public static partial class TechEndpoints
     {
         var g = api.MapGroup("/tech").WithTags("Technician app").RequireAuthorization();
 
-        g.MapPost("/actions", async (ActionInput input, CmmsDbContext db, ITenantContext ctx, PermissionService perms, EmailOutbox mail, IOptions<JsonOptions> json,
-            CancellationToken ct) =>
+        g.MapPost("/actions", async (ActionInput input, CmmsDbContext db, ITenantContext ctx, PermissionService perms, EmailOutbox mail, AccessService access,
+            IOptions<JsonOptions> json, CancellationToken ct) =>
         {
             if (input.ClientId == Guid.Empty || string.IsNullOrWhiteSpace(input.Type)) return Results.Problem(title: Translator.T("A change needs an id and a type."), statusCode: 400);
             if (OtherUser(input.UserId, ctx) is { } other) return other;
             var at = Clamp(input.At, DateTimeOffset.UtcNow);
             var allowed = await perms.GetAsync(ctx.UserId!.Value);
-            return Results.Ok(await RunAsync(db, ctx, input.ClientId, input.Type!, at, () => ApplyAsync(db, ctx, mail, allowed, json.Value.SerializerOptions, input, at, ct), ct));
+            return Results.Ok(await RunAsync(db, ctx, input.ClientId, input.Type!, at, () => ApplyAsync(db, ctx, mail, access, allowed, json.Value.SerializerOptions, input, at, ct), ct));
         });
 
         g.MapPost("/files", async (HttpRequest req, CmmsDbContext db, ITenantContext ctx, PermissionService perms, IFileStorage storage, CancellationToken ct) =>
@@ -169,7 +170,7 @@ public static partial class TechEndpoints
         if (!v.IsValid) throw new Rejected(string.Join(" ", v.Messages));
     }
 
-    private static async Task<Answer> ApplyAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, HashSet<string> allowed, JsonSerializerOptions options,
+    private static async Task<Answer> ApplyAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, AccessService access, HashSet<string> allowed, JsonSerializerOptions options,
         ActionInput input, DateTimeOffset at, CancellationToken ct)
     {
         switch (input.Type)
@@ -233,8 +234,8 @@ public static partial class TechEndpoints
                 var site = p.SiteId ?? (p.AssetId is { } aid ? await db.Assets.Where(x => x.Id == aid).Select(x => (Guid?)x.SiteId).FirstOrDefaultAsync(ct) : null)
                            ?? (p.LocationId is { } lid ? await db.Locations.Where(x => x.Id == lid).Select(x => (Guid?)x.SiteId).FirstOrDefaultAsync(ct) : null)
                            ?? throw new Rejected("Choose where the problem is.");
-                var (v, _) = await WorkRequestEndpoints.CreateAsync(db, ctx, mail, new WorkRequestEndpoints.RequestInput(p.Title ?? "", p.Description, site, p.LocationId, p.AssetId,
-                    p.Priority ?? WorkPriority.Medium, WorkType.Corrective, null, null, null, null, AssetIsDown: p.AssetIsDown == true), ct, raisedAt: at);
+                var (v, _) = await WorkRequestEndpoints.CreateAsync(db, ctx, mail, access, new WorkRequestEndpoints.RequestInput(p.Title ?? "", p.Description, site, p.LocationId, p.AssetId,
+                    p.Priority ?? WorkPriority.Medium, WorkType.Corrective, null, null, null, null, AssetIsDown: p.AssetIsDown == true, RequestTypeId: p.RequestTypeId), ct, raisedAt: at);
                 Ensure(v);
                 return new Answer("done");
             }

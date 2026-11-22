@@ -54,7 +54,7 @@ public static class Loop
     {
         var roles = await Ok(await admin.GetAsync("/api/roles"));
         var roleId = roles.EnumerateArray().First(r => r.GetProperty("name").GetString() == role).GetProperty("id").GetGuid();
-        var email = Addr(role.ToLowerInvariant());
+        var email = Addr(role.ToLowerInvariant().Replace(' ', '-'));
         var user = await Ok(await admin.PostAsJsonAsync("/api/users", new { fullName = name ?? role, email, isActive = true, roleIds = new[] { roleId }, password = Password, siteIds }));
         var c = fx.Client();
         await Ok(await c.PostAsJsonAsync("/api/auth/login", new { email, password = Password, rememberMe = false }));

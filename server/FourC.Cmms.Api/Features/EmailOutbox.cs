@@ -77,9 +77,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     {
         if (!Available) return;
         var facts = await FactsAsync(db, r, ct);
-        var recipients = await db.Sites.AllSites().Where(s => s.Id == r.SiteId).Select(s => s.Settings).FirstOrDefaultAsync(ct) is { RequestRecipientIds.Count: > 0 } site
-            ? await UsersAsync(db, site.RequestRecipientIds, ct)
-            : await UsersWithPermissionAsync(db, Permissions.RequestsManage, ct);
+        var recipients = await RequestRecipientsAsync(db, r, ct);
         await QueueAsync(db, ctx, EmailEvents.RequestSubmitted, recipients,
             org => EmailTemplates.RequestSubmitted(org, facts, r.RequesterName, Link($"/work-requests?open={r.Id}")), "WorkRequest", r.Id, ct,
             siteId: r.SiteId, locationId: r.LocationId);
@@ -251,6 +249,20 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     }
 
     // ---------------- Recipients and facts ----------------
+
+    /// <summary>
+    /// A request's recipients: the site's, the request type's and the request's own extra recipients. When neither the site nor the type
+    /// names anyone, the people who can manage requests (as before 0.10.0), plus the extra recipients.
+    /// </summary>
+    internal static async Task<List<EmailRecipient>> RequestRecipientsAsync(CmmsDbContext db, WorkRequest r, CancellationToken ct)
+    {
+        var site = (await db.Sites.AllSites().Where(s => s.Id == r.SiteId).Select(s => s.Settings).FirstOrDefaultAsync(ct))?.RequestRecipientIds ?? [];
+        var type = r.RequestTypeId is { } typeId ? await db.RequestTypes.Where(t => t.Id == typeId).Select(t => t.RecipientIds).FirstOrDefaultAsync(ct) ?? [] : [];
+        var named = site.Concat(type).Distinct().ToList();
+        var people = named.Count > 0 ? await UsersAsync(db, named, ct) : await UsersWithPermissionAsync(db, Permissions.RequestsManage, ct);
+        if (r.ExtraRecipientIds.Count > 0) people.AddRange(await UsersAsync(db, r.ExtraRecipientIds, ct));
+        return people.DistinctBy(p => p.UserId).ToList();
+    }
 
     /// <summary>Employees by their own address, or the address of the user account they're linked to.</summary>
     internal static async Task<List<EmailRecipient>> EmployeesAsync(CmmsDbContext db, IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
