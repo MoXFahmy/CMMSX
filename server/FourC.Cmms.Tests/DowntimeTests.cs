@@ -146,7 +146,7 @@ public class DowntimeTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Null(Assert.Single(await StopsAsync(o.Asset)).EndedAt);
 
         var wo = await NewWoAsync(o, Wo(o, o.Asset2));
-        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{wo}/status", new { status = "Cancelled", note = "Duplicate" }));
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{wo}/status", new { status = "Cancelled", note = "Duplicate", cancelReasonId = await Loop.AnyCancelReasonAsync(o.C) }));
         Assert.Null(Assert.Single(await StopsAsync(o.Asset2)).EndedAt);
         Assert.NotNull(At(await WoAsync(o, wo), "assetDownSince"));
     }

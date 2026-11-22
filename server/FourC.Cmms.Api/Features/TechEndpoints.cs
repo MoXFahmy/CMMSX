@@ -94,6 +94,7 @@ public static partial class TechEndpoints
                 {
                     Notes = settings.RequireCompletionNotes, Labour = settings.RequireLaborToComplete, AllSteps = settings.RequireAllTasksDone,
                     FailureCodeOnBreakdown = settings.RequireFailureCodeForBreakdowns,
+                    HoldNote = (settings.CommentRequiredFor ?? []).Contains(CommentActions.Hold),
                 },
             };
             return Versioned(http, JsonSerializer.SerializeToUtf8Bytes(body, json.Value.SerializerOptions));

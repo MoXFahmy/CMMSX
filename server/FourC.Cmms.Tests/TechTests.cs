@@ -284,7 +284,7 @@ public class TechTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
         var o = await SetupAsync();
         var wo = await WorkOrderAsync(o.C, o.SiteA, [o.Me]);
-        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{wo}/status", new { status = "Cancelled", note = "Not needed" }));
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{wo}/status", new { status = "Cancelled", note = "Not needed", cancelReasonId = await Loop.AnyCancelReasonAsync(o.C) }));
         var a = await SendAsync(o.C, Guid.NewGuid(), DateTimeOffset.UtcNow, "status.change", wo, new { status = "InProgress" });
         Assert.Equal("rejected", Status(a));
         Assert.False(string.IsNullOrWhiteSpace(a.GetProperty("message").GetString()));

@@ -108,6 +108,23 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
     }
 
+    /// <summary>Cancelled: the grid's recipients hear why (by default the requester and the people on the work).</summary>
+    public async Task WorkOrderCancelledAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, string? reason, string? note, CancellationToken ct)
+    {
+        if (!Available) return;
+        var groups = await GroupsAsync(db, EmailEvents.WorkOrderCancelled, w, null, null, ct);
+        if (groups.Count == 0) return;
+        var facts = await FactsAsync(db, w, ct);
+        var requester = groups.GetValueOrDefault(EmailRecipientKinds.Requester) ?? [];
+        var others = groups.Where(g => g.Key != EmailRecipientKinds.Requester).SelectMany(g => g.Value).ToList();
+        if (others.Count > 0)
+            await QueueAsync(db, ctx, EmailEvents.WorkOrderCancelled, others, org => EmailTemplates.WorkOrderCancelled(org, facts, reason, note, Link($"/work-orders/{w.Id}")),
+                "WorkOrder", w.Id, ct, siteId: w.SiteId, locationId: w.LocationId);
+        if (requester.Count > 0 && w.WorkRequestId is { } rid)
+            await QueueAsync(db, ctx, EmailEvents.WorkOrderCancelled, requester, org => EmailTemplates.WorkOrderCancelled(org, facts, reason, note,
+                    requester[0].UserId is null ? null : Link($"/work-requests?open={rid}"), forRequester: true), "WorkOrder", w.Id, ct, siteId: w.SiteId, locationId: w.LocationId);
+    }
+
     /// <summary>The requester refused the finished work: the grid's recipients hear why (the work order was reopened).</summary>
     public async Task RequestRefusedAsync(CmmsDbContext db, ITenantContext ctx, WorkRequest r, WorkOrder w, string? byName, string? comment, CancellationToken ct)
     {

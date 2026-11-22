@@ -731,5 +731,13 @@
  "Work done": "العمل المنجز",
  "Refused: work order {0}": "مرفوض: أمر العمل {0}",
  "The requester refused the finished work. The work order was reopened.": "رفض مقدم الطلب العمل المنجز. أُعيد فتح أمر العمل.",
- "Refused by": "رفضه"
+ "Refused by": "رفضه",
+ "Say why the work is on hold.": "اذكر سبب إيقاف العمل مؤقتًا.",
+ "Say why the work is reopened.": "اذكر سبب إعادة فتح العمل.",
+ "Say why the work is cancelled.": "اذكر سبب إلغاء العمل.",
+ "Choose why it is cancelled.": "اختر سبب الإلغاء.",
+ "Unknown cancel reason.": "سبب إلغاء غير معروف.",
+ "Cancelled: work order {0}": "ملغى: أمر العمل {0}",
+ "This work was cancelled": "أُلغي هذا العمل",
+ "The work you asked for was cancelled": "أُلغي العمل الذي طلبته"
 }

@@ -76,6 +76,9 @@ public static class Loop
         return await db.OutboundEmails.IgnoreQueryFilters().AsNoTracking().Where(e => to.Contains(e.ToAddress)).ToListAsync();
     }
 
+    /// <summary>One of the organization's cancel reasons (cancelling work needs one since 0.10.0).</summary>
+    public static async Task<Guid> AnyCancelReasonAsync(HttpClient c) => Id((await Ok(await c.GetAsync("/api/cancel-reasons"))).EnumerateArray().First());
+
     /// <summary>Runs <paramref name="work"/> on a database context that sees every organization (for checks and test setup).</summary>
     public static async Task<T> DbAsync<T>(ApiFixture fx, Func<CmmsDbContext, Task<T>> work)
     {

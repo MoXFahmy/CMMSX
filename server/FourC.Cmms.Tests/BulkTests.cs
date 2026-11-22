@@ -119,7 +119,7 @@ public class BulkTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var (admin, site) = await OrgAsync();
         var open = await WorkOrderAsync(admin, site);
         var closed = await WorkOrderAsync(admin, site);
-        await Ok(await SetStatus(admin, closed, new { status = "Cancelled" }));
+        await Ok(await SetStatus(admin, closed, new { status = "Cancelled", cancelReasonId = await Loop.AnyCancelReasonAsync(admin) }));
         var r = await Ok(await admin.PostAsJsonAsync("/api/work-orders/bulk", new { ids = new[] { open, closed }, priority = "Urgent" }));
         Assert.Equal(1, r.GetProperty("updated").GetInt32());
         Assert.Contains("Reopen", Assert.Single(r.GetProperty("skipped").EnumerateArray()).GetProperty("reason").GetString());

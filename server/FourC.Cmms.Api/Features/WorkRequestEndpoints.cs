@@ -163,9 +163,11 @@ public static class WorkRequestEndpoints
             var r = await db.WorkRequests.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) return Results.NotFound();
             if (r.Status != WorkRequestStatus.New) throw new DomainException("Only new requests can be rejected.");
-            var v = new Validator().Required("note", input.Note, "Reason", 2000);
+            var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+            var v = (settings.CommentRequiredFor ?? []).Contains(CommentActions.Reject)
+                ? new Validator().Required("note", input.Note, "Reason", 2000) : new Validator().MaxLength("note", input.Note, "Reason", 2000);
             if (!v.IsValid) return v.Problem();
-            r.Status = WorkRequestStatus.Rejected; r.DecisionNote = input.Note!.Trim(); r.DecidedAt = DateTimeOffset.UtcNow; r.DecidedById = ctx.UserId;
+            r.Status = WorkRequestStatus.Rejected; r.DecisionNote = input.Note.Clean(); r.DecidedAt = DateTimeOffset.UtcNow; r.DecidedById = ctx.UserId;
             await mail.RequestDecidedAsync(db, ctx, r, null, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { r.Id });

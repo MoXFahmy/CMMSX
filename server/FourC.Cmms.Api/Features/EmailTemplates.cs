@@ -54,6 +54,11 @@ public static class EmailTemplates
         [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place), ("Work done", notes)],
         null, link, askAnswer ? "Accept or refuse the work" : "View your request");
 
+    public static EmailContent WorkOrderCancelled(string org, WorkOrderFacts w, string? reason, string? note, string? link, bool forRequester = false) => Layout(org,
+        $"Cancelled: work order {w.Number}", forRequester ? "The work you asked for was cancelled" : "This work was cancelled",
+        [("Work order", $"{w.Number} · {w.Title}"), ("Where", w.Place), ("Reason", reason), ("Note", note)], null, link,
+        forRequester ? "View your request" : "Open the work order");
+
     public static EmailContent RequestRefused(string org, RequestFacts r, string workOrderNumber, string? byName, string? reason, string? link) => Layout(org,
         $"Refused: work order {workOrderNumber}", "The requester refused the finished work. The work order was reopened.",
         [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place), ("Refused by", byName), ("Reason", reason)],

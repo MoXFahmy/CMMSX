@@ -19,7 +19,7 @@ public static class WorkOrderEndpoints
         bool? ManagesTeam = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
-        DateTimeOffset? At = null);
+        DateTimeOffset? At = null, Guid? CancelReasonId = null);
     public sealed record BulkInput(Guid[]? Ids, StatusInput? Status, WorkPriority? Priority, Guid[]? AddAssigneeIds);
     public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null);
     public sealed record LaborInput(Guid EmployeeId, DateOnly WorkDate, decimal Hours, decimal OvertimeHours, string? Notes);
@@ -38,6 +38,9 @@ public static class WorkOrderEndpoints
         public Guid? TradeId { get; set; }
         public Guid? TeamId { get; set; }
         public Guid? AssigneeId { get; set; }
+        public Guid? CancelReasonId { get; set; }
+        /// <summary>Only work that can be done while the asset is stopped (planners book shutdowns).</summary>
+        public bool? OnlyWhenStopped { get; set; }
         /// <summary>Completed on or after this day (the dashboard's "completed in 30 days").</summary>
         public DateOnly? CompletedFrom { get; set; }
         public bool? Mine { get; set; }
@@ -72,7 +75,8 @@ public static class WorkOrderEndpoints
     public sealed record WorkOrderListItem(Guid Id, string Number, string Title, WorkType Type, WorkPriority Priority, WorkOrderStatus Status, HoldReason? HoldReason,
         Guid SiteId, string SiteName, Guid? LocationId, string? LocationPath, Guid? AssetId, string? AssetNumber, string? AssetName, string? TradeName,
         List<string> Assignees, DateOnly? DueDate, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, bool IsOverdue,
-        DateTimeOffset? DueAt, DateTimeOffset? StartBy, DateTimeOffset? RespondedAt, SlaState ResponseState, SlaState CompletionState, string? TeamName = null);
+        DateTimeOffset? DueAt, DateTimeOffset? StartBy, DateTimeOffset? RespondedAt, SlaState ResponseState, SlaState CompletionState, string? TeamName = null,
+        string? CancelReasonName = null, bool OnlyWhenStopped = false);
 
     public static void MapWorkOrderEndpoints(this RouteGroupBuilder api)
     {
@@ -97,7 +101,7 @@ public static class WorkOrderEndpoints
         g.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, HttpContext http, PermissionService perms, CancellationToken ct) =>
         {
             var w = await db.WorkOrders.AsNoTracking().Include(x => x.Site).Include(x => x.Location).Include(x => x.Asset).Include(x => x.Trade).Include(x => x.Team).Include(x => x.FailureCode)
-                .Include(x => x.Assignees).ThenInclude(a => a.Employee).FirstOrDefaultAsync(x => x.Id == id, ct);
+                .Include(x => x.CancelReason).Include(x => x.Assignees).ThenInclude(a => a.Employee).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (w is null) return Results.NotFound();
             var trail = new List<object>();
             if (w.Location is not null)
@@ -161,6 +165,7 @@ public static class WorkOrderEndpoints
                 w.PlannedStart, w.DueDate, w.DueAt, w.DueFromTarget, w.StartBy, w.RespondedAt, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 Downtime = downtime, AssetDownSince = assetDownSince,
                 LocationNotesToTechnician = locationNotes,
+                CancelReason = w.CancelReason is null ? null : new { w.CancelReason.Id, w.CancelReason.Code, w.CancelReason.Name },
                 Request = request is null ? null : new
                 {
                     request.Id, request.Number, request.RequesterName, request.RespondBy, request.DecidedAt, request.Status, request.AwaitingFeedback,
@@ -445,9 +450,26 @@ public static class WorkOrderEndpoints
     internal static async Task<Validator> ChangeStatusAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, TenantSettings settings, WorkOrder w,
         StatusInput input, CancellationToken ct)
     {
+        // Comments the organization requires (0.10.0); completing has its own completion-notes rule below.
+        var rules = settings.CommentRequiredFor ?? [];
+        var note = input.Note.Clean();
+        var reopening = w.Status is WorkOrderStatus.Completed or WorkOrderStatus.Closed or WorkOrderStatus.Cancelled && input.Status is WorkOrderStatus.InProgress or WorkOrderStatus.Open;
         var v = new Validator().MaxLength("note", input.Note, "Note", 2000)
             .When(input.Status == WorkOrderStatus.OnHold && input.HoldReason is null, "holdReason", "Choose why the work is on hold.")
-            .When(input.DowntimeHours < 0, "downtimeHours", "Downtime cannot be negative.");
+            .When(input.DowntimeHours < 0, "downtimeHours", "Downtime cannot be negative.")
+            .When(input.Status == WorkOrderStatus.OnHold && note is null && rules.Contains(CommentActions.Hold), "note", "Say why the work is on hold.")
+            .When(reopening && note is null && rules.Contains(CommentActions.Reopen), "note", "Say why the work is reopened.")
+            .When(input.Status == WorkOrderStatus.Cancelled && note is null && rules.Contains(CommentActions.Cancel), "note", "Say why the work is cancelled.");
+        string? cancelReason = null;
+        if (input.Status == WorkOrderStatus.Cancelled)
+        {
+            if (input.CancelReasonId is { } reasonId)
+            {
+                cancelReason = await db.CancelReasons.Where(x => x.Id == reasonId).Select(x => x.Name).FirstOrDefaultAsync(ct);
+                if (cancelReason is null) v.Add("cancelReasonId", "Unknown cancel reason.");
+            }
+            else if (await db.CancelReasons.AnyAsync(x => x.IsActive, ct)) v.Add("cancelReasonId", "Choose why it is cancelled.");
+        }
         if (input.Status == WorkOrderStatus.Completed)
         {
             var notes = input.CompletionNotes.Clean() ?? w.CompletionNotes;
@@ -477,6 +499,7 @@ public static class WorkOrderEndpoints
         if (input.Status != WorkOrderStatus.Open) w.RespondedAt ??= input.At ?? now;
         w.Status = input.Status;
         w.HoldReason = input.Status == WorkOrderStatus.OnHold ? input.HoldReason : null;
+        w.CancelReasonId = input.Status == WorkOrderStatus.Cancelled ? input.CancelReasonId : null;
         switch (input.Status)
         {
             case WorkOrderStatus.InProgress: w.StartedAt ??= input.ActualStart ?? now; w.CompletedAt = null; w.ClosedAt = null; break;
@@ -499,6 +522,7 @@ public static class WorkOrderEndpoints
         }
         if (input.Status == WorkOrderStatus.Completed)
             await mail.WorkOrderCompletedAsync(db, ctx, w, ct, await RequestFeedbackService.AskAsync(db, w, now, ct));
+        if (input.Status == WorkOrderStatus.Cancelled) await mail.WorkOrderCancelledAsync(db, ctx, w, cancelReason, note, ct);
         if (w.PmScheduleId is not null && input.Status is WorkOrderStatus.Completed or WorkOrderStatus.Cancelled)
             await PmGenerator.OnWorkOrderFinishedAsync(db, w, ct);
         return v;
@@ -521,7 +545,7 @@ public static class WorkOrderEndpoints
             w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason, w.SiteId, SiteName = w.Site!.Name, w.LocationId, LocationPath = w.Location!.Path,
             w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, TradeName = w.Trade!.Name, TeamName = w.Team!.Name,
             Assignees = w.Assignees.Select(a => a.Employee!.FullName).ToList(), w.DueDate, w.CreatedAt, w.CompletedAt,
-            w.DueAt, w.StartBy, w.RespondedAt, w.DueFromTarget,
+            w.DueAt, w.StartBy, w.RespondedAt, w.DueFromTarget, CancelReasonName = w.CancelReason!.Name, w.OnlyWhenStopped,
         }).ToPagedAsync(page, pageSize, ct, maxPageSize);
         var names = await LocationEndpoints.ResolvePathNamesAsync(db, paged.Items.Select(i => i.LocationPath), ct);
         return new PagedResult<WorkOrderListItem>(paged.Items.Select(w =>
@@ -530,7 +554,7 @@ public static class WorkOrderEndpoints
             return new WorkOrderListItem(w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason,
                 w.SiteId, w.SiteName, w.LocationId, w.LocationPath is null ? null : names(w.LocationPath), w.AssetId, w.AssetNumber, w.AssetName, w.TradeName,
                 w.Assignees, w.DueDate, w.CreatedAt, w.CompletedAt, sla.Completion == SlaState.Late || sla.Response == SlaState.Late,
-                w.DueAt, w.StartBy, w.RespondedAt, sla.Response, sla.Completion, w.TeamName);
+                w.DueAt, w.StartBy, w.RespondedAt, sla.Response, sla.Completion, w.TeamName, w.CancelReasonName, w.OnlyWhenStopped);
         }).ToList(), paged.Total, paged.Page, paged.PageSize);
     }
 
@@ -551,6 +575,8 @@ public static class WorkOrderEndpoints
         if (f.AssetId is not null) q = q.Where(w => w.AssetId == f.AssetId || (w.Asset != null && w.Asset.ParentAssetId == f.AssetId) || w.Assets.Any(a => a.AssetId == f.AssetId));
         if (f.TradeId is not null) q = q.Where(w => w.TradeId == f.TradeId);
         if (f.TeamId is not null) q = q.Where(w => w.TeamId == f.TeamId);
+        if (f.CancelReasonId is not null) q = q.Where(w => w.CancelReasonId == f.CancelReasonId);
+        if (f.OnlyWhenStopped == true) q = q.Where(w => w.OnlyWhenStopped);
         if (f.CreatedFrom is { } cf) { var from = new DateTimeOffset(cf.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt >= from); }
         if (f.CompletedFrom is { } completedFrom) { var done = new DateTimeOffset(completedFrom.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CompletedAt >= done); }
         if (f.CreatedTo is { } ctd && ctd < DateOnly.MaxValue) { var before = new DateTimeOffset(ctd.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt < before); }
