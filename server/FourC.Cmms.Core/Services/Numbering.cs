@@ -3,7 +3,7 @@ using FourC.Cmms.Core.Data;
 
 namespace FourC.Cmms.Core.Services;
 
-public enum NumberKind { Asset, WorkOrder, WorkRequest, PurchaseOrder }
+public enum NumberKind { Asset, WorkOrder, WorkRequest, PurchaseOrder, WorkGroup }
 
 /// <summary>Human-readable, per-tenant numbers (WO-00042). Skips past numbers that already exist (manual entry, imports).</summary>
 public static class Numbering
@@ -19,6 +19,8 @@ public static class Numbering
             NumberKind.Asset => ("Asset", org.AssetNumberPrefix, site?.Settings.AssetNumberPrefix),
             NumberKind.WorkOrder => ("WorkOrder", org.WorkOrderNumberPrefix, site?.Settings.WorkOrderNumberPrefix),
             NumberKind.WorkRequest => ("WorkRequest", org.WorkRequestNumberPrefix, site?.Settings.WorkRequestNumberPrefix),
+            // Groups of work orders (0.12.0): one sequence and prefix for the organization.
+            NumberKind.WorkGroup => ("WorkGroup", (string?)"GRP-", (string?)null),
             _ => ("PurchaseOrder", org.PurchaseOrderNumberPrefix, site?.Settings.PurchaseOrderNumberPrefix),
         };
         return string.IsNullOrWhiteSpace(sitePrefix) ? (sequence, orgPrefix ?? "") : ($"{sequence}:{site!.Id:N}", sitePrefix.Trim());
