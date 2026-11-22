@@ -33,7 +33,9 @@ public static class PmEndpoints
     /// <summary>A multi-asset PM's asset with its own template (empty = the PM's).</summary>
     public sealed record AssetTemplateInput(Guid AssetId, Guid? PmTaskId);
     public sealed record GenerateInput(DateOnly Until, Guid? SiteId, List<Guid>? ScheduleIds);
-    public sealed record MeterInput(string Code, string Name, Guid AssetId, string Unit, decimal? MaxDailyIncrement, bool IsActive = true);
+    /// <param name="ManagesSource">The page sets the meter it follows (0.12.0); otherwise the link is left as it is.</param>
+    public sealed record MeterInput(string Code, string Name, Guid AssetId, string Unit, decimal? MaxDailyIncrement, bool IsActive = true, Guid? SourceMeterId = null,
+        bool? ManagesSource = null);
     public sealed record ReadingInput(decimal Value, DateTimeOffset? ReadAt, string? Note, bool Confirm = false);
 
     private static readonly Dictionary<string, Expression<Func<PmSchedule, object?>>> SortMap = new(StringComparer.OrdinalIgnoreCase)
@@ -336,13 +338,16 @@ public static class PmEndpoints
             if (assetId is not null) q = q.Where(x => x.AssetId == assetId);
             if (search.Clean() is { } s) q = q.Where(x => x.Code.Contains(s) || x.Name.Contains(s) || x.Asset!.AssetNumber.Contains(s));
             return await q.OrderBy(x => x.Code).Select(x => new { x.Id, x.Code, x.Name, x.AssetId, AssetNumber = x.Asset!.AssetNumber, AssetName = x.Asset.Name, x.Unit,
-                x.CurrentReading, x.LastReadAt, x.MaxDailyIncrement, x.IsActive, Schedules = db.PmSchedules.Count(p => p.MeterId == x.Id && p.IsActive) }).ToListAsync(ct);
+                x.CurrentReading, x.LastReadAt, x.MaxDailyIncrement, x.IsActive, Schedules = db.PmSchedules.Count(p => p.MeterId == x.Id && p.IsActive),
+                x.SourceMeterId, SourceCode = db.Meters.IgnoreQueryFilters().Where(m => m.Id == x.SourceMeterId).Select(m => m.Code).FirstOrDefault(),
+                Followers = db.Meters.Count(m => m.SourceMeterId == x.Id) }).ToListAsync(ct);
         }).RequirePermission(Permissions.PmView);
         m.MapPost("/", async (MeterInput input, CmmsDbContext db, CancellationToken ct) =>
         {
             var v = await ValidateMeterAsync(input, null, db, ct);
             if (!v.IsValid) return v.Problem();
             var x = new Meter { Code = input.Code.Trim(), Name = input.Name.Trim(), AssetId = input.AssetId, Unit = input.Unit.Trim(), MaxDailyIncrement = input.MaxDailyIncrement, IsActive = input.IsActive };
+            if (input.ManagesSource == true) x.SourceMeterId = input.SourceMeterId;
             db.Meters.Add(x);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/meters/{x.Id}", new { x.Id });
@@ -354,6 +359,7 @@ public static class PmEndpoints
             var v = await ValidateMeterAsync(input, id, db, ct);
             if (!v.IsValid) return v.Problem();
             x.Code = input.Code.Trim(); x.Name = input.Name.Trim(); x.AssetId = input.AssetId; x.Unit = input.Unit.Trim(); x.MaxDailyIncrement = input.MaxDailyIncrement; x.IsActive = input.IsActive;
+            if (input.ManagesSource == true) x.SourceMeterId = input.SourceMeterId;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { x.Id });
         }).RequirePermission(Permissions.PmManage);
@@ -361,7 +367,9 @@ public static class PmEndpoints
         {
             var x = await db.Meters.FirstOrDefaultAsync(y => y.Id == id, ct);
             if (x is null) return Results.NotFound();
-            if (await db.PmSchedules.AnyAsync(p => p.MeterId == id, ct)) throw new DomainException("PM schedules use this meter. Remove them first or mark the meter inactive.");
+            if (await db.PmSchedules.AllSites().AnyAsync(p => p.MeterId == id || p.ExtraMeters.Any(m => m.MeterId == id), ct))
+                throw new DomainException("PM schedules use this meter. Remove them first or mark the meter inactive.");
+            if (await db.Meters.AllSites().AnyAsync(m => m.SourceMeterId == id, ct)) throw new DomainException("Other meters follow this one. Unlink them first.");
             db.Meters.Remove(x);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
@@ -395,10 +403,34 @@ public static class PmEndpoints
                     v.Add("value", $"An increase of {input.Value - last:0.###} {meter.Unit} in {days:0.#} day(s) exceeds the expected maximum ({max:0.###}/day). Confirm to save it anyway.");
             }
             if (!v.IsValid) return (v, []);
+            var previous = meter.CurrentReading;
+            var latest = meter.LastReadAt is null || at >= meter.LastReadAt;
             db.MeterReadings.Add(new MeterReading { MeterId = id, Value = input.Value, ReadAt = at, Note = input.Note.Clean(), ByName = ctx.UserName });
-            if (meter.LastReadAt is null || at >= meter.LastReadAt) { meter.CurrentReading = input.Value; meter.LastReadAt = at; }
+            if (latest) { meter.CurrentReading = input.Value; meter.LastReadAt = at; }
             await db.SaveChangesAsync(ct);
-            return (v, meter.IsActive ? await PmGenerator.OnReadingAsync(db, ctx, meter, input.Value, ct, mail) : []);
+            var generated = meter.IsActive ? await PmGenerator.OnReadingAsync(db, ctx, meter, input.Value, ct, mail) : [];
+            // Meters that follow this one (0.12.0) get the same increase; not a reset or a reading older than the latest.
+            if (latest && previous is { } prev && input.Value > prev)
+                await PropagateAsync(db, ctx, mail, meter, input.Value - prev, at, [id], generated, ct);
+            return (v, generated);
+        }
+    }
+
+    /// <summary>Adds <paramref name="increase"/> to every meter following <paramref name="source"/>, then to theirs, running their PMs.</summary>
+    private static async Task PropagateAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, Meter source, decimal increase, DateTimeOffset at, HashSet<Guid> seen,
+        List<PmGenerator.Result> generated, CancellationToken ct)
+    {
+        // Followers in any site or branch: the link was made by someone who could see both.
+        var followers = await db.Meters.AllSites().Where(m => m.SourceMeterId == source.Id && m.IsActive).ToListAsync(ct);
+        foreach (var f in followers.Where(f => seen.Add(f.Id)))
+        {
+            var value = (f.CurrentReading ?? 0) + increase;
+            var latest = f.LastReadAt is null || at >= f.LastReadAt;
+            db.MeterReadings.Add(new MeterReading { MeterId = f.Id, Value = value, ReadAt = at, Note = $"From {source.Code}", Source = ReadingSource.Propagated, ByName = ctx.UserName });
+            if (latest) { f.CurrentReading = value; f.LastReadAt = at; }
+            await db.SaveChangesAsync(ct);
+            generated.AddRange(await PmGenerator.OnReadingAsync(db, ctx, f, value, ct, mail));
+            if (latest) await PropagateAsync(db, ctx, mail, f, increase, at, seen, generated, ct);
         }
     }
 
@@ -726,6 +758,22 @@ public static class PmEndpoints
                 "Another meter uses this number.", "This number is already used by a meter in a site you can't see.", ct) is { } meterClash)
             v.Add("code", meterClash);
         if (!await db.Assets.AnyAsync(a => a.Id == i.AssetId, ct)) v.Add("assetId", "Choose the asset this meter is on.");
+        if (i.ManagesSource == true && i.SourceMeterId is { } source)
+        {
+            // Meter propagation (0.12.0): same unit, and no loop (following the chain up from the source never reaches this meter).
+            var src = await db.Meters.AsNoTracking().Where(m => m.Id == source).Select(m => new { m.Unit }).FirstOrDefaultAsync(ct);
+            if (src is null) v.Add("sourceMeterId", "Unknown meter.");
+            else if (!string.Equals(src.Unit.Trim(), i.Unit?.Trim(), StringComparison.OrdinalIgnoreCase)) v.Add("sourceMeterId", "A meter can only follow a meter with the same unit.");
+            else
+            {
+                Guid? cur = source;
+                for (var n = 0; cur is { } c && n < 100; n++)
+                {
+                    if (c == id) { v.Add("sourceMeterId", "Meters can't follow each other in a loop."); break; }
+                    cur = await db.Meters.IgnoreQueryFilters().Where(m => m.Id == c && m.TenantId == db.CurrentTenantId).Select(m => m.SourceMeterId).FirstOrDefaultAsync(ct);
+                }
+            }
+        }
         return v;
     }
 
