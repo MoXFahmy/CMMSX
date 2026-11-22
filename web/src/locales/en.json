@@ -1412,7 +1412,9 @@
     "plannedParts": "Planned parts",
     "tooSlow": "This file didn't get through on this connection ({{tries}} tries). Retry on Wi-Fi, or discard it.",
     "inGroup": "Group {{number}}",
-    "groupComments": "Group {{number}} comments"
+    "groupComments": "Group {{number}} comments",
+    "templateDocs": "From the work template",
+    "templateDocsOffline": "From the work template (open them when online)"
   },
   "labels": {
     "title": "QR labels",

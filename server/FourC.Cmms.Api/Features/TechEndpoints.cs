@@ -55,7 +55,7 @@ public static partial class TechEndpoints
                     // The job's own stop: completing it ends the stop and fills the downtime from it.
                     Downtime = db.DowntimeEvents.Where(e => e.Id == w.DowntimeEventId).Select(e => new { e.StartedAt, e.EndedAt }).FirstOrDefault(),
                     w.LocationId, LocationPath = w.Location == null ? null : w.Location.Path, LocationNotes = w.Location == null ? null : w.Location.NotesToTechnician,
-                    w.AccessWindows, w.OnlyWhenStopped, w.GroupId,
+                    w.AccessWindows, w.OnlyWhenStopped, w.GroupId, w.PmTaskId,
                 }).ToListAsync(ct);
             var ids = jobs.Select(j => j.Id).ToList();
             // The jobs' groups and their comments (0.12.0).
@@ -100,6 +100,10 @@ public static partial class TechEndpoints
                 .Concat(teamIds.Where(x => x.Id == id).SelectMany(x => teamMembers.GetValueOrDefault(x.TeamId) ?? [])).Distinct().Where(crewNames.ContainsKey)
                 .Select(e => new { EmployeeId = e, Name = crewNames[e] }).OrderBy(x => x.Name).ToList());
             var allowed = await perms.GetAsync(ctx.UserId!.Value);
+            // The work templates' documents (0.12.0), read online from the job: only for people who may open them.
+            var templateIds = allowed.Contains(Permissions.PmView) ? jobs.Where(j => j.PmTaskId != null).Select(j => j.PmTaskId!.Value).Distinct().ToList() : [];
+            var templateDocs = (templateIds.Count == 0 ? [] : await db.Attachments.AsNoTracking().Where(a => a.EntityType == "PmTask" && templateIds.Contains(a.EntityId))
+                .OrderBy(a => a.FileName).Select(a => new { a.EntityId, a.Id, a.FileName, a.ContentType }).ToListAsync(ct)).ToLookup(a => a.EntityId);
             var siteIds = jobs.Select(j => j.SiteId).Distinct().ToList();
             var defaultStores = (await db.Sites.AllSites().AsNoTracking().Where(s => siteIds.Contains(s.Id)).Select(s => new { s.Id, s.Settings }).ToListAsync(ct))
                 .ToDictionary(s => s.Id, s => s.Settings.DefaultStoreId);
@@ -115,6 +119,7 @@ public static partial class TechEndpoints
                     Tasks = tasks[j.Id].Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName }),
                     PlannedParts = parts[j.Id].Select(p => new { p.PartNumber, p.PartName, p.UnitOfMeasure, p.Quantity, p.StoreCode }),
                     Files = files[j.Id].Select(f => new { f.Id, f.FileName, f.ContentType, f.IsSignature, f.SignedBy }),
+                    TemplateDocuments = j.PmTaskId is { } tid ? templateDocs[tid].Select(d => new { d.Id, d.FileName, d.ContentType }) : [],
                     Comments = comments[j.Id].Take(CommentsPerJob).Select(c => new { c.Body, c.UserName, c.CreatedAt }),
                     MyLabor = labor[j.Id].Select(l => new { l.WorkDate, l.Hours, l.OvertimeHours, l.Notes }),
                     HasLabor = withLabor.Contains(j.Id),

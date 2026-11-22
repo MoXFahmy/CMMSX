@@ -1449,7 +1449,9 @@
     "plannedParts": "القطع المخطط لها",
     "tooSlow": "لم يصل هذا الملف عبر هذا الاتصال ({{tries}} محاولات). أعد المحاولة على شبكة Wi-Fi أو تجاهله.",
     "inGroup": "المجموعة {{number}}",
-    "groupComments": "تعليقات المجموعة {{number}}"
+    "groupComments": "تعليقات المجموعة {{number}}",
+    "templateDocs": "من قالب العمل",
+    "templateDocsOffline": "من قالب العمل (افتحها عند الاتصال)"
   },
   "labels": {
     "title": "ملصقات QR",

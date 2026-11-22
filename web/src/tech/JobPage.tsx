@@ -25,7 +25,7 @@ export function JobPage() {
   const { t } = useTranslation();
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { bundle, queue, sent, add } = useTech();
+  const { bundle, queue, sent, add, online } = useTech();
   const base = bundle?.jobs.find((j) => j.id === id);
   // Sent changes first (they are older), then those still waiting.
   const canIssue = bundle?.can?.issueStock ?? true;
@@ -130,6 +130,12 @@ export function JobPage() {
           <input ref={galleryInput} type="file" accept="image/*" multiple hidden onChange={(e) => void addPhoto(e.currentTarget.files)} />
         </Group>
         {job.files.map((f) => <Text key={f.id} fz="sm">{f.isSignature ? `✍ ${f.signedBy ?? ''}` : f.fileName}</Text>)}
+        {(job.templateDocuments?.length ?? 0) > 0 && <Stack gap={2} mt={6}>
+          <Text fz="xs" c="dimmed">{online ? t('tech.templateDocs') : t('tech.templateDocsOffline')}</Text>
+          {job.templateDocuments!.map((d) => online
+            ? <Anchor key={d.id} fz="sm" href={`/api/attachments/${d.id}/content`} target="_blank" rel="noopener">{d.fileName}</Anchor>
+            : <Text key={d.id} fz="sm" c="dimmed">{d.fileName}</Text>)}
+        </Stack>}
         {job.pendingPhotos + job.pendingSignatures > 0 && <Badge color="orange" variant="light">{t('tech.photosWaiting', { count: job.pendingPhotos + job.pendingSignatures })}</Badge>}
       </Card>
 

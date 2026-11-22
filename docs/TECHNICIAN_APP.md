@@ -79,6 +79,10 @@ The phone keeps a copy of the parts and stock of the stores at your sites, refre
 - **Hours for the crew:** with *Log hours for others* (Maintenance Managers have it), *Log hours* asks whose hours;
   pick anyone on the job's crew.
 - **Cancel the job:** with permission to close work orders; pick the reason when the organization uses cancel reasons.
+- **Group jobs (0.12.0):** a job that belongs to a work group shows *Group GRP-00012* and the group's comments
+  (read-only; write them on the web). Its due date comes from the group.
+- **Work template documents (0.12.0):** a job made from a work template lists the template's manuals and procedures
+  under its files; they open when the phone is online and are not kept for offline use.
 - **New work order** (under *My jobs*, and at the bottom of a job), for people who may create work orders: what needs doing, priority, and the
   asset or location. It is assigned to you and works offline.
 

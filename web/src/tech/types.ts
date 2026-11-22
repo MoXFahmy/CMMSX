@@ -17,6 +17,8 @@ export type TechJob = {
   tasks: { id: string; sequence: number; description: string; isDone: boolean; reading?: string | null; remarks?: string | null; assetId?: string | null; updatedAt?: string | null; updatedByName?: string | null }[];
   plannedParts: { partNumber: string; partName: string; unitOfMeasure: string; quantity: number; storeCode?: string | null }[];
   files: { id: string; fileName: string; contentType: string; isSignature: boolean; signedBy?: string | null }[];
+  /** 0.12.0: the work template's documents, opened online (not kept on the phone). */
+  templateDocuments?: { id: string; fileName: string; contentType: string }[];
   comments: { body: string; userName?: string | null; createdAt: string }[];
   /** 0.12.0: the group the job belongs to, with the comments its work orders share (read-only on the phone). */
   group?: { number: string; comments: { body: string; userName?: string | null; createdAt: string }[] } | null;

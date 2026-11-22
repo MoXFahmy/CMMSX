@@ -66,6 +66,22 @@ public class TemplateTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Phone_job_lists_the_template_documents()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var me = (await EmployeeAsync(org.Admin, $"ME{Guid.NewGuid():N}"[..8], userId: org.AdminId)).Id;
+        var template = await TemplateAsync(org.Admin, "MAN", ["Read the manual"]);
+        await UploadAsync(org.Admin, "PmTask", template, "manual.pdf");
+        var wo = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/work-orders", new
+        {
+            title = "Pump", siteId = org.Site, locationId = org.Location, priority = "Medium", type = "Corrective", templateId = template, assigneeIds = new[] { me },
+        })));
+        var job = (await Ok(await org.Admin.GetAsync("/api/tech/bundle"))).GetProperty("jobs").EnumerateArray().Single(j => Id(j) == wo);
+        Assert.Equal("manual.pdf", job.GetProperty("templateDocuments").EnumerateArray().Single().GetProperty("fileName").GetString());
+    }
+
+    [SkippableFact]
     public async Task Pm_work_takes_the_template_title_type_and_priority()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
