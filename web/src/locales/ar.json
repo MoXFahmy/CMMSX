@@ -1769,5 +1769,24 @@
     "line": "البند",
     "outstanding": "متبقٍ {{qty}}",
     "receiveButton": "استلام"
+  },
+  "techJob": {
+    "downSince": "الأصل متوقف منذ {{when}}",
+    "running": "الأصل يعمل",
+    "backRunning": "عاد للعمل",
+    "assetStopped": "توقف الأصل",
+    "when": "متى",
+    "notAFile": "لا يمكن إرفاق {{name}} (الفيديو والمستندات: MP4 أو MOV أو WebM أو PDF أو Word أو Excel أو نص).",
+    "tooBig": "حجم {{name}} أكبر من {{mb}} ميجابايت.",
+    "addChecklist": "إضافة قائمة خطوات",
+    "attachFile": "فيديو أو مستند",
+    "cancelJob": "إلغاء العمل",
+    "pmTask": "قائمة الصيانة الوقائية",
+    "addSteps": "إضافة الخطوات",
+    "workOrderSaved": "حُفظ أمر العمل؛ يُرسل عند توفر الشبكة.",
+    "newWorkOrder": "أمر عمل جديد",
+    "whatToDo": "ما المطلوب عمله",
+    "createWorkOrder": "إنشاء أمر العمل",
+    "whoseHours": "ساعات من"
   }
 }

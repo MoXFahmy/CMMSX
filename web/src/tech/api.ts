@@ -83,7 +83,7 @@ export async function sendChange(c: QueuedChange, file?: Blob): Promise<SendResu
       form.set('userId', c.userId);
       form.set('at', c.at);
       if (c.workOrderId) form.set('workOrderId', c.workOrderId);
-      const p = c.payload as { kind: 'photo' | 'signature'; signedBy?: string; fileName?: string };
+      const p = c.payload as { kind: 'photo' | 'signature' | 'file'; signedBy?: string; fileName?: string };
       form.set('kind', p.kind);
       if (p.signedBy) form.set('signedBy', p.signedBy);
       if (!file) return { kind: 'rejected', message: 'The photo is no longer on this phone.' };

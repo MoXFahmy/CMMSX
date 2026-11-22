@@ -3,6 +3,7 @@ import { ActionIcon, Alert, Anchor, Badge, Box, Button, Card, Center, Group, Ind
 import { modals } from '@mantine/modals';
 import { Link, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { CountPage, PartPage, ReceivePage, StockSearchPage } from './StockPages';
+import { NewWorkOrderPage } from './JobExtras';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { notifications } from '@mantine/notifications';
@@ -44,6 +45,7 @@ function TechShell() {
           <Route path="/tech/parts/:id" element={<PartPage />} />
           <Route path="/tech/counts/:id" element={<CountPage />} />
           <Route path="/tech/receive" element={<ReceivePage />} />
+          <Route path="/tech/new-work-order" element={<NewWorkOrderPage />} />
           <Route path="*" element={<MyJobsPage />} />
         </Routes>
       </Box>

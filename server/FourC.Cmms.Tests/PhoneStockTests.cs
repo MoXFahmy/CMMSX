@@ -59,6 +59,11 @@ public class PhoneStockTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var job = (await Ok(await org.Admin.GetAsync("/api/tech/bundle"))).GetProperty("jobs").EnumerateArray().Single(j => Id(j) == wo);
         Assert.Equal(store, job.GetProperty("defaultStoreId").GetGuid());
         var line = Assert.Single(job.GetProperty("plannedLines").EnumerateArray());
+        Assert.Contains(job.GetProperty("crew").EnumerateArray(), c => c.GetProperty("employeeId").GetGuid() == me.Id);
+        var can = (await Ok(await org.Admin.GetAsync("/api/tech/bundle"))).GetProperty("can");
+        Assert.True(can.GetProperty("logForOthers").GetBoolean());
+        Assert.True(can.GetProperty("cancel").GetBoolean());
+        Assert.True(can.GetProperty("createWorkOrders").GetBoolean());
         Assert.Equal(part, line.GetProperty("partId").GetGuid());
         Assert.Equal(2m, line.GetProperty("quantity").GetDecimal());
         Assert.Equal(0m, line.GetProperty("issued").GetDecimal());

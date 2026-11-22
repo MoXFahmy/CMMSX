@@ -37,7 +37,7 @@ public static partial class TechEndpoints
         var g = api.MapGroup("/tech").WithTags("Technician app");
 
         // My open jobs. Answers 304 when the phone already has this version (it asks every 15 minutes).
-        g.MapGet("/bundle", async (HttpContext http, CmmsDbContext db, ITenantContext ctx, IOptions<JsonOptions> json, CancellationToken ct) =>
+        g.MapGet("/bundle", async (HttpContext http, CmmsDbContext db, ITenantContext ctx, PermissionService perms, IOptions<JsonOptions> json, CancellationToken ct) =>
         {
             var me = await EmployeeAsync(db, ctx, ct);
             if (me is null) return NotLinked();
@@ -83,6 +83,16 @@ public static partial class TechEndpoints
                     .Where(t => t.WorkOrderId != null && ids.Contains(t.WorkOrderId.Value) && (t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Issue || t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Return))
                     .GroupBy(t => new { t.WorkOrderId, t.PartId, t.StoreId }).Select(g => new { g.Key.WorkOrderId, g.Key.PartId, g.Key.StoreId, Net = -g.Sum(t => t.Quantity) }).ToListAsync(ct))
                 .ToDictionary(x => (x.WorkOrderId!.Value, x.PartId, x.StoreId), x => x.Net);
+            // Each job's crew: the people on it and the members of its team (a crew leader logs their hours, 0.11.0).
+            var assignees = await db.WorkOrderAssignees.AsNoTracking().Where(a => ids.Contains(a.WorkOrderId)).Select(a => new { a.WorkOrderId, a.EmployeeId }).ToListAsync(ct);
+            var teamIds = await db.WorkOrders.AsNoTracking().Where(w => ids.Contains(w.Id) && w.TeamId != null).Select(w => new { w.Id, TeamId = w.TeamId!.Value }).ToListAsync(ct);
+            var teamMembers = teamIds.Count == 0 ? [] : await db.Teams.AllSites().AsNoTracking().Where(t => teamIds.Select(x => x.TeamId).Contains(t.Id)).ToDictionaryAsync(t => t.Id, t => t.MemberIds, ct);
+            var crewIds = assignees.Select(a => a.EmployeeId).Concat(teamMembers.Values.SelectMany(m => m)).Distinct().ToList();
+            var crewNames = await db.Employees.AsNoTracking().Where(e => crewIds.Contains(e.Id) && e.IsActive).ToDictionaryAsync(e => e.Id, e => e.FullName, ct);
+            var crew = ids.ToDictionary(id => id, id => assignees.Where(a => a.WorkOrderId == id).Select(a => a.EmployeeId)
+                .Concat(teamIds.Where(x => x.Id == id).SelectMany(x => teamMembers.GetValueOrDefault(x.TeamId) ?? [])).Distinct().Where(crewNames.ContainsKey)
+                .Select(e => new { EmployeeId = e, Name = crewNames[e] }).OrderBy(x => x.Name).ToList());
+            var allowed = await perms.GetAsync(ctx.UserId!.Value);
             var siteIds = jobs.Select(j => j.SiteId).Distinct().ToList();
             var defaultStores = (await db.Sites.AllSites().AsNoTracking().Where(s => siteIds.Contains(s.Id)).Select(s => new { s.Id, s.Settings }).ToListAsync(ct))
                 .ToDictionary(s => s.Id, s => s.Settings.DefaultStoreId);
@@ -104,7 +114,14 @@ public static partial class TechEndpoints
                     PlannedLines = planned[j.Id].Select(p => new { p.Id, p.PartId, p.StoreId, p.Quantity,
                         Issued = p.StoreId is { } st ? issued.GetValueOrDefault((j.Id, p.PartId, st)) : 0m }),
                     DefaultStoreId = defaultStores.GetValueOrDefault(j.SiteId),
+                    Crew = crew[j.Id],
                 }),
+                // What this person may do on the phone (0.11.0).
+                Can = new
+                {
+                    LogForOthers = allowed.Contains(Permissions.WorkOrdersLogForOthers), Cancel = allowed.Contains(Permissions.WorkOrdersClose),
+                    CreateWorkOrders = allowed.Contains(Permissions.WorkOrdersCreate),
+                },
                 FailureCodes = await db.FailureCodes.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
                 CompletionRules = new
                 {

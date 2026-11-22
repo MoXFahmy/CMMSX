@@ -1725,5 +1725,24 @@
     "line": "Line",
     "outstanding": "{{qty}} to come",
     "receiveButton": "Receive"
+  },
+  "techJob": {
+    "downSince": "The asset is down since {{when}}",
+    "running": "The asset is running",
+    "backRunning": "Back running",
+    "assetStopped": "Asset stopped",
+    "when": "When",
+    "notAFile": "{{name}} can't be attached (videos and documents: MP4, MOV, WebM, PDF, Word, Excel, text).",
+    "tooBig": "{{name}} is larger than {{mb}} MB.",
+    "addChecklist": "Add a checklist",
+    "attachFile": "Video or document",
+    "cancelJob": "Cancel the job",
+    "pmTask": "PM checklist",
+    "addSteps": "Add the steps",
+    "workOrderSaved": "Work order saved; it is sent when there's a signal.",
+    "newWorkOrder": "New work order",
+    "whatToDo": "What needs doing",
+    "createWorkOrder": "Create work order",
+    "whoseHours": "Whose hours"
   }
 }
