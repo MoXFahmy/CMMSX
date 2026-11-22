@@ -2048,5 +2048,9 @@
     "onWork": "Work order",
     "followUp": "Follow-up",
     "savedWithFollowUp": "Saved — follow-up work raised"
+  },
+  "codes": {
+    "mostUsed": "Most used together",
+    "all": "All"
   }
 }
