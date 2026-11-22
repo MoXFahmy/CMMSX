@@ -741,5 +741,17 @@
  "This work was cancelled": "أُلغي هذا العمل",
  "The work you asked for was cancelled": "أُلغي العمل الذي طلبته",
  "Overdue: work order {0}": "متأخر: أمر العمل {0}",
- "This work is past its due time": "تجاوز هذا العمل موعد استحقاقه"
+ "This work is past its due time": "تجاوز هذا العمل موعد استحقاقه",
+ "Requester satisfaction": "رضا مقدمي الطلبات",
+ "Requesters' answers to finished work: accepted or refused, and their ratings.": "ردود مقدمي الطلبات على العمل المنجز: مقبول أو مرفوض، وتقييماتهم.",
+ "Request type": "نوع الطلب",
+ "Answers": "الردود",
+ "Accepted": "مقبول",
+ "Refused": "مرفوض",
+ "Average rating": "متوسط التقييم",
+ "No type": "بدون نوع",
+ "No reason": "بدون سبب",
+ "Cancelled work": "الأعمال الملغاة",
+ "Work orders cancelled in the period, by reason.": "أوامر العمل الملغاة في الفترة، حسب السبب.",
+ "Without a reason": "بدون سبب"
 }
