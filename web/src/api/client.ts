@@ -1,4 +1,5 @@
 import i18n from '@/i18n';
+import { siteHeader } from '@/components/siteSwitch';
 export class ApiError extends Error {
   status: number;
   fieldErrors: Record<string, string>;
@@ -43,6 +44,7 @@ async function request(path: string, init?: RequestInit & { json?: unknown }): P
   if (init?.json !== undefined) { headers.set('Content-Type', 'application/json'); body = JSON.stringify(init.json); }
   headers.set('Accept', 'application/json');
   headers.set('Accept-Language', i18n.language || 'en'); // the server answers messages in it
+  for (const [k, v] of Object.entries(siteHeader())) headers.set(k, v); // the site switch: work in one site at a time
   let res: Response;
   // No answer at all (no signal, or the connection dropped): say so, not the browser's "Failed to fetch".
   try { res = await fetch(`/api${path}`, { ...init, headers, body, credentials: 'same-origin' }); }

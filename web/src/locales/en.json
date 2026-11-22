@@ -164,7 +164,8 @@
     "lateWork": "Late work",
     "dueSoon": "Due soon",
     "responseLate": "Not started in time",
-    "assetsDown": "Assets down now"
+    "assetsDown": "Assets down now",
+    "workBySite": "Work by {{site}}"
   },
   "locations": {
     "title": "Locations",
@@ -1531,5 +1532,14 @@
     "chosen": "Chosen",
     "ofThisAsset": "Parts of this asset",
     "otherParts": "Other parts"
+  },
+  "access": {
+    "switchLabel": "Choose the {{site}} to work in",
+    "allSites": "All {{sites}}",
+    "userSitesHint": "Leave empty for all {{sites}}.",
+    "userBranches": "Limit to parts of the tree",
+    "userBranchesHint": "Only these places and everything under them. Leave empty for whole sites.",
+    "placesCount_one": "{{count}} place",
+    "placesCount_other": "{{count}} places"
   }
 }

@@ -9,6 +9,7 @@ import { LanguageSwitch } from './LanguageSwitch';
 import { useOnline } from './useOnline';
 import { appVersionLabel } from '@/components/utils';
 import { AlertBell } from '@/components/AlertBell';
+import { SiteSwitch } from '@/components/SiteSwitch';
 import { EmailPreferences } from '@/components/EmailPreferences';
 import {
   IconLayoutDashboard, IconMapPin, IconBox, IconClipboardText, IconTool, IconCalendarRepeat, IconPackage, IconShoppingCart,
@@ -83,6 +84,7 @@ export function AppLayout() {
             <Text c="dimmed" fz="sm" visibleFrom="md" lineClamp={1}>{me?.tenant.name}</Text>
           </Group>
           <Group gap="xs" wrap="nowrap">
+            <SiteSwitch />
             <AlertBell />
             <UnstyledButton onClick={() => toggleColorScheme()} aria-label={t('common.toggleColorScheme')} p={6}>
               {colorScheme === 'dark' ? <IconSun size={18} /> : <IconMoon size={18} />}

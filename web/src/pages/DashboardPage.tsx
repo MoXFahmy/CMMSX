@@ -72,6 +72,33 @@ export function DashboardPage() {
             <Kpi label={t('dashboard.completed30')} value={data.work.completedLast30.toLocaleString()} icon={IconCircleCheck} color="teal" to="/work-orders?tab=Completed" />
             <Kpi label={t('dashboard.requestsAwaiting')} value={data.work.requestsAwaiting.toLocaleString()} icon={IconInbox} color="grape" to="/work-requests" />
           </SimpleGrid>
+          {(data.bySiteWork?.length ?? 0) > 0 && (
+            <Card mb="lg" p={0}>
+              <Title order={5} p="md" pb="xs">{t('dashboard.workBySite', { site: terms.site.toLowerCase() })}</Title>
+              <Table.ScrollContainer minWidth={520}>
+                <Table verticalSpacing={6} highlightOnHover>
+                  <Table.Thead><Table.Tr>
+                    <Table.Th>{terms.site}</Table.Th>
+                    <Table.Th ta="end">{t('dashboard.openWork')}</Table.Th>
+                    <Table.Th ta="end">{t('dashboard.lateWork')}</Table.Th>
+                    <Table.Th ta="end">{t('dashboard.completed30')}</Table.Th>
+                    <Table.Th ta="end">{t('dashboard.requestsAwaiting')}</Table.Th>
+                  </Table.Tr></Table.Thead>
+                  <Table.Tbody>
+                    {data.bySiteWork!.map((s) => (
+                      <Table.Tr key={s.siteId}>
+                        <Table.Td><Text fz="sm" fw={500}>{s.name}</Text></Table.Td>
+                        <Table.Td ta="end"><Anchor component={Link} to={`/work-orders?siteId=${s.siteId}`} fz="sm" fw={600}>{s.open.toLocaleString()}</Anchor></Table.Td>
+                        <Table.Td ta="end"><Anchor component={Link} to={`/work-orders?view=overdue&siteId=${s.siteId}`} fz="sm" fw={600} c={s.late ? 'red' : undefined}>{s.late.toLocaleString()}</Anchor></Table.Td>
+                        <Table.Td ta="end"><Anchor component={Link} to={`/work-orders?tab=Completed&siteId=${s.siteId}`} fz="sm">{s.completedLast30.toLocaleString()}</Anchor></Table.Td>
+                        <Table.Td ta="end"><Anchor component={Link} to={`/work-requests?siteId=${s.siteId}`} fz="sm">{s.requestsWaiting.toLocaleString()}</Anchor></Table.Td>
+                      </Table.Tr>
+                    ))}
+                  </Table.Tbody>
+                </Table>
+              </Table.ScrollContainer>
+            </Card>
+          )}
           {data.work.urgent.length > 0 && (
             <Card mb="lg">
               <Title order={5} mb="sm">{t('dashboard.urgentWork')}</Title>

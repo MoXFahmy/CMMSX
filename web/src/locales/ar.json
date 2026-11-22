@@ -164,7 +164,8 @@
     "lateWork": "أعمال متأخرة",
     "dueSoon": "مستحقة قريبًا",
     "responseLate": "لم تبدأ في الوقت المحدد",
-    "assetsDown": "أصول متوقفة الآن"
+    "assetsDown": "أصول متوقفة الآن",
+    "workBySite": "العمل حسب {{site}}"
   },
   "locations": {
     "title": "الأماكن",
@@ -1571,5 +1572,18 @@
     "chosen": "المختارة",
     "ofThisAsset": "قطع هذا الأصل",
     "otherParts": "قطع أخرى"
+  },
+  "access": {
+    "switchLabel": "اختيار {{site}} الذي تعمل فيه",
+    "allSites": "كل {{sites}}",
+    "userSitesHint": "اتركه فارغًا لكل {{sites}}.",
+    "userBranches": "حصر الوصول في أجزاء من الشجرة",
+    "userBranchesHint": "هذه الأماكن وكل ما تحتها فقط. اتركه فارغًا للمواقع كاملة.",
+    "placesCount_zero": "لا أماكن",
+    "placesCount_one": "مكان واحد",
+    "placesCount_two": "مكانان",
+    "placesCount_few": "{{count}} أماكن",
+    "placesCount_many": "{{count}} مكانًا",
+    "placesCount_other": "{{count}} مكان"
   }
 }

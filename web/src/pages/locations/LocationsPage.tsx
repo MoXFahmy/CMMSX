@@ -21,8 +21,10 @@ type Node = { kind: 'site' | 'location'; id: string; siteId: string; name: strin
 
 function buildTree(h: { sites: { id: string; code: string; name: string; isActive: boolean; assetCount: number }[]; locations: HierarchyLocation[] }): Node[] {
   const kids = new Map<string, HierarchyLocation[]>();
+  const ids = new Set(h.locations.map((l) => l.id));
   for (const l of h.locations) {
-    const k = l.parentId ?? `site:${l.siteId}`;
+    // Under the site when its parent isn't listed (people limited to a branch don't see above it).
+    const k = l.parentId && ids.has(l.parentId) ? l.parentId : `site:${l.siteId}`;
     kids.set(k, [...(kids.get(k) ?? []), l]);
   }
   const make = (l: HierarchyLocation): Node => ({

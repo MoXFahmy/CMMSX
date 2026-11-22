@@ -37,6 +37,8 @@ export type Me = {
   permissions: string[];
   /** Set when the account is linked to an employee: the technician view is for them. */
   employeeId?: string | null;
+  /** The sites this person may see (for the switch), whether they are limited, and the site this request was narrowed to (0.9.0). */
+  access?: { limited: boolean; branches: boolean; sites: { id: string; code: string; name: string; isActive: boolean }[]; siteId?: string | null };
 };
 
 export type Site = {
@@ -97,7 +99,12 @@ export type CustomField = {
 export type Attachment = { id: string; fileName: string; contentType: string; size: number; description?: string; isPrimaryImage: boolean; createdAt: string; createdBy?: string };
 export type AuditItem = { id: string; action: string; changes?: string; userName?: string; timestamp: string };
 export type Transfer = { id: string; transferredAt: string; reason?: string; fromSite?: string; fromLocation?: string; toSite?: string; toLocation?: string; transferredBy?: string };
-export type User = { id: string; fullName: string; email: string; jobTitle?: string; phone?: string; isActive: boolean; lastLoginAt?: string; createdAt: string; roles: { roleId: string; name: string }[]; purchaseApprovalLimit?: number | null };
+export type User = {
+  id: string; fullName: string; email: string; jobTitle?: string; phone?: string; isActive: boolean; lastLoginAt?: string; createdAt: string;
+  roles: { roleId: string; name: string }[]; purchaseApprovalLimit?: number | null;
+  /** Sites this person may see (empty = every site) and branches of the location tree they are limited to (0.9.0). */
+  siteIds?: string[]; locationIds?: string[];
+};
 export type Role = { id: string; name: string; description?: string; isSystem: boolean; permissions: string[]; userCount: number };
 export type PermissionInfo = { code: string; group: string; name: string };
 export type Dashboard = {
@@ -107,6 +114,8 @@ export type Dashboard = {
   byCriticality: { criticality: Criticality; count: number }[];
   byCategory: { categoryId?: string; name: string; color?: string; count: number }[];
   bySite: { siteId: string; name: string; count: number }[];
+  /** For people who see several sites: the work at each (0.9.0). */
+  bySiteWork?: { siteId: string; name: string; open: number; late: number; completedLast30: number; requestsWaiting: number }[];
   warrantyExpiring: { id: string; assetNumber: string; name: string; warrantyExpiresOn: string; warrantyType: WarrantyType }[];
   recentAssets: { id: string; assetNumber: string; name: string; status: AssetStatus; createdAt: string; siteName: string }[];
 };
