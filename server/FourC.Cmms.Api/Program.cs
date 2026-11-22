@@ -166,6 +166,7 @@ api.MapDowntimeEndpoints();
 api.MapPlanningEndpoints();
 api.MapPlanningBoardEndpoints();
 api.MapPmEndpoints();
+api.MapPmCalendarEndpoints();
 api.MapInventoryEndpoints();
 api.MapPurchasingEndpoints();
 api.MapReportEndpoints();
