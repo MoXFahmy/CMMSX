@@ -78,3 +78,50 @@ public class PhoneJobTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal("rejected", Status(await ActAsync(requester.Client, "workorder.create", new { title = "No", siteId = org.Site, priority = "Low", type = "Corrective" })));
     }
 }
+
+public class PhoneFileTests(ApiFixture fx) : IClassFixture<ApiFixture>
+{
+    private static async Task<JsonElement> UploadAsync(HttpClient c, Guid workOrderId, string kind, byte[] bytes, string contentType, string fileName)
+    {
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(Guid.NewGuid().ToString()), "clientId" }, { new StringContent(DateTimeOffset.UtcNow.ToString("O")), "at" },
+            { new StringContent(workOrderId.ToString()), "workOrderId" }, { new StringContent(kind), "kind" },
+        };
+        var file = new ByteArrayContent(bytes);
+        file.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue(contentType);
+        form.Add(file, "file", fileName);
+        return await Ok(await c.PostAsync("/api/tech/files", form));
+    }
+
+    private async Task<(Loop.Org Org, Guid Wo)> JobAsync()
+    {
+        var org = await OrgAsync(fx, emailOn: false);
+        var me = await EmployeeAsync(org.Admin, "ME", userId: org.AdminId);
+        var wo = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/work-orders", new { title = "Film the fault", siteId = org.Site, locationId = org.Location, priority = "Low", type = "Corrective", assigneeIds = new[] { me.Id } })));
+        return (org, wo);
+    }
+
+    [SkippableFact]
+    public async Task A_pdf_and_a_video_attach_to_the_job()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (org, wo) = await JobAsync();
+        Assert.Equal("done", Status(await UploadAsync(org.Admin, wo, "file", "%PDF-1.4 test"u8.ToArray(), "application/pdf", "manual.pdf")));
+        Assert.Equal("done", Status(await UploadAsync(org.Admin, wo, "file", new byte[2048], "video/mp4", "noise.mp4")));
+        var files = await Ok(await org.Admin.GetAsync($"/api/attachments?entityType=WorkOrder&entityId={wo}"));
+        Assert.Equal(["manual.pdf", "noise.mp4"], files.EnumerateArray().Select(f => f.GetProperty("fileName").GetString()!).Order().ToArray());
+        Assert.Equal("rejected", Status(await UploadAsync(org.Admin, wo, "file", new byte[10], "application/x-msdownload", "tool.exe")));
+    }
+
+    [SkippableFact]
+    public async Task Size_limits_are_50_MB_for_files_and_10_MB_for_photos()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (org, wo) = await JobAsync();
+        var big = await UploadAsync(org.Admin, wo, "file", new byte[50 * 1024 * 1024 + 1], "video/mp4", "long.mp4");
+        Assert.Equal("rejected", Status(big));
+        Assert.Equal("long.mp4 is larger than 50 MB.", Message(big));
+        Assert.Equal("rejected", Status(await UploadAsync(org.Admin, wo, "photo", new byte[10 * 1024 * 1024 + 1], "image/jpeg", "huge.jpg")));
+    }
+}

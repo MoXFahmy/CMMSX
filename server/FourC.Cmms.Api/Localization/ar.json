@@ -769,5 +769,7 @@
  "You can't cancel work orders.": "لا يمكنك إلغاء أوامر العمل.",
  "This checklist no longer exists.": "قائمة الخطوات هذه لم تعد موجودة.",
  "Choose where the work is.": "اختر مكان العمل.",
- "Created on the phone": "أُنشئ من الهاتف"
+ "Created on the phone": "أُنشئ من الهاتف",
+ "{0} is larger than 50 MB.": "حجم {0} أكبر من 50 ميجابايت.",
+ "{0} isn't a video or document the app can attach (MP4, MOV, WebM, PDF, Word, Excel, text).": "{0} ليس فيديو أو مستندًا يمكن للتطبيق إرفاقه (MP4 أو MOV أو WebM أو PDF أو Word أو Excel أو نص)."
 }

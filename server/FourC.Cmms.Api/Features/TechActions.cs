@@ -51,6 +51,13 @@ public static partial class TechEndpoints
 
     private static readonly HashSet<string> ImageTypes = ["image/jpeg", "image/png", "image/webp"];
     private const long MaxImageBytes = 10 * 1024 * 1024;
+    /// <summary>Videos and documents a technician can attach from the phone (0.11.0), by the type their file name gives.</summary>
+    private static readonly HashSet<string> FileTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "video/mp4", "video/quicktime", "video/webm", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain", "text/csv",
+    };
+    private const long MaxFileBytes = 50 * 1024 * 1024;
     private static readonly TimeSpan OldestChange = TimeSpan.FromDays(30);
 
     /// <summary>409 "otherUser": the change was queued by another person; the phone keeps it until they sign in again.</summary>
@@ -84,17 +91,27 @@ public static partial class TechEndpoints
             if (!Guid.TryParse(form["clientId"], out var clientId) || clientId == Guid.Empty) return Results.Problem(title: Translator.T("A file needs an id."), statusCode: 400);
             if (OtherUser(Guid.TryParse(form["userId"], out var by) ? by : null, ctx) is { } other) return other;
             var at = Clamp(DateTimeOffset.TryParse(form["at"], out var a) ? a : null, DateTimeOffset.UtcNow);
-            var signature = form["kind"].ToString() == "signature";
+            var kind = form["kind"].ToString();
+            var signature = kind == "signature";
+            var document = kind == "file"; // a video or document (0.11.0)
             var allowed = await perms.GetAsync(ctx.UserId!.Value);
-            return Results.Ok(await RunAsync(db, ctx, clientId, signature ? "signature.add" : "photo.add", at, async () =>
+            return Results.Ok(await RunAsync(db, ctx, clientId, signature ? "signature.add" : document ? "file.add" : "photo.add", at, async () =>
             {
                 Require(allowed, Permissions.WorkOrdersExecute);
                 var w = await WorkOrderAsync(db, Guid.TryParse(form["workOrderId"], out var wid) ? wid : null, ct);
                 var file = form.Files.GetFile("file") ?? throw new Rejected("The file is missing.");
-                if (!ImageTypes.Contains(AttachmentEndpoints.ContentTypeOf(file.FileName, file.ContentType)))
-                    throw new Rejected($"{file.FileName} isn't a photo (JPEG, PNG or WebP).");
+                var type = AttachmentEndpoints.ContentTypeOf(file.FileName, file.ContentType);
                 if (file.Length == 0) throw new Rejected($"{file.FileName} is empty.");
-                if (file.Length > MaxImageBytes) throw new Rejected($"{file.FileName} is larger than 10 MB.");
+                if (document)
+                {
+                    if (!FileTypes.Contains(type)) throw new Rejected($"{file.FileName} isn't a video or document the app can attach (MP4, MOV, WebM, PDF, Word, Excel, text).");
+                    if (file.Length > MaxFileBytes) throw new Rejected($"{file.FileName} is larger than 50 MB.");
+                }
+                else
+                {
+                    if (!ImageTypes.Contains(type)) throw new Rejected($"{file.FileName} isn't a photo (JPEG, PNG or WebP).");
+                    if (file.Length > MaxImageBytes) throw new Rejected($"{file.FileName} is larger than 10 MB.");
+                }
                 var att = await AttachmentEndpoints.SaveAttachmentAsync(db, storage, "WorkOrder", w.Id, file, ct);
                 if (signature)
                 {
@@ -106,7 +123,7 @@ public static partial class TechEndpoints
                 await Housekeeping.SaveOrRemoveFileAsync(storage, att.StorageKey, () => db.SaveChangesAsync(ct), ct);
                 return new Answer("done");
             }, ct));
-        }).DisableAntiforgery();
+        }).DisableAntiforgery().WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(MaxFileBytes + 2 * 1024 * 1024));
     }
 
     /// <summary>
