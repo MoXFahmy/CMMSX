@@ -5,8 +5,13 @@ import { readFileSync } from 'node:fs';
 import assert from 'node:assert/strict';
 
 const version = readFileSync(new URL('../VERSION', import.meta.url), 'utf8').trim();
-const printed = JSON.parse(execFileSync('npx', ['cap', 'config', '--json'], { cwd: new URL('.', import.meta.url), encoding: 'utf8' }));
-const cfg = printed.app?.extConfig ?? printed;
+const configWith = (push) => {
+  const env = { ...process.env };
+  if (push) env.CMMS_PUSH = '1'; else delete env.CMMS_PUSH;
+  const printed = JSON.parse(execFileSync('npx', ['cap', 'config', '--json'], { cwd: new URL('.', import.meta.url), encoding: 'utf8', env }));
+  return printed.app?.extConfig ?? printed;
+};
+const cfg = configWith(false);
 
 const checks = [
   ['app id', () => assert.equal(cfg.appId, 'com.fourcsystems.cmms')],
@@ -14,6 +19,8 @@ const checks = [
   ['opens the cloud app at the technician start page', () => assert.equal(cfg.server?.url, 'https://cmx.cworks.com.eg/tech/')],
   ['offline page', () => assert.equal(cfg.server?.errorPath, 'offline.html')],
   ['version in the user agent', () => assert.equal(cfg.android?.appendUserAgent, `4CCMMS-Android/${version}`)],
+  // 0.11.0: only a build with the Firebase file may register for push (without it registering crashes the app).
+  ['push mark only in builds with Firebase', () => assert.equal(configWith(true).android?.appendUserAgent, `4CCMMS-Android/${version} 4CCMMS-Push`)],
   // Android 15+ draws apps edge to edge; 'native' keeps the cloud app's header clear of the status bar.
   ['status bar handled by Capacitor', () => assert.equal(cfg.plugins?.SystemBars?.insetsHandling, 'native')],
   // Other sites must open in the phone's browser, not inside the app.

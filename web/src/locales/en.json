@@ -1342,7 +1342,6 @@
     "addComment": "Add a comment",
     "send": "Send",
     "me": "Me",
-    "newWorkOrder": "New work order (full app)",
     "reading": "Reading",
     "remarks": "Remarks",
     "date": "Date",
@@ -1776,5 +1775,12 @@
     "difference": "Difference",
     "countedBy": "Counted by",
     "nothingCounted": "Nothing counted yet."
+  },
+  "techLock": {
+    "reason": "Unlock CMX",
+    "title": "CMX is locked",
+    "unlock": "Unlock with fingerprint or face",
+    "setting": "Unlock with fingerprint or face",
+    "settingHint": "Asked when the app opens and after 5 minutes away. You stay signed in for 30 days as before."
   }
 }

@@ -1,5 +1,5 @@
-import { useMemo, useState } from 'react';
-import { ActionIcon, Alert, Anchor, Badge, Box, Button, Card, Center, Group, Indicator, Loader, Stack, Text, TextInput, Title, UnstyledButton } from '@mantine/core';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { ActionIcon, Alert, Anchor, Badge, Box, Button, Card, Center, Group, Indicator, Loader, Stack, Switch, Text, TextInput, Title, UnstyledButton } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { Link, Route, Routes, useLocation, useNavigate } from 'react-router';
 import { CountPage, PartPage, ReceivePage, StockSearchPage } from './StockPages';
@@ -7,7 +7,9 @@ import { NewWorkOrderPage } from './JobExtras';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { notifications } from '@mantine/notifications';
-import { IconCloudOff, IconCloudCheck, IconList, IconLogout, IconPackage, IconRefresh, IconScan, IconSearch, IconTransferVertical } from '@tabler/icons-react';
+import { IconCloudOff, IconCloudCheck, IconFingerprint, IconList, IconLogout, IconPackage, IconRefresh, IconScan, IconSearch, IconTransferVertical } from '@tabler/icons-react';
+import { BIOMETRIC_KEY, biometricAvailable, registerPush, shouldLock, verifyBiometric } from './native';
+import { sendPushToken } from './api';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDateTime, fromNow } from '@/components/utils';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
@@ -18,6 +20,68 @@ import { ScanPage } from './ScanPage';
 import { MODE_KEY, TechProvider, useTech, type Phase } from './useTech';
 import type { QueuedChange } from './outbox';
 import type { TechJob } from './types';
+
+/** Fingerprint/face lock (0.11.0): locked when the app opens or comes back after 5 minutes, if switched on and the phone can. */
+function useLock(ready: boolean) {
+  const [locked, setLocked] = useState(false);
+  const hiddenAt = useRef<number | null>(null);
+  const enabled = () => { try { return localStorage.getItem(BIOMETRIC_KEY) === '1'; } catch { return false; } };
+  useEffect(() => {
+    if (!ready || !enabled()) return;
+    void biometricAvailable().then((ok) => { if (ok && shouldLock(true, null, Date.now())) setLocked(true); });
+    const onVisibility = () => {
+      if (document.hidden) { hiddenAt.current = Date.now(); return; }
+      if (enabled() && shouldLock(true, hiddenAt.current, Date.now())) void biometricAvailable().then((ok) => { if (ok) setLocked(true); });
+    };
+    document.addEventListener('visibilitychange', onVisibility);
+    return () => document.removeEventListener('visibilitychange', onVisibility);
+  }, [ready]);
+  return { locked, unlock: () => { hiddenAt.current = null; setLocked(false); } };
+}
+
+/** Push notifications (0.11.0): register once per app start inside the new Android app; a tap opens the job. */
+function usePush(ready: boolean) {
+  const navigate = useNavigate();
+  const done = useRef(false);
+  useEffect(() => {
+    if (!ready || done.current) return;
+    done.current = true;
+    void registerPush((token) => void sendPushToken(token), (link) => navigate(link));
+  }, [ready, navigate]);
+}
+
+function LockScreen({ onUnlock }: { onUnlock: () => void }) {
+  const { t } = useTranslation();
+  const { signOut } = useTech();
+  const tryUnlock = async () => { if (await verifyBiometric(t('techLock.reason'))) onUnlock(); };
+  useEffect(() => { void tryUnlock(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return (
+    <Center mih="100vh" p="md">
+      <Stack align="center" maw={320}>
+        <IconFingerprint size={56} />
+        <Title order={4} ta="center">{t('techLock.title')}</Title>
+        <Button fullWidth onClick={() => void tryUnlock()}>{t('techLock.unlock')}</Button>
+        <Button fullWidth variant="subtle" onClick={() => void signOut()}>{t('tech.signOut')}</Button>
+      </Stack>
+    </Center>
+  );
+}
+
+/** "Unlock with fingerprint or face" (0.11.0): only shown inside the new app on a phone that can. */
+function BiometricSetting() {
+  const { t } = useTranslation();
+  const [can, setCan] = useState(false);
+  const [on, setOn] = useState(() => { try { return localStorage.getItem(BIOMETRIC_KEY) === '1'; } catch { return false; } });
+  useEffect(() => { void biometricAvailable().then(setCan); }, []);
+  if (!can) return null;
+  const change = async (next: boolean) => {
+    // Turning it on asks once, so nobody locks themselves out with a sensor that doesn't work.
+    if (next && !(await verifyBiometric(t('techLock.reason')))) return;
+    try { localStorage.setItem(BIOMETRIC_KEY, next ? '1' : '0'); } catch { /* the setting just won't stick */ }
+    setOn(next);
+  };
+  return <Switch label={t('techLock.setting')} description={t('techLock.settingHint')} checked={on} onChange={(e) => void change(e.currentTarget.checked)} />;
+}
 
 /** The technician view (/tech): works from the phone's copy and sends changes when there is signal. */
 export function TechApp() {
@@ -30,7 +94,10 @@ export function TechApp() {
 
 function TechShell() {
   const { phase } = useTech();
+  const locked = useLock(phase === 'ready');
+  usePush(phase === 'ready');
   if (phase !== 'ready') return <PhaseScreen phase={phase} />;
+  if (locked.locked) return <LockScreen onUnlock={locked.unlock} />;
   return (
     <Box mih="100vh" pb={72} bg="var(--mantine-color-gray-0)">
       <Header />
@@ -179,6 +246,7 @@ function MyJobsPage() {
           ))}
         </Stack>
       ))}
+      {bundle?.can?.createWorkOrders && <Anchor fz="sm" ta="center" onClick={() => navigate('/tech/new-work-order')}>{t('techJob.newWorkOrder')}</Anchor>}
       {lastRefresh && <Text fz="xs" c="dimmed" ta="center">{t('tech.updated', { when: fromNow(new Date(lastRefresh).toISOString()) })}</Text>}
     </Stack>
   );
@@ -195,6 +263,7 @@ function SyncPage() {
   });
   return (
     <Stack gap="sm">
+      <BiometricSetting />
       <Card withBorder p="sm">
         <Group justify="space-between">
           <div>

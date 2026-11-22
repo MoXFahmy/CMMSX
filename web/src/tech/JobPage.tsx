@@ -135,7 +135,7 @@ export function JobPage() {
           {job.comments.map((c, i) => <div key={i}><Text fz="xs" c="dimmed">{c.userName ?? t('tech.me')} · {fmtDateTime(c.createdAt)}</Text><Text fz="sm" style={{ whiteSpace: 'pre-wrap' }}>{c.body}</Text></div>)}
         </Stack>
       </Card>
-      {bundle?.can?.createWorkOrders && <Anchor fz="xs" ta="center" onClick={() => navigate('/tech/new-work-order')}>{t('tech.newWorkOrder')}</Anchor>}
+      {bundle?.can?.createWorkOrders && <Anchor fz="xs" ta="center" onClick={() => navigate('/tech/new-work-order')}>{t('techJob.newWorkOrder')}</Anchor>}
 
       <HoursModal opened={hoursOpen} onClose={() => setHoursOpen(false)} onSave={(p) => void change('labor.add', p)}
         crew={bundle?.can?.logForOthers ? job.crew : undefined} me={bundle?.employeeId} />

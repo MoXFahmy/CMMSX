@@ -58,6 +58,9 @@ if [ "$MODE" != "--no-bump" ]; then
   printf '%s\n' "$NEW" > VERSION
   trap 'echo "release: failed; undo the version change with: git checkout VERSION" >&2' ERR
 fi
+# Push notifications (0.11.0): the Firebase app file from the private folder, when it is there.
+FIREBASE_FILE=${RELEASE_FIREBASE_FILE:-$DRIVE/_private/firebase/google-services.json}
+if [ -f "$FIREBASE_FILE" ]; then export CMMS_GOOGLE_SERVICES="$FIREBASE_FILE"; else echo "release: no Firebase file — the app is built without push notifications." >&2; fi
 mobile/build-apk.sh release
 APK="mobile/out/CMX-$NEW.apk"
 [ -f "$APK" ] || die "the build did not produce $APK"

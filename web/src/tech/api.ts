@@ -109,6 +109,11 @@ export async function sendChange(c: QueuedChange, file?: Blob): Promise<SendResu
 }
 
 /** Signs this device out on the server (throws Offline when that can't be done now). */
+/** The phone's Firebase token for push notifications (0.11.0); ignored when there is no signal (sent again next start). */
+export async function sendPushToken(token: string): Promise<void> {
+  try { await call('/tech/push-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) }, SEND_MS); } catch { /* next start */ }
+}
+
 export async function logout(): Promise<void> {
   await call('/auth/logout', { method: 'POST' }, SEND_MS);
 }
