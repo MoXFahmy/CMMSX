@@ -130,6 +130,11 @@ public class WorkOrder : TenantEntity
     /// <summary>The due time an overdue e-mail was already sent (or skipped) for; a new due time can be notified again.</summary>
     public DateTimeOffset? OverdueNotifiedFor { get; set; }
 
+    /// <summary>Users told about this work beyond the usual people (from its PM and template, 0.12.0).</summary>
+    public List<Guid> RecipientIds { get; set; } = [];
+    /// <summary>The group this work order belongs to (one per asset of a group PM occurrence, 0.12.0).</summary>
+    public Guid? GroupId { get; set; }
+
     public List<WorkOrderAssignee> Assignees { get; set; } = [];
     /// <summary>Assets a PM round work order covers, in round order. Empty for all other work orders (they use <see cref="AssetId"/>).</summary>
     public List<WorkOrderAsset> Assets { get; set; } = [];

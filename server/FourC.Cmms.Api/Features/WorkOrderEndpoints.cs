@@ -16,7 +16,7 @@ public static class WorkOrderEndpoints
     public sealed record WorkOrderInput(string Title, string? Description, WorkType Type, WorkPriority Priority, Guid SiteId, Guid? LocationId, Guid? AssetId,
         Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? PlannedStart, DateOnly? DueDate, decimal? EstimatedHours, List<string>? Tasks, string? RowVersion = null,
         string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null, bool? AssetIsDown = null, Guid? TeamId = null,
-        bool? ManagesTeam = null, List<AccessWindow>? AccessWindows = null, bool? OnlyWhenStopped = null);
+        bool? ManagesTeam = null, List<AccessWindow>? AccessWindows = null, bool? OnlyWhenStopped = null, Guid? TemplateId = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
         DateTimeOffset? At = null, Guid? CancelReasonId = null);
@@ -39,6 +39,8 @@ public static class WorkOrderEndpoints
         public Guid? TeamId { get; set; }
         public Guid? AssigneeId { get; set; }
         public Guid? CancelReasonId { get; set; }
+        /// <summary>The work orders of one group (0.12.0).</summary>
+        public Guid? GroupId { get; set; }
         /// <summary>Only work that can be done while the asset is stopped (planners book shutdowns).</summary>
         public bool? OnlyWhenStopped { get; set; }
         /// <summary>Completed on or after this day (the dashboard's "completed in 30 days").</summary>
@@ -76,7 +78,7 @@ public static class WorkOrderEndpoints
         Guid SiteId, string SiteName, Guid? LocationId, string? LocationPath, Guid? AssetId, string? AssetNumber, string? AssetName, string? TradeName,
         List<string> Assignees, DateOnly? DueDate, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, bool IsOverdue,
         DateTimeOffset? DueAt, DateTimeOffset? StartBy, DateTimeOffset? RespondedAt, SlaState ResponseState, SlaState CompletionState, string? TeamName = null,
-        string? CancelReasonName = null, bool OnlyWhenStopped = false);
+        string? CancelReasonName = null, bool OnlyWhenStopped = false, Guid? GroupId = null, string? GroupNumber = null);
 
     public static void MapWorkOrderEndpoints(this RouteGroupBuilder api)
     {
@@ -153,6 +155,16 @@ public static class WorkOrderEndpoints
             var labour = Planning.Labour(w.Assignees.Select(a => (a.PlannedHours, a.Employee?.HourlyRate)).ToList(), w.EstimatedHours);
             var plannedParts = planned.Sum(p => p.PlannedCost);
             var pm = w.PmScheduleId is { } pmId ? await db.PmSchedules.AsNoTracking().Where(p => p.Id == pmId).Select(p => new { p.Id, p.Code, p.Name }).FirstOrDefaultAsync(ct) : null;
+            // The work template it was made from (0.12.0): its documents are shown, not copied, so they follow changes.
+            var template = w.PmTaskId is { } tplId ? await db.PmTasks.AsNoTracking().Where(t => t.Id == tplId)
+                .Select(t => new { t.Id, t.Code, t.Name, t.ExpectedStopHours }).FirstOrDefaultAsync(ct) : null;
+            var templateDocuments = template is null ? [] : await db.Attachments.AsNoTracking().Where(a => a.EntityType == "PmTask" && a.EntityId == template.Id)
+                .OrderBy(a => a.FileName).Select(a => new { a.Id, a.FileName, a.ContentType, a.Size }).ToListAsync(ct);
+            // Its group (0.12.0): the group's comments are shown here, not copied.
+            var group = w.GroupId is { } gid ? await db.WorkOrderGroups.AsNoTracking().Where(g => g.Id == gid).Select(g => new { g.Id, g.Number, g.Title }).FirstOrDefaultAsync(ct) : null;
+            var groupComments = group is null ? [] : await WorkGroups.CommentsAsync(db, group.Id, ct);
+            var recipients = w.RecipientIds.Count == 0 ? [] : await db.Users.AsNoTracking().Where(u => w.RecipientIds.Contains(u.Id) && u.TenantId == db.CurrentTenantId)
+                .OrderBy(u => u.FullName).Select(u => new { u.Id, u.FullName }).ToListAsync(ct);
             return Results.Ok(new
             {
                 w.Id, w.Number, w.Title, w.Description, w.Type, w.Priority, w.Status, w.HoldReason,
@@ -174,6 +186,9 @@ public static class WorkOrderEndpoints
                     Feedback = feedback, Comments = requestComments,
                 },
                 Pm = pm, w.PmDueDate, w.AccessWindows, w.OnlyWhenStopped,
+                Template = template is null ? null : new { template.Id, template.Code, template.Name, template.ExpectedStopHours, Documents = templateDocuments },
+                Recipients = recipients,
+                Group = group is null ? null : new { group.Id, group.Number, group.Title, Comments = groupComments },
                 Assets = roundAssets,
                 Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName }),
                 Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned, Signatures = signatures,
@@ -225,6 +240,10 @@ public static class WorkOrderEndpoints
             var teamBefore = w.TeamId;
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(w).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
+            // A group's work order takes its due date from the group (0.12.0).
+            if (w.GroupId is { } inGroup && DueChanges(w, input))
+                throw new DomainException(string.Format(WorkGroups.DueFromGroup,
+                    await db.WorkOrderGroups.AllSites().Where(g => g.Id == inGroup).Select(g => g.Number).FirstOrDefaultAsync(ct)));
             var priorityBefore = w.Priority;
             var assetBefore = w.AssetId;
             Apply(w, input);
@@ -552,6 +571,7 @@ public static class WorkOrderEndpoints
             w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, TradeName = w.Trade!.Name, TeamName = w.Team!.Name,
             Assignees = w.Assignees.Select(a => a.Employee!.FullName).ToList(), w.DueDate, w.CreatedAt, w.CompletedAt,
             w.DueAt, w.StartBy, w.RespondedAt, w.DueFromTarget, CancelReasonName = w.CancelReason!.Name, w.OnlyWhenStopped,
+            w.GroupId, GroupNumber = db.WorkOrderGroups.Where(g => g.Id == w.GroupId).Select(g => g.Number).FirstOrDefault(),
         }).ToPagedAsync(page, pageSize, ct, maxPageSize);
         var names = await LocationEndpoints.ResolvePathNamesAsync(db, paged.Items.Select(i => i.LocationPath), ct);
         return new PagedResult<WorkOrderListItem>(paged.Items.Select(w =>
@@ -560,7 +580,7 @@ public static class WorkOrderEndpoints
             return new WorkOrderListItem(w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason,
                 w.SiteId, w.SiteName, w.LocationId, w.LocationPath is null ? null : names(w.LocationPath), w.AssetId, w.AssetNumber, w.AssetName, w.TradeName,
                 w.Assignees, w.DueDate, w.CreatedAt, w.CompletedAt, sla.Completion == SlaState.Late || sla.Response == SlaState.Late,
-                w.DueAt, w.StartBy, w.RespondedAt, sla.Response, sla.Completion, w.TeamName, w.CancelReasonName, w.OnlyWhenStopped);
+                w.DueAt, w.StartBy, w.RespondedAt, sla.Response, sla.Completion, w.TeamName, w.CancelReasonName, w.OnlyWhenStopped, w.GroupId, w.GroupNumber);
         }).ToList(), paged.Total, paged.Page, paged.PageSize);
     }
 
@@ -582,6 +602,7 @@ public static class WorkOrderEndpoints
         if (f.TradeId is not null) q = q.Where(w => w.TradeId == f.TradeId);
         if (f.TeamId is not null) q = q.Where(w => w.TeamId == f.TeamId);
         if (f.CancelReasonId is not null) q = q.Where(w => w.CancelReasonId == f.CancelReasonId);
+        if (f.GroupId is not null) q = q.Where(w => w.GroupId == f.GroupId);
         if (f.OnlyWhenStopped == true) q = q.Where(w => w.OnlyWhenStopped);
         if (f.CreatedFrom is { } cf) { var from = new DateTimeOffset(cf.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt >= from); }
         if (f.CompletedFrom is { } completedFrom) { var done = new DateTimeOffset(completedFrom.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CompletedAt >= done); }
@@ -659,6 +680,7 @@ public static class WorkOrderEndpoints
         if (AccessWindows.Problem(i.AccessWindows) is { } windows) v.Add("accessWindows", windows);
         var who = (i.AssigneeIds ?? []).Distinct().ToList();
         if (who.Count > 0 && await db.Employees.CountAsync(e => who.Contains(e.Id), ct) != who.Count) v.Add("assigneeIds", "Unknown person.");
+        if (i.TemplateId is { } tpl && !await db.PmTasks.AnyAsync(t => t.Id == tpl, ct)) v.Add("templateId", "Unknown work template.");
         return v;
     }
 
@@ -679,17 +701,38 @@ public static class WorkOrderEndpoints
             w.OnlyWhenStopped = await db.Assets.AllSites().Where(a => a.Id == stopAsset).Select(a => a.OnlyWhenStopped).FirstOrDefaultAsync(ct);
         Deadlines.OnCreate(w, input.DueAt, input.DueDate, settings, raisedAt ?? DateTimeOffset.UtcNow, requestId is not null, applyTargets);
         SyncAssignees(w, input.AssigneeIds);
+        // From a work template (0.12.0): linked (its documents show on the work order), its parts planned, its recipients told.
+        var template = input.TemplateId is { } tid ? await db.PmTasks.AsNoTracking().Include(t => t.Steps).Include(t => t.Parts).FirstOrDefaultAsync(t => t.Id == tid, ct) : null;
+        if (template is not null)
+        {
+            w.PmTaskId = template.Id;
+            w.RecipientIds = [.. template.RecipientIds];
+            if (input.Tasks is null) input = input with { Tasks = template.Steps.OrderBy(x => x.Sequence).Select(x => x.Description).ToList() };
+            foreach (var tp in template.Parts)
+                db.WorkOrderParts.Add(new WorkOrderPart { WorkOrderId = w.Id, PartId = tp.PartId, Quantity = tp.Quantity, StoreId = await Planning.DefaultStoreAsync(db, tp.PartId, w.SiteId, ct) });
+        }
         configure?.Invoke(w);
         db.WorkOrders.Add(w);
         if (mail is not null) { await mail.WorkOrderCreatedAsync(db, ctx, w, ct); await mail.TeamGivenAsync(db, ctx, w, ct); }
         var seq = 0;
         foreach (var t in (input.Tasks ?? []).Select(x => x.Clean()).OfType<string>())
             db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = ++seq, Description = t.Length > 1000 ? t[..1000] : t });
+        // Checklists on the asset or its category (0.12.0), after the work order's own steps.
+        await AssetChecklists.AppendAsync(db, w, w.Assets.Count > 0 ? w.Assets.OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList() : w.AssetId is { } onAsset ? [onAsset] : [], ct);
         db.WorkOrderStatusChanges.Add(new WorkOrderStatusChange { WorkOrderId = w.Id, ToStatus = WorkOrderStatus.Open, ChangedAt = DateTimeOffset.UtcNow,
             ChangedById = ctx.UserId, ChangedByName = ctx.UserName, Note = note ?? (requestId is null ? null : "Created from work request") });
         await db.SaveChangesAsync(ct);
         return w;
     }
+
+    /// <summary>
+    /// The edit asks for another deadline: a due time a minute or more away from the current one (the page sends the loaded time,
+    /// to the second), else a different due day, else none at all where there is one (back to the priority's target).
+    /// </summary>
+    private static bool DueChanges(WorkOrder w, WorkOrderInput i) =>
+        i.DueAt is { } at ? w.DueAt is not { } current || Math.Abs((at - current).TotalSeconds) >= 60
+        : i.DueDate is { } day ? day != w.DueDate
+        : w.DueAt is not null || w.DueDate is not null;
 
     private static void Apply(WorkOrder w, WorkOrderInput i)
     {

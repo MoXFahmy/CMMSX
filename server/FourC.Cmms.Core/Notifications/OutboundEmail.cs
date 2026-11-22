@@ -47,12 +47,12 @@ public static class EmailEvents
             [RequestRejected] = ([K.Requester, K.RequestRecipients], [K.Requester]),
             [RequestComment] = ([K.Requester, K.RequestRecipients, K.Technicians, K.Contractors], [K.Requester, K.RequestRecipients]),
             [WorkOrderAssigned] = ([K.Technicians, K.Contractors], [K.Technicians, K.Contractors]),
-            [PmAssigned] = ([K.Technicians, K.Contractors], [K.Technicians, K.Contractors]),
-            [WorkOrderCompleted] = ([K.RequestRecipients, K.Issuer], [K.Issuer]),
+            [PmAssigned] = ([K.Technicians, K.Contractors, K.WorkRecipients], [K.Technicians, K.Contractors, K.WorkRecipients]),
+            [WorkOrderCompleted] = ([K.RequestRecipients, K.WorkRecipients, K.Issuer], [K.WorkRecipients, K.Issuer]),
             [RequestCompleted] = ([K.Requester], [K.Requester]),
-            [RequestRefused] = ([K.RequestRecipients, K.Technicians, K.Contractors, K.Issuer], [K.RequestRecipients, K.Technicians, K.Contractors, K.Issuer]),
-            [WorkOrderCancelled] = ([K.Requester, K.RequestRecipients, K.Technicians, K.Contractors, K.Issuer], [K.Requester, K.Technicians, K.Contractors]),
-            [WorkOrderOverdue] = ([K.RequestRecipients, K.Technicians, K.Contractors, K.Issuer], [K.Technicians, K.Contractors, K.Issuer]),
+            [RequestRefused] = ([K.RequestRecipients, K.WorkRecipients, K.Technicians, K.Contractors, K.Issuer], [K.RequestRecipients, K.Technicians, K.Contractors, K.Issuer]),
+            [WorkOrderCancelled] = ([K.Requester, K.RequestRecipients, K.WorkRecipients, K.Technicians, K.Contractors, K.Issuer], [K.Requester, K.WorkRecipients, K.Technicians, K.Contractors]),
+            [WorkOrderOverdue] = ([K.RequestRecipients, K.WorkRecipients, K.Technicians, K.Contractors, K.Issuer], [K.Technicians, K.Contractors, K.Issuer]),
             [PartsReceived] = ([K.Technicians, K.Contractors], [K.Technicians, K.Contractors]),
         };
 
@@ -79,8 +79,10 @@ public static class EmailRecipientKinds
     public const string Contractors = "contractors";
     /// <summary>Who created the work order (for e-mails about a request only, who created the request).</summary>
     public const string Issuer = "issuer";
+    /// <summary>The work order's own recipients, from its PM and work template (0.12.0).</summary>
+    public const string WorkRecipients = "workRecipients";
 
-    public static readonly IReadOnlyList<string> All = [Requester, RequestRecipients, Technicians, Contractors, Issuer];
+    public static readonly IReadOnlyList<string> All = [Requester, RequestRecipients, WorkRecipients, Technicians, Contractors, Issuer];
 }
 
 /// <summary>

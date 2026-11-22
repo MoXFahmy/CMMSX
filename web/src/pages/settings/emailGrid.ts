@@ -2,7 +2,7 @@
 export type GridRow = { key: string; applicable: string[]; defaults: string[] };
 
 /** The recipient columns of the grid, in order. */
-export const RECIPIENT_KINDS = ['requester', 'requestRecipients', 'technicians', 'contractors', 'issuer'] as const;
+export const RECIPIENT_KINDS = ['requester', 'requestRecipients', 'workRecipients', 'technicians', 'contractors', 'issuer'] as const;
 
 /** The kinds switched on for a row: the organization's choice (only kinds that apply), else the defaults. */
 export function kindsOn(chosen: Record<string, string[]> | undefined, row: GridRow): string[] {

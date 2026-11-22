@@ -25,6 +25,7 @@ import { noteRequired } from './statusRules';
 import { TxTypeBadge } from '@/components/InventoryBadges';
 import { fmtDate, fmtDateTime, fmtMoney, fmtPrice, fmtQty, fromNow, handleFormError, hoursText, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { PlannedHoursCard, PlannedPartsCard, PlanVsActualCard } from './WorkOrderPlanning';
+import { GroupCard, TemplateCard } from './WorkOrderGroupBits';
 import { BackRunningButton } from '@/pages/assets/AssetDowntime';
 import { downFor } from '@/components/downtime';
 
@@ -123,6 +124,7 @@ export function WorkOrderDetailPage() {
           <Grid gutter="lg">
             <Grid.Col span={{ base: 12, md: 8 }}>
               <Stack gap="lg">
+                {w.group && <GroupCard group={w.group} canComment={canExec} onChange={refresh} />}
                 {w.asset?.underWarranty && !locked && (
                   <Alert variant="light" color="teal" icon={<IconShieldCheck size={18} />} title={t('wo.underWarrantyTitle', { type: t(`warrantyType.${w.asset.warrantyType}`) })}>
                     {t('wo.underWarrantyBody', { date: fmtDate(w.asset.warrantyExpiresOn) })}
@@ -190,6 +192,7 @@ export function WorkOrderDetailPage() {
               <Stack gap="lg">
                 <Card><SimpleGrid cols={2} spacing="sm">
                   <Field label={t('wo.assignees')}>{w.assignees.map((a) => a.fullName).join(', ') || t('wo.noAssignees')}</Field>
+                  {(w.recipients?.length ?? 0) > 0 && <Field label={t('pm12.recipients')}>{w.recipients!.map((r) => r.fullName).join(', ')}</Field>}
                   <Field label={t('wo.trade')}>{w.tradeName}</Field>
                   {w.team && <Field label={t('teams.team')}>{w.team.name}</Field>}
                   <Field label={t('wo.requestedBy')}>{w.requestedBy ?? w.request?.requesterName}</Field>
@@ -198,6 +201,7 @@ export function WorkOrderDetailPage() {
                     <Stack gap={0}>
                       <Text span fw={500} fz="sm">{w.dueAt ? fmtDateTime(w.dueAt) : fmtDate(w.dueDate)}</Text>
                       <SlaText fz="xs" deadline={w.sla.dueAt ?? w.dueAt} state={w.sla.completion} />
+                      {w.group && <Text span fz="xs" c="dimmed">{t('groups.dueFromGroup', { number: w.group.number })}</Text>}
                     </Stack>
                   </Field>
                   {w.sla.respondBy && (
@@ -216,6 +220,7 @@ export function WorkOrderDetailPage() {
                   {w.completedAt && <Field label={t('wo.completed')}>{fmtDateTime(w.completedAt)}</Field>}
                   {w.closedAt && <Field label={t('wo.closed')}>{fmtDateTime(w.closedAt)}</Field>}
                 </SimpleGrid></Card>
+                {w.template && <TemplateCard template={w.template} />}
                 <Card>
                   <Text fw={600} mb="sm">{t('wo.totals')}</Text>
                   <Table verticalSpacing={4}><Table.Tbody>

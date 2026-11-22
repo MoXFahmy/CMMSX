@@ -5,6 +5,7 @@ import { useForm } from '@mantine/form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { ChecklistsCard } from '@/pages/assets/AssetChecklists';
 import { DataTable } from 'mantine-datatable';
 import { IconDevices, IconEdit, IconKey, IconPlus, IconTrash } from '@tabler/icons-react';
 import { DevicesModal } from '@/components/DevicesModal';
@@ -217,6 +218,7 @@ function CategorySettings() {
           <Checkbox label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
           <Group justify="flex-end"><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>
         </Stack></form>
+        {editing && <Stack mt="md"><ChecklistsCard categoryId={editing.id} canEdit={editable} /></Stack>}
       </Modal>
     </Card>
   );

@@ -82,6 +82,12 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<PmSchedule> PmSchedules => Set<PmSchedule>();
     public DbSet<PmScheduleTask> PmScheduleTasks => Set<PmScheduleTask>();
     public DbSet<PmScheduleAsset> PmScheduleAssets => Set<PmScheduleAsset>();
+    public DbSet<ScheduleCalendar> ScheduleCalendars => Set<ScheduleCalendar>();
+    public DbSet<PmScheduleCalendar> PmScheduleCalendars => Set<PmScheduleCalendar>();
+    public DbSet<PmScheduleMeter> PmScheduleMeters => Set<PmScheduleMeter>();
+    public DbSet<WorkOrderGroup> WorkOrderGroups => Set<WorkOrderGroup>();
+    public DbSet<WorkOrderGroupComment> WorkOrderGroupComments => Set<WorkOrderGroupComment>();
+    public DbSet<AssetChecklist> AssetChecklists => Set<AssetChecklist>();
     public DbSet<WorkOrderAsset> WorkOrderAssets => Set<WorkOrderAsset>();
     public DbSet<Meter> Meters => Set<Meter>();
     public DbSet<MeterReading> MeterReadings => Set<MeterReading>();
@@ -462,6 +468,9 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         {
             ConfigureTenantEntity(e);
             e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(300); e.Property(x => x.EstimatedHours).HasPrecision(9, 2);
+            e.Property(x => x.Title).HasMaxLength(300); e.Property(x => x.ExpectedStopHours).HasPrecision(9, 2);
+            e.Property(x => x.WorkType).HasDefaultValue(WorkType.Preventive);
+            e.Property(x => x.RecipientIds).HasDefaultValueSql("'[]'");
             e.HasMany(x => x.Steps).WithOne().HasForeignKey(x => x.PmTaskId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Parts).WithOne().HasForeignKey(x => x.PmTaskId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
@@ -487,16 +496,67 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasOne<Team>().WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.ExtraTasks).WithOne().HasForeignKey(x => x.PmScheduleId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Assets).WithOne().HasForeignKey(x => x.PmScheduleId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Calendars).WithOne().HasForeignKey(x => x.PmScheduleId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.ExtraMeters).WithOne().HasForeignKey(x => x.PmScheduleId).OnDelete(DeleteBehavior.Cascade);
+            e.Property(x => x.RecipientIds).HasDefaultValueSql("'[]'");
+            e.Property(x => x.MultiAssetMode).HasDefaultValue(MultiAssetMode.Round);
+            e.Property(x => x.GroupPlan).HasDefaultValue(GroupPlan.Copy);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
             e.HasIndex(x => new { x.TenantId, x.IsActive, x.NextDueDate });
             e.HasIndex(x => new { x.TenantId, x.AssetId });
         });
         b.Entity<PmScheduleTask>(e => e.HasKey(x => new { x.PmScheduleId, x.PmTaskId }));
+        b.Entity<PmScheduleCalendar>(e =>
+        {
+            e.HasKey(x => new { x.PmScheduleId, x.ScheduleCalendarId });
+            e.HasOne<ScheduleCalendar>().WithMany().HasForeignKey(x => x.ScheduleCalendarId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.ScheduleCalendarId);
+        });
+        b.Entity<PmScheduleMeter>(e =>
+        {
+            e.HasKey(x => new { x.PmScheduleId, x.MeterId });
+            e.Property(x => x.Interval).HasPrecision(18, 3); e.Property(x => x.NextDueReading).HasPrecision(18, 3);
+            e.HasOne<Meter>().WithMany().HasForeignKey(x => x.MeterId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.MeterId);
+        });
+        b.Entity<ScheduleCalendar>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Dates).HasDefaultValueSql("'[]'");
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<WorkOrderGroup>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Number).HasMaxLength(50); e.Property(x => x.Title).HasMaxLength(300);
+            e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<PmSchedule>().WithMany().HasForeignKey(x => x.PmScheduleId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => new { x.TenantId, x.PmScheduleId, x.PmDueDate }).IsUnique().HasFilter("[PmScheduleId] IS NOT NULL AND [PmDueDate] IS NOT NULL AND [IsDeleted] = 0");
+        });
+        b.Entity<WorkOrderGroupComment>(e =>
+        {
+            e.Property(x => x.Body).HasMaxLength(4000); e.Property(x => x.UserName).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.GroupId });
+            e.HasOne<WorkOrderGroup>().WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<AssetChecklist>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<AssetCategory>().WithMany().HasForeignKey(x => x.AssetCategoryId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<PmTask>().WithMany().HasForeignKey(x => x.PmTaskId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.AssetId, x.PmTaskId }).IsUnique().HasFilter("[AssetId] IS NOT NULL AND [IsDeleted] = 0");
+            e.HasIndex(x => new { x.TenantId, x.AssetCategoryId, x.PmTaskId }).IsUnique().HasFilter("[AssetCategoryId] IS NOT NULL AND [IsDeleted] = 0");
+            e.ToTable(t => t.HasCheckConstraint("CK_AssetChecklists_Target", "([AssetId] IS NULL AND [AssetCategoryId] IS NOT NULL) OR ([AssetId] IS NOT NULL AND [AssetCategoryId] IS NULL)"));
+        });
         b.Entity<PmScheduleAsset>(e =>
         {
             e.HasKey(x => new { x.PmScheduleId, x.AssetId });
             e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.AssetId);
+            e.HasOne<PmTask>().WithMany().HasForeignKey(x => x.PmTaskId).OnDelete(DeleteBehavior.Restrict);
         });
         b.Entity<Meter>(e =>
         {
@@ -504,6 +564,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.Unit).HasMaxLength(30);
             e.Property(x => x.CurrentReading).HasPrecision(18, 3); e.Property(x => x.MaxDailyIncrement).HasPrecision(18, 3);
             e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Meter>().WithMany().HasForeignKey(x => x.SourceMeterId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
         b.Entity<MeterReading>(e =>
@@ -513,7 +574,10 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         });
         b.Entity<WorkOrder>(e =>
         {
-            e.HasIndex(x => new { x.TenantId, x.PmScheduleId, x.PmDueDate }).IsUnique().HasFilter("[PmScheduleId] IS NOT NULL AND [PmDueDate] IS NOT NULL AND [IsDeleted] = 0");
+            e.HasIndex(x => new { x.TenantId, x.PmScheduleId, x.PmDueDate }).IsUnique().HasFilter("[PmScheduleId] IS NOT NULL AND [PmDueDate] IS NOT NULL AND [GroupId] IS NULL AND [IsDeleted] = 0");
+            e.Property(x => x.RecipientIds).HasDefaultValueSql("'[]'");
+            e.HasOne<WorkOrderGroup>().WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.GroupId }).HasFilter("[GroupId] IS NOT NULL");
         });
 
         b.Entity<AppUser>(e => e.Property(x => x.PurchaseApprovalLimit).HasPrecision(18, 2));
@@ -716,6 +780,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
                 && e.LocationId != null && CurrentBranchPaths!.Any(p => e.Location!.Path.StartsWith(p)));
         }
         b.Entity<Store>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
+        b.Entity<WorkOrderGroup>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
         b.Entity<PurchaseOrder>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
         b.Entity<Team>().HasQueryFilter(SiteFilter, e => e.SiteId == null || CurrentSiteIds!.Contains(e.SiteId.Value));
 
@@ -741,6 +806,11 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<AssetTransfer>().HasQueryFilter(SiteFilter, x => Assets.Any(a => a.Id == x.AssetId));
         b.Entity<PmScheduleTask>().HasQueryFilter(SiteFilter, x => PmSchedules.Any(p => p.Id == x.PmScheduleId));
         b.Entity<PmScheduleAsset>().HasQueryFilter(SiteFilter, x => PmSchedules.Any(p => p.Id == x.PmScheduleId));
+        b.Entity<PmScheduleCalendar>().HasQueryFilter(SiteFilter, x => PmSchedules.Any(p => p.Id == x.PmScheduleId));
+        b.Entity<PmScheduleMeter>().HasQueryFilter(SiteFilter, x => PmSchedules.Any(p => p.Id == x.PmScheduleId));
+        b.Entity<WorkOrderGroupComment>().HasQueryFilter(SiteFilter, x => WorkOrderGroups.Any(g => g.Id == x.GroupId));
+        // An asset's checklist follows the asset; a category's is for the whole organization.
+        b.Entity<AssetChecklist>().HasQueryFilter(SiteFilter, x => x.AssetId == null || Assets.Any(a => a.Id == x.AssetId));
         b.Entity<PurchaseOrderLine>().HasQueryFilter(SiteFilter, x => PurchaseOrders.Any(p => p.Id == x.PurchaseOrderId));
         b.Entity<StockReservation>().HasQueryFilter(SiteFilter, x => Stores.Any(s => s.Id == x.StoreId));
     }

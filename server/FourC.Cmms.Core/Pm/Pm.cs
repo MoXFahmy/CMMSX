@@ -5,19 +5,37 @@ using FourC.Cmms.Core.Work;
 
 namespace FourC.Cmms.Core.Pm;
 
-public enum PmScheduleType { FixedInterval = 1, DayOfWeekInMonth = 2, DateOfMonth = 3, Meter = 4 }
+/// <summary>Calendar (0.12.0): the PM's dates come only from its shared calendars.</summary>
+public enum PmScheduleType { FixedInterval = 1, DayOfWeekInMonth = 2, DateOfMonth = 3, Meter = 4, Calendar = 5 }
+/// <summary>A multi-asset PM's work: one work order listing every asset (Round) or a group with a work order per asset (0.12.0).</summary>
+public enum MultiAssetMode { Round = 1, Group = 2 }
+/// <summary>How a group PM's planned hours and parts reach its work orders: the whole plan on each, or shared out evenly.</summary>
+public enum GroupPlan { Copy = 1, Split = 2 }
 /// <summary>Scheduled: next = last target date + interval. Actual: next = last work order completion + interval (4CSQL "Schedule"/"Actual").</summary>
 public enum PmBasis { Scheduled = 1, Actual = 2 }
 public enum FrequencyUnit { Day = 1, Week = 2, Month = 3, Year = 4 }
 public enum MeterTrigger { Incremental = 1, Threshold = 2 }
-public enum ReadingSource { Manual = 1, WorkOrder = 2, Import = 3 }
+/// <summary>Propagated (0.12.0): copied from the meter this one follows.</summary>
+public enum ReadingSource { Manual = 1, WorkOrder = 2, Import = 3, Propagated = 4 }
 
-/// <summary>Reusable PM instructions (legacy pmchecklist + checklistelements).</summary>
+/// <summary>
+/// A work template (0.12.0; "PM task" before): reusable instructions for PM work and for work orders created from it
+/// (legacy pmchecklist + checklistelements).
+/// </summary>
 public class PmTask : TenantEntity
 {
     public required string Code { get; set; }
     public required string Name { get; set; }
     public string? Description { get; set; }
+    /// <summary>Title of the work orders made from it; empty = the template's name (PM work keeps the PM's name).</summary>
+    public string? Title { get; set; }
+    public WorkType WorkType { get; set; } = WorkType.Preventive;
+    /// <summary>Empty = the PM's or the form's priority.</summary>
+    public WorkPriority? Priority { get; set; }
+    /// <summary>Users told about work made from it (carried to the work orders).</summary>
+    public List<Guid> RecipientIds { get; set; } = [];
+    /// <summary>How long the asset is expected to be stopped, shown on the work order.</summary>
+    public decimal? ExpectedStopHours { get; set; }
     public Guid? TradeId { get; set; }
     public decimal? EstimatedHours { get; set; }
     public string? SafetyNotes { get; set; }
@@ -104,7 +122,40 @@ public class PmSchedule : TenantEntity
     /// <summary>Meter schedules: also generate on the time interval, whichever comes first.</summary>
     public bool TimeBased { get; set; }
 
+    /// <summary>Users told when it generates work; carried to its work orders (0.12.0).</summary>
+    public List<Guid> RecipientIds { get; set; } = [];
+    /// <summary>Overrides of the organization's PM rules; null = the organization's (0.12.0).</summary>
+    public List<Assets.AssetStatus>? SkipStatusesOverride { get; set; }
+    public List<DayOfWeek>? NonWorkingDaysOverride { get; set; }
+    public bool? NoStackingOverride { get; set; }
+    public MultiAssetMode MultiAssetMode { get; set; } = MultiAssetMode.Round;
+    public GroupPlan GroupPlan { get; set; } = GroupPlan.Copy;
+    /// <summary>Even spread: each period is split into this many occurrences, each for a block of the assets.</summary>
+    public int? SpreadParts { get; set; }
+    /// <summary>Spread: the part of the period the next occurrence is for (0-based).</summary>
+    public int SpreadIndex { get; set; }
+    /// <summary>Spread: the start of the current period.</summary>
+    public DateOnly? CycleStart { get; set; }
+    /// <summary>Shared calendars giving extra dates (or, for the Calendar type, all of them).</summary>
+    public List<PmScheduleCalendar> Calendars { get; set; } = [];
+    /// <summary>Meter triggers on top of the PM's own meter, whichever comes first.</summary>
+    public List<PmScheduleMeter> ExtraMeters { get; set; } = [];
+
     public bool IsActive { get; set; } = true;
+}
+
+public class PmScheduleCalendar
+{
+    public Guid PmScheduleId { get; set; }
+    public Guid ScheduleCalendarId { get; set; }
+}
+
+public class PmScheduleMeter
+{
+    public Guid PmScheduleId { get; set; }
+    public Guid MeterId { get; set; }
+    public decimal Interval { get; set; }
+    public decimal? NextDueReading { get; set; }
 }
 
 /// <summary>Multiple PM: on every Nth generation use this task instead of the routine one (e.g. monthly instead of weekly).</summary>
@@ -122,6 +173,8 @@ public class PmScheduleAsset
     public Guid AssetId { get; set; }
     public Asset? Asset { get; set; }
     public int Sequence { get; set; }
+    /// <summary>This asset's own template; empty = the PM's (0.12.0).</summary>
+    public Guid? PmTaskId { get; set; }
 }
 
 public class Meter : TenantEntity
@@ -135,6 +188,8 @@ public class Meter : TenantEntity
     public DateTimeOffset? LastReadAt { get; set; }
     /// <summary>Readings rising faster than this per day are flagged as probable typos (legacy max_daily_reading).</summary>
     public decimal? MaxDailyIncrement { get; set; }
+    /// <summary>The meter this one follows: its increases are added here as readings (0.12.0).</summary>
+    public Guid? SourceMeterId { get; set; }
     public bool IsActive { get; set; } = true;
 }
 
@@ -297,6 +352,7 @@ public static class PmCalendar
             PmScheduleType.FixedInterval => Every(s.Frequency, s.Unit) + (s.Basis == PmBasis.Actual ? " بعد الإنجاز" : ""),
             PmScheduleType.DayOfWeekInMonth => $"{days[(int)(s.DayOfWeek ?? System.DayOfWeek.Monday)]} {weeks[Math.Clamp(s.WeekOfMonth ?? 1, 1, 5)]} · {Every(s.Frequency, FrequencyUnit.Month)}",
             PmScheduleType.DateOfMonth => $"اليوم {s.DayOfMonth} · {Every(s.Frequency, FrequencyUnit.Month)}",
+            PmScheduleType.Calendar => "في تواريخ تقويماتها",
             _ => s.MeterTrigger == Pm.MeterTrigger.Threshold
                 ? (s.LowerLimit, s.UpperLimit) switch
                 {
@@ -318,6 +374,7 @@ public static class PmCalendar
             PmScheduleType.FixedInterval => Every(s.Frequency, s.Unit.ToString().ToLowerInvariant()) + (s.Basis == PmBasis.Actual ? " after completion" : ""),
             PmScheduleType.DayOfWeekInMonth => $"{weeks[Math.Clamp(s.WeekOfMonth ?? 1, 1, 5)]} {s.DayOfWeek} · {Every(s.Frequency, "month").ToLowerInvariant()}",
             PmScheduleType.DateOfMonth => $"Day {s.DayOfMonth} · {Every(s.Frequency, "month").ToLowerInvariant()}",
+            PmScheduleType.Calendar => "On its calendars' dates",
             _ => s.MeterTrigger == Pm.MeterTrigger.Threshold
                 ? (s.LowerLimit, s.UpperLimit) switch
                 {

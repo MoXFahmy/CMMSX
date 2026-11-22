@@ -13,7 +13,7 @@ import { SiteSwitch } from '@/components/SiteSwitch';
 import { EmailPreferences } from '@/components/EmailPreferences';
 import {
   IconLayoutDashboard, IconMapPin, IconBox, IconClipboardText, IconTool, IconCalendarRepeat, IconPackage, IconShoppingCart,
-  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices, IconCloudOff, IconCalendarWeek } from '@tabler/icons-react';
+  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices, IconCloudOff, IconCalendarWeek, IconStack2 } from '@tabler/icons-react';
 import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { handleFormError, notifySuccess } from './utils';
@@ -42,6 +42,7 @@ export function AppLayout() {
     { title: t('nav.maintenance'), items: [
       { label: t('nav.workRequests'), to: '/work-requests', icon: IconClipboardText, perm: P.requestsCreate },
       { label: t('nav.workOrders'), to: '/work-orders', icon: IconTool, perm: P.woView },
+      { label: t('nav.workGroups'), to: '/work-groups', icon: IconStack2, perm: P.woView },
       { label: t('nav.planning'), to: '/planning', icon: IconCalendarWeek, perm: P.woView },
       { label: t('nav.preventive'), to: '/pm', icon: IconCalendarRepeat, perm: P.pmView },
     ] },

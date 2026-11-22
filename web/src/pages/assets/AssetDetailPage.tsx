@@ -26,6 +26,7 @@ import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtDateTime, fmtMoney, handleFormError, notifyError, notifySuccess } from '@/components/utils';
 import { AssetDowntimeTab } from './AssetDowntime';
 import { AssetPartsTab } from './AssetParts';
+import { ChecklistsCard } from './AssetChecklists';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -204,6 +205,7 @@ export function AssetDetailPage() {
         </Tabs.Panel>
         <Tabs.Panel value="pm">
           <Stack>
+            <ChecklistsCard assetId={a.id} categoryId={a.categoryId} canEdit={can(P.assetsEdit)} />
             <Card p={0}>
               <Group justify="space-between" p="md"><Title order={5}>{t('pm.schedules')}</Title>
                 {can(P.pmManage) && <Button size="xs" leftSection={<IconPlus size={14} />} component={Link} to={`/pm/schedules/new?assetId=${a.id}`}>{t('pm.newSchedule')}</Button>}</Group>

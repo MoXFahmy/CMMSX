@@ -1,4 +1,4 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { ActionIcon, Anchor, Badge, Button, Card, Center, Checkbox, Grid, Group, Loader, NumberInput, Radio, SegmentedControl, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
@@ -17,11 +17,13 @@ import { AssetListEditor, type AssetRef } from '@/components/AssetListEditor';
 import { EmployeePicker } from '@/components/EmployeePicker';
 import { teamOptions, useTeams } from '@/components/teams';
 import { WoStatusBadge } from '@/components/WorkBadges';
-import { confirmDelete } from '@/components/confirm';
+import { confirmAction, confirmDelete } from '@/components/confirm';
+import { MultiAssetCard, PeopleRulesCard, TriggersCard } from './PmScheduleExtras';
+import { OccurrencesDrawer } from './OccurrencesDrawer';
 import { generateNow } from './generateNow';
-import { fmtDate, fmtDateTime, fmtMoney, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { fmtDate, fmtDateTime, fmtMoney, handleFormError, notifyError, notifySuccess, notifyWarning, toIsoDate } from '@/components/utils';
 
-type V = {
+export type V = {
   code: string; name: string; description: string; siteId: string | null; locationId: string | null; assetId: string | null; tradeId: string | null; teamId: string | null; priority: string;
   assigneeIds: string[]; pmTaskId: string | null; extraTasks: { pmTaskId: string | null; everyNth: number | '' }[]; type: string; basis: string; frequency: number | '';
   unit: string; weekOfMonth: string | null; dayOfWeek: string | null; dayOfMonth: number | ''; workPeriodDays: number | ''; wholeMonth: boolean; leadDays: number | '';
@@ -31,6 +33,10 @@ type V = {
   target: Target; roundAssets: AssetRef[];
   /** Only while the asset is stopped (0.10.0); null on a new schedule = take it from the asset. */
   onlyWhenStopped: boolean | null;
+  /** 0.12.0: shared calendars and extra meters, recipients, the PM's own rules, multi-asset mode, spread and each asset's template. */
+  calendarIds: string[]; extraMeters: { meterId: string | null; interval: number | '' }[]; recipientIds: string[];
+  useOrgRules: boolean; skipStatusesOverride: string[]; nonWorkingDaysOverride: string[]; noStackingOverride: boolean;
+  multiAssetMode: 'Round' | 'Group'; groupPlan: 'Copy' | 'Split'; spreadParts: number | ''; assetTemplates: Record<string, string | null>;
 };
 type Target = 'asset' | 'location' | 'several';
 const blank: V = {
@@ -38,17 +44,25 @@ const blank: V = {
   type: 'FixedInterval', basis: 'Scheduled', frequency: 1, unit: 'Month', weekOfMonth: '1', dayOfWeek: 'Monday', dayOfMonth: 1, workPeriodDays: 1, wholeMonth: false, leadDays: 7,
   startDate: new Date(), nextDueDate: null, meterId: null, meterTrigger: 'Incremental', meterInterval: '', nextDueReading: '', lowerLimit: '', upperLimit: '', lowerTaskId: null,
   upperTaskId: null, timeBased: false, isActive: true, target: 'asset', roundAssets: [], onlyWhenStopped: null,
+  calendarIds: [], extraMeters: [], recipientIds: [], useOrgRules: true, skipStatusesOverride: [], nonWorkingDaysOverride: [], noStackingOverride: false,
+  multiAssetMode: 'Round', groupPlan: 'Copy', spreadParts: '', assetTemplates: {},
 };
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 const n = (v: number | '') => (v === '' ? null : v);
 
-function toBody({ target, roundAssets, ...v }: V, rowVersion?: string) {
+function toBody({ target, roundAssets, useOrgRules, assetTemplates, ...v }: V, rowVersion?: string) {
+  const several = target === 'several';
   return {
     ...v, assetId: target === 'asset' ? v.assetId : null, assetIds: target === 'several' ? roundAssets.map((a) => a.id) : [], frequency: n(v.frequency) ?? 1, dayOfMonth: n(v.dayOfMonth), workPeriodDays: n(v.workPeriodDays) ?? 1, leadDays: n(v.leadDays) ?? 0,
     weekOfMonth: v.weekOfMonth ? Number(v.weekOfMonth) : null, startDate: toIsoDate(v.startDate) ?? toIsoDate(new Date()), nextDueDate: toIsoDate(v.nextDueDate),
     meterInterval: n(v.meterInterval), nextDueReading: n(v.nextDueReading), lowerLimit: n(v.lowerLimit), upperLimit: n(v.upperLimit),
     extraTasks: v.extraTasks.filter((x) => x.pmTaskId).map((x) => ({ pmTaskId: x.pmTaskId, everyNth: n(x.everyNth) ?? 2 })), rowVersion,
     managesTeam: true, // this form shows the team: an empty one clears it
+    extraMeters: target === 'asset' ? v.extraMeters.filter((m) => m.meterId).map((m) => ({ meterId: m.meterId, interval: n(m.interval) ?? 0 })) : [],
+    managesRules: true, skipStatusesOverride: useOrgRules ? null : v.skipStatusesOverride, nonWorkingDaysOverride: useOrgRules ? null : v.nonWorkingDaysOverride,
+    noStackingOverride: useOrgRules ? null : v.noStackingOverride,
+    multiAssetMode: several ? v.multiAssetMode : 'Round', groupPlan: v.groupPlan, spreadParts: several ? n(v.spreadParts) ?? 0 : 0,
+    assetTemplates: several ? roundAssets.map((a) => ({ assetId: a.id, pmTaskId: assetTemplates[a.id] ?? null })) : [],
   };
 }
 
@@ -83,6 +97,11 @@ export function PmScheduleFormPage() {
         meterTrigger: s.meterTrigger ?? 'Incremental', meterInterval: s.meterInterval ?? '', nextDueReading: s.nextDueReading ?? '', lowerLimit: s.lowerLimit ?? '', upperLimit: s.upperLimit ?? '',
         lowerTaskId: s.lowerTaskId ?? null, upperTaskId: s.upperTaskId ?? null, timeBased: s.timeBased, isActive: s.isActive,
         target: s.assets.length > 0 ? 'several' : s.assetId ? 'asset' : 'location', roundAssets: s.assets, onlyWhenStopped: s.onlyWhenStopped ?? false,
+        calendarIds: s.calendarIds ?? [], extraMeters: (s.extraMeters ?? []).map((m) => ({ meterId: m.meterId, interval: m.interval })), recipientIds: s.recipientIds ?? [],
+        useOrgRules: s.skipStatusesOverride == null && s.nonWorkingDaysOverride == null && s.noStackingOverride == null,
+        skipStatusesOverride: s.skipStatusesOverride ?? [], nonWorkingDaysOverride: s.nonWorkingDaysOverride ?? [], noStackingOverride: !!s.noStackingOverride,
+        multiAssetMode: s.multiAssetMode ?? 'Round', groupPlan: s.groupPlan ?? 'Copy', spreadParts: s.spreadParts ?? '',
+        assetTemplates: Object.fromEntries(s.assets.map((a) => [a.id, a.pmTaskId ?? null])),
       };
       form.setValues(saved);
       form.resetDirty(saved); // the saved schedule is the baseline: "unsaved changes" means edits since
@@ -101,10 +120,21 @@ export function PmScheduleFormPage() {
   });
   const taskOpts = useMemo(() => (tasks ?? []).filter((x) => x.isActive || [v.pmTaskId, v.lowerTaskId, v.upperTaskId].includes(x.id)).map((x) => ({ value: x.id, label: `${x.code} · ${x.name}` })), [tasks, v.pmTaskId, v.lowerTaskId, v.upperTaskId]);
 
+  const [occurrences, setOccurrences] = useState(false);
+  // "Make a copy for this PM" (0.12.0): later edits to the shared template no longer reach this PM.
+  const ownTemplate = () => confirmAction(t('pm12.ownTemplateConfirm'), async () => {
+    try {
+      const r = await post<{ pmTaskId: string; code: string }>(`/pm-schedules/${id}/own-template`);
+      notifySuccess(t('pm12.ownTemplateDone', { code: r.code }));
+      await qc.invalidateQueries({ queryKey: ['pm-schedule', id] }); await qc.invalidateQueries({ queryKey: ['pm-tasks'] });
+    } catch (e) { notifyError(e); }
+  });
   const submit = form.onSubmit(async (vals) => {
     try {
-      const r = editing ? await put<{ id: string }>(`/pm-schedules/${id}`, toBody(vals, s?.rowVersion)) : await post<{ id: string; code: string }>('/pm-schedules', toBody(vals));
+      const r = editing ? await put<{ id: string; warnings?: string[] }>(`/pm-schedules/${id}`, toBody(vals, s?.rowVersion))
+        : await post<{ id: string; code: string; warnings?: string[] }>('/pm-schedules', toBody(vals));
       notifySuccess(t('common.saved'));
+      for (const w of r.warnings ?? []) notifyWarning(w);
       await qc.invalidateQueries({ queryKey: ['pm-schedules'] }); await qc.invalidateQueries({ queryKey: ['pm-schedule'] });
       if (!editing) navigate(`/pm/schedules/${r.id}`, { replace: true });
     } catch (e) { handleFormError(form, e); }
@@ -124,6 +154,8 @@ export function PmScheduleFormPage() {
               qc.invalidateQueries({ queryKey: ['pm-schedule', id] }), qc.invalidateQueries({ queryKey: ['pm-forecast'] }), qc.invalidateQueries({ queryKey: ['work-orders'] })]))}>
               {t('pm.generateNextNow')}</Button>
           </Tooltip>}
+          {editing && <Button variant="light" onClick={() => setOccurrences(true)}>{t('pm12.occurrences')}</Button>}
+          {editable && editing && <Button variant="subtle" onClick={ownTemplate}>{t('pm12.ownTemplate')}</Button>}
           {editable && editing && <Button variant="subtle" color="red" onClick={() => confirmDelete(s!.code, async () => { try { await del(`/pm-schedules/${id}`); await qc.invalidateQueries({ queryKey: ['pm-schedules'] }); navigate('/pm/schedules'); } catch (e) { notifyError(e); } })}>{t('common.delete')}</Button>}
           {editable && <><Button variant="default" onClick={() => navigate(-1)}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{editing ? t('common.saveChanges') : t('common.create')}</Button></>}
         </>} />
@@ -223,6 +255,9 @@ export function PmScheduleFormPage() {
                 </>
               )}
             </Stack></Card>
+            <TriggersCard form={form} meters={meters ?? []} />
+            {v.target === 'several' && <MultiAssetCard form={form} templates={taskOpts} locked={editing && (s?.generationCount ?? 0) > 0} />}
+            <PeopleRulesCard form={form} />
             <Card><Stack gap="xs">
               <div><Title order={5}>{t('pm.multiple')}</Title><Text fz="sm" c="dimmed">{t('pm.multipleHint')}</Text></div>
               {v.extraTasks.map((_, i) => (
@@ -281,6 +316,7 @@ export function PmScheduleFormPage() {
           </Stack>
         </Grid.Col>
       </Grid>
+      {editing && <OccurrencesDrawer scheduleId={id!} opened={occurrences} onClose={() => setOccurrences(false)} />}
     </form>
   );
 }

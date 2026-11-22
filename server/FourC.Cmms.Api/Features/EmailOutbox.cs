@@ -31,15 +31,19 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
 
     /// <summary>A new work order: its assignees hear (PM work under its own switch).</summary>
     public Task WorkOrderCreatedAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, CancellationToken ct) =>
-        AssigneesAddedAsync(db, ctx, w, w.Assignees.Select(a => a.EmployeeId).ToList(), ct);
+        AssigneesAddedAsync(db, ctx, w, w.Assignees.Select(a => a.EmployeeId).ToList(), ct, newWork: true);
 
-    public async Task AssigneesAddedAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, IReadOnlyCollection<Guid> employeeIds, CancellationToken ct)
+    /// <param name="newWork">The work was just created: its own recipients (0.12.0) hear too, even with nobody assigned.</param>
+    public async Task AssigneesAddedAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, IReadOnlyCollection<Guid> employeeIds, CancellationToken ct,
+        bool newWork = false)
     {
         await push.JobAssignedAsync(db, ctx, w, employeeIds, ct); // their phones too (0.11.0), whether or not e-mail is set up
-        if (!Available || employeeIds.Count == 0) return;
+        if (!Available || (employeeIds.Count == 0 && !(newWork && w.RecipientIds.Count > 0))) return;
         var pm = w.PmScheduleId is not null;
         var key = pm ? EmailEvents.PmAssigned : EmailEvents.WorkOrderAssigned;
-        var to = Union(await GroupsAsync(db, key, w, null, employeeIds, ct));
+        var groups = await GroupsAsync(db, key, w, null, employeeIds, ct);
+        if (!newWork) groups.Remove(EmailRecipientKinds.WorkRecipients); // told once, when the work is made
+        var to = Union(groups);
         if (to.Count == 0) return;
         var facts = await FactsAsync(db, w, ct);
         await QueueAsync(db, ctx, key, to, org => EmailTemplates.Assigned(org, facts, Link($"/work-orders/{w.Id}"), pm), "WorkOrder", w.Id, ct,
@@ -200,6 +204,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
                 EmailRecipientKinds.Technicians => w is null ? [] : await WorkersAsync(db, w, onlyEmployees, contractors: false, ct),
                 EmailRecipientKinds.Contractors => w is null ? [] : await WorkersAsync(db, w, onlyEmployees, contractors: true, ct),
                 EmailRecipientKinds.Issuer => IssuerOf(w, r) is { } issuer ? await UsersAsync(db, [issuer], ct) : [],
+                EmailRecipientKinds.WorkRecipients => w is null || w.RecipientIds.Count == 0 ? [] : await UsersAsync(db, w.RecipientIds, ct),
                 _ => [],
             };
         return groups;

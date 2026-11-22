@@ -19,7 +19,8 @@ public sealed record ColumnDef(string Key, string English, string Arabic, ValueK
 }
 
 /// <summary>A sheet of the import workbook: its key, its name in English and Arabic, and its columns.</summary>
-public sealed record SheetDef(string Key, string English, string Arabic, IReadOnlyList<ColumnDef> Columns)
+/// <param name="Aliases">Older names the sheet is still read under (e.g. "PM tasks" before 0.12.0's "Work templates").</param>
+public sealed record SheetDef(string Key, string English, string Arabic, IReadOnlyList<ColumnDef> Columns, IReadOnlyList<string>? Aliases = null)
 {
     public string Name => Translator.CurrentLanguage == "ar" ? Arabic : English;
 
@@ -97,8 +98,10 @@ public static class ImportSheets
             T("bin", "Bin", "الموضع"), N("min", "Min", "الحد الأدنى"), N("reorderLevel", "Re-order level", "حد إعادة الطلب"), N("max", "Max", "الحد الأقصى"),
             N("reorderQuantity", "Re-order quantity", "كمية إعادة الطلب"), N("openingQuantity", "Opening quantity", "الرصيد الافتتاحي"),
             T("batch", "Batch", "الدفعة"), D("expiry", "Expiry", "تاريخ الانتهاء")]),
-        new("PmTasks", "PM tasks", "مهام الصيانة الوقائية", [Code, Name, Description, T("tradeCode", "Trade code", "رمز التخصص"),
-            N("estimatedHours", "Estimated hours", "الساعات التقديرية"), T("safetyNotes", "Safety notes", "ملاحظات السلامة"), Active]),
+        new("PmTasks", "Work templates", "قوالب العمل", [Code, Name, Description, T("tradeCode", "Trade code", "رمز التخصص"),
+            N("estimatedHours", "Estimated hours", "الساعات التقديرية"), T("safetyNotes", "Safety notes", "ملاحظات السلامة"),
+            T("title", "Title", "العنوان"), C<WorkType>("workType", "Work type", "نوع العمل"), C<WorkPriority>("priority", "Priority", "الأولوية"),
+            N("expectedStopHours", "Expected stop hours", "ساعات التوقف المتوقعة"), Active], ["PM tasks", "مهام الصيانة الوقائية"]),
         new("PmSteps", "PM steps", "خطوات الصيانة الوقائية", [T("taskCode", "Task code", "رمز المهمة", true), I("step", "Step", "الخطوة", true),
             T("description", "Description", "الوصف", true)]),
         new("PmParts", "PM parts", "قطع الصيانة الوقائية", [T("taskCode", "Task code", "رمز المهمة", true), T("partNumber", "Part number", "رقم القطعة", true),
@@ -109,7 +112,8 @@ public static class ImportSheets
             C<FrequencyUnit>("unit", "Unit", "الوحدة"), C<PmBasis>("countFrom", "Count from", "الحساب من"),
             C<WeekOfMonth>("weekOfMonth", "Week of month", "أسبوع الشهر"), C<DayOfWeek>("weekday", "Weekday", "يوم الأسبوع"),
             I("dayOfMonth", "Day of month", "يوم الشهر"), D("startDate", "Start date", "تاريخ البدء", true), I("leadDays", "Lead days", "أيام التقديم"),
-            I("workPeriodDays", "Work period days", "أيام فترة العمل"), L("assignees", "Assignees", "المكلفون"), Description, Active]),
+            I("workPeriodDays", "Work period days", "أيام فترة العمل"), L("assignees", "Assignees", "المكلفون"),
+            C<MultiAssetMode>("multiAssetMode", "Multi-asset mode", "وضع الأصول المتعددة"), Description, Active]),
     ];
 
     /// <summary>
@@ -127,7 +131,7 @@ public static class ImportSheets
             .OrderByDescending(x => x.Name.Length).Select(x => x.Sheet).FirstOrDefault();
     }
 
-    private static IEnumerable<string> Names(SheetDef s) => [Normal(s.English), Normal(s.Arabic), Normal(s.Key)];
+    private static IEnumerable<string> Names(SheetDef s) => [Normal(s.English), Normal(s.Arabic), Normal(s.Key), .. (s.Aliases ?? []).Select(Normal)];
 
     /// <summary>Lower case, trimmed, inner runs of spaces made one.</summary>
     public static string Normal(string? s) =>

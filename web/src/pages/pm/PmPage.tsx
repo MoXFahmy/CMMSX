@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import { StoppedBadge } from '@/components/AccessWindowsEditor';
-import { ActionIcon, Alert, Anchor, Badge, Button, Card, Checkbox, Drawer, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Table, Tabs, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Button, Card, Checkbox, Drawer, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Table, Tabs, Text, TextInput, Title } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useDisclosure } from '@mantine/hooks';
 import { useForm } from '@mantine/form';
@@ -9,20 +9,19 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
 import dayjs from 'dayjs';
-import { IconArrowDown, IconArrowUp, IconCalendarPlus, IconGauge, IconPlus, IconSearch, IconTrash } from '@tabler/icons-react';
-import { ApiError, get, post, put, del } from '@/api/client';
-import type { ForecastItem, Lookup, MeterItem, MeterReadingItem, Paged, PmRunResult, PmScheduleListItem, PmTaskDetail, PmTaskListItem } from '@/api/types';
+import { IconCalendarPlus, IconGauge, IconPlus, IconSearch } from '@tabler/icons-react';
+import { ApiError, get, post, put } from '@/api/client';
+import type { ForecastItem, MeterItem, MeterReadingItem, Paged, PmRunResult, PmScheduleListItem, PmTaskListItem } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { AssetPicker } from '@/components/AssetPicker';
 import { useHierarchy } from '@/components/LocationPicker';
-import { confirmDelete } from '@/components/confirm';
 import { generateNow } from './generateNow';
-import { PartPicker } from '@/components/PartPicker';
+import { CalendarsTab } from './CalendarsTab';
 import { fmtDate, fmtDateTime, fmtMoney, fmtNumber, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { BulkBar, FilterChips, ListTools, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
-const TABS = ['schedules', 'tasks', 'generate', 'forecast', 'meters'] as const;
+const TABS = ['schedules', 'tasks', 'calendars', 'generate', 'forecast', 'meters'] as const;
 
 export function PmPage() {
   const { t } = useTranslation();
@@ -38,6 +37,7 @@ export function PmPage() {
         <Tabs.List mb="lg">{TABS.filter((x) => x !== 'generate' || can(P.pmGenerate)).map((x) => <Tabs.Tab key={x} value={x}>{t(`pm.${x}`)}</Tabs.Tab>)}</Tabs.List>
         <Tabs.Panel value="schedules"><SchedulesTab /></Tabs.Panel>
         <Tabs.Panel value="tasks"><TasksTab /></Tabs.Panel>
+        <Tabs.Panel value="calendars"><CalendarsTab /></Tabs.Panel>
         <Tabs.Panel value="generate"><GenerateTab /></Tabs.Panel>
         <Tabs.Panel value="forecast"><ForecastTab /></Tabs.Panel>
         <Tabs.Panel value="meters"><MetersTab /></Tabs.Panel>
@@ -121,43 +121,17 @@ function SchedulesTab() {
   );
 }
 
+/** PM › Work templates (0.12.0; "PM tasks" before): the list; each opens its own page. */
 function TasksTab() {
   const { t } = useTranslation();
   const { can } = useAuth();
-  const qc = useQueryClient();
-  const editable = can(P.pmManage);
+  const navigate = useNavigate();
   const { data, isFetching } = useQuery({ queryKey: ['pm-tasks'], queryFn: () => get<PmTaskListItem[]>('/pm-tasks') });
-  const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
-  const [opened, m] = useDisclosure();
-  const [editing, setEditing] = useState<PmTaskDetail | null>(null);
-  const [step, setStep] = useState('');
-  const blank = { code: '', name: '', description: '', tradeId: null as string | null, estimatedHours: '' as number | '', safetyNotes: '', steps: [] as string[], isActive: true,
-    parts: [] as TaskPartRow[] };
-  const { me } = useAuth();
-  const currency = me?.tenant.settings.currency ?? 'USD';
-  const form = useForm({ initialValues: blank });
-  const open = async (id: string | null) => {
-    form.clearErrors(); setStep('');
-    if (!id) { setEditing(null); form.setValues(blank); m.open(); return; }
-    try {
-      const x = await get<PmTaskDetail>(`/pm-tasks/${id}`);
-      setEditing(x);
-      form.setValues({ code: x.code, name: x.name, description: x.description ?? '', tradeId: x.tradeId ?? null, estimatedHours: x.estimatedHours ?? '', safetyNotes: x.safetyNotes ?? '', steps: x.steps, isActive: x.isActive,
-        parts: x.parts.map((p) => ({ partId: p.partId, label: `${p.partNumber} · ${p.partName}`, unit: p.unitOfMeasure, quantity: p.quantity, unitCost: p.unitCost })) });
-      m.open();
-    } catch (e) { notifyError(e); }
-  };
-  const addStep = () => { if (step.trim()) { form.insertListItem('steps', step.trim()); setStep(''); } };
-  const move = (i: number, d: number) => { const s = [...form.values.steps]; const j = i + d; if (j < 0 || j >= s.length) return; [s[i], s[j]] = [s[j], s[i]]; form.setFieldValue('steps', s); };
-  const submit = form.onSubmit(async (v) => {
-    const body = { ...v, estimatedHours: v.estimatedHours === '' ? null : v.estimatedHours, rowVersion: editing?.rowVersion, parts: v.parts.map((p) => ({ partId: p.partId, quantity: p.quantity || 0 })) };
-    try { if (editing) await put(`/pm-tasks/${editing.id}`, body); else await post('/pm-tasks', body); notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['pm-tasks'] }); m.close(); }
-    catch (e) { handleFormError(form, e); }
-  });
   return (
     <Card p={0}>
-      <Group justify="space-between" p="md"><Title order={5}>{t('pm.tasks')}</Title>{editable && <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => open(null)}>{t('pm.newTask')}</Button>}</Group>
-      <DataTable minHeight={160} fetching={isFetching} records={data ?? []} noRecordsText={t('common.noRecords')} highlightOnHover rowClassName={() => 'clickable-row'} onRowClick={({ record }) => open(record.id)}
+      <Group justify="space-between" p="md"><div><Title order={5}>{t('pm.tasks')}</Title><Text fz="sm" c="dimmed">{t('pm12.templatesHint')}</Text></div>
+        {can(P.pmManage) && <Button size="xs" leftSection={<IconPlus size={14} />} component={Link} to="/pm/templates/new">{t('pm12.newTemplate')}</Button>}</Group>
+      <DataTable minHeight={160} fetching={isFetching} records={data ?? []} noRecordsText={t('common.noRecords')} highlightOnHover rowClassName={() => 'clickable-row'} onRowClick={({ record }) => navigate(`/pm/templates/${record.id}`)}
         columns={[
           { accessor: 'code', title: t('pm.taskCode'), noWrap: true, render: (x) => <Text fw={600} fz="sm">{x.code}</Text> },
           { accessor: 'name', title: t('common.name') },
@@ -166,63 +140,10 @@ function TasksTab() {
           { accessor: 'scheduleCount', title: t('pm.schedules'), textAlign: 'right' },
           { accessor: 'isActive', title: t('common.status'), render: (x) => <Badge color={x.isActive ? 'teal' : 'gray'}>{x.isActive ? t('common.active') : t('common.inactive')}</Badge> },
         ]} />
-      <Modal opened={opened} onClose={m.close} title={editing ? `${t('pm.editTask')} · ${editing.code}` : t('pm.newTask')} size="xl">
-        <form onSubmit={submit}><Stack>
-          <SimpleGrid cols={{ base: 1, sm: 3 }}>
-            <TextInput label={t('pm.taskCode')} required disabled={!!editing} {...form.getInputProps('code')} />
-            <TextInput label={t('common.name')} required style={{ gridColumn: 'span 2' }} {...form.getInputProps('name')} />
-          </SimpleGrid>
-          <SimpleGrid cols={2}>
-            <Select label={t('wo.trade')} clearable data={(trades ?? []).map((x) => ({ value: x.id, label: x.name }))} {...form.getInputProps('tradeId')} />
-            <NumberInput label={t('pm.estimatedHours')} min={0} decimalScale={2} {...form.getInputProps('estimatedHours')} />
-          </SimpleGrid>
-          <Textarea label={t('common.description')} autosize minRows={2} {...form.getInputProps('description')} />
-          <Textarea label={t('pm.safetyNotes')} autosize minRows={2} {...form.getInputProps('safetyNotes')} />
-          <Stack gap={4}>
-            <Text fz="sm" fw={500}>{t('pm.steps')} ({form.values.steps.length})</Text>
-            {form.values.steps.map((_, i) => (
-              <Group key={i} gap={6} wrap="nowrap">
-                <Text fz="sm" c="dimmed" w={28} ta="right">{i + 1}.</Text>
-                <TextInput style={{ flex: 1 }} size="xs" {...form.getInputProps(`steps.${i}`)} />
-                <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('pm.moveUp')} onClick={() => move(i, -1)}><IconArrowUp size={14} /></ActionIcon>
-                <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('pm.moveDown')} onClick={() => move(i, 1)}><IconArrowDown size={14} /></ActionIcon>
-                <ActionIcon variant="subtle" color="red" size="sm" aria-label={t('common.delete')} onClick={() => form.removeListItem('steps', i)}><IconTrash size={14} /></ActionIcon>
-              </Group>
-            ))}
-            <Group gap="xs"><TextInput style={{ flex: 1 }} placeholder={t('pm.addStep')} value={step} onChange={(e) => setStep(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addStep(); } }} />
-              <Button variant="light" leftSection={<IconPlus size={14} />} onClick={addStep}>{t('common.create')}</Button></Group>
-          </Stack>
-          <Stack gap={4}>
-            <Text fz="sm" fw={500}>{t('pm.parts')} · {fmtMoney(form.values.parts.reduce((a, p) => a + Number(p.quantity || 0) * p.unitCost, 0), currency)}</Text>
-            <Text fz="xs" c="dimmed">{t('pm.partsHint')}</Text>
-            {form.values.parts.map((p, i) => (
-              <Group key={p.partId} gap={6} wrap="nowrap">
-                <Text fz="sm" style={{ flex: 1 }} lineClamp={1}>{p.label}</Text>
-                <NumberInput size="xs" w={130} min={0} decimalScale={3} suffix={` ${p.unit}`} aria-label={t('inv.quantity')} {...form.getInputProps(`parts.${i}.quantity`)} />
-                <ActionIcon variant="subtle" color="red" size="sm" aria-label={t('common.delete')} onClick={() => form.removeListItem('parts', i)}><IconTrash size={14} /></ActionIcon>
-              </Group>
-            ))}
-            {editable && (
-              <PartPicker placeholder={t('pm.addPart')} value={null} withStock={false}
-                onChange={(id, part) => {
-                  if (!id || !part || form.values.parts.some((x) => x.partId === id)) return;
-                  form.insertListItem('parts', { partId: id, label: `${part.partNumber} · ${part.name}`, unit: part.unitOfMeasure, quantity: 1, unitCost: part.averageCost });
-                }} />
-            )}
-            {form.errors.parts && <Text fz="xs" c="red">{form.errors.parts}</Text>}
-          </Stack>
-          <Checkbox label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
-          <Group justify="space-between">
-            {editing && editable ? <Button variant="subtle" color="red" onClick={() => confirmDelete(editing.code, async () => { try { await del(`/pm-tasks/${editing.id}`); await qc.invalidateQueries({ queryKey: ['pm-tasks'] }); m.close(); } catch (e) { notifyError(e); } })}>{t('common.delete')}</Button> : <span />}
-            <Group><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button>{editable && <Button type="submit" loading={form.submitting}>{t('common.save')}</Button>}</Group>
-          </Group>
-        </Stack></form>
-      </Modal>
     </Card>
   );
 }
 
-type TaskPartRow = { partId: string; label: string; unit: string; quantity: number | ''; unitCost: number };
 
 function GenerateTab() {
   const { t } = useTranslation();
@@ -335,14 +256,17 @@ export function MetersTab({ assetId }: { assetId?: string }) {
   const [opened, m] = useDisclosure();
   const [editing, setEditing] = useState<MeterItem | null>(null);
   const [reading, setReading] = useState<MeterItem | null>(null);
-  const form = useForm({ initialValues: { code: '', name: '', assetId: (assetId ?? null) as string | null, unit: 'h', maxDailyIncrement: '' as number | '', isActive: true } });
+  const form = useForm({ initialValues: { code: '', name: '', assetId: (assetId ?? null) as string | null, unit: 'h', maxDailyIncrement: '' as number | '', isActive: true, sourceMeterId: null as string | null } });
+  // Meter propagation (0.12.0): any other meter with the same unit can be followed.
+  const { data: allMeters } = useQuery({ queryKey: ['meters', 'all'], queryFn: () => get<MeterItem[]>('/meters'), enabled: opened });
   const open = (x: MeterItem | null) => {
     setEditing(x); form.clearErrors();
-    form.setValues(x ? { code: x.code, name: x.name, assetId: x.assetId, unit: x.unit, maxDailyIncrement: x.maxDailyIncrement ?? '', isActive: x.isActive } : { code: '', name: '', assetId: assetId ?? null, unit: 'h', maxDailyIncrement: '', isActive: true });
+    form.setValues(x ? { code: x.code, name: x.name, assetId: x.assetId, unit: x.unit, maxDailyIncrement: x.maxDailyIncrement ?? '', isActive: x.isActive, sourceMeterId: x.sourceMeterId ?? null }
+      : { code: '', name: '', assetId: assetId ?? null, unit: 'h', maxDailyIncrement: '', isActive: true, sourceMeterId: null });
     m.open();
   };
   const submit = form.onSubmit(async (v) => {
-    const body = { ...v, maxDailyIncrement: v.maxDailyIncrement === '' ? null : v.maxDailyIncrement };
+    const body = { ...v, maxDailyIncrement: v.maxDailyIncrement === '' ? null : v.maxDailyIncrement, managesSource: true };
     try { if (editing) await put(`/meters/${editing.id}`, body); else await post('/meters', body); await qc.invalidateQueries({ queryKey: ['meters'] }); m.close(); } catch (e) { handleFormError(form, e); }
   });
   return (
@@ -356,6 +280,7 @@ export function MetersTab({ assetId }: { assetId?: string }) {
           { accessor: 'currentReading', title: t('pm.current'), textAlign: 'right', render: (x) => x.currentReading != null ? `${fmtNumber(x.currentReading)} ${x.unit}` : '—' },
           { accessor: 'lastReadAt', title: t('pm.lastRead'), noWrap: true, render: (x) => fmtDateTime(x.lastReadAt) },
           { accessor: 'schedules', title: t('pm.schedules'), textAlign: 'right' },
+          { accessor: 'sourceCode', title: t('pm12.follows'), render: (x) => x.sourceCode ?? '' },
           { accessor: 'actions', title: '', textAlign: 'right', render: (x) => <Button size="compact-xs" variant="light" leftSection={<IconGauge size={12} />} onClick={() => setReading(x)}>{can(P.metersRecord) ? t('pm.logReading') : t('pm.readings')}</Button> },
         ]} />
       <Modal opened={opened} onClose={m.close} title={editing ? editing.code : t('pm.newMeter')}>
@@ -365,6 +290,9 @@ export function MetersTab({ assetId }: { assetId?: string }) {
           {!assetId && <AssetPicker label={t('wo.asset')} value={form.values.assetId} onChange={(v) => form.setFieldValue('assetId', v)} error={form.errors.assetId}
             initial={editing ? { id: editing.assetId, assetNumber: editing.assetNumber, name: editing.assetName } : null} />}
           <NumberInput label={t('pm.maxDaily')} min={0} decimalScale={3} {...form.getInputProps('maxDailyIncrement')} />
+          <Select label={t('pm12.followsMeter')} description={t('pm12.followsMeterHint')} clearable searchable error={form.errors.sourceMeterId}
+            data={(allMeters ?? []).filter((x) => x.id !== editing?.id && x.unit.trim().toLowerCase() === form.values.unit.trim().toLowerCase())
+              .map((x) => ({ value: x.id, label: `${x.code} · ${x.name} (${x.assetNumber})` }))} {...form.getInputProps('sourceMeterId')} />
           <Checkbox label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
           <Group justify="flex-end"><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>
         </Stack></form>

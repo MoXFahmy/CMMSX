@@ -13,10 +13,12 @@ import { ComingSoonPage } from './pages/ComingSoonPage';
 import { WorkOrdersPage } from './pages/work/WorkOrdersPage';
 import { WorkOrderDetailPage } from './pages/work/WorkOrderDetailPage';
 import { WorkOrderFormPage } from './pages/work/WorkOrderFormPage';
+import { WorkGroupDetailPage, WorkGroupsPage } from './pages/work/WorkGroupPages';
 import { WorkRequestsPage } from './pages/work/WorkRequestsPage';
 import { PeoplePage } from './pages/people/PeoplePage';
 import { PmPage } from './pages/pm/PmPage';
 import { PmScheduleFormPage } from './pages/pm/PmScheduleFormPage';
+import { TemplatePage } from './pages/pm/TemplatePage';
 import { InventoryPage } from './pages/inventory/InventoryPage';
 import { PartDetailPage } from './pages/inventory/PartDetailPage';
 import { PartFormPage } from './pages/inventory/PartFormPage';
@@ -66,11 +68,14 @@ export function App() {
         <Route path="work-orders/new" element={<WorkOrderFormPage />} />
         <Route path="work-orders/:id" element={<WorkOrderDetailPage />} />
         <Route path="work-orders/:id/edit" element={<WorkOrderFormPage />} />
+        <Route path="work-groups" element={<WorkGroupsPage />} />
+        <Route path="work-groups/:id" element={<WorkGroupDetailPage />} />
         <Route path="work-requests" element={<WorkRequestsPage />} />
         <Route path="people" element={<PeoplePage />} />
         <Route path="pm" element={<PmPage />} />
         <Route path="pm/schedules/new" element={<PmScheduleFormPage />} />
         <Route path="pm/schedules/:id" element={<PmScheduleFormPage />} />
+        <Route path="pm/templates/:id" element={<TemplatePage />} />
         <Route path="pm/:tab" element={<PmPage />} />
         <Route path="inventory" element={<InventoryPage />} />
         <Route path="inventory/parts/new" element={<PartFormPage />} />
