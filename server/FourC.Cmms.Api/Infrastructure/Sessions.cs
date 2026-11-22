@@ -78,7 +78,8 @@ public static class Sessions
         var ids = await which.Where(s => s.RevokedAt == null).Select(s => s.Id).ToListAsync(ct);
         if (ids.Count == 0) return;
         var now = DateTimeOffset.UtcNow;
-        await db.UserSessions.IgnoreQueryFilters().Where(s => ids.Contains(s.Id)).ExecuteUpdateAsync(x => x.SetProperty(s => s.RevokedAt, now), ct);
+        // A signed-out device gets no more push notifications (0.11.0).
+        await db.UserSessions.IgnoreQueryFilters().Where(s => ids.Contains(s.Id)).ExecuteUpdateAsync(x => x.SetProperty(s => s.RevokedAt, now).SetProperty(s => s.PushToken, (string?)null), ct);
         foreach (var id in ids) cache.Remove(CacheKey(id));
     }
 

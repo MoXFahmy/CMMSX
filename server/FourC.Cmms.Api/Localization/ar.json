@@ -771,5 +771,9 @@
  "Choose where the work is.": "اختر مكان العمل.",
  "Created on the phone": "أُنشئ من الهاتف",
  "{0} is larger than 50 MB.": "حجم {0} أكبر من 50 ميجابايت.",
- "{0} isn't a video or document the app can attach (MP4, MOV, WebM, PDF, Word, Excel, text).": "{0} ليس فيديو أو مستندًا يمكن للتطبيق إرفاقه (MP4 أو MOV أو WebM أو PDF أو Word أو Excel أو نص)."
+ "{0} isn't a video or document the app can attach (MP4, MOV, WebM, PDF, Word, Excel, text).": "{0} ليس فيديو أو مستندًا يمكن للتطبيق إرفاقه (MP4 أو MOV أو WebM أو PDF أو Word أو Excel أو نص).",
+ "New job: {0}": "عمل جديد: {0}",
+ "Request approved: {0}": "اعتُمد الطلب: {0}",
+ "A push token is needed.": "مطلوب رمز الإشعارات.",
+ "This device isn't signed in.": "هذا الجهاز غير مسجّل الدخول."
 }

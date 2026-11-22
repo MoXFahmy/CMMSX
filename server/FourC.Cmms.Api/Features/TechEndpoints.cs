@@ -24,6 +24,7 @@ public static partial class TechEndpoints
     private const int CommentsPerJob = 20;
 
     private sealed record Me(Guid EmployeeId, List<Guid> SiteIds);
+    public sealed record PushTokenInput(string? Token);
 
     private static async Task<Me?> EmployeeAsync(CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         await db.Employees.AsNoTracking().Where(e => e.UserId == ctx.UserId && e.IsActive).Select(e => new Me(e.Id, e.SiteIds)).FirstOrDefaultAsync(ct);
@@ -114,6 +115,19 @@ public static partial class TechEndpoints
             };
             return Versioned(http, JsonSerializer.SerializeToUtf8Bytes(body, json.Value.SerializerOptions));
         }).RequirePermission(Permissions.WorkOrdersView);
+
+        // The phone's Firebase token for push notifications (0.11.0), kept on this signed-in device; a token moves with the phone
+        // when someone else signs in on it.
+        api.MapPost("/tech/push-token", async (PushTokenInput input, HttpContext http, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        {
+            var token = input.Token?.Trim();
+            if (string.IsNullOrEmpty(token) || token.Length > 512) return Results.Problem(title: Translator.T("A push token is needed."), statusCode: 400);
+            var current = await Sessions.CurrentAsync(http);
+            if (current is not { } sid) return Results.Problem(title: Translator.T("This device isn't signed in."), statusCode: 400);
+            await db.UserSessions.IgnoreQueryFilters().Where(s => s.PushToken == token && s.Id != sid).ExecuteUpdateAsync(x => x.SetProperty(s => s.PushToken, (string?)null), ct);
+            await db.UserSessions.IgnoreQueryFilters().Where(s => s.Id == sid && s.UserId == ctx.UserId).ExecuteUpdateAsync(x => x.SetProperty(s => s.PushToken, token), ct);
+            return Results.NoContent();
+        }).WithTags("Technician app").RequireAuthorization();
 
         // Parts and stock of my sites' stores, cancel reasons, PM task lists, open counts and (to receive) open purchase orders,
         // for working offline (0.11.0). Answers 304 when the phone already has this version.
