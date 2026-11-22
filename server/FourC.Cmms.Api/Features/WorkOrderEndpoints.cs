@@ -21,6 +21,7 @@ public static class WorkOrderEndpoints
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
         DateTimeOffset? At = null, Guid? CancelReasonId = null);
+    public sealed record AllOkInput(Guid? AssetId = null);
     public sealed record BulkInput(Guid[]? Ids, StatusInput? Status, WorkPriority? Priority, Guid[]? AddAssigneeIds);
     public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null, StepAnswer? Answer = null, decimal? Value = null,
         string? Text = null, Guid? MeterId = null, bool Confirm = false);
@@ -407,6 +408,27 @@ public static class WorkOrderEndpoints
             return Results.Ok(new { t.Id, t.IsDone, t.Level, FollowUp = followUp });
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
+        // All OK (0.13.0): every unanswered plain Check step of the work order (or of one round asset) answered OK; never safety or photo steps.
+        g.MapPost("/{id:guid}/tasks/all-ok", async (Guid id, AllOkInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
+        {
+            await RequireOpenAsync(db, id, ct);
+            var w = await db.WorkOrders.FirstAsync(x => x.Id == id, ct);
+            var steps = await db.WorkOrderTasks.Where(t => t.WorkOrderId == id).OrderBy(t => t.Sequence).ToListAsync(ct);
+            var open = steps.Where(t => t.Type == StepType.Check && !t.BeforeStart && !t.PhotoRequired && t.Answer is null
+                && (input.AssetId is null || t.AssetId == input.AssetId)).ToList();
+            foreach (var asset in open.Select(t => t.AssetId).Distinct())
+                if (StepRules.SafetyBlock(steps, asset, forStart: false) is { } safety) throw new DomainException(safety);
+            var settings = (await db.Tenants.AsNoTracking().FirstAsync(x => x.Id == db.CurrentTenantId, ct)).Settings;
+            var now = DateTimeOffset.UtcNow;
+            foreach (var t in open)
+            {
+                var v = await Checklists.AnswerAsync(db, ctx, mail, settings, w, t, new Checklists.StepChange(null, StepAnswer.Ok), now, ct);
+                if (!v.IsValid) return v.Problem();
+            }
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { Answered = open.Count });
+        }).RequirePermission(Permissions.WorkOrdersExecute);
+
         g.MapDelete("/{id:guid}/tasks/{taskId:guid}", async (Guid id, Guid taskId, CmmsDbContext db, CancellationToken ct) =>
         {
             await RequireOpenAsync(db, id, ct);
@@ -525,6 +547,11 @@ public static class WorkOrderEndpoints
                 v.Add("labor", "Log the labour before completing the work.");
             if (settings.RequireAllTasksDone && await db.WorkOrderTasks.AnyAsync(t => t.WorkOrderId == w.Id && !t.IsDone, ct))
                 v.Add("tasks", "Tick every checklist step before completing the work.");
+            // Photo-required steps always need a photo; Number, Meter and Text steps need an answer when the organization asks (0.13.0).
+            var withPhotos = (await db.Attachments.Where(a => a.EntityType == "WorkOrder" && a.EntityId == w.Id && a.WorkOrderTaskId != null)
+                .Select(a => a.WorkOrderTaskId!.Value).ToListAsync(ct)).ToHashSet();
+            foreach (var problem in StepRules.CompletionProblems(await db.WorkOrderTasks.Where(t => t.WorkOrderId == w.Id).ToListAsync(ct), withPhotos, settings.RequireReadingSteps))
+                v.Add("tasks", problem);
             if (settings.RequireFailureCodeForBreakdowns && w.Type == WorkType.Breakdown && (input.FailureCodeId ?? w.FailureCodeId) is null)
                 v.Add("failureCodeId", "Choose a failure code for breakdown work.");
             if (input.FailureCodeId is { } fc && !await db.FailureCodes.AnyAsync(f => f.Id == fc, ct)) v.Add("failureCodeId", "Unknown failure code.");

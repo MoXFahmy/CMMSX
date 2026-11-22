@@ -115,6 +115,9 @@ public static partial class TechEndpoints
                     if (file.Length > MaxImageBytes) throw new Rejected($"{file.FileName} is larger than 10 MB.");
                 }
                 var att = await AttachmentEndpoints.SaveAttachmentAsync(db, storage, "WorkOrder", w.Id, file, ct);
+                // A photo taken on a checklist step (0.13.0).
+                if (Guid.TryParse(form["taskId"], out var taskId))
+                    att.WorkOrderTaskId = await db.WorkOrderTasks.AnyAsync(t => t.Id == taskId && t.WorkOrderId == w.Id, ct) ? taskId : throw new Rejected("This checklist step was removed.");
                 if (signature)
                 {
                     var by = form["signedBy"].ToString().Clean() ?? ctx.UserName;

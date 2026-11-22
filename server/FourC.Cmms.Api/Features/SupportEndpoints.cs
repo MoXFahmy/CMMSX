@@ -226,7 +226,7 @@ public static class AttachmentEndpoints
             var rows = await db.Attachments.AsNoTracking().Where(a => a.EntityType == entityType && a.EntityId == entityId).OrderByDescending(a => a.CreatedAt).ToListAsync(ct);
             var userIds = rows.Select(r => r.CreatedById).OfType<Guid>().Distinct().ToList();
             var users = await db.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
-            return Results.Ok(rows.Select(a => new { a.Id, a.FileName, a.ContentType, a.Size, a.Description, a.IsPrimaryImage, a.IsSignature, a.SignedBy, a.CreatedAt, CreatedBy = a.CreatedById is { } c ? users.GetValueOrDefault(c) : null }));
+            return Results.Ok(rows.Select(a => new { a.Id, a.FileName, a.ContentType, a.Size, a.Description, a.IsPrimaryImage, a.IsSignature, a.SignedBy, a.CreatedAt, CreatedBy = a.CreatedById is { } c ? users.GetValueOrDefault(c) : null, a.WorkOrderTaskId }));
         });
 
         g.MapPost("/", async (HttpRequest req, CmmsDbContext db, IFileStorage storage, PermissionService perms, CancellationToken ct) =>
@@ -250,11 +250,22 @@ public static class AttachmentEndpoints
                 _ => false,
             };
             if (!exists) return Results.NotFound();
+            // A work order photo taken on one of its checklist steps (0.13.0).
+            Guid? stepId = null;
+            if (Guid.TryParse(form["stepId"], out var sid))
+            {
+                if (entityType != "WorkOrder" || !await db.WorkOrderTasks.AnyAsync(t => t.Id == sid && t.WorkOrderId == entityId, ct)) throw new DomainException("This checklist step was removed.");
+                stepId = sid;
+            }
             // Sizes are checked before anything is stored, so a too-large third file doesn't leave the first two behind.
             if (form.Files.FirstOrDefault(f => f.Length > MaxSize) is { } tooLarge) throw new DomainException($"{tooLarge.FileName} is larger than 25 MB.");
             var saved = new List<Attachment>();
             foreach (var file in form.Files.Where(f => f.Length > 0))
-                saved.Add(await SaveAttachmentAsync(db, storage, entityType, entityId, file, ct));
+            {
+                var att = await SaveAttachmentAsync(db, storage, entityType, entityId, file, ct);
+                att.WorkOrderTaskId = stepId;
+                saved.Add(att);
+            }
             await Housekeeping.SaveOrRemoveFilesAsync(storage, saved.Select(a => a.StorageKey).ToList(), () => db.SaveChangesAsync(ct), ct);
             return Results.Ok(saved.Select(a => new { a.Id, a.FileName }));
         }).DisableAntiforgery();
