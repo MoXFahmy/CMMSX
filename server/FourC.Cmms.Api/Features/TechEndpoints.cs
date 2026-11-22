@@ -55,9 +55,16 @@ public static partial class TechEndpoints
                     // The job's own stop: completing it ends the stop and fills the downtime from it.
                     Downtime = db.DowntimeEvents.Where(e => e.Id == w.DowntimeEventId).Select(e => new { e.StartedAt, e.EndedAt }).FirstOrDefault(),
                     w.LocationId, LocationPath = w.Location == null ? null : w.Location.Path, LocationNotes = w.Location == null ? null : w.Location.NotesToTechnician,
-                    w.AccessWindows, w.OnlyWhenStopped,
+                    w.AccessWindows, w.OnlyWhenStopped, w.GroupId,
                 }).ToListAsync(ct);
             var ids = jobs.Select(j => j.Id).ToList();
+            // The jobs' groups and their comments (0.12.0).
+            var groupIds = jobs.Where(j => j.GroupId != null).Select(j => j.GroupId!.Value).Distinct().ToList();
+            var groups = groupIds.Count == 0 ? [] : await db.WorkOrderGroups.AllSites().AsNoTracking().Where(g => groupIds.Contains(g.Id)).ToDictionaryAsync(g => g.Id, g => new { g.Number }, ct);
+            var groupComments = (groupIds.Count == 0 ? [] : await db.WorkOrderGroupComments.IgnoreQueryFilters().AsNoTracking()
+                    .Where(c => groupIds.Contains(c.GroupId) && c.TenantId == db.CurrentTenantId).OrderByDescending(c => c.CreatedAt).Take(200)
+                    .Select(c => new { c.GroupId, c.Body, c.UserName, c.CreatedAt }).ToListAsync(ct))
+                .ToLookup(c => c.GroupId, c => new { c.Body, c.UserName, c.CreatedAt });
             var names = await LocationNamesAsync(db, jobs.Where(j => j.LocationPath != null).SelectMany(j => LocationEndpoints.PathIds(j.LocationPath!)).Distinct().ToList(), ct);
             var tasks = (await db.WorkOrderTasks.AsNoTracking().Where(t => ids.Contains(t.WorkOrderId)).OrderBy(t => t.Sequence)
                 .Select(t => new { t.WorkOrderId, t.Id, t.Sequence, t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName }).ToListAsync(ct))
@@ -118,6 +125,8 @@ public static partial class TechEndpoints
                         .Select(x => new { x.Key.PartId, x.Key.StoreId, Issued = x.Value }),
                     DefaultStoreId = defaultStores.GetValueOrDefault(j.SiteId),
                     Crew = crew[j.Id],
+                    // Its group (0.12.0): the number and the group's comments.
+                    Group = j.GroupId is { } gid && groups.TryGetValue(gid, out var grp) ? new { grp.Number, Comments = groupComments[gid] } : null,
                 }),
                 // What this person may do on the phone (0.11.0).
                 Can = new

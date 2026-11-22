@@ -39,6 +39,8 @@ public static class WorkOrderEndpoints
         public Guid? TeamId { get; set; }
         public Guid? AssigneeId { get; set; }
         public Guid? CancelReasonId { get; set; }
+        /// <summary>The work orders of one group (0.12.0).</summary>
+        public Guid? GroupId { get; set; }
         /// <summary>Only work that can be done while the asset is stopped (planners book shutdowns).</summary>
         public bool? OnlyWhenStopped { get; set; }
         /// <summary>Completed on or after this day (the dashboard's "completed in 30 days").</summary>
@@ -76,7 +78,7 @@ public static class WorkOrderEndpoints
         Guid SiteId, string SiteName, Guid? LocationId, string? LocationPath, Guid? AssetId, string? AssetNumber, string? AssetName, string? TradeName,
         List<string> Assignees, DateOnly? DueDate, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, bool IsOverdue,
         DateTimeOffset? DueAt, DateTimeOffset? StartBy, DateTimeOffset? RespondedAt, SlaState ResponseState, SlaState CompletionState, string? TeamName = null,
-        string? CancelReasonName = null, bool OnlyWhenStopped = false);
+        string? CancelReasonName = null, bool OnlyWhenStopped = false, Guid? GroupId = null, string? GroupNumber = null);
 
     public static void MapWorkOrderEndpoints(this RouteGroupBuilder api)
     {
@@ -158,6 +160,9 @@ public static class WorkOrderEndpoints
                 .Select(t => new { t.Id, t.Code, t.Name, t.ExpectedStopHours }).FirstOrDefaultAsync(ct) : null;
             var templateDocuments = template is null ? [] : await db.Attachments.AsNoTracking().Where(a => a.EntityType == "PmTask" && a.EntityId == template.Id)
                 .OrderBy(a => a.FileName).Select(a => new { a.Id, a.FileName, a.ContentType, a.Size }).ToListAsync(ct);
+            // Its group (0.12.0): the group's comments are shown here, not copied.
+            var group = w.GroupId is { } gid ? await db.WorkOrderGroups.AsNoTracking().Where(g => g.Id == gid).Select(g => new { g.Id, g.Number, g.Title }).FirstOrDefaultAsync(ct) : null;
+            var groupComments = group is null ? [] : await WorkGroups.CommentsAsync(db, group.Id, ct);
             var recipients = w.RecipientIds.Count == 0 ? [] : await db.Users.AsNoTracking().Where(u => w.RecipientIds.Contains(u.Id) && u.TenantId == db.CurrentTenantId)
                 .OrderBy(u => u.FullName).Select(u => new { u.Id, u.FullName }).ToListAsync(ct);
             return Results.Ok(new
@@ -183,6 +188,7 @@ public static class WorkOrderEndpoints
                 Pm = pm, w.PmDueDate, w.AccessWindows, w.OnlyWhenStopped,
                 Template = template is null ? null : new { template.Id, template.Code, template.Name, template.ExpectedStopHours, Documents = templateDocuments },
                 Recipients = recipients,
+                Group = group is null ? null : new { group.Id, group.Number, group.Title, Comments = groupComments },
                 Assets = roundAssets,
                 Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName }),
                 Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned, Signatures = signatures,
@@ -234,6 +240,10 @@ public static class WorkOrderEndpoints
             var teamBefore = w.TeamId;
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(w).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
+            // A group's work order takes its due date from the group (0.12.0).
+            if (w.GroupId is { } inGroup && (input.DueDate != w.DueDate || (input.DueAt is { } dueAt && dueAt != w.DueAt)))
+                throw new DomainException(string.Format(WorkGroups.DueFromGroup,
+                    await db.WorkOrderGroups.AllSites().Where(g => g.Id == inGroup).Select(g => g.Number).FirstOrDefaultAsync(ct)));
             var priorityBefore = w.Priority;
             var assetBefore = w.AssetId;
             Apply(w, input);
@@ -561,6 +571,7 @@ public static class WorkOrderEndpoints
             w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, TradeName = w.Trade!.Name, TeamName = w.Team!.Name,
             Assignees = w.Assignees.Select(a => a.Employee!.FullName).ToList(), w.DueDate, w.CreatedAt, w.CompletedAt,
             w.DueAt, w.StartBy, w.RespondedAt, w.DueFromTarget, CancelReasonName = w.CancelReason!.Name, w.OnlyWhenStopped,
+            w.GroupId, GroupNumber = db.WorkOrderGroups.Where(g => g.Id == w.GroupId).Select(g => g.Number).FirstOrDefault(),
         }).ToPagedAsync(page, pageSize, ct, maxPageSize);
         var names = await LocationEndpoints.ResolvePathNamesAsync(db, paged.Items.Select(i => i.LocationPath), ct);
         return new PagedResult<WorkOrderListItem>(paged.Items.Select(w =>
@@ -569,7 +580,7 @@ public static class WorkOrderEndpoints
             return new WorkOrderListItem(w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason,
                 w.SiteId, w.SiteName, w.LocationId, w.LocationPath is null ? null : names(w.LocationPath), w.AssetId, w.AssetNumber, w.AssetName, w.TradeName,
                 w.Assignees, w.DueDate, w.CreatedAt, w.CompletedAt, sla.Completion == SlaState.Late || sla.Response == SlaState.Late,
-                w.DueAt, w.StartBy, w.RespondedAt, sla.Response, sla.Completion, w.TeamName, w.CancelReasonName, w.OnlyWhenStopped);
+                w.DueAt, w.StartBy, w.RespondedAt, sla.Response, sla.Completion, w.TeamName, w.CancelReasonName, w.OnlyWhenStopped, w.GroupId, w.GroupNumber);
         }).ToList(), paged.Total, paged.Page, paged.PageSize);
     }
 
@@ -591,6 +602,7 @@ public static class WorkOrderEndpoints
         if (f.TradeId is not null) q = q.Where(w => w.TradeId == f.TradeId);
         if (f.TeamId is not null) q = q.Where(w => w.TeamId == f.TeamId);
         if (f.CancelReasonId is not null) q = q.Where(w => w.CancelReasonId == f.CancelReasonId);
+        if (f.GroupId is not null) q = q.Where(w => w.GroupId == f.GroupId);
         if (f.OnlyWhenStopped == true) q = q.Where(w => w.OnlyWhenStopped);
         if (f.CreatedFrom is { } cf) { var from = new DateTimeOffset(cf.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt >= from); }
         if (f.CompletedFrom is { } completedFrom) { var done = new DateTimeOffset(completedFrom.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CompletedAt >= done); }

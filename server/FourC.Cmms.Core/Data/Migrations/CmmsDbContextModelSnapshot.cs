@@ -3867,6 +3867,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
 
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<Guid>("GroupId")
                         .HasColumnType("uniqueidentifier");
 

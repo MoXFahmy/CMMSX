@@ -62,4 +62,16 @@ public class PmPureTests
         Assert.Null(PmTriggers.Next(Monthly(PmScheduleType.Calendar), new(2026, 3, 1), [Cal(CalendarKind.Dates, dates: [new(2026, 4, 1)], active: false)]));
         Assert.Null(PmTriggers.CalendarNext(Cal(CalendarKind.Interval), new(2026, 3, 1))); // no anchor
     }
+
+    [Fact]
+    public void Group_status_from_children()
+    {
+        Assert.Equal("Open", FourC.Cmms.Api.Features.WorkGroups.Status([]));
+        Assert.Equal("Open", FourC.Cmms.Api.Features.WorkGroups.Status([Core.Work.WorkOrderStatus.Open, Core.Work.WorkOrderStatus.Open]));
+        Assert.Equal("InProgress", FourC.Cmms.Api.Features.WorkGroups.Status([Core.Work.WorkOrderStatus.Open, Core.Work.WorkOrderStatus.OnHold]));
+        Assert.Equal("Completed", FourC.Cmms.Api.Features.WorkGroups.Status([Core.Work.WorkOrderStatus.Completed, Core.Work.WorkOrderStatus.Cancelled]));
+        Assert.Equal("Closed", FourC.Cmms.Api.Features.WorkGroups.Status([Core.Work.WorkOrderStatus.Closed, Core.Work.WorkOrderStatus.Cancelled]));
+        Assert.Equal("Cancelled", FourC.Cmms.Api.Features.WorkGroups.Status([Core.Work.WorkOrderStatus.Cancelled]));
+        Assert.Equal("Completed", FourC.Cmms.Api.Features.WorkGroups.Status([Core.Work.WorkOrderStatus.Closed, Core.Work.WorkOrderStatus.Completed]));
+    }
 }

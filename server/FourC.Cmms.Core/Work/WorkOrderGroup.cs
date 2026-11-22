@@ -31,4 +31,5 @@ public class WorkOrderGroupComment : Entity, ITenantOwned
     public required string Body { get; set; }
     public Guid? UserId { get; set; }
     public string? UserName { get; set; }
+    public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
 }

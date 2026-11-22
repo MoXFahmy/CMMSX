@@ -12,7 +12,7 @@ using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 namespace FourC.Cmms.Core.Data.Migrations
 {
     [DbContext(typeof(CmmsDbContext))]
-    [Migration("20261122144745_TemplatesGroups")]
+    [Migration("20261122153017_TemplatesGroups")]
     partial class TemplatesGroups
     {
         /// <inheritdoc />
@@ -3869,6 +3869,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(4000)
                         .HasColumnType("nvarchar(4000)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<Guid>("GroupId")
                         .HasColumnType("uniqueidentifier");
