@@ -169,19 +169,26 @@ public static class MeasurementPointEndpoints
         }).RequirePermission(Permissions.MetersRecord);
     }
 
-    private static void Apply(MeasurementPoint p, PointInput i)
+    internal static void Apply(MeasurementPoint p, PointInput i)
     {
         p.Kind = i.Kind; p.Unit = i.Unit.Clean(); p.Decimals = i.Decimals; p.IsActive = i.IsActive;
         p.ValidMin = i.ValidMin; p.ValidMax = i.ValidMax; p.AlarmLow = i.AlarmLow; p.AlertLow = i.AlertLow; p.Target = i.Target; p.AlertHigh = i.AlertHigh; p.AlarmHigh = i.AlarmHigh;
         p.AlarmLowTemplateId = i.AlarmLowTemplateId; p.AlertLowTemplateId = i.AlertLowTemplateId; p.AlertHighTemplateId = i.AlertHighTemplateId; p.AlarmHighTemplateId = i.AlarmHighTemplateId;
     }
 
-    private static async Task<Validator> ValidateAsync(MeasurementPoint p, PointInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
+    /// <summary>The checks that need no database (shared with the import); <paramref name="p"/> already has the input applied.</summary>
+    internal static Validator PointRules(MeasurementPoint p, PointInput i)
     {
         var v = new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200).MaxLength("unit", i.Unit, "Unit", 20)
             .When(!Enum.IsDefined(i.Kind), "kind", "Choose what is measured.")
             .When(i.Decimals is < 0 or > 4, "decimals", "Decimals can be 0 to 4.");
         foreach (var (field, message) in MeasureLevels.Problems(p)) v.Add(field, message);
+        return v;
+    }
+
+    private static async Task<Validator> ValidateAsync(MeasurementPoint p, PointInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
+    {
+        var v = PointRules(p, i);
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.MeasurementPoints.AnyAsync(x => x.Code == i.Code.Trim() && x.Id != id, ct)) v.Add("code", CodeTaken);
         var templates = new[] { ("alarmLowTemplateId", i.AlarmLowTemplateId), ("alertLowTemplateId", i.AlertLowTemplateId), ("alertHighTemplateId", i.AlertHighTemplateId),
             ("alarmHighTemplateId", i.AlarmHighTemplateId) };
