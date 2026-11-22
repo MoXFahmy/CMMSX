@@ -102,6 +102,27 @@ public static class MeasurementPointEndpoints
             return Results.NoContent();
         }).RequirePermission(Permissions.PmManage);
 
+        // An asset's measurements (0.13.0): the points listing it or read on it, each with its readings in the period (oldest first) for the chart.
+        api.MapGet("/assets/{assetId:guid}/measurements", async (Guid assetId, DateOnly? from, DateOnly? to, CmmsDbContext db, CancellationToken ct) =>
+        {
+            if (!await db.Assets.AnyAsync(a => a.Id == assetId, ct)) return Results.NotFound();
+            var start = new DateTimeOffset((from ?? DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-1)).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+            var end = new DateTimeOffset((to ?? DateOnly.FromDateTime(DateTime.UtcNow)).AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+            var points = await db.MeasurementPoints.AsNoTracking()
+                .Where(p => db.MeasurementPointAssets.Any(x => x.PointId == p.Id && x.AssetId == assetId) || db.MeasurementReadings.Any(r => r.PointId == p.Id && r.AssetId == assetId))
+                .OrderBy(p => p.Code).ToListAsync(ct);
+            var ids = points.Select(p => p.Id).ToList();
+            var readings = (await db.MeasurementReadings.AsNoTracking().Where(r => ids.Contains(r.PointId) && r.AssetId == assetId && r.ReadAt >= start && r.ReadAt < end)
+                .OrderByDescending(r => r.ReadAt).Take(200 * Math.Max(1, ids.Count))
+                .Select(r => new { r.PointId, r.Id, r.ReadAt, r.Value, r.Level, r.WorkOrderId, r.FollowUpWorkOrderId, r.FollowUpRequestId, r.ByName, r.Note }).ToListAsync(ct))
+                .ToLookup(r => r.PointId);
+            return Results.Ok(points.Select(p => new
+            {
+                p.Id, p.Code, p.Name, p.Kind, p.Unit, p.Decimals, p.ValidMin, p.ValidMax, p.AlarmLow, p.AlertLow, p.Target, p.AlertHigh, p.AlarmHigh, p.IsActive,
+                Readings = readings[p.Id].Take(200).OrderBy(r => r.ReadAt).Select(r => new { r.Id, r.ReadAt, r.Value, r.Level, r.WorkOrderId, r.FollowUpWorkOrderId, r.FollowUpRequestId, r.ByName, r.Note }),
+            }));
+        }).WithTags("Measurement points").RequirePermission(Permissions.AssetsView);
+
         g.MapGet("/{id:guid}/readings", async (Guid id, Guid? assetId, DateOnly? from, DateOnly? to, CmmsDbContext db, CancellationToken ct) =>
         {
             if (!await db.MeasurementPoints.AnyAsync(p => p.Id == id, ct)) return Results.NotFound();
