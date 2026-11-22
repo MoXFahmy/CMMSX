@@ -4,6 +4,38 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.13.0] - 2026-11-22
+
+Smart checklists and follow-up work. A checklist step says what it asks for (OK / Not OK / N/A, a number, a meter
+reading or a text), numbers can be judged against shared measurement points with alert and alarm levels, a failed step
+raises follow-up work in the same save, and safety steps must be answered before work starts. See
+docs/SMART_CHECKLISTS.md.
+
+### Added
+- Step types on work templates: OK / Not OK / N/A, Number (unit and decimals, or a measurement point), Meter reading
+  (saved on the asset's meter, meter PMs follow) and Text. Any step can be Photo required or Before starting (safety).
+- PM › Measurement points: kind, unit, decimals, lowest and highest possible values, up to five levels (alarm low, alert
+  low, target, alert high, alarm high), a work template per alert or alarm level, and the assets it is measured on.
+- Follow-up work: a Not OK answer or a reading at an alert or alarm level raises a request for triage or a work order
+  from a template, once per step, linked back to the step with its answer, value, remarks and photos. Settings ›
+  Organization › *A failed step raises* sets the default; each step can choose its own or none.
+- Safety steps: answered OK or N/A before the work can start or be completed and before other steps can be answered,
+  on the web, in bulk, for groups and on the phone; automatic start waits for them. On a round, per asset.
+- On the work order and the phone: an answer that fits each step, a reading's level, a photo on a step, All OK (plain
+  OK / Not OK / N/A steps, whole job or one round asset), each round asset in green or red, and the follow-up raised.
+- Settings › Organization › *Require every number, meter and text step answered before completing*.
+- Asset › Measurements: a chart of each point's readings with its levels, the latest readings and Add reading.
+- Reports › Out of limits: readings at an alert or alarm level with the work they raised.
+- Import: a Measurement points sheet, and Type, Unit, Decimals, Measurement point, Photo required, Before starting,
+  Follow-up and Follow-up template columns on PM steps.
+
+### Changed
+- Steps from before 0.13.0 are OK / Not OK / N/A steps; a ticked step counts as OK. Reading and remarks stay on every
+  step.
+- The printed work order shows each step's result (☑ answered, ☒ Not OK or out of limits, ☐ open) with its answer,
+  value, text, reading and follow-up.
+- A template used for follow-up work can't be deleted (mark it inactive instead).
+
 ## [0.12.1] - 2026-11-22
 
 ### Fixed
