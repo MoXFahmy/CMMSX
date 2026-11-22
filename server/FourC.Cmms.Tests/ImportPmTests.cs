@@ -147,4 +147,58 @@ public class ImportPmTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var sheet = SheetOf(await CheckAsync(c, Book(new Sheet("PM schedules", ["Code", "Count from"], ["PM-LUB-01", "Completion"]))), "PmSchedules");
         Assert.Contains("The generation basis cannot change after work orders were generated (as in 4CSQL). Create a new schedule instead.", ProblemsOf(sheet));
     }
+
+    [SkippableFact]
+    public async Task Imports_work_templates_with_new_columns()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        var book = Book(new Sheet("Work templates", ["Code", "Name", "Title", "Work type", "Priority", "Expected stop hours"],
+            ["INS-1", "Chiller inspection", "Inspect chiller", "Inspection", "High", 2.5m]));
+        Assert.Equal(1, Count(SheetOf(await RunAsync(c, book), "PmTasks"), "new"));
+        var t = await TaskAsync(c, "INS-1");
+        Assert.Equal(("Inspect chiller", "Inspection", "High", 2.5m),
+            (t.GetProperty("title").GetString(), t.GetProperty("workType").GetString(), t.GetProperty("priority").GetString(), t.GetProperty("expectedStopHours").GetDecimal()));
+    }
+
+    [SkippableFact]
+    public async Task Old_sheet_name_still_imports()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        Assert.Equal(1, Count(SheetOf(await RunAsync(c, Book(new Sheet("PM tasks", ["Code", "Name"], ["OLD-1", "Old name"]))), "PmTasks"), "new"));
+        Assert.Equal(1, Count(SheetOf(await RunAsync(c, Book(new Sheet("مهام الصيانة الوقائية", ["الرمز", "الاسم"], ["OLD-2", "Arabic old name"]))), "PmTasks"), "new"));
+        await TaskAsync(c, "OLD-2");
+    }
+
+    [SkippableFact]
+    public async Task Multi_asset_mode_imports_and_locks_like_the_screen()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        var site = (await OkAsync(await c.PostAsJsonAsync("/api/sites", new { code = "CAI", name = "Cairo", isActive = true }))).GetProperty("id").GetGuid();
+        var a = await Pm12.AssetAsync(c, site, "Fan A");
+        var b = await Pm12.AssetAsync(c, site, "Fan B");
+        var task = await Pm12.TemplateAsync(c, "FAN");
+        await Pm12.SaveScheduleAsync(c, Pm12.Schedule(site, task, Loop.Today, assets: [a, b], extra: new() { ["code"] = "PM-FANS" }));
+        string[] heads = ["Code", "Name", "Task code", "Site code", "Schedule", "Every", "Unit", "Start date", "Multi-asset mode"];
+        Assert.Equal(1, Count(SheetOf(await RunAsync(c, Book(new Sheet("PM schedules", heads, ["PM-FANS", "Fans", "FAN", "CAI", "Every", 1m, "Month", Loop.Iso(Loop.Today), "Group"]))), "PmSchedules"), "changed"));
+        Assert.Equal("Group", (await ScheduleAsync(c, "PM-FANS")).GetProperty("multiAssetMode").GetString());
+        await Pm12.GenerateAsync(c, Loop.Today, (await ScheduleAsync(c, "PM-FANS")).GetProperty("id").GetGuid());
+        var again = await RunAsync(c, Book(new Sheet("PM schedules", heads, ["PM-FANS", "Fans", "FAN", "CAI", "Every", 1m, "Month", Loop.Iso(Loop.Today), "Round"])));
+        Assert.Contains("The multi-asset mode can't change after the PM has generated work.", ProblemsOf(SheetOf(again, "PmSchedules")));
+    }
+
+    [SkippableFact]
+    public async Task Export_has_the_new_columns()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        var bytes = await (await c.GetAsync("/api/import/template")).Content.ReadAsByteArrayAsync();
+        var book = FourC.Cmms.Api.Features.Import.SpreadsheetReader.Read(new MemoryStream(bytes), "book.xlsx");
+        string?[] Heads(string sheet) => book.Sheets.Single(x => x.Name == sheet).Rows[0].Select(x => x?.ToString()).ToArray();
+        Assert.Equal(["Code", "Name", "Description", "Trade code", "Estimated hours", "Safety notes", "Title", "Work type", "Priority", "Expected stop hours", "Active"],
+            Heads("Work templates"));
+        Assert.Contains("Multi-asset mode", Heads("PM schedules"));
+    }
 }

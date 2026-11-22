@@ -799,6 +799,7 @@ internal sealed class PmTaskImporter : RecordImporter<PmTask>
     {
         ["code"] = t.Code, ["name"] = t.Name, ["description"] = t.Description, ["tradeCode"] = t.TradeId is { } tr ? c.CodeOf.GetValueOrDefault(tr) : null,
         ["estimatedHours"] = t.EstimatedHours, ["safetyNotes"] = t.SafetyNotes, ["active"] = t.IsActive,
+        ["title"] = t.Title, ["workType"] = t.WorkType, ["priority"] = t.Priority, ["expectedStopHours"] = t.ExpectedStopHours,
     };
 
     protected override Task<PmTask?> SaveAsync(ImportContext c, ImportRow row, PmTask? existing, Dictionary<string, object?> v, CancellationToken ct)
@@ -807,7 +808,8 @@ internal sealed class PmTaskImporter : RecordImporter<PmTask>
         Guid? tradeId = tradeCode is not null && c.Trades.TryGetValue(tradeCode, out var known) ? known : null;
         var steps = existing?.Steps.OrderBy(s => s.Sequence).Select(s => s.Description).ToList() ?? [];
         var input = new PmEndpoints.TaskInput(S(v, "code")!, S(v, "name") ?? "", S(v, "description"), tradeId, N(v, "estimatedHours"), S(v, "safetyNotes"),
-            steps, B(v, "active", true));
+            steps, B(v, "active", true), Title: S(v, "title"), WorkType: v.GetValueOrDefault("workType") as WorkType?, Priority: v.GetValueOrDefault("priority") as WorkPriority?,
+            ExpectedStopHours: N(v, "expectedStopHours"));
         if (!Accept(row, PmEndpoints.PmTaskRules(input))) return Task.FromResult<PmTask?>(null);
         if (tradeCode is not null && tradeId is null) input = input with { TradeId = c.EnsureLookup(c.Trades, tradeCode, "Trades") };
         if (existing is not null) { Replace(c, existing, input); return Task.FromResult<PmTask?>(null); }
@@ -1109,7 +1111,7 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
     public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
     {
         var codes = Codes(rows, "code");
-        Keep(await ByKey(c.Db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Assets).Where(s => codes.Contains(s.Code)), s => s.Code, ct));
+        Keep(await ByKey(c.Db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Assets).Include(s => s.Calendars).AsSplitQuery().Where(s => codes.Contains(s.Code)), s => s.Code, ct));
         if (c.Db.CurrentSiteIds is not null) Hide(await c.Db.PmSchedules.AllSites().Where(s => codes.Contains(s.Code)).Select(s => s.Code).ToListAsync(ct));
     }
 
@@ -1122,6 +1124,7 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
         ["weekOfMonth"] = s.WeekOfMonth is { } w ? (WeekOfMonth)w : null, ["weekday"] = s.DayOfWeek, ["dayOfMonth"] = s.DayOfMonth,
         ["startDate"] = s.StartDate, ["leadDays"] = s.LeadDays, ["workPeriodDays"] = s.WorkPeriodDays,
         ["assignees"] = s.AssigneeIds.Select(id => c.CodeOf.GetValueOrDefault(id)).OfType<string>().ToList(), ["description"] = s.Description, ["active"] = s.IsActive,
+        ["multiAssetMode"] = s.Assets.Count > 0 ? s.MultiAssetMode : null,
     };
 
     protected override Dictionary<string, object?> Defaults() => new()
@@ -1162,7 +1165,9 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
             I(v, "workPeriodDays") ?? 1, existing?.WholeMonth ?? false, I(v, "leadDays") ?? 7, D(v, "startDate") ?? existing!.StartDate, null,
             existing?.MeterId, existing?.MeterTrigger, existing?.MeterInterval, null, existing?.LowerLimit, existing?.UpperLimit,
             existing?.LowerTaskId, existing?.UpperTaskId, existing?.TimeBased ?? false, B(v, "active", true), null, round is { Count: > 0 } ? round : null,
-            existing?.TeamId); // the sheet has no team column: the schedule keeps its team
+            existing?.TeamId, // the sheet has no team column: the schedule keeps its team
+            // 0.12.0: the sheet doesn't hold calendars, so a PM keeps its own; its multi-asset mode follows the screen's rules.
+            CalendarIds: existing?.Calendars.Select(x => x.ScheduleCalendarId).ToList(), MultiAssetMode: v.GetValueOrDefault("multiAssetMode") as MultiAssetMode?);
         var rules = PmEndpoints.PmScheduleRules(input, existing?.Id);
         if (existing is not null) rules.Merge(PmEndpoints.ScheduleChangeRules(existing, input));
         if (!Accept(row, rules)) return Task.FromResult<PmSchedule?>(null);
