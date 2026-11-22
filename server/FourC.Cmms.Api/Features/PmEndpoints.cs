@@ -27,7 +27,9 @@ public static class PmEndpoints
         Guid? LowerTaskId, Guid? UpperTaskId, bool TimeBased, bool IsActive = true, string? RowVersion = null, List<Guid>? AssetIds = null, Guid? TeamId = null,
         bool? ManagesTeam = null, bool? OnlyWhenStopped = null, List<Guid>? RecipientIds = null,
         bool? ManagesRules = null, List<Core.Assets.AssetStatus>? SkipStatusesOverride = null, List<DayOfWeek>? NonWorkingDaysOverride = null, bool? NoStackingOverride = null,
-        List<AssetTemplateInput>? AssetTemplates = null);
+        List<AssetTemplateInput>? AssetTemplates = null, List<Guid>? CalendarIds = null, List<ExtraMeterInput>? ExtraMeters = null);
+    /// <summary>A meter trigger on top of the PM's own (0.12.0), whichever comes first.</summary>
+    public sealed record ExtraMeterInput(Guid MeterId, decimal Interval, decimal? NextDueReading = null);
     /// <summary>A multi-asset PM's asset with its own template (empty = the PM's).</summary>
     public sealed record AssetTemplateInput(Guid AssetId, Guid? PmTaskId);
     public sealed record GenerateInput(DateOnly Until, Guid? SiteId, List<Guid>? ScheduleIds);
@@ -153,8 +155,9 @@ public static class PmEndpoints
         g.MapPost("/bulk", async (BulkActiveInput input, CmmsDbContext db, CancellationToken ct) =>
         {
             var ids = Bulk.Ids(input.Ids, "PM schedules");
-            var rows = await db.PmSchedules.Where(s => ids.Contains(s.Id)).ToListAsync(ct);
-            foreach (var s in rows) SetActive(s, input.Active);
+            var rows = await db.PmSchedules.Include(s => s.Calendars).Where(s => ids.Contains(s.Id)).ToListAsync(ct);
+            var calendars = (await CalendarsAsync(db, rows.SelectMany(r => r.Calendars.Select(c => c.ScheduleCalendarId)), ct)).ToDictionary(c => c.Id);
+            foreach (var s in rows) SetActive(s, input.Active, s.Calendars.Where(c => calendars.ContainsKey(c.ScheduleCalendarId)).Select(c => calendars[c.ScheduleCalendarId]).ToList());
             await db.SaveChangesAsync(ct);
             return Results.Ok(new BulkResult(rows.Count, ids.Except(rows.Select(r => r.Id)).Select(id => new BulkSkip(id, "", "Not found.")).ToList()));
         }).RequirePermission(Permissions.PmManage);
@@ -162,8 +165,11 @@ public static class PmEndpoints
         g.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
             var s = await db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Asset).Include(x => x.Meter).Include(x => x.PmTask)
-                .Include(x => x.Assets).ThenInclude(a => a.Asset).AsSplitQuery().FirstOrDefaultAsync(x => x.Id == id, ct);
+                .Include(x => x.Assets).ThenInclude(a => a.Asset).Include(x => x.Calendars).Include(x => x.ExtraMeters).AsSplitQuery().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (s is null) return Results.NotFound();
+            var calendars = await CalendarsAsync(db, s.Calendars.Select(c => c.ScheduleCalendarId), ct);
+            var extraIds = s.ExtraMeters.Select(m => m.MeterId).ToList();
+            var extraMeters = await db.Meters.AsNoTracking().Where(m => extraIds.Contains(m.Id)).ToDictionaryAsync(m => m.Id, ct);
             var recent = await db.WorkOrders.AsNoTracking().Where(w => w.PmScheduleId == id).OrderByDescending(w => w.CreatedAt).Take(10)
                 .Select(w => new { w.Id, w.Number, w.Title, w.Status, w.PmDueDate, w.CompletedAt }).ToListAsync(ct);
             var visitCost = (await PmCost.ForSchedulesAsync(db, [s], ct))[(s.Id, s.PmTaskId)];
@@ -177,18 +183,25 @@ public static class PmEndpoints
                 s.WorkPeriodDays, s.WholeMonth, s.LeadDays, s.StartDate, s.NextDueDate, s.LastDueDate, s.LastGeneratedAt, s.GenerationCount,
                 s.MeterId, Meter = s.Meter is null ? null : new { s.Meter.Id, s.Meter.Code, s.Meter.Name, s.Meter.Unit, s.Meter.CurrentReading },
                 s.MeterTrigger, s.MeterInterval, s.NextDueReading, s.LowerLimit, s.UpperLimit, s.LowerTaskId, s.UpperTaskId, s.TimeBased, s.IsActive,
-                Schedule = PmCalendar.Describe(s, Translator.CurrentLanguage), Upcoming = PmCalendar.Forecast(s, Today.AddYears(2), 6), RecentWorkOrders = recent, VisitCost = visitCost,
+                Schedule = PmCalendar.Describe(s, Translator.CurrentLanguage), Upcoming = PmTriggers.Forecast(s, Today.AddYears(2), 6, calendars), RecentWorkOrders = recent, VisitCost = visitCost,
+                CalendarIds = s.Calendars.Select(c => c.ScheduleCalendarId),
+                Calendars = calendars.OrderBy(c => c.Code).Select(c => new { c.Id, c.Code, c.Name }),
+                ExtraMeters = s.ExtraMeters.Where(m => extraMeters.ContainsKey(m.MeterId)).Select(m => new
+                {
+                    m.MeterId, extraMeters[m.MeterId].Code, extraMeters[m.MeterId].Name, extraMeters[m.MeterId].Unit, extraMeters[m.MeterId].CurrentReading, m.Interval, m.NextDueReading,
+                }),
                 s.LegacyRef, RowVersion = Convert.ToBase64String(s.RowVersion),
             });
         }).RequirePermission(Permissions.PmView);
 
         // Live preview for the schedule form: describe + next dates for a draft, without saving.
-        g.MapPost("/simulate", (ScheduleInput input) =>
+        g.MapPost("/simulate", async (ScheduleInput input, CmmsDbContext db, CancellationToken ct) =>
         {
             var s = new PmSchedule { Code = "", Name = "" };
             ApplySchedule(s, input);
-            s.NextDueDate = input.NextDueDate ?? PmCalendar.FirstOnOrAfter(s, input.StartDate);
-            var dates = PmCalendar.Forecast(s, s.NextDueDate.Value.AddYears(3), 6).ToList();
+            var calendars = await CalendarsAsync(db, input.CalendarIds ?? [], ct);
+            s.NextDueDate = input.NextDueDate ?? PmTriggers.First(s, input.StartDate, calendars);
+            var dates = s.NextDueDate is { } first ? PmTriggers.Forecast(s, first.AddYears(3), 6, calendars).ToList() : [];
             return Results.Ok(new { Schedule = PmCalendar.Describe(s, Translator.CurrentLanguage), Upcoming = dates, DueDates = dates.Select(d => PmCalendar.DueDate(s, d)) });
         }).RequirePermission(Permissions.PmView);
 
@@ -198,7 +211,9 @@ public static class PmEndpoints
             if (!v.IsValid) return v.Problem();
             var code = input.Code.Clean() ?? await Numbering.NextAsync(db, "PmSchedule", "PM-", 5, n => db.PmSchedules.AllSites().AnyAsync(x => x.Code == n, ct),
                 p => db.PmSchedules.AllSites().Where(x => x.Code.StartsWith(p)).Select(x => x.Code).ToListAsync(ct), ct);
-            var s = CreateSchedule(db, input, code);
+            var s = CreateSchedule(db, input, code, await CalendarsAsync(db, input.CalendarIds ?? [], ct));
+            foreach (var m in s.ExtraMeters.Where(m => m.NextDueReading is null))
+                m.NextDueReading = (await db.Meters.Where(x => x.Id == m.MeterId).Select(x => x.CurrentReading).FirstOrDefaultAsync(ct) ?? 0) + m.Interval;
             // "Only while stopped" comes from the asset unless the form says otherwise.
             if (input.OnlyWhenStopped is null && s.AssetId is { } stopAsset)
                 s.OnlyWhenStopped = await db.Assets.AllSites().Where(a => a.Id == stopAsset).Select(a => a.OnlyWhenStopped).FirstOrDefaultAsync(ct);
@@ -210,7 +225,8 @@ public static class PmEndpoints
 
         g.MapPut("/{id:guid}", async (Guid id, ScheduleInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
-            var s = await db.PmSchedules.Include(x => x.ExtraTasks).Include(x => x.Assets).FirstOrDefaultAsync(x => x.Id == id, ct);
+            var s = await db.PmSchedules.Include(x => x.ExtraTasks).Include(x => x.Assets).Include(x => x.Calendars).Include(x => x.ExtraMeters).AsSplitQuery()
+                .FirstOrDefaultAsync(x => x.Id == id, ct);
             if (s is null) return Results.NotFound();
             var before = s.Assets.OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList();
             // The round's assets that still exist, and those of them the editor can't see (another branch): only these may be kept
@@ -239,7 +255,9 @@ public static class PmEndpoints
             v.Merge(ScheduleChangeRules(s, input));
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(s).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
-            UpdateSchedule(s, input);
+            UpdateSchedule(s, input, await CalendarsAsync(db, input.CalendarIds ?? s.Calendars.Select(c => c.ScheduleCalendarId), ct));
+            foreach (var m in s.ExtraMeters.Where(m => m.NextDueReading is null))
+                m.NextDueReading = (await db.Meters.Where(x => x.Id == m.MeterId).Select(x => x.CurrentReading).FirstOrDefaultAsync(ct) ?? 0) + m.Interval;
             var after = s.Assets.OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList();
             if (!before.SequenceEqual(after))
             {
@@ -507,6 +525,17 @@ public static class PmEndpoints
             .When(id is null && i.Type != PmScheduleType.Meter && i.StartDate < Today.AddDays(-366), "startDate", "Start date is more than a year in the past.");
         var round = i.AssetIds ?? [];
         if (i.AssetId is null && i.LocationId is null && round.Count == 0) v.Add("assetId", "Choose the asset or location to maintain.");
+        // Shared calendars and extra meters (0.12.0).
+        var calendars = (i.CalendarIds ?? []).Distinct().Count();
+        if (i.Type == PmScheduleType.Calendar && calendars == 0) v.Add("calendarIds", "Choose at least one calendar.");
+        else if (calendars > 10) v.Add("calendarIds", "At most 10 calendars.");
+        else if ((calendars > 0 || i.Type == PmScheduleType.Calendar) && i.Basis == PmBasis.Actual) v.Add("calendarIds", "Shared calendars need the Scheduled basis.");
+        var extra = i.ExtraMeters ?? [];
+        if (extra.Count > 5) v.Add("extraMeters", "At most 5 extra meters.");
+        else if (extra.Any(m => m.Interval <= 0)) v.Add("extraMeters", "Each extra meter needs an interval above zero.");
+        else if (extra.GroupBy(m => m.MeterId).Any(g => g.Count() > 1) || extra.Any(m => i.Type == PmScheduleType.Meter && m.MeterId == i.MeterId))
+            v.Add("extraMeters", "List each meter once.");
+        else if (extra.Count > 0 && round.Count > 0) v.Add("extraMeters", "Extra meters need a single asset.");
         if ((i.ExtraTasks ?? []).Any(e => e.EveryNth is < 2 or > 1000)) v.Add("extraTasks", "\"Every Nth\" must be between 2 and 1000.");
         if (i.Type == PmScheduleType.Meter)
         {
@@ -523,24 +552,37 @@ public static class PmEndpoints
         .When(i.Basis != s.Basis && s.GenerationCount > 0, "basis", "The generation basis cannot change after work orders were generated (as in 4CSQL). Create a new schedule instead.");
 
     /// <summary>A new schedule with its first due date (meter schedules: see the POST for their first reading).</summary>
-    internal static PmSchedule CreateSchedule(CmmsDbContext db, ScheduleInput i, string code)
+    /// <param name="calendars">The shared calendars the input names (0.12.0); none when left out.</param>
+    internal static PmSchedule CreateSchedule(CmmsDbContext db, ScheduleInput i, string code, IReadOnlyList<ScheduleCalendar>? calendars = null)
     {
         var s = new PmSchedule { Code = code, Name = i.Name.Trim() };
         ApplySchedule(s, i);
-        s.NextDueDate = PmCalendar.UsesCalendar(s) ? i.NextDueDate ?? PmCalendar.FirstOnOrAfter(s, i.StartDate) : null;
+        calendars ??= [];
+        s.NextDueDate = PmTriggers.UsesDates(s, calendars.Count) ? i.NextDueDate ?? PmTriggers.First(s, i.StartDate, calendars) : null;
         db.PmSchedules.Add(s);
         return s;
     }
 
+    /// <summary>The shared calendars with these ids (organization-wide).</summary>
+    internal static async Task<List<ScheduleCalendar>> CalendarsAsync(CmmsDbContext db, IEnumerable<Guid> ids, CancellationToken ct)
+    {
+        var list = ids.Distinct().ToList();
+        return list.Count == 0 ? [] : await db.ScheduleCalendars.AsNoTracking().Where(c => list.Contains(c.Id)).ToListAsync(ct);
+    }
+
     /// <summary>Updates a schedule (loaded with its extra tasks and assets) and works out its next due date as the screen does.</summary>
-    internal static void UpdateSchedule(PmSchedule s, ScheduleInput i)
+    internal static void UpdateSchedule(PmSchedule s, ScheduleInput i, IReadOnlyList<ScheduleCalendar>? calendars = null)
     {
         s.Name = i.Name.Trim();
         if (i.Code.Clean() is { } c) s.Code = c;
         var wasActive = s.IsActive;
         ApplySchedule(s, i);
-        if (PmCalendar.UsesCalendar(s))
-            s.NextDueDate = i.NextDueDate ?? (!wasActive && s.IsActive ? PmCalendar.FirstOnOrAfter(s, Today) : s.NextDueDate ?? (s.GenerationCount == 0 ? PmCalendar.FirstOnOrAfter(s, i.StartDate) : null));
+        // The import doesn't read calendars: a PM whose dates come only from them keeps its next date there.
+        if (calendars is null && s.Type == PmScheduleType.Calendar) return;
+        calendars ??= [];
+        if (PmTriggers.UsesDates(s, calendars.Count))
+            s.NextDueDate = i.NextDueDate ?? (!wasActive && s.IsActive ? PmTriggers.First(s, Today, calendars)
+                : s.NextDueDate ?? (s.GenerationCount == 0 ? PmTriggers.First(s, i.StartDate, calendars) : null));
         else s.NextDueDate = null;
     }
 
@@ -582,6 +624,10 @@ public static class PmEndpoints
         if (await db.PmTasks.CountAsync(x => taskIds.Contains(x.Id), ct) != taskIds.Count) v.Add("pmTaskId", "Choose a valid PM task.");
         if (i.TradeId is not null && !await db.Trades.AnyAsync(x => x.Id == i.TradeId, ct)) v.Add("tradeId", "Unknown trade.");
         if (i.Type == PmScheduleType.Meter && (i.MeterId is null || !await db.Meters.AnyAsync(x => x.Id == i.MeterId, ct))) v.Add("meterId", "Choose a meter.");
+        var calIds = (i.CalendarIds ?? []).Distinct().ToList();
+        if (calIds.Count > 0 && await db.ScheduleCalendars.CountAsync(c => calIds.Contains(c.Id), ct) != calIds.Count) v.Add("calendarIds", "Unknown calendar.");
+        var meterIds = (i.ExtraMeters ?? []).Select(m => m.MeterId).Distinct().ToList();
+        if (meterIds.Count > 0 && await db.Meters.CountAsync(m => meterIds.Contains(m.Id), ct) != meterIds.Count) v.Add("extraMeters", "Unknown meter.");
         if ((i.NonWorkingDaysOverride ?? []).Distinct().Count() >= 7) v.Add("nonWorkingDaysOverride", "Leave at least one working day.");
         if ((i.RecipientIds ?? []).Distinct().Count() > 20) v.Add("recipientIds", "At most 20 recipients.");
         else await CheckRecipientsAsync(db, v, i.RecipientIds, ct);
@@ -603,9 +649,10 @@ public static class PmEndpoints
     }
 
     /// <summary>Pauses or resumes a schedule; resuming a calendar schedule moves its next due date to the first one from today.</summary>
-    internal static void SetActive(PmSchedule s, bool active)
+    internal static void SetActive(PmSchedule s, bool active, IReadOnlyList<ScheduleCalendar>? calendars = null)
     {
-        if (active && !s.IsActive && PmCalendar.UsesCalendar(s)) s.NextDueDate = PmCalendar.FirstOnOrAfter(s, Today);
+        calendars ??= [];
+        if (active && !s.IsActive && PmTriggers.UsesDates(s, calendars.Count)) s.NextDueDate = PmTriggers.First(s, Today, calendars);
         s.IsActive = active;
     }
 
@@ -642,6 +689,24 @@ public static class PmEndpoints
             // Each asset's own template (0.12.0); assets not named use the PM's. Left out: unchanged.
             var own = i.AssetTemplates.GroupBy(a => a.AssetId).ToDictionary(g => g.Key, g => g.First().PmTaskId);
             foreach (var a in s.Assets) a.PmTaskId = own.GetValueOrDefault(a.AssetId) is { } tid && tid != i.PmTaskId ? tid : null;
+        }
+        if (i.CalendarIds is not null)
+        {
+            var cals = i.CalendarIds.Distinct().ToList();
+            s.Calendars.RemoveAll(c => !cals.Contains(c.ScheduleCalendarId));
+            foreach (var c in cals.Where(c => s.Calendars.All(x => x.ScheduleCalendarId != c))) s.Calendars.Add(new PmScheduleCalendar { PmScheduleId = s.Id, ScheduleCalendarId = c });
+        }
+        if (i.ExtraMeters is not null)
+        {
+            var meters = i.ExtraMeters.GroupBy(m => m.MeterId).Select(g => g.First()).ToList();
+            s.ExtraMeters.RemoveAll(m => meters.All(x => x.MeterId != m.MeterId));
+            foreach (var m in meters)
+            {
+                var row = s.ExtraMeters.FirstOrDefault(x => x.MeterId == m.MeterId);
+                if (row is null) s.ExtraMeters.Add(row = new PmScheduleMeter { PmScheduleId = s.Id, MeterId = m.MeterId });
+                row.Interval = Math.Round(m.Interval, 3);
+                if (m.NextDueReading is not null) row.NextDueReading = m.NextDueReading;
+            }
         }
         var want = (i.ExtraTasks ?? []).GroupBy(e => e.PmTaskId).Select(e => e.First()).Where(e => e.PmTaskId != i.PmTaskId).ToList();
         s.ExtraTasks.RemoveAll(e => want.All(w => w.PmTaskId != e.PmTaskId));
@@ -692,7 +757,12 @@ public static class PmEndpoints
         var taskNames = await db.PmTasks.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, ct);
         // Estimated cost per visit, worked out once per schedule and task (not per forecast row).
         var costs = (await PmCost.ForSchedulesAsync(db, list.Select(i => i.S).ToList(), ct)).ToDictionary(x => x.Key, x => x.Value.Total);
-        return list.SelectMany(i => PmCalendar.Forecast(i.S, to, 400).Select((d, k) => new ForecastRow
+        // Each PM's shared calendars (0.12.0), read once for the whole list.
+        var ids = list.Select(i => i.S.Id).ToList();
+        var links = (await db.PmScheduleCalendars.AsNoTracking().Where(x => ids.Contains(x.PmScheduleId)).ToListAsync(ct)).ToLookup(x => x.PmScheduleId, x => x.ScheduleCalendarId);
+        var calendars = (await CalendarsAsync(db, links.SelectMany(x => x), ct)).ToDictionary(c => c.Id);
+        IReadOnlyList<ScheduleCalendar> CalendarsOf(Guid id) => links[id].Where(calendars.ContainsKey).Select(c => calendars[c]).ToList();
+        return list.SelectMany(i => PmTriggers.Forecast(i.S, to, 400, CalendarsOf(i.S.Id)).Select((d, k) => new ForecastRow
         {
             Date = d, Id = i.S.Id, Code = i.S.Code, Name = i.S.Name, AssetId = i.S.AssetId, AssetNumber = i.AssetNumber, SiteId = i.S.SiteId, SiteName = i.SiteName, Type = i.S.Type,
             TaskName = taskNames.GetValueOrDefault(PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + k)) ?? i.TaskName,

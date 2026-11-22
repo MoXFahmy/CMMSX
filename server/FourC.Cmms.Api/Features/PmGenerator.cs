@@ -25,7 +25,8 @@ public static class PmGenerator
     {
         var today = Today;
         var horizon = until ?? today.AddDays(366);
-        var q = db.PmSchedules.AsNoTracking().Where(s => s.IsActive && s.NextDueDate != null && s.NextDueDate <= horizon && (s.Type != PmScheduleType.Meter || s.TimeBased));
+        var q = db.PmSchedules.AsNoTracking().Where(s => s.IsActive && s.NextDueDate != null && s.NextDueDate <= horizon
+            && (s.Type != PmScheduleType.Meter || s.TimeBased || s.Calendars.Any()));
         if (siteId is not null) q = q.Where(s => s.SiteId == siteId);
         if (ids is { Count: > 0 }) q = q.Where(s => ids.Contains(s.Id));
         var candidates = await q.OrderBy(s => s.NextDueDate).Select(s => s.Id).ToListAsync(ct);
@@ -35,7 +36,8 @@ public static class PmGenerator
         {
             try
             {
-                var query = db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Asset).Include(s => s.Assets).Where(s => s.Id == id);
+                var query = db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Asset).Include(s => s.Assets).Include(s => s.Calendars).Include(s => s.ExtraMeters)
+                    .AsSplitQuery().Where(s => s.Id == id);
                 var s = dryRun ? await query.AsNoTracking().FirstAsync(ct) : await query.FirstAsync(ct);
                 results.AddRange(await GenerateForAsync(db, ctx, s, until ?? today.AddDays(Math.Max(0, s.LeadDays)), dryRun, settings, ct, mail));
             }
@@ -74,8 +76,11 @@ public static class PmGenerator
         }
         var taskIds = s.ExtraTasks.Select(x => x.PmTaskId).Append(s.PmTaskId).Distinct().ToList();
         var tasks = await db.PmTasks.AsNoTracking().Include(t => t.Steps).Where(t => taskIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
+        var calendars = await PmEndpoints.CalendarsAsync(db, s.Calendars.Select(c => c.ScheduleCalendarId), ct);
+        DateOnly? last = null;
         for (var guard = 0; guard < 120 && s.NextDueDate is { } due && due <= limit; guard++)
         {
+            last = due;
             var count = s.GenerationCount + 1;
             var task = tasks.GetValueOrDefault(PmCalendar.TaskFor(s, count)) ?? tasks.GetValueOrDefault(s.PmTaskId);
             WorkOrder? wo = null;
@@ -92,7 +97,7 @@ public static class PmGenerator
                 // A skipped occurrence moves the schedule on but is not a generation, so "every Nth" tasks are not lost.
                 results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, null, null, $"Skipped: {skip}"));
                 s.LastDueDate = due;
-                s.NextDueDate = PmCalendar.Next(s, due);
+                s.NextDueDate = PmTriggers.Next(s, due, calendars);
                 if (!dryRun) await db.SaveChangesAsync(ct);
                 if (s.Basis == PmBasis.Actual) break;
                 continue;
@@ -101,13 +106,30 @@ public static class PmGenerator
             results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, wo?.Id, wo?.Number,
                 task is null ? "PM task not found" : exists ? "Already generated" : null));
             s.GenerationCount = count; s.LastDueDate = due; s.LastGeneratedAt = DateTimeOffset.UtcNow; s.LastWorkOrderId = wo?.Id ?? s.LastWorkOrderId;
-            s.NextDueDate = s.Basis == PmBasis.Scheduled ? PmCalendar.Next(s, due) : null;
-            if (s.Type == PmScheduleType.Meter && s.MeterTrigger == MeterTrigger.Incremental && s.Basis == PmBasis.Scheduled && s.MeterInterval is { } iv && !dryRun)
-                s.NextDueReading = (await db.Meters.Where(m => m.Id == s.MeterId).Select(m => m.CurrentReading).FirstOrDefaultAsync(ct) ?? 0) + iv;
+            s.NextDueDate = s.Basis == PmBasis.Scheduled ? PmTriggers.Next(s, due, calendars) : null;
+            if (s.Basis == PmBasis.Scheduled && !dryRun) await RestartMetersAsync(db, s, null, 0, ct); // whichever comes first: every meter starts again
             if (!dryRun) await db.SaveChangesAsync(ct);
             if (s.Basis == PmBasis.Actual) break;
         }
+        // Its calendars have no more dates (0.12.0): say so instead of going quiet.
+        if (last is { } lastDue && s.NextDueDate is null && s.Basis == PmBasis.Scheduled && (s.Type == PmScheduleType.Calendar || calendars.Count > 0))
+            results.Add(new Result(s.Id, s.Code, s.Name, null, null, s.Asset?.AssetNumber, null, null, string.Format(NoNextDate, lastDue.ToString("yyyy-MM-dd"))));
         return results;
+    }
+
+    public const string NoNextDate = "No next date: its calendars have no dates after {0}.";
+
+    /// <summary>
+    /// Restarts every incremental meter trigger of <paramref name="s"/> (its own meter and its extra meters, 0.12.0) at the meter's
+    /// current reading plus the interval; <paramref name="readMeter"/> uses <paramref name="value"/>, the reading just taken.
+    /// </summary>
+    private static async Task RestartMetersAsync(CmmsDbContext db, PmSchedule s, Guid? readMeter, decimal value, CancellationToken ct)
+    {
+        async Task<decimal> CurrentAsync(Guid meterId) => meterId == readMeter ? value
+            : await db.Meters.Where(m => m.Id == meterId).Select(m => m.CurrentReading).FirstOrDefaultAsync(ct) ?? 0;
+        if (s.Type == PmScheduleType.Meter && s.MeterTrigger == MeterTrigger.Incremental && s.MeterId is { } own && s.MeterInterval is { } iv)
+            s.NextDueReading = await CurrentAsync(own) + iv;
+        foreach (var m in s.ExtraMeters) m.NextDueReading = await CurrentAsync(m.MeterId) + m.Interval;
     }
 
     public const string NoActiveAssets = "No active assets in the list";
@@ -200,25 +222,34 @@ public static class PmGenerator
     /// <summary>"Actual" schedules restart from the completion (or cancellation) of their latest work order.</summary>
     public static async Task OnWorkOrderFinishedAsync(CmmsDbContext db, WorkOrder w, CancellationToken ct)
     {
-        var s = await db.PmSchedules.FirstOrDefaultAsync(x => x.Id == w.PmScheduleId, ct);
+        var s = await db.PmSchedules.Include(x => x.ExtraMeters).FirstOrDefaultAsync(x => x.Id == w.PmScheduleId, ct);
         if (s is null || !s.IsActive || s.Basis != PmBasis.Actual || (s.LastWorkOrderId is { } last && last != w.Id)) return;
         var done = DateOnly.FromDateTime((w.CompletedAt ?? DateTimeOffset.UtcNow).UtcDateTime);
-        if (PmCalendar.UsesCalendar(s)) s.NextDueDate = PmCalendar.Next(s, done);
-        if (s.Type == PmScheduleType.Meter && s.MeterTrigger == MeterTrigger.Incremental && s.MeterInterval is { } iv)
-            s.NextDueReading = (await db.Meters.Where(m => m.Id == s.MeterId).Select(m => m.CurrentReading).FirstOrDefaultAsync(ct) ?? 0) + iv;
+        if (PmCalendar.UsesCalendar(s)) s.NextDueDate = PmCalendar.Next(s, done); // calendars need the Scheduled basis
+        await RestartMetersAsync(db, s, null, 0, ct);
     }
 
     /// <summary>Evaluates meter-based schedules after a reading; returns the work orders it created.</summary>
     public static async Task<List<Result>> OnReadingAsync(CmmsDbContext db, ITenantContext ctx, Meter meter, decimal value, CancellationToken ct, EmailOutbox? mail = null)
     {
         var results = new List<Result>();
-        var schedules = await db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Asset)
-            .Where(s => s.MeterId == meter.Id && s.IsActive && s.Type == PmScheduleType.Meter).ToListAsync(ct);
+        // PMs on this meter: as their own meter, or as an extra meter trigger (0.12.0).
+        var schedules = await db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Asset).Include(s => s.ExtraMeters).Include(s => s.Calendars).AsSplitQuery()
+            .Where(s => s.IsActive && ((s.MeterId == meter.Id && s.Type == PmScheduleType.Meter) || s.ExtraMeters.Any(m => m.MeterId == meter.Id))).ToListAsync(ct);
         foreach (var s in schedules)
         {
             Guid? taskId = null;
             string? why = null;
-            if (s.MeterTrigger == MeterTrigger.Threshold)
+            var extraRow = s.ExtraMeters.FirstOrDefault(m => m.MeterId == meter.Id);
+            if (!(s.MeterId == meter.Id && s.Type == PmScheduleType.Meter))
+            {
+                if (extraRow?.NextDueReading is { } extraDue && value >= extraDue)
+                {
+                    taskId = PmCalendar.TaskFor(s, s.GenerationCount + 1);
+                    why = $"Meter reached {value:0.###} {meter.Unit} (due at {extraDue:0.###}).";
+                }
+            }
+            else if (s.MeterTrigger == MeterTrigger.Threshold)
             {
                 if (s.LowerLimit is { } lo && value < lo) { taskId = s.LowerTaskId ?? s.PmTaskId; why = $"Reading {value:0.###} {meter.Unit} is below the lower limit {lo:0.###}."; }
                 else if (s.UpperLimit is { } hi && value > hi) { taskId = s.UpperTaskId ?? s.PmTaskId; why = $"Reading {value:0.###} {meter.Unit} is above the upper limit {hi:0.###}."; }
@@ -238,10 +269,19 @@ public static class PmGenerator
             if (task is null) continue;
             var wo = await CreateWorkOrderAsync(db, ctx, s, task, null, why, ct, mail: mail);
             s.GenerationCount++; s.LastGeneratedAt = DateTimeOffset.UtcNow; s.LastWorkOrderId = wo.Id;
-            if (s.MeterTrigger == MeterTrigger.Incremental)
-                s.NextDueReading = s.Basis == PmBasis.Scheduled && s.MeterInterval is { } iv ? value + iv : null;
-            if (s.TimeBased && s.Basis == PmBasis.Scheduled) s.NextDueDate = PmCalendar.Next(s, Today); // whichever comes first: restart the clock
-            if (s.TimeBased && s.Basis == PmBasis.Actual) s.NextDueDate = null;
+            if (s.Basis == PmBasis.Scheduled)
+            {
+                // Whichever comes first: every meter starts again, the PM's own clock restarts today and its calendars keep their dates.
+                await RestartMetersAsync(db, s, meter.Id, value, ct);
+                var calendars = await PmEndpoints.CalendarsAsync(db, s.Calendars.Select(c => c.ScheduleCalendarId), ct);
+                if (PmTriggers.UsesDates(s, calendars.Count)) s.NextDueDate = PmTriggers.Next(s, Today, calendars);
+            }
+            else
+            {
+                if (s.Type == PmScheduleType.Meter && s.MeterTrigger == MeterTrigger.Incremental) s.NextDueReading = null;
+                foreach (var m in s.ExtraMeters) m.NextDueReading = null;
+                if (s.TimeBased) s.NextDueDate = null;
+            }
             await db.SaveChangesAsync(ct);
             results.Add(new Result(s.Id, s.Code, s.Name, null, task.Name, s.Asset?.AssetNumber, wo.Id, wo.Number, null));
         }

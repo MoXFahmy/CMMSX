@@ -49,6 +49,21 @@ public static class PmTriggers
         return best;
     }
 
+    /// <summary>Upcoming target dates from the PM's next date (Actual-basis PMs only know their next one).</summary>
+    public static IEnumerable<DateOnly> Forecast(PmSchedule s, DateOnly to, int max, IReadOnlyList<ScheduleCalendar> calendars)
+    {
+        if (s.NextDueDate is not { } d || !UsesDates(s, calendars.Count)) yield break;
+        for (var i = 0; i < max && d <= to; i++)
+        {
+            yield return d;
+            if (s.Basis == PmBasis.Actual || Next(s, d, calendars) is not { } next) yield break;
+            d = next;
+        }
+    }
+
+    /// <summary>The PM generates by date: its own rule or any calendar.</summary>
+    public static bool UsesDates(PmSchedule s, int calendarCount) => OwnRule(s) || calendarCount > 0;
+
     /// <summary>The PM has a date rule of its own (not only calendars, and not a meter without "or time").</summary>
     public static bool OwnRule(PmSchedule s) => s.Type != PmScheduleType.Calendar && PmCalendar.UsesCalendar(s);
 }
