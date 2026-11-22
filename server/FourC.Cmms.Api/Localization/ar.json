@@ -761,5 +761,8 @@
  "Choose the store.": "اختر المخزن.",
  "This count was already posted or cancelled.": "تم ترحيل هذا الجرد أو إلغاؤه من قبل.",
  "This count no longer exists.": "هذا الجرد لم يعد موجودًا.",
- "Count not found.": "الجرد غير موجود."
+ "Count not found.": "الجرد غير موجود.",
+ "The time can't be in the future.": "لا يمكن أن يكون الوقت في المستقبل.",
+ "Choose the asset.": "اختر الأصل.",
+ "Asset not found.": "الأصل غير موجود."
 }

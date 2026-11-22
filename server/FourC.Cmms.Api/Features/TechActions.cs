@@ -38,6 +38,8 @@ public static partial class TechEndpoints
     private sealed record ReceivePayload(Guid PurchaseOrderId, Guid LineId, decimal Quantity, Guid? StoreId = null, string? BatchNumber = null, DateOnly? ExpiryDate = null);
     /// <summary>A counted quantity for a stock count (0.11.0).</summary>
     private sealed record CountPayload(Guid CountId, Guid PartId, decimal Quantity);
+    /// <summary>The asset's stop started or ended from a job (0.11.0); At = the time the technician chose, else when the change was made.</summary>
+    private sealed record StopPayload(Guid? AssetId, DateTimeOffset? At, string? Reason);
     /// <summary>A change that can't be applied; rolls back anything it did and is answered "rejected".</summary>
     private sealed class Rejected(string message, string? code = null) : Exception(message) { public string? Code { get; } = code; }
 
@@ -287,6 +289,30 @@ public static partial class TechEndpoints
                 await StockCountEndpoints.CountLineAsync(db, ctx, p.CountId, p.PartId, p.Quantity, at, ct);
                 await db.SaveChangesAsync(ct);
                 return new Answer("done");
+            }
+            case "downtime.start":
+            case "downtime.end":
+            {
+                Require(allowed, Permissions.WorkOrdersExecute);
+                var w = await WorkOrderAsync(db, input.WorkOrderId, ct);
+                RequireNotClosed(w);
+                var p = Read<StopPayload>(input.Payload, options);
+                var asset = p.AssetId ?? w.AssetId ?? throw new Rejected("Choose the asset.");
+                if (!await db.Assets.AnyAsync(a => a.Id == asset, ct)) throw new Rejected("Asset not found.");
+                if (p.At > DateTimeOffset.UtcNow.AddMinutes(1)) throw new Rejected("The time can't be in the future.");
+                var when = p.At ?? at;
+                if (input.Type == "downtime.end")
+                {
+                    if (!await Downtime.EndOpenAsync(db, ctx, asset, when, ct)) throw new Rejected("The asset isn't down.");
+                    await db.SaveChangesAsync(ct);
+                    return new Answer("done");
+                }
+                var already = await db.DowntimeEvents.AnyAsync(e => e.AssetId == asset && e.EndedAt == null, ct);
+                var stop = await Downtime.StartOrJoinAsync(db, asset, when, p.Reason ?? w.Title, FourC.Cmms.Core.Assets.DowntimeSource.WorkOrder, w.Number, ct);
+                // The job is about this stop: completing it ends the stop (as "The asset is down" on the web).
+                if (w.AssetId == asset && w.DowntimeEventId is null) { w.DowntimeEventId = stop.Id; w.AssetWasDown = true; }
+                await db.SaveChangesAsync(ct);
+                return new Answer("done", already ? "The asset is already down." : null);
             }
             case "request.create":
             {
