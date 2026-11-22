@@ -502,7 +502,7 @@ internal sealed class AssetImporter : RecordImporter<Asset>
         while (_next < _end)
         {
             var number = AssetEndpoints.FormatAssetNumber(c.Settings, _next++);
-            if (!c.Assets.ContainsKey(number)) return number;
+            if (!c.Assets.ContainsKey(number) && !c.HiddenAssetNumbers.Contains(number)) return number;
         }
         return null;
     }

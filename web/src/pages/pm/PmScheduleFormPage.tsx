@@ -46,6 +46,7 @@ function toBody({ target, roundAssets, ...v }: V, rowVersion?: string) {
     weekOfMonth: v.weekOfMonth ? Number(v.weekOfMonth) : null, startDate: toIsoDate(v.startDate) ?? toIsoDate(new Date()), nextDueDate: toIsoDate(v.nextDueDate),
     meterInterval: n(v.meterInterval), nextDueReading: n(v.nextDueReading), lowerLimit: n(v.lowerLimit), upperLimit: n(v.upperLimit),
     extraTasks: v.extraTasks.filter((x) => x.pmTaskId).map((x) => ({ pmTaskId: x.pmTaskId, everyNth: n(x.everyNth) ?? 2 })), rowVersion,
+    managesTeam: true, // this form shows the team: an empty one clears it
   };
 }
 

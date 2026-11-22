@@ -77,6 +77,7 @@ export function WorkOrderFormPage() {
       tasks: v.tasks.filter((x) => x.trim()), rowVersion: wo?.rowVersion, assetIsDown: v.assetId ? v.assetIsDown : null,
       // Duplicate: the source's planned parts and hours come along (server side).
       copyPlanFromId: !editing && source ? source.id : undefined,
+      managesTeam: true, // this form shows the team: an empty one clears it
     };
     try {
       const r = editing ? await put<{ id: string }>(`/work-orders/${id}`, body) : await post<{ id: string; number: string }>('/work-orders', body);

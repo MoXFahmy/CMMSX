@@ -31,9 +31,9 @@ public static class SiteEndpoints
                 ? Results.Ok(ToDto(s, await db.Locations.CountAsync(l => l.SiteId == id, ct), await db.Assets.CountAsync(a => a.SiteId == id, ct)))
                 : Results.NotFound()).RequirePermission(Permissions.LocationsView);
 
-        g.MapPost("/", async (SiteInput input, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPost("/", async (SiteInput input, CmmsDbContext db, AccessService access, CancellationToken ct) =>
         {
-            var v = await ValidateAsync(input, null, db, ct);
+            var v = await ValidateAsync(input, null, db, ct, access);
             if (db.CurrentSiteIds is not null) v.Add("code", OnlyEveryoneAddsSites); // they couldn't see the new site
             if (!v.IsValid) return v.Problem();
             var site = CreateSite(db, input);
@@ -41,12 +41,12 @@ public static class SiteEndpoints
             return Results.Created($"/api/sites/{site.Id}", ToDto(site, 0, 0));
         }).RequirePermission(Permissions.LocationsManage);
 
-        g.MapPut("/{id:guid}", async (Guid id, SiteInput input, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPut("/{id:guid}", async (Guid id, SiteInput input, CmmsDbContext db, AccessService access, CancellationToken ct) =>
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
             if (db.CurrentBranchPaths is not null) throw new DomainException(OnlyWholeSiteChangesIt);
-            var v = await ValidateAsync(input, id, db, ct);
+            var v = await ValidateAsync(input, id, db, ct, access);
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(site).Property(s => s.RowVersion).OriginalValue = input.RowVersion.ToVersion();
             UpdateSite(site, input);
@@ -101,7 +101,7 @@ public static class SiteEndpoints
         RequestRecipientIds = (s.RequestRecipientIds ?? []).Distinct().ToList(), EmailSenderName = s.EmailSenderName.Clean(),
     };
 
-    private static async Task<Validator> ValidateAsync(SiteInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
+    private static async Task<Validator> ValidateAsync(SiteInput i, Guid? id, CmmsDbContext db, CancellationToken ct, AccessService? access = null)
     {
         var v = SiteRules(i);
         if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.Sites, s => s.Code == i.Code.Trim() && s.Id != id,
@@ -119,6 +119,12 @@ public static class SiteEndpoints
             var who = (st.RequestRecipientIds ?? []).Distinct().ToList();
             if (who.Count > 0 && await db.Users.CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != who.Count)
                 v.Add("settings.requestRecipientIds", "Choose active users.");
+            else if (who.Count > 0 && access is not null)
+            {
+                // Recipients who can't see the site would never get the e-mail (it only goes to people who can).
+                foreach (var person in who)
+                    if (!Access.CoversSite(await access.GetAsync(person, ct), id ?? Guid.Empty)) { v.Add("settings.requestRecipientIds", "Choose people who can see this site."); break; }
+            }
         }
         return v;
     }

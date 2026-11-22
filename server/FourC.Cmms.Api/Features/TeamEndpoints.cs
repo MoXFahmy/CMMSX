@@ -79,6 +79,18 @@ public static class TeamEndpoints
                 "Another team uses this code.", "This code is already used by a team in a site you can't see.", ct) is { } clash)
             v.Add("code", clash);
         if (i.SiteId is { } site && !await db.Sites.AnyAsync(s => s.Id == site, ct)) v.Add("siteId", "Choose a site.");
+        var currentSite = id is { } tid ? await db.Teams.AllSites().Where(t => t.Id == tid).Select(t => new { t.SiteId }).FirstOrDefaultAsync(ct) : null;
+        // People with limited access give their teams a site (a team of every site would reach sites they can't see).
+        if (db.CurrentSiteIds is not null && i.SiteId is null && !(currentSite is not null && currentSite.SiteId is null))
+            v.Add("siteId", "Choose the team's site.");
+        // A team's site can't move away from its open work and schedules.
+        if (i.SiteId is { } newSite && id is { } team && currentSite?.SiteId != newSite)
+        {
+            var open = new[] { WorkOrderStatus.Open, WorkOrderStatus.InProgress, WorkOrderStatus.OnHold };
+            if (await db.WorkOrders.AllSites().AnyAsync(w => w.TeamId == team && w.SiteId != newSite && open.Contains(w.Status), ct)
+                || await db.PmSchedules.AllSites().AnyAsync(s => s.TeamId == team && s.SiteId != newSite, ct))
+                v.Add("siteId", "This team has open work or PM schedules at another site.");
+        }
         var members = (i.MemberIds ?? []).Distinct().ToList();
         if (members.Count > 0 && await db.Employees.CountAsync(e => members.Contains(e.Id), ct) != members.Count) v.Add("memberIds", "Unknown person.");
         return v;

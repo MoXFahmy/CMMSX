@@ -15,7 +15,8 @@ public static class WorkOrderEndpoints
 {
     public sealed record WorkOrderInput(string Title, string? Description, WorkType Type, WorkPriority Priority, Guid SiteId, Guid? LocationId, Guid? AssetId,
         Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? PlannedStart, DateOnly? DueDate, decimal? EstimatedHours, List<string>? Tasks, string? RowVersion = null,
-        string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null, bool? AssetIsDown = null, Guid? TeamId = null);
+        string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null, bool? AssetIsDown = null, Guid? TeamId = null,
+        bool? ManagesTeam = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
         DateTimeOffset? At = null);
@@ -37,6 +38,8 @@ public static class WorkOrderEndpoints
         public Guid? TradeId { get; set; }
         public Guid? TeamId { get; set; }
         public Guid? AssigneeId { get; set; }
+        /// <summary>Completed on or after this day (the dashboard's "completed in 30 days").</summary>
+        public DateOnly? CompletedFrom { get; set; }
         public bool? Mine { get; set; }
         /// <summary>Old name of <see cref="Late"/> (phones and bookmarks).</summary>
         public bool? Overdue { get; set; }
@@ -195,6 +198,8 @@ public static class WorkOrderEndpoints
             // People limited to a branch: work with only an asset takes the asset's location (as when created), so it stays in the branch.
             if (db.CurrentBranchPaths is not null && input.LocationId is null && input.AssetId is { } onlyAsset)
                 input = input with { LocationId = await db.Assets.Where(a => a.Id == onlyAsset).Select(a => a.LocationId).FirstOrDefaultAsync(ct) };
+            // Pages from before teams (0.9.0) don't send the team: an edit from them keeps it.
+            if (input.ManagesTeam != true) input = input with { TeamId = w.TeamId };
             var v = await ValidateAsync(input, db, ct, w.TeamId);
             var teamBefore = w.TeamId;
             if (!v.IsValid) return v.Problem();
@@ -529,6 +534,7 @@ public static class WorkOrderEndpoints
         if (f.TradeId is not null) q = q.Where(w => w.TradeId == f.TradeId);
         if (f.TeamId is not null) q = q.Where(w => w.TeamId == f.TeamId);
         if (f.CreatedFrom is { } cf) { var from = new DateTimeOffset(cf.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt >= from); }
+        if (f.CompletedFrom is { } completedFrom) { var done = new DateTimeOffset(completedFrom.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CompletedAt >= done); }
         if (f.CreatedTo is { } ctd && ctd < DateOnly.MaxValue) { var before = new DateTimeOffset(ctd.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt < before); }
         if (f.DueFrom is { } df) q = q.Where(w => w.DueDate >= df);
         if (f.DueTo is { } dt) q = q.Where(w => w.DueDate <= dt);

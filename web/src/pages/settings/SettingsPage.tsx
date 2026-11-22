@@ -326,7 +326,10 @@ function UserSettings() {
           <NumberInput label={t('settings.approvalLimit')} description={t('settings.approvalLimitHint')} min={0} thousandSeparator {...form.getInputProps('purchaseApprovalLimit')} />
           <MultiSelect label={terms.sites} description={t('access.userSitesHint', { sites: terms.sites.toLowerCase() })} searchable clearable disabled={form.values.locationIds.length > 0}
             data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} {...form.getInputProps('siteIds')} />
-          <MultiSelect label={t('access.userBranches')} description={t('access.userBranchesHint')} searchable clearable data={placeOptions} {...form.getInputProps('locationIds')} />
+          <MultiSelect label={t('access.userBranches')} description={t('access.userBranchesHint')} searchable clearable
+            // A place deleted since it was given still shows, so it can be taken off.
+            data={[...placeOptions, ...form.values.locationIds.filter((id) => h && !placeOptions.some((o) => o.value === id)).map((id) => ({ value: id, label: t('access.deletedPlace') }))]}
+            {...form.getInputProps('locationIds')} />
           {!editing && <PasswordInput label={t('settings.initialPassword')} required {...form.getInputProps('password')} />}
           <Switch label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
           <Group justify="flex-end"><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>

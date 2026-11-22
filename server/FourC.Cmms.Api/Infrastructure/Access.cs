@@ -127,3 +127,25 @@ public static class Unique
         CancellationToken ct) where T : class =>
         await set.AnyAsync(match, ct) ? visible : await set.AllSites().AnyAsync(match, ct) ? hidden : null;
 }
+
+public static class UserAccessRules
+{
+    public const string Outside = "You can only change people whose access is inside yours.";
+
+    /// <summary>
+    /// Someone whose own access is limited may only change people whose access is inside theirs (their details, password or
+    /// devices); otherwise they could take over or cut down someone who sees more. Null when the change is allowed.
+    /// </summary>
+    public static async Task<string?> OutsideAsync(CmmsDbContext db, UserAccess editor, Core.Identity.AppUser target, CancellationToken ct)
+    {
+        if (!editor.Limited) return null;
+        if (target.LocationIds.Count > 0)
+        {
+            var ids = target.LocationIds;
+            var places = await db.Locations.AllSites().AsNoTracking().Where(l => ids.Contains(l.Id)).Select(l => new { l.SiteId, l.Path }).ToListAsync(ct);
+            return places.Count > 0 && places.All(p => Access.Covers(editor, p.SiteId, p.Path)) ? null : Outside;
+        }
+        if (target.SiteIds.Count == 0 || editor.Branches is not null) return Outside; // every site, or whole sites: more than the editor's
+        return target.SiteIds.All(s => editor.SiteIds!.Contains(s)) ? null : Outside;
+    }
+}

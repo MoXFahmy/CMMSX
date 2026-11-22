@@ -22,7 +22,7 @@ import { fmtDate, notifyError } from '@/components/utils';
 import { BulkBar, FilterChips, ListTools, listText, rangeText, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
 /** Filters behind "More filters"; they live in the address like the others. */
-const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source'] as const;
+const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source', 'completedFrom'] as const;
 const isoDay = (d: string | Date | null) => (d ? dayjs(d).format('YYYY-MM-DD') : null);
 
 const TABS: { key: string; statuses: WorkOrderStatus[] | null }[] = [
@@ -50,7 +50,7 @@ export function WorkOrdersPage() {
     mine: view === 'mine' ? 'true' : '', overdue: view === 'overdue' ? 'true' : '',
     dueSoon: view === 'dueSoon' ? 'true' : '', responseLate: view === 'responseLate' ? 'true' : '',
     locationId: p('locationId'), assigneeId: p('assigneeId'), teamId: p('teamId'), createdFrom: p('createdFrom'), createdTo: p('createdTo'),
-    dueFrom: p('dueFrom'), dueTo: p('dueTo'), source: p('source'),
+    dueFrom: p('dueFrom'), dueTo: p('dueTo'), source: p('source'), completedFrom: p('completedFrom'),
   };
   const listQuery = { ...base, status: statuses ?? undefined, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
   const { data, isFetching } = useQuery({
@@ -66,7 +66,7 @@ export function WorkOrdersPage() {
   const filtersActive = ['search', 'siteId', 'priority', 'type', 'tradeId', ...EXTRA_FILTERS].some((k) => p(k));
   const tradeOpts = useMemo(() => (trades ?? []).map((x) => ({ value: x.id, label: x.name })), [trades]);
   const { data: teams } = useTeams(p('siteId') || null);
-  const extraCount = [p('locationId'), p('assetId'), p('assigneeId'), p('createdFrom') || p('createdTo'), p('dueFrom') || p('dueTo'), p('source')].filter(Boolean).length;
+  const extraCount = [p('locationId'), p('assetId'), p('assigneeId'), p('teamId'), p('createdFrom') || p('createdTo'), p('dueFrom') || p('dueTo'), p('source'), p('completedFrom')].filter(Boolean).length;
   const [moreOpen, more] = useDisclosure(extraCount > 0);
   const locOpts = useMemo(() => locationOptions(h?.locations ?? [], p('siteId') || null), [h, lp.params]); // eslint-disable-line react-hooks/exhaustive-deps
   const { data: employees } = useEmployees(p('siteId') || null);
@@ -114,6 +114,7 @@ export function WorkOrdersPage() {
     { keys: ['assetId'], label: terms.asset, format: () => (filterAsset ? `${filterAsset.assetNumber} ${filterAsset.name}` : '…') },
     { keys: ['assigneeId'], label: t('wo.filterAssignee'), format: ([v]) => empOpts.find((o) => o.value === v)?.label ?? '…' },
     { keys: ['createdFrom', 'createdTo'], label: t('wo.createdBetween'), format: rangeText(fmtDate, t) },
+    { keys: ['completedFrom'], label: t('wo.completedSince'), format: ([v]) => fmtDate(v) },
     { keys: ['dueFrom', 'dueTo'], label: t('wo.dueBetween'), format: rangeText(fmtDate, t) },
     { keys: ['source'], label: t('wo.source'), format: ([v]) => sources[v] ?? v },
   ];

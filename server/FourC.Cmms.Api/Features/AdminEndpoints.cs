@@ -58,7 +58,7 @@ public static class AdminEndpoints
             var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id && u.TenantId == db.CurrentTenantId, ct);
             if (user is null) return Results.NotFound();
             var editor = Access.Of(http) ?? UserAccess.Everything;
-            if (await OutsideAsync(db, editor, user, ct) is { } outside) throw new DomainException(outside);
+            if (await UserAccessRules.OutsideAsync(db, editor, user, ct) is { } outside) throw new DomainException(outside);
             var v = await ValidateUserAsync(input, id, db, um, ct);
             var access = await CheckAccessAsync(input, user, db, editor, v, ct);
             if (id == ctx.UserId && !input.IsActive) v.Add("isActive", "You cannot deactivate your own account.");
@@ -88,7 +88,7 @@ public static class AdminEndpoints
         {
             var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id && u.TenantId == db.CurrentTenantId, ct);
             if (user is null) return Results.NotFound();
-            if (await OutsideAsync(db, Access.Of(http) ?? UserAccess.Everything, user, ct) is { } outside) throw new DomainException(outside);
+            if (await UserAccessRules.OutsideAsync(db, Access.Of(http) ?? UserAccess.Everything, user, ct) is { } outside) throw new DomainException(outside);
             var v = new Validator();
             foreach (var pv in um.PasswordValidators)
                 foreach (var e in (await pv.ValidateAsync(um, user, input.Password ?? "")).Errors) v.Add("password", e.Description);
@@ -191,24 +191,6 @@ public static class AdminEndpoints
     private static List<string> CleanPermissions(List<string>? p) => (p ?? []).Intersect(Permissions.All.Select(x => x.Code)).Distinct().ToList();
 
     /// <summary>
-    /// Someone whose own access is limited may only change people whose access is inside theirs; otherwise they could take over
-    /// (a new password or e-mail) or cut down someone who sees more. Null when the change is allowed.
-    /// </summary>
-    private static async Task<string?> OutsideAsync(CmmsDbContext db, UserAccess editor, AppUser target, CancellationToken ct)
-    {
-        const string outside = "You can only change people whose access is inside yours.";
-        if (!editor.Limited) return null;
-        if (target.LocationIds.Count > 0)
-        {
-            var ids = target.LocationIds;
-            var places = await db.Locations.AllSites().AsNoTracking().Where(l => ids.Contains(l.Id)).Select(l => new { l.SiteId, l.Path }).ToListAsync(ct);
-            return places.Count > 0 && places.All(p => Access.Covers(editor, p.SiteId, p.Path)) ? null : outside;
-        }
-        if (target.SiteIds.Count == 0 || editor.Branches is not null) return outside; // every site, or whole sites: more than the editor's
-        return target.SiteIds.All(s => editor.SiteIds!.Contains(s)) ? null : outside;
-    }
-
-    /// <summary>
     /// The person's new site and branch lists (null input keeps what they have). Branches decide the sites (theirs), so the
     /// two never disagree. Someone whose own access is limited can only give access inside it; unchanged lists always pass.
     /// </summary>
@@ -218,7 +200,9 @@ public static class AdminEndpoints
         var sites = (i.SiteIds ?? current?.SiteIds ?? []).Distinct().ToList();
         var locationIds = (i.LocationIds ?? current?.LocationIds ?? []).Distinct().ToList();
         var places = await db.Locations.AllSites().AsNoTracking().Where(l => locationIds.Contains(l.Id)).Select(l => new { l.Id, l.SiteId, l.Path }).ToListAsync(ct);
-        if (places.Count != locationIds.Count) v.Add("locationIds", "Unknown location.");
+        // Places deleted since they were given stay listed (the person keeps seeing nothing there); only new ones must exist.
+        var missing = locationIds.Where(l => places.All(p => p.Id != l)).ToList();
+        if (missing.Any(l => current is null || !current.LocationIds.Contains(l))) v.Add("locationIds", "Unknown location.");
         if (places.Count > 0) sites = places.Select(p => p.SiteId).Distinct().ToList();
         else if (sites.Count > 0 && await db.Sites.AllSites().CountAsync(s => sites.Contains(s.Id), ct) != sites.Count) v.Add("siteIds", "Unknown site.");
 

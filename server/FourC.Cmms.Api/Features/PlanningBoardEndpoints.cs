@@ -73,7 +73,10 @@ public static class PlanningBoardEndpoints
             var employees = await db.Employees.AsNoTracking().Where(e => e.IsActive).Select(e => new { e.Id, e.FullName, e.TradeIds, e.SiteIds, e.WorkingHours }).ToListAsync(ct);
             var siteHours = (await db.Sites.AllSites().AsNoTracking().Select(s => new { s.Id, s.Settings }).ToListAsync(ct)).ToDictionary(s => s.Id, s => s.Settings.WorkingHours);
             var members = teamId is { } tm ? await db.Teams.AsNoTracking().Where(x => x.Id == tm).Select(x => x.MemberIds).FirstOrDefaultAsync(ct) ?? [] : null;
+            // People limited to some sites see the technicians who work there (or everywhere), not those of sites they can't see.
+            var visible = db.CurrentSiteIds;
             var people = employees.Where(e => (siteId is not { } s || e.SiteIds.Count == 0 || e.SiteIds.Contains(s)) && (tradeId is not { } t || e.TradeIds.Contains(t))
+                    && (visible is null || e.SiteIds.Count == 0 || e.SiteIds.Any(visible.Contains))
                     && (members is null || members.Contains(e.Id)))
                 .OrderBy(e => e.FullName).Select(e =>
                 {
