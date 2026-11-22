@@ -24,8 +24,8 @@ shows the open work orders that employee is assigned to (up to 300, earliest due
 | See my jobs, steps, parts, notes for the technician | Yes (from the last copy) |
 | Tick steps, enter readings and remarks | Yes |
 | Log hours, add comments, take photos or pick them from the gallery | Yes (photos are shrunk to 1600 px) |
-| Start, put on hold, complete with signatures | Yes |
-| Scan or type an asset/location number; meter readings; raise a request | Yes |
+| Start, put on hold, complete with signatures, cause and remedy | Yes (causes and remedies most used together first) |
+| Scan or type an asset/location number; meter readings; raise a request (with what you saw) | Yes |
 | Use parts on a job, give them back, look up stock, count a store, receive a delivery | Yes (see *Parts and stock*) |
 | Mark the asset stopped or back running, add a PM checklist, attach a video or document | Yes |
 | Log hours for the crew, cancel the job, create a work order | Yes, with the permission (see below) |
