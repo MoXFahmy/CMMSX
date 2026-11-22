@@ -1080,7 +1080,17 @@
       "custom": "Custom"
     },
     "noData": "No data for the selected filters",
-    "generated": "Generated {{date}}"
+    "generated": "Generated {{date}}",
+    "plan": {
+      "done": "done",
+      "late": "late",
+      "missed": "missed",
+      "cancelled": "cancelled",
+      "planned": "planned"
+    },
+    "year": "Year",
+    "withComponents": "With its components",
+    "chooseAsset": "Choose an asset to see its work history."
   },
   "alerts": {
     "title": "Needs attention",

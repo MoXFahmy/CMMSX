@@ -23,7 +23,12 @@ public static class ReportEndpoints
     public sealed record Option(string Value, string Label);
     public sealed record Param(string Name, string Type, List<Option>? Options = null, object? Default = null);
     public sealed record ReportDef(string Key, string Category, string Title, string Description, string Permission, List<Param> Params);
-    public sealed record ReportArgs(DateOnly From, DateOnly To, Guid? SiteId, string? GroupBy, int Days);
+    /// <summary>A report's choices. 0.14.0: one asset (with its components), and a year.</summary>
+    public sealed record ReportArgs(DateOnly From, DateOnly To, Guid? SiteId, string? GroupBy, int Days, Guid? AssetId = null, int Year = 0, bool Components = false);
+    /// <summary>A month of the PM annual plan (0.14.0): column type "plan".</summary>
+    public sealed record PlanCell(int Done, int Late, int Missed, int Cancelled, int Planned);
+    public const string ChooseAsset = "Choose an asset.";
+    public const string ChooseYear = "Choose a year from 2000 to 2100.";
 
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
     private static readonly Param Range = new("range", "dateRange");
@@ -71,7 +76,8 @@ public static class ReportEndpoints
             return Catalog.Where(r => mine.Contains(r.Permission)).Select(Localized);
         }).RequirePermission(Permissions.ReportsView);
 
-        g.MapGet("/{key}", async (string key, HttpContext http, PermissionService perms, CmmsDbContext db, DateOnly? from, DateOnly? to, Guid? siteId, string? groupBy, int? days, CancellationToken ct) =>
+        g.MapGet("/{key}", async (string key, HttpContext http, PermissionService perms, CmmsDbContext db, DateOnly? from, DateOnly? to, Guid? siteId, string? groupBy, int? days,
+            Guid? assetId, int? year, bool? components, CancellationToken ct) =>
         {
             var def = Catalog.FirstOrDefault(r => r.Key == key);
             if (def is null) return Results.NotFound();
@@ -82,7 +88,10 @@ public static class ReportEndpoints
             if (t.DayNumber - f.DayNumber > 3700) throw new FourC.Cmms.Core.Common.DomainException("Choose a period of ten years or less.");
             var allowed = def.Params.FirstOrDefault(p => p.Name == "groupBy");
             var gb = allowed?.Options?.Any(o => o.Value == groupBy) == true ? groupBy : allowed?.Default as string;
-            var a = new ReportArgs(f, t, siteId, gb, Math.Clamp(days ?? 180, 1, 3650));
+            if (def.Params.Any(p => p.Type == "asset") && assetId is null) throw new FourC.Cmms.Core.Common.DomainException(ChooseAsset);
+            var y = year ?? Today.Year;
+            if (def.Params.Any(p => p.Type == "year") && y is < 2000 or > 2100) throw new FourC.Cmms.Core.Common.DomainException(ChooseYear);
+            var a = new ReportArgs(f, t, siteId, gb, Math.Clamp(days ?? 180, 1, 3650), assetId, y, components == true);
             ReportResult r = key switch
             {
                 "wo-backlog" => await BacklogAsync(db, a, ct),

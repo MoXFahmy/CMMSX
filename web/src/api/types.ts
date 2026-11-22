@@ -438,11 +438,11 @@ export type PoDetail = {
 };
 
 // ---------------- Reports ----------------
-export type ReportParam = { name: string; type: 'dateRange' | 'site' | 'select' | 'number'; options?: { value: string; label: string }[]; default?: string | number };
+export type ReportParam = { name: string; type: 'dateRange' | 'site' | 'select' | 'number' | 'asset' | 'year' | 'bool'; options?: { value: string; label: string }[]; default?: string | number };
 export type ReportDef = { key: string; category: string; title: string; description: string; permission: string; params: ReportParam[] };
-export type ReportColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date' | 'datetime' | 'hours';
+export type ReportColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date' | 'datetime' | 'hours' | 'plan';
 export type ReportResult = {
-  key: string; title: string; subtitle?: string; columns: { key: string; label: string; type: ReportColumnType }[]; rows: Record<string, string | number | null>[];
+  key: string; title: string; subtitle?: string; columns: { key: string; label: string; type: ReportColumnType }[]; rows: Record<string, unknown>[];
   chart?: { type: 'bar' | 'line' | 'donut'; x: string; series: string[]; stacked: boolean }; summary: { label: string; value: number | null; type: ReportColumnType }[];
 };
 

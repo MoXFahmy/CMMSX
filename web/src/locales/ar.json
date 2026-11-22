@@ -1090,7 +1090,17 @@
       "custom": "مخصص"
     },
     "noData": "لا توجد بيانات لعوامل التصفية المختارة",
-    "generated": "أُنشئ في {{date}}"
+    "generated": "أُنشئ في {{date}}",
+    "plan": {
+      "done": "منجز",
+      "late": "متأخر",
+      "missed": "فائت",
+      "cancelled": "ملغى",
+      "planned": "مخطط"
+    },
+    "year": "السنة",
+    "withComponents": "مع مكوناته",
+    "chooseAsset": "اختر أصلًا لعرض سجل أعماله."
   },
   "alerts": {
     "title": "يحتاج إلى انتباه",

@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
-import { Anchor, Badge, Button, Card, Center, Group, Loader, NumberInput, Select, SimpleGrid, Stack, Text, TextInput, ThemeIcon, Title, Alert } from '@mantine/core';
+import { Anchor, Badge, Button, Card, Center, Group, Loader, NumberInput, Select, SimpleGrid, Stack, Switch, Text, TextInput, ThemeIcon, Title, Alert } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { BarChart, DonutChart } from '@mantine/charts';
 import { useQuery } from '@tanstack/react-query';
@@ -14,6 +14,8 @@ import type { ReportColumnType, ReportDef, ReportResult } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { useHierarchy } from '@/components/LocationPicker';
+import { AssetPicker } from '@/components/AssetPicker';
+import { isTree, PLAN_PARTS, planText, rowLink, treeRows, type PlanCell } from './reportCells';
 import { fmtDate, fmtDateTime, fmtNumber, fmtPrice } from '@/components/utils';
 import { downloadCsv } from '../inventory/InventoryPage';
 
@@ -81,8 +83,16 @@ export function ReportViewPage() {
   const [from, to] = preset ? PRESETS.find((x) => x.key === preset)!.range() : [p('from'), p('to')];
   const groupParam = def?.params.find((x) => x.name === 'groupBy');
   const daysParam = def?.params.find((x) => x.name === 'days');
-  const q = { from: has('range') ? from : undefined, to: has('range') ? to : undefined, siteId: p('siteId') || undefined, groupBy: p('groupBy') || (groupParam?.default as string | undefined), days: p('days') || (daysParam?.default as number | undefined) };
-  const { data, isFetching, error } = useQuery({ queryKey: ['report', key, q], queryFn: () => get<ReportResult>(`/reports/${key}`, q), enabled: !!def, placeholderData: (prev) => (prev?.key === key ? prev : undefined) });
+  // 0.14.0: one asset (with its components) and a year.
+  const assetParam = def?.params.find((x) => x.type === 'asset');
+  const yearParam = def?.params.find((x) => x.type === 'year');
+  const boolParam = def?.params.find((x) => x.type === 'bool');
+  const q = { from: has('range') ? from : undefined, to: has('range') ? to : undefined, siteId: p('siteId') || undefined, groupBy: p('groupBy') || (groupParam?.default as string | undefined), days: p('days') || (daysParam?.default as number | undefined),
+    assetId: assetParam ? p('assetId') || undefined : undefined, year: yearParam ? p('year') || String(dayjs().year()) : undefined,
+    components: boolParam ? p('components') || undefined : undefined };
+  const needsAsset = !!assetParam && !q.assetId;
+  const { data: chosenAsset } = useQuery({ queryKey: ['asset', q.assetId], queryFn: () => get<{ assetNumber: string; name: string }>(`/assets/${q.assetId}`), enabled: !!q.assetId });
+  const { data, isFetching, error } = useQuery({ queryKey: ['report', key, q], queryFn: () => get<ReportResult>(`/reports/${key}`, q), enabled: !!def && !needsAsset, placeholderData: (prev) => (prev?.key === key ? prev : undefined) });
   const NONE: DataTableSortStatus<Record<string, unknown>> = { columnAccessor: '__none', direction: 'asc' };
   const [sort, setSort] = useState<DataTableSortStatus<Record<string, unknown>>>(NONE);
   const fmt = (v: unknown, type: ReportColumnType) => {
@@ -94,6 +104,7 @@ export function ReportViewPage() {
       case 'number': return fmtNumber(Number(v));
       case 'date': return fmtDate(String(v));
       case 'datetime': return fmtDateTime(String(v));
+      case 'plan': return planText(v as PlanCell, t);
       default: return String(v);
     }
   };
@@ -106,8 +117,9 @@ export function ReportViewPage() {
     });
     return list;
   }, [data, sort]);
-  const link = (r: Record<string, unknown>) => (r.partId ? `/inventory/parts/${r.partId}` : r.assetId ? `/assets/${r.assetId}` : key === 'open-purchase-orders' && r.id ? `/purchasing/orders/${r.id}` : null);
-  const exportCsv = () => data && downloadCsv(`${data.key}-${dayjs().format('YYYYMMDD')}.csv`, [data.columns.map((c) => c.label), ...data.rows.map((r) => data.columns.map((c) => r[c.key]))]);
+  const tree = isTree(data?.rows ?? []);
+  const exportCsv = () => data && downloadCsv(`${data.key}-${dayjs().format('YYYYMMDD')}.csv`,
+    [data.columns.map((c) => c.label), ...data.rows.map((r) => data.columns.map((c) => (c.type === 'plan' ? planText(r[c.key] as PlanCell, t) : r[c.key] as string | number | null)))]);
   const narrow = useMediaQuery('(max-width: 48em)');
   const axisW = narrow ? 110 : 240;
   const clip = (v: string) => { const max = narrow ? 14 : 34; return v.length > max ? `${v.slice(0, max - 1)}…` : v; };
@@ -115,7 +127,7 @@ export function ReportViewPage() {
   const AxisTick = ({ x, y, payload }: { x: number; y: number; payload: { value: unknown } }) => (
     <text x={x} y={y} dy={4} textAnchor="end" fontSize={12} fill="var(--mantine-color-dimmed)"><title>{String(payload.value)}</title>{clip(String(payload.value))}</text>
   );
-  const chartRows = (data?.rows ?? []).slice(0, data?.chart?.type === 'donut' ? 10 : 15);
+  const chartRows = treeRows(data?.rows ?? []).slice(0, data?.chart?.type === 'donut' ? 10 : 15);
   const label = (k: string) => data?.columns.find((c) => c.key === k)?.label ?? k;
   const chartFmt = (v: number) => (data?.columns.find((c) => data.chart?.series.includes(c.key))?.type === 'currency' ? fmtPrice(v, currency, 0) : fmtNumber(v));
 
@@ -136,13 +148,18 @@ export function ReportViewPage() {
             </>}
             {has('siteId') && <Select label={terms.site} placeholder={t('common.all')} w={200} clearable data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v })} />}
             {groupParam && <Select label={t('rep.groupBy')} w={180} allowDeselect={false} data={groupParam.options ?? []} value={q.groupBy ?? null} onChange={(v) => { setSort(NONE); set({ groupBy: v }); }} />}
+            {assetParam && <AssetPicker label={t('wo.asset')} value={q.assetId ?? null} onChange={(v) => set({ assetId: v })}
+              initial={chosenAsset && q.assetId ? { id: q.assetId, assetNumber: chosenAsset.assetNumber, name: chosenAsset.name } : null} />}
+            {boolParam && <Switch label={t('rep.withComponents')} checked={q.components === 'true'} onChange={(e) => set({ components: e.currentTarget.checked ? 'true' : null })} mb={8} />}
+            {yearParam && <NumberInput label={t('rep.year')} w={120} min={2000} max={2100} value={Number(q.year)} onChange={(v) => set({ year: v ? String(v) : null })} />}
             {daysParam && <NumberInput label={t('rep.idleDays')} w={140} min={1} max={3650} value={Number(q.days)} onChange={(v) => set({ days: v ? String(v) : null })} />}
           </Group>
         </Card>
       )}
       {error && <Alert color="red" mb="md">{(error as Error).message}</Alert>}
+      {needsAsset && <Alert color="blue" variant="light" mb="md">{t('rep.chooseAsset')}</Alert>}
       {!data && isFetching && <Center h={240}><Loader /></Center>}
-      {data && (
+      {data && !needsAsset && (
         <Stack style={{ opacity: isFetching ? 0.6 : 1, transition: 'opacity 120ms' }}>
           <div className="print-only"><Title order={3}>{me?.tenant.name} — {data.title}</Title><Text c="dimmed" fz="sm">{data.subtitle}</Text></div>
           {data.summary.length > 0 && (
@@ -170,10 +187,16 @@ export function ReportViewPage() {
               minHeight={rows.length ? undefined : 160} withTableBorder={false} striped highlightOnHover verticalSpacing="xs" records={rows} idAccessor={(r) => JSON.stringify(r)}
               noRecordsText={t('rep.noData')} sortStatus={sort} onSortStatusChange={setSort}
               columns={data.columns.map((c, i) => ({
-                accessor: c.key, title: c.label, sortable: true, textAlign: c.type === 'text' || c.type === 'date' ? 'left' as const : 'right' as const, noWrap: c.type !== 'text',
+                accessor: c.key, title: c.label, sortable: !tree, textAlign: c.type === 'text' || c.type === 'date' || c.type === 'plan' ? 'left' as const : 'right' as const, noWrap: c.type !== 'text',
                 render: (r: Record<string, unknown>) => {
+                  if (c.type === 'plan') return <PlanCellView cell={r[c.key] as PlanCell | null} />;
                   const v = fmt(r[c.key], c.type);
-                  const to = i === 0 ? link(r) : null;
+                  const to = i === 0 ? rowLink(r, key) : null;
+                  // A tree report (0.14.0): the first column is indented by level, the upper levels in bold.
+                  if (i === 0 && typeof r.level === 'number') {
+                    const style = { paddingInlineStart: Number(r.level) * 20, fontWeight: r.level === 0 ? 700 : r.level === 1 ? 600 : 400 };
+                    return to ? <Anchor component={Link} to={to} fz="sm" style={style}>{v}</Anchor> : <Text fz="sm" style={style}>{v}</Text>;
+                  }
                   if (to) return <Anchor component={Link} to={to} fz="sm">{v}</Anchor>;
                   if (c.key === 'status' && typeof r[c.key] === 'string') return <Badge variant="light" color={/out of stock|below/i.test(String(r[c.key])) ? 'red' : /re-order/i.test(String(r[c.key])) ? 'orange' : 'gray'}>{v}</Badge>;
                   return <Text fz="sm" c={c.key === 'daysLate' && r[c.key] ? 'red' : undefined} fw={c.key === 'total' ? 600 : undefined}>{v}</Text>;
@@ -187,3 +210,17 @@ export function ReportViewPage() {
     </>
   );
 }
+
+const PLAN_COLORS: Record<(typeof PLAN_PARTS)[number], string> = { done: 'teal', late: 'orange', missed: 'red', cancelled: 'gray', planned: 'blue' };
+
+/** A month of the PM annual plan (0.14.0): small coloured counts, with the counts in words for screen readers. */
+function PlanCellView({ cell }: { cell: PlanCell | null }) {
+  const { t } = useTranslation();
+  if (!cell || PLAN_PARTS.every((k) => cell[k] === 0)) return null;
+  return (
+    <Group gap={2} wrap="nowrap" aria-label={planText(cell, t)} title={planText(cell, t)}>
+      {PLAN_PARTS.filter((k) => cell[k] > 0).map((k) => <Badge key={k} size="xs" variant={k === 'planned' ? 'outline' : 'filled'} color={PLAN_COLORS[k]}>{cell[k]}</Badge>)}
+    </Group>
+  );
+}
+
