@@ -260,3 +260,20 @@
 - [ ] **Step 3:** Write the docs.
 - [ ] **Step 4:** Full runs: `wt-test` (all) and `wt-vitest`, `wt-web` — all green; record counts in the ledger.
 - [ ] **Step 5: Commit** `docs(0.10.0): requests and notifications guide`.
+
+---
+
+## Deferred minors (from the final review, not fixed in 0.10.0)
+
+1. The public answer GET returns the requester's name, which the page doesn't use.
+2. `/work-requests/people` checks each user's access one by one (up to 1000) and stops at 1000 people.
+3. `FeedbackInput.Accepted` is a plain bool: a body without it counts as a refusal.
+4. Marking work orders as overdue-notified bumps their row version and writes audit rows.
+5. Multi-line completion notes and comments lose their line breaks in HTML e-mails.
+6. Rejecting without a reason (when "reject" needs no comment) e-mails "Reason:" with nothing after it.
+7. The cancel reason shows under the title in the work-order list, not as its own sortable, exportable column.
+8. Bulk reopen has no note box when "reopen" needs a comment, so every row is skipped.
+9. A request type whose recipient became inactive can't be saved until that person is removed.
+10. Request form: extra recipients stay when the site changes; clearing a window date sends an empty value; a null window item gives a 500.
+11. Extra recipients without `requests.view` get a link to a request they can't open.
+12. The "Requester" receipt on new requests never reaches someone raising their own request (the never-the-actor rule).
