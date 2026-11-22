@@ -579,7 +579,13 @@ public static class PmEndpoints
             if (wanted.Remove(line.PartId, out var qty)) line.Quantity = qty;
             else { x.Parts.Remove(line); db.PmTaskParts.Remove(line); }
         }
-        foreach (var (partId, qty) in wanted) x.Parts.Add(new PmTaskPart { PmTaskId = x.Id, PartId = partId, Quantity = qty });
+        foreach (var (partId, qty) in wanted)
+        {
+            // A new line already has its id, so EF would take it for an existing row and update nothing (a 409): it is new.
+            var line = new PmTaskPart { PmTaskId = x.Id, PartId = partId, Quantity = qty };
+            x.Parts.Add(line);
+            db.Entry(line).State = EntityState.Added;
+        }
     }
 
     internal static void ApplyTask(PmTask x, TaskInput i)
