@@ -20,8 +20,10 @@ dashboard, the alert bell, e-mails and the technician app. A record outside it a
   requests, an asset is enough: they take its location).
 - Shared lists stay shared by every site: parts (each person sees the stock of their own sites' stores), suppliers, the
   PM task library, trades, failure codes, categories and custom fields.
-- Someone whose own access is limited can only give access inside it, can only change (or reset the password of) people
-  whose access is inside theirs, and can't add new sites.
+- Someone whose own access is limited can only give access inside it, can only change people whose access is inside
+  theirs (their details, password and signed-in devices), and can't add new sites.
+- A person whose places were all deleted keeps seeing nothing (the user form shows "(deleted place)" until new places
+  are given).
 - People limited to parts of the tree add places only under places they see, and can't change the site's own record or
   settings (that's for people who see the whole site).
 - Decisions that concern the whole organization still count every site: a part's average cost, and whether a shared
@@ -48,7 +50,7 @@ Locations › edit a site › **This site's own settings** (leave anything empty
 |---|---|
 | Number prefixes (work orders, requests, purchase orders, assets) | A prefix of its own starts its own count, for example A-WO-00001. Numbers already given don't change. Assets added by the Excel import keep the organization's numbering. |
 | Default store | Planned and issued parts on the site's work start from this store. |
-| Told about new requests | These people get the "new request" e-mail instead of everyone who can manage requests. |
+| Told about new requests | These people get the "new request" e-mail instead of everyone who can manage requests. They must see the whole site. |
 | E-mail sender name | E-mails about the site's records come from "<name> via CMX". |
 | Working hours | The weekly pattern for people who work only at this site and have no hours of their own. |
 
@@ -65,7 +67,10 @@ People › **Teams**: a code, a name, a site (or every site), a colour and the m
 - Work orders: a **Team** filter (More filters) and a Team column, also in the export.
 - Planning board: a **Team** filter shows the team's members and the work given to the team or to its members.
 - Reports › Labour hours and Maintenance costs can be grouped by team.
-- A team with open work or PM schedules can't be deleted; mark it inactive instead.
+- A team with open work or PM schedules can't be deleted; mark it inactive instead. Its site can't change away from
+  that work, and people with limited access give their teams a site.
+- A PM round keeps its assets in parts of the site the editor can't see; such a round can't be turned into a single-asset
+  or location schedule by them.
 
 ## Working hours
 

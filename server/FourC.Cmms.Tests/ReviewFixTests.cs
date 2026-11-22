@@ -214,6 +214,7 @@ public class ReviewFixTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var code = s.GetProperty("code").GetString()!;
         var body = JsonSerializer.Deserialize<Dictionary<string, object?>>(s.GetRawText())!;
         body["teamId"] = team;
+        body["managesTeam"] = true; // as the schedule form sends it (0.9.1)
         await Ok(await w.Admin.PutAsJsonAsync($"/api/pm-schedules/{w.A.Schedule}", body));
         await RunAsync(w.Admin, Book(new Sheet("PM schedules", ["Code", "Name"], [code, "Renamed by import"])));
         var after = await Ok(await w.Admin.GetAsync($"/api/pm-schedules/{w.A.Schedule}"));

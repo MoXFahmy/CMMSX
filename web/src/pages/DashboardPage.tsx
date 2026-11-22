@@ -2,6 +2,7 @@ import { Button, Card, Grid, Group, Loader, SimpleGrid, Stack, Table, Text, Them
 import { DonutChart, BarChart } from '@mantine/charts';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
+import dayjs from 'dayjs';
 import { useTranslation } from 'react-i18next';
 import { IconAlertOctagon, IconAlertTriangle, IconBox, IconCash, IconShieldCheck, IconTool, IconDatabaseImport, IconClipboardList, IconClockExclamation, IconCircleCheck, IconInbox, IconHourglass, IconBellRinging } from '@tabler/icons-react';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
@@ -39,6 +40,8 @@ export function DashboardPage() {
 
   if (isLoading || !data) return <Center h={300}><Loader /></Center>;
   const firstName = me?.user.fullName.split(' ')[0] ?? '';
+  // The "completed in 30 days" counts open the list of work completed since then.
+  const since30 = dayjs().subtract(30, 'day').format('YYYY-MM-DD');
 
   if (data.totals.assets === 0 && data.totals.sites === 0) {
     return (
@@ -69,7 +72,7 @@ export function DashboardPage() {
             <Kpi label={t('dashboard.lateWork')} value={(data.work.late ?? data.work.overdue).toLocaleString()} icon={IconClockExclamation} color="red" to="/work-orders?view=overdue" />
             <Kpi label={t('dashboard.dueSoon')} value={(data.work.dueSoon ?? 0).toLocaleString()} icon={IconHourglass} color="orange" to="/work-orders?view=dueSoon" />
             <Kpi label={t('dashboard.responseLate')} value={(data.work.responseLate ?? 0).toLocaleString()} icon={IconBellRinging} color="red" to="/work-orders?view=responseLate" />
-            <Kpi label={t('dashboard.completed30')} value={data.work.completedLast30.toLocaleString()} icon={IconCircleCheck} color="teal" to="/work-orders?tab=Completed" />
+            <Kpi label={t('dashboard.completed30')} value={data.work.completedLast30.toLocaleString()} icon={IconCircleCheck} color="teal" to={`/work-orders?tab=all&completedFrom=${since30}`} />
             <Kpi label={t('dashboard.requestsAwaiting')} value={data.work.requestsAwaiting.toLocaleString()} icon={IconInbox} color="grape" to="/work-requests" />
           </SimpleGrid>
           {(data.bySiteWork?.length ?? 0) > 0 && (
@@ -90,7 +93,7 @@ export function DashboardPage() {
                         <Table.Td><Text fz="sm" fw={500}>{s.name}</Text></Table.Td>
                         <Table.Td ta="end"><Anchor component={Link} to={`/work-orders?siteId=${s.siteId}`} fz="sm" fw={600}>{s.open.toLocaleString()}</Anchor></Table.Td>
                         <Table.Td ta="end"><Anchor component={Link} to={`/work-orders?view=overdue&siteId=${s.siteId}`} fz="sm" fw={600} c={s.late ? 'red' : undefined}>{s.late.toLocaleString()}</Anchor></Table.Td>
-                        <Table.Td ta="end"><Anchor component={Link} to={`/work-orders?tab=Completed&siteId=${s.siteId}`} fz="sm">{s.completedLast30.toLocaleString()}</Anchor></Table.Td>
+                        <Table.Td ta="end"><Anchor component={Link} to={`/work-orders?tab=all&completedFrom=${since30}&siteId=${s.siteId}`} fz="sm">{s.completedLast30.toLocaleString()}</Anchor></Table.Td>
                         <Table.Td ta="end"><Anchor component={Link} to={`/work-requests?siteId=${s.siteId}`} fz="sm">{s.requestsWaiting.toLocaleString()}</Anchor></Table.Td>
                       </Table.Tr>
                     ))}

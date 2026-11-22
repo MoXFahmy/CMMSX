@@ -4,6 +4,27 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.9.1] - 2026-11-22
+
+Small fixes to sites and access, from the 0.9.0 review.
+
+### Fixed
+- A user whose places were all deleted can be edited again (they keep seeing nothing until given new places); the user
+  form shows such a place as "(deleted place)" so it can be taken off.
+- A limited administrator can't list or sign out the devices of people who see more than they do.
+- The change history of a work order's labour, parts, costs and other rows answers "not found" outside the person's sites.
+- Saving a work order or PM schedule from a page opened before 0.9.0 no longer clears its team.
+- A team's site can't be changed away from its open work and schedules; people with limited access give their teams a
+  site.
+- The planning board shows people limited to some sites only the technicians who work there (or everywhere).
+- A site's request recipients must be able to see all of the site.
+- The import's automatic asset numbers skip numbers used in sites the person can't see (no more "already exists").
+- The dashboard's "Completed (30 days)" opens the work completed in the last 30 days (new "Completed since" filter);
+  the More filters badge counts the team.
+- Saving a PM round keeps its assets in parts of the site the person can't see, and generating it covers them; only
+  assets the person can see can be added, and such a round can't be turned into a single-asset schedule by them.
+- An older page that moves work to another site drops a team that doesn't fit there; a team it sends is kept.
+
 ## [0.9.0] - 2026-11-22
 
 People can be limited to their own sites or parts of the location tree, each site can have settings of its own, and

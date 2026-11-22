@@ -562,7 +562,8 @@
     "signature": "Signature",
     "due": "Due",
     "dueAt": "Due date and time",
-    "dueAtHint": "Leave empty to use the priority's target"
+    "dueAtHint": "Leave empty to use the priority's target",
+    "completedSince": "Completed since"
   },
   "wr": {
     "title": "Work requests",
@@ -1541,7 +1542,8 @@
     "userBranches": "Limit to parts of the tree",
     "userBranchesHint": "Only these places and everything under them. Leave empty for whole sites.",
     "placesCount_one": "{{count}} place",
-    "placesCount_other": "{{count}} places"
+    "placesCount_other": "{{count}} places",
+    "deletedPlace": "(deleted place)"
   },
   "teams": {
     "tab": "Teams",

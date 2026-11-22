@@ -346,7 +346,20 @@ public static class SiteAccess
             "Team" => await db.Teams.AnyAsync(x => x.Id == id, ct),
             "Meter" => await db.Meters.AnyAsync(x => x.Id == id, ct),
             "DowntimeEvent" => await db.DowntimeEvents.AnyAsync(x => x.Id == id, ct),
-            _ => true, // shared by every site: parts, suppliers, PM tasks, people…
+            // Rows of a site's records: visible when their record is (their own site filters say so).
+            "WorkOrderLabor" => await db.WorkOrderLabor.AnyAsync(x => x.Id == id, ct),
+            "WorkOrderPart" => await db.WorkOrderParts.AnyAsync(x => x.Id == id, ct),
+            "WorkOrderCost" => await db.WorkOrderCosts.AnyAsync(x => x.Id == id, ct),
+            "WorkOrderTask" => await db.WorkOrderTasks.AnyAsync(x => x.Id == id, ct),
+            "WorkOrderComment" => await db.WorkOrderComments.AnyAsync(x => x.Id == id, ct),
+            "StockLevel" => await db.StockLevels.AnyAsync(x => x.Id == id, ct),
+            "StockTransaction" => await db.StockTransactions.AnyAsync(x => x.Id == id, ct),
+            "AssetPart" => await db.AssetParts.AnyAsync(x => x.Id == id, ct),
+            "AssetTransfer" => await db.AssetTransfers.AnyAsync(x => x.Id == id, ct),
+            "PurchaseOrderLine" => await db.PurchaseOrderLines.AnyAsync(x => x.Id == id, ct),
+            // Shared by every site.
+            "Part" or "PartGroup" or "Supplier" or "PmTask" or "Employee" or "Trade" or "FailureCode" or "AssetCategory" or "CustomFieldDefinition" => true,
+            _ => false, // anything else: not shown to people with limited access
         };
     }
 }

@@ -37,11 +37,18 @@ public static class DeviceEndpoints
 
         // An administrator looking at their own devices sees which one they're on.
         users.MapGet("/", async (Guid userId, HttpContext http, CmmsDbContext db, CancellationToken ct) =>
-            await db.Users.AnyAsync(u => u.Id == userId && u.TenantId == db.CurrentTenantId, ct)
-                ? Results.Ok(await ListAsync(db, userId, await Sessions.CurrentAsync(http), ct)) : Results.NotFound());
-
-        users.MapPost("/{id:guid}/sign-out", async (Guid userId, Guid id, CmmsDbContext db, IMemoryCache cache, CancellationToken ct) =>
         {
+            var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == db.CurrentTenantId, ct);
+            if (user is null) return Results.NotFound();
+            if (await UserAccessRules.OutsideAsync(db, Access.Of(http) ?? UserAccess.Everything, user, ct) is { } outside) throw new DomainException(outside);
+            return Results.Ok(await ListAsync(db, userId, await Sessions.CurrentAsync(http), ct));
+        });
+
+        users.MapPost("/{id:guid}/sign-out", async (Guid userId, Guid id, CmmsDbContext db, IMemoryCache cache, HttpContext http, CancellationToken ct) =>
+        {
+            var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == db.CurrentTenantId, ct);
+            if (user is null) return Results.NotFound();
+            if (await UserAccessRules.OutsideAsync(db, Access.Of(http) ?? UserAccess.Everything, user, ct) is { } outside) throw new DomainException(outside);
             if (!await db.UserSessions.AnyAsync(s => s.Id == id && s.UserId == userId, ct)) return Results.NotFound();
             await Sessions.RevokeAsync(db, cache, db.UserSessions.Where(s => s.Id == id), ct);
             return Results.Ok(new { ok = true });

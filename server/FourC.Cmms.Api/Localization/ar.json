@@ -702,5 +702,9 @@
  "Only people who see every site can add sites.": "لا يضيف المواقع إلا من يرى جميع المواقع.",
  "You can only change people whose access is inside yours.": "يمكنك تعديل الأشخاص الذين يقع وصولهم ضمن وصولك فقط.",
  "Choose a parent place in your part of the site.": "اختر مكانًا أعلى ضمن الجزء الخاص بك من الموقع.",
- "Only people who see the whole site can change it.": "لا يغيّر الموقع إلا من يرى الموقع كاملًا."
+ "Only people who see the whole site can change it.": "لا يغيّر الموقع إلا من يرى الموقع كاملًا.",
+ "Choose the team's site.": "اختر موقع الفريق.",
+ "This team has open work or PM schedules at another site.": "لدى هذا الفريق أعمال مفتوحة أو جداول صيانة وقائية في موقع آخر.",
+ "Choose people who can see all of this site.": "اختر أشخاصًا يمكنهم رؤية هذا الموقع كاملًا.",
+ "This round also covers assets in parts of the site you can't see.": "تغطي هذه الجولة أيضًا أصولًا في أجزاء من الموقع لا يمكنك رؤيتها."
 }

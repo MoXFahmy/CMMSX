@@ -562,7 +562,8 @@
     "signature": "التوقيع",
     "due": "الاستحقاق",
     "dueAt": "تاريخ ووقت الاستحقاق",
-    "dueAtHint": "اتركه فارغًا لاستخدام هدف الأولوية"
+    "dueAtHint": "اتركه فارغًا لاستخدام هدف الأولوية",
+    "completedSince": "مكتمل منذ"
   },
   "wr": {
     "title": "طلبات العمل",
@@ -1585,7 +1586,8 @@
     "placesCount_two": "مكانان",
     "placesCount_few": "{{count}} أماكن",
     "placesCount_many": "{{count}} مكانًا",
-    "placesCount_other": "{{count}} مكان"
+    "placesCount_other": "{{count}} مكان",
+    "deletedPlace": "(مكان محذوف)"
   },
   "teams": {
     "tab": "الفرق",

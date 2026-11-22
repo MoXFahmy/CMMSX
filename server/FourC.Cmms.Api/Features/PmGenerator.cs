@@ -159,13 +159,13 @@ public static class PmGenerator
         }, $"Generated from PM {s.Code}", mail, applyTargets: false);
     }
 
-    /// <summary>The assets a round's next work order covers (deleted assets drop out through the query filter).</summary>
+    /// <summary>The assets a round's next work order covers (deleted assets drop out through the organization filter; site limits don't apply).</summary>
     internal static async Task<IReadOnlyList<RoundAsset>> RoundAssetsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct,
         IReadOnlyCollection<Core.Assets.AssetStatus>? skipStatuses = null)
     {
         var sequence = s.Assets.ToDictionary(a => a.AssetId, a => a.Sequence);
         var ids = sequence.Keys.ToList();
-        var rows = await db.Assets.AsNoTracking().Where(a => ids.Contains(a.Id))
+        var rows = await db.Assets.AllSites().AsNoTracking().Where(a => ids.Contains(a.Id)) // every asset on the round, also those in branches the person can't see
             .Select(a => new { a.Id, a.SiteId, a.Status, a.LocationId, Path = a.Location != null ? a.Location.Path : null }).ToListAsync(ct);
         return PmRound.Covered(rows.Select(a => new RoundAsset(a.Id, sequence[a.Id], a.SiteId, a.Path, a.LocationId,
             a.Status is not (Core.Assets.AssetStatus.Disposed or Core.Assets.AssetStatus.Inactive) && skipStatuses?.Contains(a.Status) != true)), s.SiteId);
@@ -300,7 +300,7 @@ public static class PmCost
     {
         if (rounds.Count == 0) return [];
         var ids = rounds.SelectMany(s => s.Assets.Select(a => a.AssetId)).Distinct().ToList();
-        var rows = await db.Assets.AsNoTracking().Where(a => ids.Contains(a.Id))
+        var rows = await db.Assets.AllSites().AsNoTracking().Where(a => ids.Contains(a.Id)) // every asset on the round, also those in branches the person can't see
             .Select(a => new { a.Id, a.SiteId, a.Status, a.LocationId, Path = a.Location != null ? a.Location.Path : null }).ToDictionaryAsync(a => a.Id, ct);
         return rounds.ToDictionary(s => s.Id, s => PmRound.Covered(s.Assets.Where(a => rows.ContainsKey(a.AssetId)).Select(a =>
         {

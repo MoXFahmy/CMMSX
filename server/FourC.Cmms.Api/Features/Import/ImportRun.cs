@@ -77,6 +77,8 @@ public sealed class ImportContext(CmmsDbContext db, ITenantContext tenant, Tenan
 
     /// <summary>Each asset's site, to check a PM schedule's asset is in the schedule's site.</summary>
     public Dictionary<Guid, Guid> AssetSites { get; } = [];
+    /// <summary>Asset numbers in sites the person can't see (for limited people only).</summary>
+    public HashSet<string> HiddenAssetNumbers { get; } = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Each location's site and parent, to catch a location put under its own descendant.</summary>
     public Dictionary<Guid, (Guid SiteId, Guid? ParentId)> LocationTree { get; } = [];
@@ -334,6 +336,10 @@ public static class ImportRun
             c.AssetParents[x.Id] = x.ParentAssetId;
             c.AssetSites[x.Id] = x.SiteId;
         }
+        // People with limited access: numbers of assets they can't see are taken too (asset numbers are unique across the organization).
+        if (db.CurrentSiteIds is not null)
+            foreach (var n in await db.Assets.AllSites().AsNoTracking().Select(x => x.AssetNumber).ToListAsync(ct))
+                if (!c.Assets.ContainsKey(n)) c.HiddenAssetNumbers.Add(n);
         foreach (var x in await db.Employees.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.Employees, x.Code, x.Id);
         foreach (var x in await db.Parts.AsNoTracking().Select(x => new { x.Id, x.PartNumber }).ToListAsync(ct)) c.Remember(c.Parts, x.PartNumber, x.Id);
         foreach (var x in await db.PmTasks.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.PmTasks, x.Code, x.Id);
