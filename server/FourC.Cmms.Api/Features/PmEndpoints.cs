@@ -23,7 +23,7 @@ public static class PmEndpoints
         List<Guid>? AssigneeIds, Guid PmTaskId, List<ExtraTaskInput>? ExtraTasks, PmScheduleType Type, PmBasis Basis, int Frequency, FrequencyUnit Unit,
         int? WeekOfMonth, DayOfWeek? DayOfWeek, int? DayOfMonth, int WorkPeriodDays, bool WholeMonth, int LeadDays, DateOnly StartDate, DateOnly? NextDueDate,
         Guid? MeterId, MeterTrigger? MeterTrigger, decimal? MeterInterval, decimal? NextDueReading, decimal? LowerLimit, decimal? UpperLimit,
-        Guid? LowerTaskId, Guid? UpperTaskId, bool TimeBased, bool IsActive = true, string? RowVersion = null, List<Guid>? AssetIds = null);
+        Guid? LowerTaskId, Guid? UpperTaskId, bool TimeBased, bool IsActive = true, string? RowVersion = null, List<Guid>? AssetIds = null, Guid? TeamId = null);
     public sealed record GenerateInput(DateOnly Until, Guid? SiteId, List<Guid>? ScheduleIds);
     public sealed record MeterInput(string Code, string Name, Guid AssetId, string Unit, decimal? MaxDailyIncrement, bool IsActive = true);
     public sealed record ReadingInput(decimal Value, DateTimeOffset? ReadAt, string? Note, bool Confirm = false);
@@ -164,7 +164,7 @@ public static class PmEndpoints
             {
                 s.Id, s.Code, s.Name, s.Description, s.SiteId, s.LocationId, s.AssetId, Asset = s.Asset is null ? null : new { s.Asset.Id, s.Asset.AssetNumber, s.Asset.Name },
                 Assets = s.Assets.Where(a => a.Asset is not null).OrderBy(a => a.Sequence).Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name }),
-                s.TradeId, s.Priority, s.AssigneeIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, s.PmTask.Name },
+                s.TradeId, s.TeamId, s.Priority, s.AssigneeIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, s.PmTask.Name },
                 ExtraTasks = s.ExtraTasks.Select(e => new { e.PmTaskId, e.EveryNth }), s.Type, s.Basis, s.Frequency, s.Unit, s.WeekOfMonth, s.DayOfWeek, s.DayOfMonth,
                 s.WorkPeriodDays, s.WholeMonth, s.LeadDays, s.StartDate, s.NextDueDate, s.LastDueDate, s.LastGeneratedAt, s.GenerationCount,
                 s.MeterId, Meter = s.Meter is null ? null : new { s.Meter.Id, s.Meter.Code, s.Meter.Name, s.Meter.Unit, s.Meter.CurrentReading },
@@ -461,6 +461,8 @@ public static class PmEndpoints
             v.Add("code", scheduleClash);
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         Access.RequireLocation(db, v, i.LocationId);
+        var currentTeam = id is { } sid ? await db.PmSchedules.Where(x => x.Id == sid).Select(x => x.TeamId).FirstOrDefaultAsync(ct) : null;
+        await TeamEndpoints.CheckForWorkAsync(db, v, i.TeamId, i.SiteId, currentTeam, ct);
         var round = i.AssetIds ?? [];
         if (round.Count > 100) v.Add("assetIds", "List at most 100 assets.");
         else if (round.Count > 0)
@@ -493,7 +495,7 @@ public static class PmEndpoints
 
     internal static void ApplySchedule(PmSchedule s, ScheduleInput i)
     {
-        s.Description = i.Description.Clean(); s.SiteId = i.SiteId; s.LocationId = i.LocationId; s.AssetId = i.AssetId; s.TradeId = i.TradeId; s.Priority = i.Priority;
+        s.Description = i.Description.Clean(); s.SiteId = i.SiteId; s.LocationId = i.LocationId; s.AssetId = i.AssetId; s.TradeId = i.TradeId; s.TeamId = i.TeamId; s.Priority = i.Priority;
         s.AssigneeIds = (i.AssigneeIds ?? []).Distinct().ToList(); s.PmTaskId = i.PmTaskId; s.Type = i.Type; s.Basis = i.Basis; s.Frequency = i.Frequency;
         s.Unit = i.Type == PmScheduleType.FixedInterval || i.TimeBased ? i.Unit : FrequencyUnit.Month;
         s.WeekOfMonth = i.Type == PmScheduleType.DayOfWeekInMonth ? i.WeekOfMonth : null; s.DayOfWeek = i.Type == PmScheduleType.DayOfWeekInMonth ? i.DayOfWeek : null;

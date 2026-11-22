@@ -40,7 +40,10 @@ public static partial class TechEndpoints
         {
             var me = await EmployeeAsync(db, ctx, ct);
             if (me is null) return NotLinked();
-            var jobs = await db.WorkOrders.AsNoTracking().Where(w => Open.Contains(w.Status) && w.Assignees.Any(a => a.EmployeeId == me.EmployeeId))
+            // Mine: assigned to me, or given to a team I'm in (0.9.0).
+            var myTeams = await TeamEndpoints.TeamsOfAsync(db, me.EmployeeId, ct);
+            var jobs = await db.WorkOrders.AsNoTracking().Where(w => Open.Contains(w.Status)
+                    && (w.Assignees.Any(a => a.EmployeeId == me.EmployeeId) || (w.TeamId != null && myTeams.Contains(w.TeamId.Value))))
                 .OrderBy(w => w.DueDate == null).ThenBy(w => w.DueDate).ThenBy(w => w.Number).Take(MaxJobs)
                 .Select(w => new
                 {

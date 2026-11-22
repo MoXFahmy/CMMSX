@@ -39,12 +39,12 @@ public static class ReportEndpoints
         new("pm-compliance", "Work", "PM compliance", "Preventive work due in the period: completed on time, late, or missed.", Permissions.PmView,
             [Range, SiteP, GroupBy("month", ("month", "Month"), ("schedule", "PM schedule"), ("trade", "Trade"))]),
         new("labor-hours", "Work", "Labour hours", "Hours, overtime and labour cost booked to work orders.", Permissions.WorkOrdersView,
-            [Range, SiteP, GroupBy("employee", ("employee", "Employee"), ("trade", "Trade"), ("type", "Work type"))]),
+            [Range, SiteP, GroupBy("employee", ("employee", "Employee"), ("trade", "Trade"), ("team", "Team"), ("type", "Work type"))]),
         new("reliability", "Reliability", "Asset reliability (MTBF / MTTR)", "Breakdowns per asset with downtime, mean time between failures and mean time to repair.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("downtime", "Reliability", "Downtime log", "Every stop in the period with how long the asset was stopped during its running time.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("failure-pareto", "Reliability", "Failure analysis", "Breakdowns by failure code — the few causes behind most of the downtime.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("maintenance-costs", "Costs", "Maintenance costs", "Labour, parts and other costs booked in the period.", Permissions.WorkOrdersView,
-            [Range, SiteP, GroupBy("asset", ("asset", "Asset"), ("site", "Site"), ("category", "Asset category"), ("type", "Work type"), ("trade", "Trade"), ("month", "Month"))]),
+            [Range, SiteP, GroupBy("asset", ("asset", "Asset"), ("site", "Site"), ("category", "Asset category"), ("type", "Work type"), ("trade", "Trade"), ("team", "Team"), ("month", "Month"))]),
         new("assets-by-category", "Assets", "Asset register summary", "Assets by category and status with purchase and current value.", Permissions.AssetsView, [SiteP]),
         new("stock-valuation", "Inventory", "Stock valuation", "Value of stock on hand at average cost.", Permissions.InventoryView,
             [SiteP, GroupBy("store", ("store", "Store"), ("group", "Part group"))]),
@@ -275,17 +275,18 @@ public static class ReportEndpoints
         var q = from l in db.WorkOrderLabor.AsNoTracking()
                 join w in Wo(db, a) on l.WorkOrderId equals w.Id
                 where l.WorkDate >= a.From && l.WorkDate <= a.To
-                select new { l.EmployeeId, Employee = l.Employee!.FullName, l.Employee.IsContractor, l.Employee.TradeIds, Trade = w.Trade!.Name, w.Type, l.WorkOrderId, l.Hours, l.OvertimeHours, Cost = l.Hours * l.Rate + l.OvertimeHours * l.OvertimeRate };
+                select new { l.EmployeeId, Employee = l.Employee!.FullName, l.Employee.IsContractor, l.Employee.TradeIds, Trade = w.Trade!.Name, Team = w.Team!.Name, w.Type, l.WorkOrderId, l.Hours, l.OvertimeHours, Cost = l.Hours * l.Rate + l.OvertimeHours * l.OvertimeRate };
         var xs = await q.ToListAsync(ct);
         var groups = a.GroupBy switch
         {
             "trade" => xs.GroupBy(x => x.Trade ?? "No trade"),
+            "team" => xs.GroupBy(x => x.Team ?? "No team"),
             "type" => xs.GroupBy(x => x.Type.ToString()),
             _ => xs.GroupBy(x => x.Employee + (x.IsContractor ? " (contractor)" : "")),
         };
         var rows = groups.Select(g => Row(("group", g.Key), ("hours", g.Sum(x => x.Hours)), ("overtime", g.Sum(x => x.OvertimeHours)), ("total", g.Sum(x => x.Hours + x.OvertimeHours)),
             ("cost", R2(g.Sum(x => x.Cost))), ("workOrders", g.Select(x => x.WorkOrderId).Distinct().Count()))).OrderByDescending(r => (decimal)r["total"]!).ToList();
-        var label = a.GroupBy switch { "trade" => "Trade (work order)", "type" => "Work type", _ => "Employee" };
+        var label = a.GroupBy switch { "trade" => "Trade (work order)", "team" => "Team (work order)", "type" => "Work type", _ => "Employee" };
         var hrs = xs.Sum(x => x.Hours + x.OvertimeHours);
         return new("labor-hours", "Labour hours", Period(a),
             [new("group", label), new("hours", "Normal hours", "hours"), new("overtime", "Overtime", "hours"), new("total", "Total hours", "hours"), new("cost", "Labour cost", "currency"), new("workOrders", "Work orders", "number")],
@@ -413,14 +414,14 @@ public static class ReportEndpoints
                            select new CostLine(g.Key.WorkOrderId, g.Key.Year, g.Key.Month, 0, 0, g.Sum(x => x.Quantity * x.UnitCost))).ToListAsync(ct);
         var lines = labor.Concat(parts).Concat(other).ToList();
         var ids = lines.Select(l => l.WoId).Distinct().ToList();
-        var dims = new Dictionary<Guid, (string Site, string Type, string Trade, string Asset, string Category)>();
+        var dims = new Dictionary<Guid, (string Site, string Type, string Trade, string Team, string Asset, string Category)>();
         foreach (var chunk in ids.Chunk(1000))
             foreach (var d in await db.WorkOrders.AsNoTracking().Where(w => chunk.Contains(w.Id)).Select(w => new { w.Id, Site = w.Site!.Name, w.Type, Trade = w.Trade!.Name,
-                         Asset = w.Asset == null ? null : w.Asset.AssetNumber + " · " + w.Asset.Name, Category = w.Asset!.Category!.Name }).ToListAsync(ct))
-                dims[d.Id] = (d.Site, d.Type.ToString(), d.Trade ?? "No trade", d.Asset ?? "No asset (location work)", d.Category ?? "Uncategorised");
+                         Team = w.Team!.Name, Asset = w.Asset == null ? null : w.Asset.AssetNumber + " · " + w.Asset.Name, Category = w.Asset!.Category!.Name }).ToListAsync(ct))
+                dims[d.Id] = (d.Site, d.Type.ToString(), d.Trade ?? "No trade", d.Team ?? "No team", d.Asset ?? "No asset (location work)", d.Category ?? "Uncategorised");
         string Key(CostLine l) => a.GroupBy switch
         {
-            "site" => dims[l.WoId].Site, "type" => dims[l.WoId].Type, "trade" => dims[l.WoId].Trade, "category" => dims[l.WoId].Category,
+            "site" => dims[l.WoId].Site, "type" => dims[l.WoId].Type, "trade" => dims[l.WoId].Trade, "team" => dims[l.WoId].Team, "category" => dims[l.WoId].Category,
             "month" => $"{l.Y:0000}-{l.M:00}", _ => dims[l.WoId].Asset,
         };
         var grouped = lines.GroupBy(Key).Select(g => Row(("group", a.GroupBy == "month" ? MonthLabel(int.Parse(g.Key[..4]), int.Parse(g.Key[5..])) : g.Key), ("sortKey", g.Key),
@@ -429,7 +430,7 @@ public static class ReportEndpoints
         var rows = (a.GroupBy == "month" ? grouped.OrderBy(r => (string)r["sortKey"]!) : grouped.OrderByDescending(r => (decimal)r["total"]!)).Take(a.GroupBy == "asset" ? 200 : 1000).ToList();
         foreach (var r in rows) r.Remove("sortKey");
         var total = lines.Sum(x => x.Labor + x.Parts + x.Other);
-        var label = a.GroupBy switch { "site" => "Site", "type" => "Work type", "trade" => "Trade", "category" => "Asset category", "month" => "Month", _ => "Asset" };
+        var label = a.GroupBy switch { "site" => "Site", "type" => "Work type", "trade" => "Trade", "team" => "Team", "category" => "Asset category", "month" => "Month", _ => "Asset" };
         return new("maintenance-costs", "Maintenance costs", Period(a),
             [new("group", label), new("labor", "Labour", "currency"), new("parts", "Parts", "currency"), new("other", "Other", "currency"), new("total", "Total", "currency"), new("workOrders", "Work orders", "number")],
             rows, new Chart("bar", "group", ["labor", "parts", "other"], true),

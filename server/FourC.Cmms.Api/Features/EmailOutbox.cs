@@ -43,6 +43,16 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             org => EmailTemplates.Assigned(org, facts, Link($"/work-orders/{w.Id}"), pm), "WorkOrder", w.Id, ct, siteId: w.SiteId, locationId: w.LocationId);
     }
 
+    /// <summary>Given to a team: its members hear, as when assigned (those already assigned heard that already).</summary>
+    public async Task TeamGivenAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, CancellationToken ct)
+    {
+        if (!Available || w.TeamId is not { } teamId) return;
+        var members = await db.Teams.AllSites().Where(t => t.Id == teamId).Select(t => t.MemberIds).FirstOrDefaultAsync(ct) ?? [];
+        var assigned = w.Assignees.Select(a => a.EmployeeId).ToHashSet();
+        var active = await db.Employees.Where(e => members.Contains(e.Id) && e.IsActive).Select(e => e.Id).ToListAsync(ct);
+        await AssigneesAddedAsync(db, ctx, w, active.Where(m => !assigned.Contains(m)).ToList(), ct);
+    }
+
     /// <summary>Completed: whoever created the work hears, and so does the requester when it came from a request.</summary>
     public async Task WorkOrderCompletedAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, CancellationToken ct)
     {
