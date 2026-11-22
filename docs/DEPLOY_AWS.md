@@ -109,6 +109,7 @@ Repository variables read by the deployment workflow:
 | `CMMS_MAIL_ALLOWED_ORGS` | empty | Organizations allowed to send e-mail while sign-up is open: short names, comma-separated (`*` = all) |
 | `CMMS_DOMAIN` | empty | The app's own web address, e.g. `cmms.example.com` (see *Own domain* below) |
 | `CMMS_DOMAIN_CERTIFICATE_ARN` | empty | ARN of the ACM certificate for `CMMS_DOMAIN`, requested in **us-east-1** |
+| `CMMS_PUSH_SECRET_ARN` | empty | ARN of the Secrets Manager secret holding the Firebase key, for push notifications to the Android app (see *Push notifications* below) |
 
 ## Sending e-mail
 
@@ -136,6 +137,29 @@ accounts may only send to addresses verified one by one (the SES *sandbox*) unti
 
 The **E-mail log** on that page shows each message and, for failures, the reason (SES's message, e.g. an address not
 verified while in the sandbox). Failed messages are retried after 1, 5, 30 and 120 minutes.
+
+## Push notifications
+
+From 0.11.0 the Android app can show a notification when a job is assigned to the technician or their request is
+approved; tapping it opens the job. It needs a Firebase project (free) and the 0.11.0 app or later. Releases build the
+app with the project's app file (`google-services.json`); the server needs the project's **service account key** to
+send.
+
+1. In the Firebase console → **Project settings → Service accounts → Generate new private key**. A key file
+   (`.json`) downloads. Keep it private: it lets anyone send notifications as your project.
+2. AWS console, in the app's region → **Secrets Manager → Store a new secret** → *Other type of secret* → **Plaintext**
+   tab: paste the whole contents of the key file. Name it, e.g. `cmms/push-key`, and store it.
+3. Open the secret and copy its **Secret ARN** (the full one, ending in six random characters).
+4. In GitHub → **Settings → Secrets and variables → Actions → Variables**, add `CMMS_PUSH_SECRET_ARN` with that ARN.
+5. Deploy: push `main`, or re-run **Deploy to AWS** from the Actions tab.
+
+The app reads the key from the secret when it starts; it never appears in GitHub, the logs or the stack's settings. To
+change the key, store a new value in the same secret and restart the service (ECS → cluster → service → *Update* →
+*Force new deployment*). With the variable empty, nothing is sent and nothing waits to be sent. The phone asks once for
+permission to show notifications; a phone that refused gets none.
+
+Uploads from the phone (videos and documents) can be up to 50 MB. CloudFront and the load balancer accept that; if you
+put another proxy in front of the app, let it pass request bodies of 52 MB.
 
 ## Day-to-day operations
 

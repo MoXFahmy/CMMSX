@@ -46,4 +46,20 @@ public class PhoneModelTests(ApiFixture fx) : IClassFixture<ApiFixture>
             return await db.SaveChangesAsync();
         }));
     }
+
+    [Theory]
+    [InlineData("Only 2 in the store; the rest is on the store keeper's list.")]
+    [InlineData("This took parts reserved for WO-00001.")]
+    [InlineData("Added to the job's parts; the store keeper issues them.")]
+    [InlineData("This count was already posted or cancelled.")]
+    [InlineData("The asset isn't down.")]
+    [InlineData("The asset is already down.")]
+    [InlineData("The time can't be in the future.")]
+    [InlineData("clip.mp4 is larger than 50 MB.")]
+    [InlineData("New job: WO-00001")]
+    [InlineData("Request approved: WR-00001")]
+    [InlineData("The phone can start, hold, complete or cancel work only.")]
+    [InlineData("You can't cancel work orders.")]
+    public void New_phone_messages_have_Arabic(string english) =>
+        Assert.NotEqual(english, FourC.Cmms.Api.Infrastructure.Translator.T(english, "ar"));
 }

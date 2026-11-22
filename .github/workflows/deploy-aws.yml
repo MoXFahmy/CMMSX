@@ -42,6 +42,8 @@ jobs:
       MAIL_ALLOWED_ORGS: ${{ vars.CMMS_MAIL_ALLOWED_ORGS }}
       DOMAIN: ${{ vars.CMMS_DOMAIN }}
       DOMAIN_CERTIFICATE_ARN: ${{ vars.CMMS_DOMAIN_CERTIFICATE_ARN }}
+      # Push notifications (optional): ARN of the Secrets Manager secret holding the Firebase key. See docs/DEPLOY_AWS.md.
+      PUSH_SECRET_ARN: ${{ vars.CMMS_PUSH_SECRET_ARN }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -102,7 +104,8 @@ jobs:
               MailFromAddress="$MAIL_FROM_ADDRESS" \
               MailAllowedOrganizations="$MAIL_ALLOWED_ORGS" \
               Domain="$DOMAIN" \
-              DomainCertificateArn="$DOMAIN_CERTIFICATE_ARN"
+              DomainCertificateArn="$DOMAIN_CERTIFICATE_ARN" \
+              PushSecretArn="$PUSH_SECRET_ARN"
 
           url=$(aws cloudformation describe-stacks --stack-name "$STACK" \
             --query "Stacks[0].Outputs[?OutputKey=='Url'].OutputValue" --output text)

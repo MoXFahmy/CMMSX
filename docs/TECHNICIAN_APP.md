@@ -26,7 +26,9 @@ shows the open work orders that employee is assigned to (up to 300, earliest due
 | Log hours, add comments, take photos or pick them from the gallery | Yes (photos are shrunk to 1600 px) |
 | Start, put on hold, complete with signatures | Yes |
 | Scan or type an asset/location number; meter readings; raise a request | Yes |
-| Issue parts from the store | No: *Issue parts* opens the full app |
+| Use parts on a job, give them back, look up stock, count a store, receive a delivery | Yes (see *Parts and stock*) |
+| Mark the asset stopped or back running, add a PM checklist, attach a video or document | Yes |
+| Log hours for the crew, cancel the job, create a work order | Yes, with the permission (see below) |
 
 Changes wait on the phone (also when the app is closed) and are sent in order as soon as it is online again: the app
 tries every 30 seconds, at once when the signal returns, and when you tap *Refresh now* on the **Sync** page. The copy of
@@ -41,6 +43,51 @@ the same way so the rest can go.
 
 **Times.** Work done offline is recorded at the time you did it (up to 30 days back), not when it was sent: steps,
 readings, comments, hours, the start and the completion of the job.
+
+## Parts and stock
+
+The phone keeps a copy of the parts and stock of the stores at your sites, refreshed with your jobs. **Stock** (top of
+*My jobs*) searches it by part number, name or barcode; scanning a part's QR label opens the part.
+
+- **On a job, *Parts*:** *Used* on a planned part, or *Add a part*. The part is in your hand, so it is issued straight
+  away, even if it takes parts reserved for another job (the answer names that job). What the store's stock can't
+  cover is added to the job's planned parts: it shows as short on the store keeper's list (*Inventory › Short for
+  work*) and the answer says "Only … in the store; the rest is on the store keeper's list." Stock never goes below
+  zero unless the part allows it, as in the office. *Give back* returns parts to the store (never more than were
+  issued to the job). Shelf-life parts are issued with their batch in the office.
+- **Without permission to issue stock** (*Inventory: transact*), *Used* asks for the parts instead: they are added to
+  the job's planned parts and the store keeper issues them.
+- **A part's page:** stock per store and bin, what is reserved, and *Issue to a job* (store keepers).
+- **Stock counts:** the office opens a count for a store (*Inventory › Stock counts › New stock count*). It appears on
+  the phone under *Open stock counts*; scan or search each part and enter the quantity counted, offline too. Several
+  people can count the same store; the latest count of a part wins. Back in the office, the count shows what is in
+  stock, what was counted and the difference; *Post* turns the differences into stock adjustments, *Cancel count*
+  drops it with nothing changed.
+- **Receive a delivery** (people who may receive purchase orders): pick the order and the line, enter the quantity,
+  never more than is still to come.
+
+## On the job
+
+- **The asset's stop:** *Asset stopped* and *Back running*, with the time it happened (not in the future). If the
+  asset is already down from another job, yours joins that stop with a note.
+- **Add a checklist:** copies a PM checklist's steps into the job.
+- **Video or document:** MP4, MOV, WebM, PDF, Word, Excel or text, up to 50 MB each. They wait on the phone like
+  photos and are sent when there is a signal.
+- **Hours for the crew:** with *Log hours for others* (Maintenance Managers have it), *Log hours* asks whose hours;
+  pick anyone on the job's crew.
+- **Cancel the job:** with permission to close work orders; pick the reason when the organization uses cancel reasons.
+- **New work order** (under *My jobs*, and at the bottom of a job), for people who may create work orders: what needs doing, priority, and the
+  asset or location. It is assigned to you and works offline.
+
+## Fingerprint unlock and notifications (Android app 0.11.0)
+
+- **Unlock with fingerprint or face:** switch it on under **Sync**. The app then asks for it when it opens and after 5
+  minutes away. It doesn't replace the sign-in: you stay signed in for 30 days as before.
+- **Notifications:** the app asks once for permission. You then get a notification when a job is assigned to you or
+  your request is approved; tapping it opens the job. This needs the 0.11.0 app and the server set up for push (see
+  *Push notifications* in docs/DEPLOY_AWS.md).
+
+Both need the Android app from 0.11.0 on; older apps and the browser keep working without them.
 
 ## Safety
 
@@ -82,3 +129,9 @@ Phones that signed in before 0.4.0 keep their old sign-in, which lasts 12 hours 
 4. Turn airplane mode off: within a few seconds the Sync page is empty and the work order in the full app shows the
    changes, with the signature on the job card.
 5. Scan a printed label with the app's *Scan* tab.
+6. From 0.11.0, offline on a job: mark the asset stopped and back running, use a part (more than the store has, to see
+   the "store keeper's list" answer), give one back, attach a short video. In the office: the part is short under
+   *Inventory › Short for work* and the stop is on the asset.
+7. Open a stock count in the office, count two parts on the phone, post the count and check the adjustments.
+8. Switch on *Unlock with fingerprint or face* (Sync page), close the app, open it: it asks for the fingerprint. With
+   push set up on the server, assign a job to the phone's person in the office: the notification opens the job.
