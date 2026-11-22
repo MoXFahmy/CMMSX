@@ -266,9 +266,27 @@ public static class DashboardEndpoints
                 Urgent = await db.WorkOrders.AsNoTracking().Where(w => active.Contains(w.Status)).OrderByDescending(w => w.Priority).ThenBy(w => w.DueDate).Take(6)
                     .Select(w => new { w.Id, w.Number, w.Title, w.Priority, w.Status, w.DueDate, AssetNumber = w.Asset!.AssetNumber }).ToListAsync(ct),
             };
+            // People who see several sites: the work at each, side by side (each number opens that site's list).
+            var visibleSites = await db.Sites.AsNoTracking().OrderBy(s => s.Name).Select(s => new { s.Id, s.Name }).ToListAsync(ct);
+            var bySiteWork = new List<object>();
+            if (visibleSites.Count > 1)
+            {
+                var now = DateTimeOffset.UtcNow;
+                var openBy = await db.WorkOrders.Where(w => active.Contains(w.Status)).GroupBy(w => w.SiteId).Select(g => new { g.Key, N = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.N, ct);
+                var lateBy = await SlaQueries.LateWork(db.WorkOrders, now).GroupBy(w => w.SiteId).Select(g => new { g.Key, N = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.N, ct);
+                var doneBy = await db.WorkOrders.Where(w => w.CompletedAt >= since).GroupBy(w => w.SiteId).Select(g => new { g.Key, N = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.N, ct);
+                var waitingBy = await db.WorkRequests.Where(r => r.Status == FourC.Cmms.Core.Work.WorkRequestStatus.New).GroupBy(r => r.SiteId)
+                    .Select(g => new { g.Key, N = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.N, ct);
+                bySiteWork.AddRange(visibleSites.Select(s => new
+                {
+                    SiteId = s.Id, s.Name, Open = openBy.GetValueOrDefault(s.Id), Late = lateBy.GetValueOrDefault(s.Id),
+                    CompletedLast30 = doneBy.GetValueOrDefault(s.Id), RequestsWaiting = waitingBy.GetValueOrDefault(s.Id),
+                }));
+            }
             return new
             {
                 Work = work,
+                BySiteWork = bySiteWork,
                 Totals = new
                 {
                     Sites = await db.Sites.CountAsync(ct), Locations = await db.Locations.CountAsync(ct), Assets = byStatus.Sum(x => x.Count),
