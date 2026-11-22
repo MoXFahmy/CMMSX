@@ -4,6 +4,35 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.11.0] - 2026-11-22
+
+Phone app: parts, stock and stops. Technicians use and give back parts, look up stock, count stores and receive
+deliveries from the phone, offline too; the Android app gets fingerprint unlock and push notifications. See
+docs/TECHNICIAN_APP.md.
+
+### Added
+- Parts on a job from the phone: *Used* on a planned part or *Add a part*. What the store has is issued at once (with a
+  note when it takes parts reserved for another job); what it can't cover is added to the job and shows as short on
+  the store keeper's list. *Give back* returns parts to the store. People without permission to issue stock ask for the
+  parts instead, and shelf-life parts go on the store keeper's list to be issued with their batch.
+- Stock on the phone: search or scan a part to see stock per store and bin; store keepers issue to any open job.
+- Stock counts (Inventory › Stock counts): the office opens a count, people count on the phone (offline too, the latest
+  count of a part wins), and the office reviews the differences and posts them. Stock moved after a part was counted
+  is kept when posting.
+- Inventory › Short for work: planned parts on open work that their store can't cover.
+- Receiving purchase order deliveries on the phone, for people who may receive.
+- On a phone job: mark the asset stopped or back running with the time it happened, add a PM checklist, attach videos
+  and documents up to 50 MB, log hours for the crew (new permission "Log hours for others", given to Maintenance
+  Managers in new organizations), cancel the job with a reason, and create work orders.
+- Android app: unlock with fingerprint or face (Sync page), and notifications when a job is assigned or a request is
+  approved. Push needs the server's Firebase key on AWS (docs/DEPLOY_AWS.md › Push notifications) and the 0.11.0 app.
+
+### Changed
+- The phone's Sync page names every kind of change in English and Arabic, and a video or document that doesn't get
+  through on a slow connection after 3 tries is set aside (Retry or Discard) so the changes after it still go.
+- The phone's job page shows *Asset stopped* / *Back running* offline instead of the online-only button, and its *New
+  work order* link opens the phone form (also under *My jobs*).
+
 ## [0.10.0] - 2026-11-22
 
 Requests that close the loop: requests go to the right people, the requester accepts or refuses finished work, and an
