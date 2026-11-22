@@ -11,14 +11,14 @@ import { DevicesModal } from '@/components/DevicesModal';
 import { TargetsEditor, timeZones } from './TargetsEditor';
 import { WorkingHoursEditor, organizationHours } from '@/components/WorkingHoursEditor';
 import { LANGUAGES } from '@/language';
-import { del, get, post, put } from '@/api/client';
-import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
+import { del, get, getAllSites, post, put } from '@/api/client';
+import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type Hierarchy, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { NotificationSettings } from './NotificationSettings';
 import { ImportSettings } from './ImportSettings';
 import { PageHeader } from '@/components/PageHeader';
 import { LookupTable } from '@/components/LookupTable';
-import { locationOptions, useHierarchy } from '@/components/LocationPicker';
+import { locationOptions } from '@/components/LocationPicker';
 import { confirmDelete } from '@/components/confirm';
 import { fromNow, handleFormError, notifyError, notifySuccess } from '@/components/utils';
 
@@ -266,7 +266,8 @@ function UserSettings() {
   const qc = useQueryClient();
   const { data, isFetching } = useQuery({ queryKey: ['users'], queryFn: () => get<User[]>('/users') });
   const { data: roles } = useQuery({ queryKey: ['roles'], queryFn: () => get<Role[]>('/roles') });
-  const { data: h } = useHierarchy();
+  // Every site and place the editor may see, whatever site the header switch is on.
+  const { data: h } = useQuery({ queryKey: ['hierarchy', 'all-sites'], queryFn: () => getAllSites<Hierarchy>('/locations/hierarchy'), staleTime: 60_000 });
   const { terms } = useAuth();
   const siteName = (id: string) => h?.sites.find((s) => s.id === id)?.name;
   // Every place the editor can see, labelled with its site and path.

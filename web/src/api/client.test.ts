@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, post } from './client';
+import { ApiError, get, getAllSites, post } from './client';
 
 afterEach(() => { vi.unstubAllGlobals(); });
 
@@ -17,5 +17,15 @@ describe('api client', () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ title: 'Choose a site.' }), { status: 400 }));
     const e = await post('/work-orders', {}).catch((x: unknown) => x);
     expect((e as ApiError).message).toBe('Choose a site.');
+  });
+
+  it('sends the site switch, except on calls that ask for every site (0.9.0)', async () => {
+    const store = new Map<string, string>([['cmx.site', 'cairo']]);
+    vi.stubGlobal('localStorage', { getItem: (k: string) => store.get(k) ?? null, setItem: () => {}, removeItem: () => {} });
+    const sent: (string | null)[] = [];
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => { sent.push(new Headers(init.headers).get('X-Cmx-Site')); return new Response('[]', { status: 200 }); });
+    await get('/sites');
+    await getAllSites('/locations/hierarchy');
+    expect(sent).toEqual(['cairo', 'all']);
   });
 });

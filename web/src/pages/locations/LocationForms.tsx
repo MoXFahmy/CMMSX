@@ -82,7 +82,7 @@ export function SiteFormModal({ opened, onClose, site, onSaved }: { opened: bool
                     <TextInput label={t('siteSettings.woPrefix')} placeholder={me?.tenant.settings.workOrderNumberPrefix} maxLength={20} {...form.getInputProps('settings.workOrderNumberPrefix')} />
                     <TextInput label={t('siteSettings.wrPrefix')} placeholder={me?.tenant.settings.workRequestNumberPrefix} maxLength={20} {...form.getInputProps('settings.workRequestNumberPrefix')} />
                     <TextInput label={t('siteSettings.poPrefix')} placeholder={me?.tenant.settings.purchaseOrderNumberPrefix} maxLength={20} {...form.getInputProps('settings.purchaseOrderNumberPrefix')} />
-                    <TextInput label={t('siteSettings.assetPrefix', { asset: terms.asset.toLowerCase() })} placeholder={me?.tenant.settings.assetNumberPrefix} maxLength={20}
+                    <TextInput label={t('siteSettings.assetPrefix', { asset: terms.asset })} placeholder={me?.tenant.settings.assetNumberPrefix} maxLength={20}
                       {...form.getInputProps('settings.assetNumberPrefix')} />
                   </SimpleGrid>
                   <Text c="dimmed" fz="xs">{t('siteSettings.prefixHint')}</Text>
