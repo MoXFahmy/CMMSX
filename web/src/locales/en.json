@@ -85,7 +85,8 @@
     "language": "Language",
     "toggleNavigation": "Show or hide the menu",
     "toggleColorScheme": "Switch between light and dark",
-    "listSeparator": ", "
+    "listSeparator": ", ",
+    "confirm": "Confirm"
   },
   "auth": {
     "signIn": "Sign in",
@@ -794,7 +795,9 @@
       "stores": "Stores",
       "transactions": "Transactions",
       "stock-take": "Stock take",
-      "groups": "Part groups"
+      "groups": "Part groups",
+      "shortages": "Short for work",
+      "counts": "Stock counts"
     },
     "stockMovement": "Stock movement",
     "tx": {
@@ -1744,5 +1747,34 @@
     "whatToDo": "What needs doing",
     "createWorkOrder": "Create work order",
     "whoseHours": "Whose hours"
+  },
+  "invPhone": {
+    "shortagesHint": "Planned parts on open work that their store can't cover, most urgent first.",
+    "allStores": "All stores",
+    "noShortages": "Nothing is short.",
+    "store": "Store",
+    "short": "Short",
+    "countsHint": "Open a count, count on the phone (offline too), then review the differences and post them.",
+    "newCount": "New stock count",
+    "partsCounted": "Parts counted",
+    "opened": "Opened",
+    "countNameHint": "e.g. Store A, November",
+    "openCount": "Open the count",
+    "status": {
+      "Open": "Open",
+      "Posted": "Posted",
+      "Cancelled": "Cancelled"
+    },
+    "postConfirm": "Post the differences as stock adjustments?",
+    "cancelConfirm": "Cancel this count? Nothing changes in stock.",
+    "posted": "Posted: {{count}} parts adjusted.",
+    "cancelCount": "Cancel count",
+    "post": "Post {{count}} differences",
+    "bin": "Bin",
+    "expected": "In stock",
+    "counted": "Counted",
+    "difference": "Difference",
+    "countedBy": "Counted by",
+    "nothingCounted": "Nothing counted yet."
   }
 }

@@ -85,7 +85,8 @@
     "language": "اللغة",
     "toggleNavigation": "إظهار القائمة أو إخفاؤها",
     "toggleColorScheme": "التبديل بين الوضع الفاتح والداكن",
-    "listSeparator": "، "
+    "listSeparator": "، ",
+    "confirm": "تأكيد"
   },
   "auth": {
     "signIn": "تسجيل الدخول",
@@ -798,7 +799,9 @@
       "stores": "المخازن",
       "transactions": "الحركات",
       "stock-take": "الجرد",
-      "groups": "مجموعات القطع"
+      "groups": "مجموعات القطع",
+      "shortages": "نواقص الأعمال",
+      "counts": "عمليات الجرد"
     },
     "stockMovement": "حركة مخزون",
     "tx": {
@@ -1788,5 +1791,34 @@
     "whatToDo": "ما المطلوب عمله",
     "createWorkOrder": "إنشاء أمر العمل",
     "whoseHours": "ساعات من"
+  },
+  "invPhone": {
+    "shortagesHint": "القطع المخططة للأعمال المفتوحة التي لا يغطيها مخزنها، الأكثر إلحاحًا أولًا.",
+    "allStores": "كل المخازن",
+    "noShortages": "لا توجد نواقص.",
+    "store": "المخزن",
+    "short": "الناقص",
+    "countsHint": "افتح جردًا، واجرد من الهاتف (دون شبكة أيضًا)، ثم راجع الفروق ورحّلها.",
+    "newCount": "جرد جديد",
+    "partsCounted": "القطع المجرودة",
+    "opened": "فُتح",
+    "countNameHint": "مثال: مخزن أ، نوفمبر",
+    "openCount": "فتح الجرد",
+    "status": {
+      "Open": "مفتوح",
+      "Posted": "مُرحّل",
+      "Cancelled": "ملغى"
+    },
+    "postConfirm": "ترحيل الفروق كتسويات مخزون؟",
+    "cancelConfirm": "إلغاء هذا الجرد؟ لن يتغير شيء في المخزون.",
+    "posted": "رُحّل: سُوّيت {{count}} قطعة.",
+    "cancelCount": "إلغاء الجرد",
+    "post": "ترحيل {{count}} فرق",
+    "bin": "الرف",
+    "expected": "في المخزون",
+    "counted": "المجرود",
+    "difference": "الفرق",
+    "countedBy": "جرده",
+    "nothingCounted": "لم يُجرد شيء بعد."
   }
 }

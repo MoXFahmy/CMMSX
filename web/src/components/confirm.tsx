@@ -11,3 +11,12 @@ export function confirmDelete(name: string, onConfirm: () => Promise<unknown> | 
     onConfirm: () => void onConfirm(),
   });
 }
+
+/** Asks before an action that can't be undone (posting a count, cancelling it). */
+export function confirmAction(question: string, onConfirm: () => Promise<unknown> | void) {
+  modals.openConfirmModal({
+    title: question,
+    labels: { confirm: i18n.t('common.confirm'), cancel: i18n.t('common.cancel') },
+    onConfirm: () => void onConfirm(),
+  });
+}
