@@ -269,3 +269,18 @@
 - [ ] **Step 3: Add** the Arabic and the docs.
 - [ ] **Step 4: Run** the full suites: `wt-test`, `wt-vitest`, `wt-web` — Expected: all PASS.
 - [ ] **Step 5: Commit** `feat(0.14.0): Arabic for the new texts; failure analysis guide, README and technician app docs`.
+
+---
+
+## Deferred minors (final review)
+
+Found by the final review and left for a later release:
+
+- M5 logo GET sends no nosniff / CSP sandbox headers (type already checked by first bytes).
+- M6 the phone job can't name a code made inactive (the bundle lists active codes only).
+- M7 treeRows drops rows whose level is text (no chart uses such rows today).
+- M8 the print header repeats the period (and the asset on Asset work history).
+- M9 the report year box sends a request per keystroke and flashes the year error while typing.
+- M11 no site-limited user tests for Responsiveness and the PM annual plan (they rely on the global filters).
+- M12 Asset work history adds each work order's downtime hours, so a stop shared by two work orders counts twice.
+- M13 the Failure analysis report still says "Failure code" and "Not coded".
