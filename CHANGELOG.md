@@ -17,11 +17,13 @@ Small fixes to sites and access, from the 0.9.0 review.
 - A team's site can't be changed away from its open work and schedules; people with limited access give their teams a
   site.
 - The planning board shows people limited to some sites only the technicians who work there (or everywhere).
-- A site's request recipients must be able to see the site.
+- A site's request recipients must be able to see all of the site.
 - The import's automatic asset numbers skip numbers used in sites the person can't see (no more "already exists").
 - The dashboard's "Completed (30 days)" opens the work completed in the last 30 days (new "Completed since" filter);
   the More filters badge counts the team.
-- Saving a PM round keeps its assets in parts of the site the person can't see.
+- Saving a PM round keeps its assets in parts of the site the person can't see, and generating it covers them; only
+  assets the person can see can be added, and such a round can't be turned into a single-asset schedule by them.
+- An older page that moves work to another site drops a team that doesn't fit there; a team it sends is kept.
 
 ## [0.9.0] - 2026-11-22
 

@@ -198,8 +198,10 @@ public static class WorkOrderEndpoints
             // People limited to a branch: work with only an asset takes the asset's location (as when created), so it stays in the branch.
             if (db.CurrentBranchPaths is not null && input.LocationId is null && input.AssetId is { } onlyAsset)
                 input = input with { LocationId = await db.Assets.Where(a => a.Id == onlyAsset).Select(a => a.LocationId).FirstOrDefaultAsync(ct) };
-            // Pages from before teams (0.9.0) don't send the team: an edit from them keeps it.
-            if (input.ManagesTeam != true) input = input with { TeamId = w.TeamId };
+            // Pages from before teams (0.9.0) don't send the team: an edit from them keeps it where it still fits; a team they do
+            // send is a choice.
+            if (input.ManagesTeam != true && input.TeamId is null && w.TeamId is { } keep)
+                input = input with { TeamId = await db.Teams.AllSites().AnyAsync(t => t.Id == keep && (t.SiteId == null || t.SiteId == input.SiteId), ct) ? keep : null };
             var v = await ValidateAsync(input, db, ct, w.TeamId);
             var teamBefore = w.TeamId;
             if (!v.IsValid) return v.Problem();

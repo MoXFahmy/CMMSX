@@ -30,9 +30,9 @@ public static class TeamEndpoints
             }).ToListAsync(ct);
         }).RequireAuthorization();
 
-        g.MapPost("/", async (TeamInput input, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPost("/", async (TeamInput input, CmmsDbContext db, HttpContext http, CancellationToken ct) =>
         {
-            var v = await ValidateAsync(input, null, db, ct);
+            var v = await ValidateAsync(input, null, db, ct, Access.Of(http)?.Limited == true);
             if (!v.IsValid) return v.Problem();
             var t = new Team { Code = input.Code.Trim(), Name = input.Name.Trim() };
             Apply(t, input);
@@ -41,11 +41,11 @@ public static class TeamEndpoints
             return Results.Created($"/api/teams/{t.Id}", new { t.Id });
         }).RequirePermission(Permissions.PeopleManage);
 
-        g.MapPut("/{id:guid}", async (Guid id, TeamInput input, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPut("/{id:guid}", async (Guid id, TeamInput input, CmmsDbContext db, HttpContext http, CancellationToken ct) =>
         {
             var t = await db.Teams.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (t is null) return Results.NotFound();
-            var v = await ValidateAsync(input, id, db, ct);
+            var v = await ValidateAsync(input, id, db, ct, Access.Of(http)?.Limited == true);
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(t).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
             t.Code = input.Code.Trim(); t.Name = input.Name.Trim();
@@ -72,7 +72,8 @@ public static class TeamEndpoints
         t.SiteId = i.SiteId; t.Color = i.Color.Clean(); t.MemberIds = (i.MemberIds ?? []).Distinct().ToList(); t.IsActive = i.IsActive;
     }
 
-    private static async Task<Validator> ValidateAsync(TeamInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
+    /// <param name="limited">The person's own access is limited (not just the site switch).</param>
+    private static async Task<Validator> ValidateAsync(TeamInput i, Guid? id, CmmsDbContext db, CancellationToken ct, bool limited = false)
     {
         var v = new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200).MaxLength("color", i.Color, "Colour", 20);
         if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.Teams, t => t.Code == i.Code.Trim() && t.Id != id,
@@ -81,7 +82,7 @@ public static class TeamEndpoints
         if (i.SiteId is { } site && !await db.Sites.AnyAsync(s => s.Id == site, ct)) v.Add("siteId", "Choose a site.");
         var currentSite = id is { } tid ? await db.Teams.AllSites().Where(t => t.Id == tid).Select(t => new { t.SiteId }).FirstOrDefaultAsync(ct) : null;
         // People with limited access give their teams a site (a team of every site would reach sites they can't see).
-        if (db.CurrentSiteIds is not null && i.SiteId is null && !(currentSite is not null && currentSite.SiteId is null))
+        if (limited && i.SiteId is null && !(currentSite is not null && currentSite.SiteId is null))
             v.Add("siteId", "Choose the team's site.");
         // A team's site can't move away from its open work and schedules.
         if (i.SiteId is { } newSite && id is { } team && currentSite?.SiteId != newSite)

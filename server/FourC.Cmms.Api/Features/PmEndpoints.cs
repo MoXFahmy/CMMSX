@@ -203,23 +203,29 @@ public static class PmEndpoints
             var s = await db.PmSchedules.Include(x => x.ExtraTasks).Include(x => x.Assets).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (s is null) return Results.NotFound();
             var before = s.Assets.OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList();
+            // The round's assets that still exist, and those of them the editor can't see (another branch): only these may be kept
+            // past the site limits; any other asset must be one the editor sees.
+            var live = before.Count == 0 ? [] : (await db.Assets.AllSites().Where(a => before.Contains(a.Id)).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
+            var seen = before.Count == 0 ? [] : (await db.Assets.Where(a => before.Contains(a.Id)).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
+            var hidden = before.Where(a => live.Contains(a) && !seen.Contains(a)).ToList();
+            string? coversHidden = null;
             // A client that sends no asset list (e.g. one that predates rounds) leaves a round's list as it is, unless it makes
             // the schedule a single-asset one. Assets deleted since drop out.
             if (input.AssetIds is null && input.AssetId is null && before.Count > 0)
-            {
-                var live = (await db.Assets.AllSites().Where(a => before.Contains(a.Id)).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
                 input = input with { AssetIds = before.Where(live.Contains).ToList() };
-            }
-            // A round's assets the editor can't see (another branch) stay on it, after the ones they sent.
-            else if (db.CurrentSiteIds is not null && input.AssetIds is { } sent && before.Count > 0)
+            else if (hidden.Count > 0)
             {
-                var seen = (await db.Assets.Where(a => before.Contains(a.Id)).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
-                var live = (await db.Assets.AllSites().Where(a => before.Contains(a.Id)).Select(a => a.Id).ToListAsync(ct)).ToHashSet();
-                input = input with { AssetIds = [.. sent, .. before.Where(a => live.Contains(a) && !seen.Contains(a) && !sent.Contains(a))] };
+                // A round's assets the editor can't see stay on it, after the ones they sent; they can't turn it into something else.
+                if (input.AssetIds is { Count: > 0 } sent && input.AssetId is null && input.Type != PmScheduleType.Meter)
+                    input = input with { AssetIds = [.. sent, .. hidden.Where(a => !sent.Contains(a))] };
+                else coversHidden = "This round also covers assets in parts of the site you can't see.";
             }
-            // Pages from before teams (0.9.0) don't send the team: an edit from them keeps it.
-            if (input.ManagesTeam != true) input = input with { TeamId = s.TeamId };
-            var v = await ValidateScheduleAsync(input, id, db, ct);
+            // Pages from before teams (0.9.0) don't send the team: an edit from them keeps it where it still fits; a team they do
+            // send is a choice.
+            if (input.ManagesTeam != true && input.TeamId is null && s.TeamId is { } keep)
+                input = input with { TeamId = await db.Teams.AllSites().AnyAsync(t => t.Id == keep && (t.SiteId == null || t.SiteId == input.SiteId), ct) ? keep : null };
+            var v = await ValidateScheduleAsync(input, id, db, ct, hidden);
+            if (coversHidden is not null) v.Add("assetIds", coversHidden);
             v.Merge(ScheduleChangeRules(s, input));
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(s).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
@@ -463,7 +469,9 @@ public static class PmEndpoints
         else s.NextDueDate = null;
     }
 
-    private static async Task<Validator> ValidateScheduleAsync(ScheduleInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
+    /// <param name="keptHidden">Assets already on the round that the editor can't see (another branch): checked past the site limits.
+    /// Every other asset must be one the editor sees.</param>
+    private static async Task<Validator> ValidateScheduleAsync(ScheduleInput i, Guid? id, CmmsDbContext db, CancellationToken ct, IReadOnlyCollection<Guid>? keptHidden = null)
     {
         var v = PmScheduleRules(i, id);
         if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.PmSchedules, x => x.Code == i.Code.Trim() && x.Id != id,
@@ -480,10 +488,13 @@ public static class PmEndpoints
             if (round.Distinct().Count() != round.Count) v.Add("assetIds", "An asset is listed twice.");
             else
             {
-                // Past the site limits: a round may keep assets of a branch the editor can't see.
-                var elsewhere = await db.Assets.AllSites().Where(a => round.Contains(a.Id) && a.SiteId != i.SiteId).OrderBy(a => a.AssetNumber).Select(a => a.AssetNumber).ToListAsync(ct);
+                // Assets the editor names must be ones they see; those already on the round in a hidden branch are checked past the limits.
+                var kept = round.Where(a => keptHidden?.Contains(a) == true).ToList();
+                var named = round.Where(a => keptHidden?.Contains(a) != true).ToList();
+                var elsewhere = await db.Assets.Where(a => named.Contains(a.Id) && a.SiteId != i.SiteId).OrderBy(a => a.AssetNumber).Select(a => a.AssetNumber).ToListAsync(ct);
                 if (elsewhere.Count > 0) v.Add("assetIds", $"Assets must belong to the selected site: {string.Join(", ", elsewhere)}.");
-                else if (await db.Assets.AllSites().CountAsync(a => round.Contains(a.Id), ct) != round.Count) v.Add("assetIds", "Some listed assets no longer exist. Remove them from the list.");
+                else if (await db.Assets.CountAsync(a => named.Contains(a.Id), ct) + await db.Assets.AllSites().CountAsync(a => kept.Contains(a.Id), ct) != round.Count)
+                    v.Add("assetIds", "Some listed assets no longer exist. Remove them from the list.");
             }
             if (i.Type == PmScheduleType.Meter) v.Add("assetIds", "Meter schedules cannot cover several assets.");
             if (i.AssetId is not null) v.Add("assetId", "Choose either one asset or several assets.");

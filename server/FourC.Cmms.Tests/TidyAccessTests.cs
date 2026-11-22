@@ -129,7 +129,7 @@ public class TidyAccessTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var bOnly = Id(await Ok(await w.Admin.PostAsJsonAsync("/api/users", new { fullName = "B only", email = $"{Guid.NewGuid():N}@test.local", isActive = true, roleIds = new[] { manager }, password = UserPassword, siteIds = new[] { w.B.Site } })));
         var r = await SiteSettingsTests.TrySetSiteAsync(w.Admin, w.A.Site, new { requestRecipientIds = new[] { bOnly } });
         Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
-        Assert.Contains("Choose people who can see this site.", await r.Content.ReadAsStringAsync());
+        Assert.Contains("Choose people who can see all of this site.", await r.Content.ReadAsStringAsync());
     }
 
     // 8
@@ -180,5 +180,114 @@ public class TidyAccessTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Ok(await c.PutAsJsonAsync($"/api/pm-schedules/{round}", body));
         var assets = (await Ok(await w.Admin.GetAsync($"/api/pm-schedules/{round}"))).GetProperty("assets").EnumerateArray().Select(Id).ToList();
         Assert.Equal([w.A.Asset, hidden], assets);
+    }
+
+    // ---- From the 0.9.1 review ----
+
+    private static object RoundBody(World w, Guid location, params Guid[] assets) => new
+    {
+        name = "Round", siteId = w.A.Site, locationId = location, priority = "Medium", pmTaskId = w.Task, type = "FixedInterval", basis = "Scheduled",
+        frequency = 1, unit = "Week", workPeriodDays = 2, wholeMonth = false, leadDays = 0, startDate = Today, timeBased = false, extraTasks = Array.Empty<object>(),
+        assetIds = assets,
+    };
+
+    private async Task<(World W, Guid Hidden, Guid Round, HttpClient Branch)> RoundWorldAsync(string org)
+    {
+        var w = await WorldAsync(fx, org);
+        var annex = Id(await Ok(await w.Admin.PostAsJsonAsync("/api/locations", new { siteId = w.A.Site, code = "LA2", name = "Annex", type = "Building", criticality = "Medium", isActive = true })));
+        var hidden = Id(await Ok(await w.Admin.PostAsJsonAsync("/api/assets", new { name = "Annex pump", siteId = w.A.Site, locationId = annex, status = "Active", criticality = "Low", warrantyType = "None" })));
+        var round = Id(await Ok(await w.Admin.PostAsJsonAsync("/api/pm-schedules", RoundBody(w, w.A.Location, w.A.Asset, hidden))));
+        var (branch, _) = await UserAsync(fx, w.Admin, "Administrator", locationIds: [w.A.Location]);
+        return (w, hidden, round, branch);
+    }
+
+    [SkippableFact]
+    public async Task A_round_doesnt_take_assets_the_person_cannot_see()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (w, hidden, round, branch) = await RoundWorldAsync("Round Take Co");
+        var extra = Id(await Ok(await w.Admin.PostAsJsonAsync("/api/assets", new { name = "Annex fan", siteId = w.A.Site, locationId = (await Ok(await w.Admin.GetAsync($"/api/assets/{hidden}"))).GetProperty("locationId").GetGuid(), status = "Active", criticality = "Low", warrantyType = "None" })));
+        Assert.Equal(HttpStatusCode.BadRequest, (await branch.PostAsJsonAsync("/api/pm-schedules", RoundBody(w, w.A.Location, w.A.Asset, extra))).StatusCode);
+        var body = JsonSerializer.Deserialize<Dictionary<string, object?>>((await Ok(await branch.GetAsync($"/api/pm-schedules/{round}"))).GetRawText())!;
+        body["assetIds"] = new[] { w.A.Asset, extra };
+        Assert.Equal(HttpStatusCode.BadRequest, (await branch.PutAsJsonAsync($"/api/pm-schedules/{round}", body)).StatusCode);
+        // Someone limited to site A naming site B's asset learns nothing about it.
+        var (siteA, _) = await UserAsync(fx, w.Admin, "Administrator", [w.A.Site]);
+        var other = await siteA.PostAsJsonAsync("/api/pm-schedules", RoundBody(w, w.A.Location, w.A.Asset, w.B.Asset));
+        Assert.Equal(HttpStatusCode.BadRequest, other.StatusCode);
+        Assert.DoesNotContain(w.B.AssetNumber, await other.Content.ReadAsStringAsync());
+    }
+
+    [SkippableFact]
+    public async Task A_branch_user_cant_turn_a_round_with_hidden_assets_into_one_asset()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (w, _, round, branch) = await RoundWorldAsync("Round Convert Co");
+        var body = JsonSerializer.Deserialize<Dictionary<string, object?>>((await Ok(await branch.GetAsync($"/api/pm-schedules/{round}"))).GetRawText())!;
+        body["assetIds"] = Array.Empty<Guid>();
+        body["assetId"] = w.A.Asset;
+        var single = await branch.PutAsJsonAsync($"/api/pm-schedules/{round}", body);
+        Assert.Equal(HttpStatusCode.BadRequest, single.StatusCode);
+        Assert.Contains("This round also covers assets in parts of the site you can't see.", await single.Content.ReadAsStringAsync());
+        body["assetId"] = null; // a location schedule
+        Assert.Equal(HttpStatusCode.BadRequest, (await branch.PutAsJsonAsync($"/api/pm-schedules/{round}", body)).StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task Generating_a_round_as_a_branch_user_covers_every_asset()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (w, hidden, round, branch) = await RoundWorldAsync("Round Generate Co");
+        await Ok(await branch.PostAsJsonAsync("/api/pm/generate", new { until = Today, ids = new[] { round } }));
+        var wo = (await Ok(await w.Admin.GetAsync($"/api/work-orders?search=Round"))).GetProperty("items").EnumerateArray().First(x => x.GetProperty("title").GetString()!.StartsWith("Round"));
+        var assets = (await Ok(await w.Admin.GetAsync($"/api/work-orders/{Id(wo)}"))).GetProperty("assets").EnumerateArray().Select(Id).ToList();
+        Assert.Equal([w.A.Asset, hidden], assets);
+    }
+
+    [SkippableFact]
+    public async Task Unlimited_admins_switched_to_one_site_can_still_make_every_site_teams()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var w = await WorldAsync(fx, "Switched Team Co");
+        var m = new HttpRequestMessage(HttpMethod.Post, "/api/teams") { Content = JsonContent.Create(new { code = "ALL", name = "Everywhere", memberIds = Array.Empty<Guid>(), isActive = true }) };
+        m.Headers.Add("X-Cmx-Site", w.A.Site.ToString());
+        await Ok(await w.Admin.SendAsync(m));
+    }
+
+    [SkippableFact]
+    public async Task Older_pages_keep_a_team_only_where_it_fits()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var w = await WorldAsync(fx, "Old Page Fit Co");
+        var teamA = Id(await Ok(await w.Admin.PostAsJsonAsync("/api/teams", new { code = "TA", name = "A crew", siteId = w.A.Site, memberIds = Array.Empty<Guid>(), isActive = true })));
+        var teamB = Id(await Ok(await w.Admin.PostAsJsonAsync("/api/teams", new { code = "TB", name = "B crew", siteId = w.B.Site, memberIds = Array.Empty<Guid>(), isActive = true })));
+        var wo = Id(await Ok(await w.Admin.PostAsJsonAsync("/api/work-orders", new { title = "Moving job", siteId = w.A.Site, locationId = w.A.Location, type = "Corrective", priority = "Low", teamId = teamA })));
+        async Task<JsonElement> Detail() => await Ok(await w.Admin.GetAsync($"/api/work-orders/{wo}"));
+        // An older page moves it to site B: A's team doesn't fit there and goes.
+        await Ok(await w.Admin.PutAsJsonAsync($"/api/work-orders/{wo}", new { title = "Moving job", siteId = w.B.Site, locationId = w.B.Location, type = "Corrective", priority = "Low", rowVersion = (await Detail()).GetProperty("rowVersion").GetString() }));
+        Assert.Equal(JsonValueKind.Null, (await Detail()).GetProperty("teamId").ValueKind);
+        // A team sent without the flag is still a choice.
+        await Ok(await w.Admin.PutAsJsonAsync($"/api/work-orders/{wo}", new { title = "Moving job", siteId = w.B.Site, locationId = w.B.Location, type = "Corrective", priority = "Low", teamId = teamB, rowVersion = (await Detail()).GetProperty("rowVersion").GetString() }));
+        Assert.Equal(teamB, (await Detail()).GetProperty("teamId").GetGuid());
+        // PM schedules keep their team the same way.
+        var s = JsonSerializer.Deserialize<Dictionary<string, object?>>((await Ok(await w.Admin.GetAsync($"/api/pm-schedules/{w.A.Schedule}"))).GetRawText())!;
+        s["teamId"] = teamA; s["managesTeam"] = true;
+        await Ok(await w.Admin.PutAsJsonAsync($"/api/pm-schedules/{w.A.Schedule}", s));
+        s = JsonSerializer.Deserialize<Dictionary<string, object?>>((await Ok(await w.Admin.GetAsync($"/api/pm-schedules/{w.A.Schedule}"))).GetRawText())!;
+        s.Remove("teamId"); s.Remove("managesTeam"); s["name"] = "Renamed by an older page";
+        await Ok(await w.Admin.PutAsJsonAsync($"/api/pm-schedules/{w.A.Schedule}", s));
+        Assert.Equal(teamA, (await Ok(await w.Admin.GetAsync($"/api/pm-schedules/{w.A.Schedule}"))).GetProperty("teamId").GetGuid());
+    }
+
+    [SkippableFact]
+    public async Task Request_recipients_must_see_all_of_the_site()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var w = await WorldAsync(fx, "Recipients Whole Co");
+        var manager = await RoleAsync(w.Admin, "Maintenance Manager");
+        var partly = Id(await Ok(await w.Admin.PostAsJsonAsync("/api/users", new { fullName = "Hall only", email = $"{Guid.NewGuid():N}@test.local", isActive = true, roleIds = new[] { manager }, password = UserPassword, locationIds = new[] { w.A.Location } })));
+        var r = await SiteSettingsTests.TrySetSiteAsync(w.Admin, w.A.Site, new { requestRecipientIds = new[] { partly } });
+        Assert.Equal(HttpStatusCode.BadRequest, r.StatusCode);
+        Assert.Contains("Choose people who can see all of this site.", await r.Content.ReadAsStringAsync());
     }
 }

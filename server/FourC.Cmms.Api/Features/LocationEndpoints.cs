@@ -122,8 +122,15 @@ public static class SiteEndpoints
             else if (who.Count > 0 && access is not null)
             {
                 // Recipients who can't see the site would never get the e-mail (it only goes to people who can).
+                // ...and must see all of it: someone limited to part of the site would miss requests elsewhere in it.
                 foreach (var person in who)
-                    if (!Access.CoversSite(await access.GetAsync(person, ct), id ?? Guid.Empty)) { v.Add("settings.requestRecipientIds", "Choose people who can see this site."); break; }
+                {
+                    var theirs = await access.GetAsync(person, ct);
+                    if (!Access.CoversSite(theirs, id ?? Guid.Empty) || theirs.Branches is not null)
+                    {
+                        v.Add("settings.requestRecipientIds", "Choose people who can see all of this site."); break;
+                    }
+                }
             }
         }
         return v;

@@ -66,7 +66,7 @@ export function WorkOrdersPage() {
   const filtersActive = ['search', 'siteId', 'priority', 'type', 'tradeId', ...EXTRA_FILTERS].some((k) => p(k));
   const tradeOpts = useMemo(() => (trades ?? []).map((x) => ({ value: x.id, label: x.name })), [trades]);
   const { data: teams } = useTeams(p('siteId') || null);
-  const extraCount = [p('locationId'), p('assetId'), p('assigneeId'), p('teamId'), p('createdFrom') || p('createdTo'), p('dueFrom') || p('dueTo'), p('source'), p('completedFrom')].filter(Boolean).length;
+  const extraCount = [p('locationId'), p('assetId'), p('assigneeId'), p('teamId'), p('createdFrom') || p('createdTo'), p('dueFrom') || p('dueTo'), p('source')].filter(Boolean).length; // "completed since" shows as a chip only
   const [moreOpen, more] = useDisclosure(extraCount > 0);
   const locOpts = useMemo(() => locationOptions(h?.locations ?? [], p('siteId') || null), [h, lp.params]); // eslint-disable-line react-hooks/exhaustive-deps
   const { data: employees } = useEmployees(p('siteId') || null);
