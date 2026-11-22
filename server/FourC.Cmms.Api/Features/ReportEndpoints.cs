@@ -40,6 +40,8 @@ public static class ReportEndpoints
         new("wo-backlog", "Work", "Work order backlog", "Open work orders by priority and age, with overdue and on-hold counts.", Permissions.WorkOrdersView, [SiteP]),
         new("targets-met", "Work", "Targets met", "Requests and work orders that met their response and completion targets, by month or priority.", Permissions.WorkOrdersView,
             [Range, SiteP, GroupBy("month", ("month", "Month"), ("priority", "Priority"))]),
+        new("responsiveness", "Work", "Responsiveness", "Each request and work order against its response and completion targets, with averages by priority and trade.", Permissions.WorkOrdersView,
+            [Range, SiteP, GroupBy("order", ("order", "Order"), ("priority", "Priority"), ("trade", "Trade"))]),
         new("wo-throughput", "Work", "Work order throughput", "Work orders raised and completed per month, on-time completion and average turnaround.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("pm-compliance", "Work", "PM compliance", "Preventive work due in the period: completed on time, late, or missed.", Permissions.PmView,
             [Range, SiteP, GroupBy("month", ("month", "Month"), ("schedule", "PM schedule"), ("trade", "Trade"))]),
@@ -52,6 +54,7 @@ public static class ReportEndpoints
         new("reliability", "Reliability", "Asset reliability (MTBF / MTTR)", "Breakdowns per asset with downtime, mean time between failures and mean time to repair.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("downtime", "Reliability", "Downtime log", "Every stop in the period with how long the asset was stopped during its running time.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("out-of-limits", "Reliability", "Out of limits", "Readings at an alert or alarm level, with the work they raised.", Permissions.WorkOrdersView, [Range, SiteP]),
+        new("failure-tree", "Reliability", "Failure tree", "Completed work by symptom, cause and remedy, with hours, downtime and cost.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("failure-pareto", "Reliability", "Failure analysis", "Breakdowns by failure code — the few causes behind most of the downtime.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("maintenance-costs", "Costs", "Maintenance costs", "Labour, parts and other costs booked in the period.", Permissions.WorkOrdersView,
             [Range, SiteP, GroupBy("asset", ("asset", "Asset"), ("site", "Site"), ("category", "Asset category"), ("type", "Work type"), ("trade", "Trade"), ("team", "Team"), ("month", "Month"))]),
@@ -103,6 +106,8 @@ public static class ReportEndpoints
                 "cancelled-work" => await CancelledAsync(db, a, ct),
                 "reliability" => await ReliabilityAsync(db, a, ct),
                 "failure-pareto" => await FailureParetoAsync(db, a, ct),
+                "failure-tree" => await FailureTreeAsync(db, a, ct),
+                "responsiveness" => await ResponsivenessAsync(db, a, ct),
                 "out-of-limits" => await OutOfLimitsAsync(db, a, ct),
                 "downtime" => await DowntimeLogAsync(db, a, ct),
                 "maintenance-costs" => await CostsAsync(db, a, ct),
@@ -496,26 +501,168 @@ public static class ReportEndpoints
             [new("Breakdowns", total), new("Coded", Pct(fs.Count(f => f.Code is not null), total), "percent"), new("Distinct causes", rows.Count)]);
     }
 
+    /// <summary>The failure tree's work (0.14.0): a symptom, cause or remedy recorded, or a breakdown (also the work order list's inFailureTree filter).</summary>
+    internal static IQueryable<WorkOrder> InFailureTree(IQueryable<WorkOrder> q) =>
+        q.Where(w => w.SymptomId != null || w.FailureCodeId != null || w.RemedyId != null || w.Type == WorkType.Breakdown || w.AssetWasDown);
+
+    public const string NotRecorded = "Not recorded";
+
+    private static async Task<ReportResult> FailureTreeAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
+    {
+        var (s, e) = (Start(a.From), End(a.To));
+        var wos = InFailureTree(Wo(db, a).Where(w => w.CompletedAt >= s && w.CompletedAt < e));
+        var items = await wos.Select(w => new
+        {
+            w.Id, w.SymptomId, SymptomCode = w.Symptom!.Code, SymptomName = w.Symptom.Name, w.FailureCodeId, CauseCode = w.FailureCode!.Code, CauseName = w.FailureCode.Name,
+            w.RemedyId, RemedyCode = w.Remedy!.Code, RemedyName = w.Remedy.Name, w.DowntimeHours, w.DowntimeEventId, w.CompletedAt, w.CreatedAt,
+        }).ToListAsync(ct);
+        var costs = (await CostLinesAsync(db, wos, null, null, ct)).GroupBy(c => c.WoId)
+            .ToDictionary(g => g.Key, g => (Hours: g.Sum(x => x.Hours), Cost: g.Sum(x => x.Labor + x.Parts + x.Other)));
+        // Work orders sharing one stop carry its hours once, as in the failure analysis.
+        var counted = items.Where(x => x.DowntimeEventId != null).GroupBy(x => x.DowntimeEventId)
+            .Select(g => g.OrderBy(x => x.CompletedAt ?? DateTimeOffset.MaxValue).ThenBy(x => x.CreatedAt).First().Id).ToHashSet();
+        decimal Down(Guid id, Guid? stop, decimal? hours) => stop is null || counted.Contains(id) ? hours ?? 0 : 0;
+        var query = $"inFailureTree=true&completedFrom={a.From:yyyy-MM-dd}&completedTo={a.To:yyyy-MM-dd}" + (a.SiteId is { } site ? $"&siteId={site}" : "");
+        static string Q(Guid? id) => id?.ToString() ?? "none";
+        var rows = new List<Dictionary<string, object?>>();
+        void Line<T>(int level, string node, List<T> group, Func<T, Guid> id, Func<T, Guid?> stop, Func<T, decimal?> hours, string filter) => rows.Add(Row(
+            ("node", node), ("workOrders", group.Count),
+            ("hours", R2(group.Sum(x => costs.GetValueOrDefault(id(x)).Hours))), ("downtime", R2(group.Sum(x => Down(id(x), stop(x), hours(x))))),
+            ("cost", R2(group.Sum(x => costs.GetValueOrDefault(id(x)).Cost))), ("level", level), ("listQuery", $"{query}&{filter}")));
+        static IEnumerable<(List<T> Items, string Label, Guid? Key)> Groups<T>(IEnumerable<T> xs, Func<T, Guid?> key, Func<T, string> label) =>
+            xs.GroupBy(key).Select(g => (Items: g.ToList(), Label: g.Key is null ? NotRecorded : label(g.First()), Key: g.Key))
+                .OrderByDescending(g => g.Items.Count).ThenBy(g => g.Key is null).ThenBy(g => g.Label, StringComparer.CurrentCulture);
+        foreach (var sg in Groups(items, x => x.SymptomId, x => $"{x.SymptomCode} · {x.SymptomName}"))
+        {
+            var sf = $"symptomId={Q(sg.Key)}";
+            Line(0, sg.Label, sg.Items, x => x.Id, x => x.DowntimeEventId, x => x.DowntimeHours, sf);
+            foreach (var cg in Groups(sg.Items, x => x.FailureCodeId, x => $"{x.CauseCode} · {x.CauseName}"))
+            {
+                var cf = $"{sf}&causeId={Q(cg.Key)}";
+                Line(1, cg.Label, cg.Items, x => x.Id, x => x.DowntimeEventId, x => x.DowntimeHours, cf);
+                foreach (var rg in Groups(cg.Items, x => x.RemedyId, x => $"{x.RemedyCode} · {x.RemedyName}"))
+                    Line(2, rg.Label, rg.Items, x => x.Id, x => x.DowntimeEventId, x => x.DowntimeHours, $"{cf}&remedyId={Q(rg.Key)}");
+            }
+        }
+        // The first column's fixed words ("Not recorded") are translated here, at every level.
+        foreach (var row in rows.Where(r => (string)r["node"]! == NotRecorded)) row["node"] = Translator.T(NotRecorded);
+        return new("failure-tree", "Failure tree", Period(a),
+            [new("node", "Symptom → cause → remedy"), new("workOrders", "Work orders", "number"), new("hours", "Labour hours", "hours"), new("downtime", "Downtime (h)", "hours"),
+             new("cost", "Cost", "currency")],
+            rows, new Chart("bar", "node", ["workOrders"]),
+            [new("Work orders", items.Count), new("With a symptom", Pct(items.Count(x => x.SymptomId != null), items.Count), "percent"),
+             new("With a cause", Pct(items.Count(x => x.FailureCodeId != null), items.Count), "percent"), new("With a remedy", Pct(items.Count(x => x.RemedyId != null), items.Count), "percent")]);
+    }
+
+    private static async Task<ReportResult> ResponsivenessAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
+    {
+        var (s, e) = (Start(a.From), End(a.To));
+        var now = DateTimeOffset.UtcNow;
+        const int most = 5000;
+        var rq = db.WorkRequests.AsNoTracking().Where(r => r.Status != WorkRequestStatus.Cancelled && r.RespondBy >= s && r.RespondBy < e);
+        if (a.SiteId is { } site) rq = rq.Where(r => r.SiteId == site);
+        var requests = await rq.OrderBy(r => r.RespondBy).Take(most).Select(r => new
+        {
+            r.Id, r.Number, r.Title, r.Priority, r.CreatedAt, RespondBy = r.RespondBy!.Value, r.DecidedAt,
+            Finished = r.Status == WorkRequestStatus.Approved || r.Status == WorkRequestStatus.Closed || r.Status == WorkRequestStatus.Rejected,
+            WorkTrade = db.WorkOrders.Where(w => w.Id == r.WorkOrderId).Select(w => w.Trade!.Name).FirstOrDefault(),
+            TypeTrade = db.Trades.Where(t => t.Id == r.RequestType!.DefaultTradeId).Select(t => t.Name).FirstOrDefault(),
+        }).ToListAsync(ct);
+        var works = await Wo(db, a).Where(w => w.Status != WorkOrderStatus.Cancelled
+                && (w.WorkRequestId == null && w.StartBy >= s && w.StartBy < e || w.PmScheduleId == null && w.DueAt >= s && w.DueAt < e))
+            .OrderBy(w => w.StartBy ?? w.DueAt).Take(most).Select(w => new
+            {
+                w.Id, w.Number, w.Title, w.Priority, Trade = w.Trade!.Name, w.CreatedAt, w.WorkRequestId, w.PmScheduleId, w.StartBy, w.RespondedAt, w.DueAt, w.CompletedAt,
+                Finished = w.Status == WorkOrderStatus.Completed || w.Status == WorkOrderStatus.Closed,
+            }).ToListAsync(ct);
+        string? Word(DateTimeOffset deadline, DateTimeOffset? done, bool finished) => Outcome(deadline, done, finished, now) switch
+        {
+            true => "Met", false => "Missed", null => done is null && !finished ? "Pending" : null, // finished with no time recorded: not judged
+        };
+        static decimal? Hours(DateTimeOffset? done, DateTimeOffset from) => done is { } d ? Math.Round((decimal)(d - from).TotalHours, 1) : null;
+        var orders = requests.Select(r => new Order(r.Number, r.Title, r.Priority, r.WorkTrade ?? r.TypeTrade, r.Id, null,
+                r.RespondBy, r.DecidedAt, Hours(r.DecidedAt, r.CreatedAt), Word(r.RespondBy, r.DecidedAt, r.Finished), null, null, null, null))
+            .Concat(works.Select(w =>
+            {
+                var respond = w.WorkRequestId == null && w.StartBy >= s && w.StartBy < e ? w.StartBy : null;
+                var due = w.PmScheduleId == null && w.DueAt >= s && w.DueAt < e ? w.DueAt : null;
+                return new Order(w.Number, w.Title, w.Priority, w.Trade, null, w.Id,
+                    respond, respond is null ? null : w.RespondedAt, respond is null ? null : Hours(w.RespondedAt, w.CreatedAt), respond is { } rb ? Word(rb, w.RespondedAt, w.Finished) : null,
+                    due, due is null ? null : w.CompletedAt, due is null ? null : Hours(w.CompletedAt, w.CreatedAt), due is { } d ? Word(d, w.CompletedAt, w.Finished) : null);
+            }))
+            .OrderBy(o => o.RespondBy ?? o.DueAt).ToList();
+        decimal? Avg(IEnumerable<decimal?> xs) => xs.OfType<decimal>().ToList() is { Count: > 0 } l ? Math.Round(l.Average(), 1) : null;
+        decimal? MetPct(IEnumerable<string?> xs) { var l = xs.Where(x => x is "Met" or "Missed").ToList(); return Pct(l.Count(x => x == "Met"), l.Count); }
+        var summary = new List<Kpi>
+        {
+            new("Response targets met", MetPct(orders.Select(o => o.Response)), "percent"), new("Avg. response (h)", Avg(orders.Select(o => o.ResponseHours)), "hours"),
+            new("Completion targets met", MetPct(orders.Select(o => o.Completion)), "percent"), new("Avg. completion (h)", Avg(orders.Select(o => o.CompletionHours)), "hours"),
+        };
+        var subtitle = requests.Count >= most || works.Count >= most ? $"{Period(a)} · the first 5,000" : Period(a);
+        if (a.GroupBy is "priority" or "trade")
+        {
+            var byPriority = a.GroupBy == "priority";
+            var groups = byPriority
+                ? orders.GroupBy(o => o.Priority).OrderByDescending(g => g.Key).Select(g => (Label: g.Key.ToString(), Items: g.ToList()))
+                : orders.GroupBy(o => o.Trade ?? "No trade").OrderBy(g => g.Key == "No trade").ThenBy(g => g.Key).Select(g => (Label: g.Key, Items: g.ToList()));
+            var rows = groups.Select(g => Row(("group", g.Label), ("orders", g.Items.Count), ("responseAvg", Avg(g.Items.Select(o => o.ResponseHours))),
+                ("responsePct", MetPct(g.Items.Select(o => o.Response))), ("completionAvg", Avg(g.Items.Select(o => o.CompletionHours))),
+                ("completionPct", MetPct(g.Items.Select(o => o.Completion))))).ToList();
+            return new("responsiveness", "Responsiveness", subtitle,
+                [new("group", byPriority ? "Priority" : "Trade"), new("orders", "Orders", "number"), new("responseAvg", "Avg. response (h)", "hours"), new("responsePct", "Response %", "percent"),
+                 new("completionAvg", "Avg. completion (h)", "hours"), new("completionPct", "Completion %", "percent")],
+                rows, new Chart("bar", "group", ["responsePct", "completionPct"]), summary);
+        }
+        string? T(string? word) => word is null ? null : Translator.T(word);
+        var list = orders.Select(o => Row(("number", o.Number), ("title", o.Title), ("priority", Translator.T(o.Priority.ToString())), ("trade", o.Trade),
+            ("respondBy", o.RespondBy), ("respondedAt", o.RespondedAt), ("responseHours", o.ResponseHours), ("response", T(o.Response)),
+            ("dueAt", o.DueAt), ("completedAt", o.CompletedAt), ("completionHours", o.CompletionHours), ("completion", T(o.Completion)),
+            ("requestId", o.RequestId), ("workOrderId", o.WorkOrderId))).ToList();
+        return new("responsiveness", "Responsiveness", subtitle,
+            [new("number", "Number"), new("title", "Title"), new("priority", "Priority"), new("trade", "Trade"), new("respondBy", "Respond by", "datetime"),
+             new("respondedAt", "Responded", "datetime"), new("responseHours", "Response (h)", "hours"), new("response", "Response"), new("dueAt", "Due", "datetime"),
+             new("completedAt", "Completed", "datetime"), new("completionHours", "Completion (h)", "hours"), new("completion", "Completion")],
+            list, null, summary);
+    }
+
+    /// <summary>One request or work order in the responsiveness report.</summary>
+    private sealed record Order(string Number, string Title, WorkPriority Priority, string? Trade, Guid? RequestId, Guid? WorkOrderId,
+        DateTimeOffset? RespondBy, DateTimeOffset? RespondedAt, decimal? ResponseHours, string? Response,
+        DateTimeOffset? DueAt, DateTimeOffset? CompletedAt, decimal? CompletionHours, string? Completion);
+
     // ---------------------------------------------------------------- costs
-    private sealed record CostLine(Guid WoId, int Y, int M, decimal Labor, decimal Parts, decimal Other);
+    /// <summary>A work order's labour, parts and other costs in one month (and its labour hours, 0.14.0).</summary>
+    internal sealed record CostLine(Guid WoId, int Y, int M, decimal Labor, decimal Parts, decimal Other, decimal Hours = 0);
+
+    /// <summary>
+    /// The cost lines of <paramref name="wos"/> per work order and month: labour by its work date, parts issued (net of returns) by their date,
+    /// other costs by when they were added; <paramref name="from"/> and <paramref name="to"/> bound the dates (null: all).
+    /// </summary>
+    internal static async Task<List<CostLine>> CostLinesAsync(CmmsDbContext db, IQueryable<WorkOrder> wos, DateOnly? from, DateOnly? to, CancellationToken ct)
+    {
+        var lq = from l in db.WorkOrderLabor.AsNoTracking() join w in wos on l.WorkOrderId equals w.Id select l;
+        if (from is { } lf) lq = lq.Where(l => l.WorkDate >= lf);
+        if (to is { } lt) lq = lq.Where(l => l.WorkDate <= lt);
+        var labor = await lq.GroupBy(l => new { l.WorkOrderId, l.WorkDate.Year, l.WorkDate.Month })
+            .Select(g => new CostLine(g.Key.WorkOrderId, g.Key.Year, g.Key.Month, g.Sum(x => x.Hours * x.Rate + x.OvertimeHours * x.OvertimeRate), 0, 0, g.Sum(x => x.Hours + x.OvertimeHours)))
+            .ToListAsync(ct);
+        var tq = from t in db.StockTransactions.AsNoTracking() join w in wos on t.WorkOrderId equals w.Id
+                 where t.Type == StockTransactionType.Issue || t.Type == StockTransactionType.Return select t;
+        if (from is { } tf) tq = tq.Where(t => t.Date >= tf);
+        if (to is { } tt) tq = tq.Where(t => t.Date <= tt);
+        var parts = await tq.GroupBy(t => new { WorkOrderId = t.WorkOrderId!.Value, t.Date.Year, t.Date.Month })
+            .Select(g => new CostLine(g.Key.WorkOrderId, g.Key.Year, g.Key.Month, 0, g.Sum(x => -x.Quantity * x.UnitCost), 0, 0)).ToListAsync(ct);
+        var cq = from c in db.WorkOrderCosts.AsNoTracking() join w in wos on c.WorkOrderId equals w.Id select c;
+        if (from is { } cf) { var cs = Start(cf); cq = cq.Where(c => c.CreatedAt >= cs); }
+        if (to is { } ctd) { var ce = End(ctd); cq = cq.Where(c => c.CreatedAt < ce); }
+        var other = await cq.GroupBy(c => new { c.WorkOrderId, c.CreatedAt.Year, c.CreatedAt.Month })
+            .Select(g => new CostLine(g.Key.WorkOrderId, g.Key.Year, g.Key.Month, 0, 0, g.Sum(x => x.Quantity * x.UnitCost), 0)).ToListAsync(ct);
+        return labor.Concat(parts).Concat(other).ToList();
+    }
 
     private static async Task<ReportResult> CostsAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
     {
-        var (s, e) = (Start(a.From), End(a.To));
-        var wos = Wo(db, a);
-        var labor = await (from l in db.WorkOrderLabor.AsNoTracking() join w in wos on l.WorkOrderId equals w.Id
-                           where l.WorkDate >= a.From && l.WorkDate <= a.To
-                           group l by new { l.WorkOrderId, l.WorkDate.Year, l.WorkDate.Month } into g
-                           select new CostLine(g.Key.WorkOrderId, g.Key.Year, g.Key.Month, g.Sum(x => x.Hours * x.Rate + x.OvertimeHours * x.OvertimeRate), 0, 0)).ToListAsync(ct);
-        var parts = await (from t in db.StockTransactions.AsNoTracking() join w in wos on t.WorkOrderId equals w.Id
-                           where t.Date >= a.From && t.Date <= a.To && (t.Type == StockTransactionType.Issue || t.Type == StockTransactionType.Return)
-                           group t by new { WorkOrderId = t.WorkOrderId!.Value, t.Date.Year, t.Date.Month } into g
-                           select new CostLine(g.Key.WorkOrderId, g.Key.Year, g.Key.Month, 0, g.Sum(x => -x.Quantity * x.UnitCost), 0)).ToListAsync(ct);
-        var other = await (from c in db.WorkOrderCosts.AsNoTracking() join w in wos on c.WorkOrderId equals w.Id
-                           where c.CreatedAt >= s && c.CreatedAt < e
-                           group c by new { c.WorkOrderId, c.CreatedAt.Year, c.CreatedAt.Month } into g
-                           select new CostLine(g.Key.WorkOrderId, g.Key.Year, g.Key.Month, 0, 0, g.Sum(x => x.Quantity * x.UnitCost))).ToListAsync(ct);
-        var lines = labor.Concat(parts).Concat(other).ToList();
+        var lines = await CostLinesAsync(db, Wo(db, a), a.From, a.To, ct);
         var ids = lines.Select(l => l.WoId).Distinct().ToList();
         var dims = new Dictionary<Guid, (string Site, string Type, string Trade, string Team, string Asset, string Category)>();
         foreach (var chunk in ids.Chunk(1000))

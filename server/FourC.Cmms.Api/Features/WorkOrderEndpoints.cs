@@ -55,6 +55,8 @@ public static class WorkOrderEndpoints
         public string? SymptomId { get; set; }
         public string? CauseId { get; set; }
         public string? RemedyId { get; set; }
+        /// <summary>The failure tree's work (0.14.0): a code recorded, or a breakdown — so a report line opens the same work orders.</summary>
+        public bool? InFailureTree { get; set; }
         public bool? Mine { get; set; }
         /// <summary>Old name of <see cref="Late"/> (phones and bookmarks).</summary>
         public bool? Overdue { get; set; }
@@ -699,6 +701,7 @@ public static class WorkOrderEndpoints
         { var before = new DateTimeOffset(completedTo.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CompletedAt < before); }
         if (f.SymptomId is { Length: > 0 } sy) q = sy == "none" ? q.Where(w => w.SymptomId == null) : Guid.TryParse(sy, out var syId) ? q.Where(w => w.SymptomId == syId) : q;
         if (f.CauseId is { Length: > 0 } ca) q = ca == "none" ? q.Where(w => w.FailureCodeId == null) : Guid.TryParse(ca, out var caId) ? q.Where(w => w.FailureCodeId == caId) : q;
+        if (f.InFailureTree == true) q = ReportEndpoints.InFailureTree(q);
         if (f.RemedyId is { Length: > 0 } re) q = re == "none" ? q.Where(w => w.RemedyId == null) : Guid.TryParse(re, out var reId) ? q.Where(w => w.RemedyId == reId) : q;
         if (f.CreatedTo is { } ctd && ctd < DateOnly.MaxValue) { var before = new DateTimeOffset(ctd.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt < before); }
         if (f.DueFrom is { } df) q = q.Where(w => w.DueDate >= df);
