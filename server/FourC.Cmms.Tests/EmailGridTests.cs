@@ -25,8 +25,8 @@ public class EmailGridTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var org = await OrgAsync(fx, emailOn: false);
         var status = await Ok(await org.Admin.GetAsync("/api/email/status"));
         var row = status.GetProperty("grid").EnumerateArray().Single(r => r.GetProperty("key").GetString() == EmailEvents.WorkOrderCompleted);
-        Assert.Equal(["requestRecipients", "issuer"], row.GetProperty("applicable").EnumerateArray().Select(x => x.GetString()!).ToArray());
-        Assert.Equal(["issuer"], row.GetProperty("defaults").EnumerateArray().Select(x => x.GetString()!).ToArray());
+        Assert.Equal(["requestRecipients", "workRecipients", "issuer"], row.GetProperty("applicable").EnumerateArray().Select(x => x.GetString()!).ToArray());
+        Assert.Equal(["workRecipients", "issuer"], row.GetProperty("defaults").EnumerateArray().Select(x => x.GetString()!).ToArray());
         Assert.DoesNotContain(status.GetProperty("grid").EnumerateArray(), r => r.GetProperty("key").GetString()!.StartsWith("po."));
     }
 

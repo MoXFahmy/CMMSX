@@ -67,7 +67,8 @@ public class LoopModelTests(ApiFixture fx) : IClassFixture<ApiFixture>
     [Fact]
     public void Email_kinds_use_the_defaults_until_configured()
     {
-        Assert.Equal(new HashSet<string> { EmailRecipientKinds.Issuer }, EmailEvents.KindsOn(new TenantSettings(), EmailEvents.WorkOrderCompleted));
+        // 0.12.0: the work order's own recipients (from its PM and template) hear by default too.
+        Assert.Equal(new HashSet<string> { EmailRecipientKinds.WorkRecipients, EmailRecipientKinds.Issuer }, EmailEvents.KindsOn(new TenantSettings(), EmailEvents.WorkOrderCompleted));
         var s = new TenantSettings { EmailRecipients = new() { [EmailEvents.WorkOrderCompleted] = [EmailRecipientKinds.Issuer, EmailRecipientKinds.Technicians] } };
         Assert.Equal(new HashSet<string> { EmailRecipientKinds.Issuer }, EmailEvents.KindsOn(s, EmailEvents.WorkOrderCompleted));
         s.EmailRecipients[EmailEvents.WorkOrderCompleted] = [];
