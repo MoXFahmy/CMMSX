@@ -717,6 +717,8 @@ public static class WorkOrderEndpoints
         var seq = 0;
         foreach (var t in (input.Tasks ?? []).Select(x => x.Clean()).OfType<string>())
             db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = ++seq, Description = t.Length > 1000 ? t[..1000] : t });
+        // Checklists on the asset or its category (0.12.0), after the work order's own steps.
+        await AssetChecklists.AppendAsync(db, w, w.Assets.Count > 0 ? w.Assets.OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList() : w.AssetId is { } onAsset ? [onAsset] : [], ct);
         db.WorkOrderStatusChanges.Add(new WorkOrderStatusChange { WorkOrderId = w.Id, ToStatus = WorkOrderStatus.Open, ChangedAt = DateTimeOffset.UtcNow,
             ChangedById = ctx.UserId, ChangedByName = ctx.UserName, Note = note ?? (requestId is null ? null : "Created from work request") });
         await db.SaveChangesAsync(ct);
