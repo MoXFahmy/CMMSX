@@ -118,6 +118,36 @@ public static class PmGenerator
     }
 
     public const string NoNextDate = "No next date: its calendars have no dates after {0}.";
+    public const string AlreadyGenerated = "This occurrence was already generated as {0}.";
+    public const string NotAnOccurrence = "This date isn't one of the PM's next occurrences.";
+
+    /// <summary>
+    /// Generates one of the PM's next occurrences now (0.12.0). The next one goes through normal generation (the PM moves on); a
+    /// later one is made out of order and is found as "Already generated" when its turn comes.
+    /// </summary>
+    public static async Task<Result> GenerateOccurrenceAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, DateOnly date, CancellationToken ct, EmailOutbox? mail = null)
+    {
+        var existing = await db.WorkOrders.Where(w => w.PmScheduleId == s.Id && w.PmDueDate == date && w.GroupId == null).Select(w => w.Number).FirstOrDefaultAsync(ct)
+            ?? await db.WorkOrderGroups.Where(g => g.PmScheduleId == s.Id && g.PmDueDate == date).Select(g => g.Number).FirstOrDefaultAsync(ct);
+        if (existing is not null) throw new DomainException(string.Format(AlreadyGenerated, existing));
+        var calendars = await PmEndpoints.CalendarsAsync(db, s.Calendars.Select(c => c.ScheduleCalendarId), ct);
+        var dates = PmTriggers.Forecast(s, date, 500, calendars).ToList();
+        var k = dates.IndexOf(date);
+        if (k < 0) throw new DomainException(NotAnOccurrence);
+        var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+        if (k == 0)
+        {
+            var made = await GenerateForAsync(db, ctx, s, date, false, settings, ct, mail);
+            return made.FirstOrDefault() ?? new Result(s.Id, s.Code, s.Name, date, null, s.Asset?.AssetNumber, null, null, "Nothing to generate");
+        }
+        var rules = Rules(s, settings);
+        var taskId = PmCalendar.TaskFor(s, s.GenerationCount + 1 + k);
+        var task = await db.PmTasks.AsNoTracking().Include(t => t.Steps).FirstAsync(t => t.Id == taskId, ct);
+        IReadOnlyList<RoundAsset>? round = null;
+        if (s.Assets.Count > 0 && (round = await RoundAssetsAsync(db, s, ct, rules.Skip)).Count == 0) throw new DomainException(NoActiveAssets);
+        var wo = await CreateWorkOrderAsync(db, ctx, s, task, date, null, ct, round, rules.NonWorking, mail);
+        return new Result(s.Id, s.Code, s.Name, date, task.Name, s.Asset?.AssetNumber, wo.Id, wo.Number, null);
+    }
 
     /// <summary>
     /// Restarts every incremental meter trigger of <paramref name="s"/> (its own meter and its extra meters, 0.12.0) at the meter's

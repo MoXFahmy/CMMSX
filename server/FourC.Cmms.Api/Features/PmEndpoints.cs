@@ -33,6 +33,8 @@ public static class PmEndpoints
     /// <summary>A multi-asset PM's asset with its own template (empty = the PM's).</summary>
     public sealed record AssetTemplateInput(Guid AssetId, Guid? PmTaskId);
     public sealed record GenerateInput(DateOnly Until, Guid? SiteId, List<Guid>? ScheduleIds);
+    public sealed record OccurrenceInput(DateOnly Date);
+    public const int Occurrences = 24;
     /// <param name="ManagesSource">The page sets the meter it follows (0.12.0); otherwise the link is left as it is.</param>
     public sealed record MeterInput(string Code, string Name, Guid AssetId, string Unit, decimal? MaxDailyIncrement, bool IsActive = true, Guid? SourceMeterId = null,
         bool? ManagesSource = null);
@@ -290,6 +292,45 @@ public static class PmEndpoints
         }).RequirePermission(Permissions.PmManage);
 
         // ---------------- Generation & forecast ----------------
+        // The next 24 occurrences (0.12.0): dates, or projected meter readings with an estimated date.
+        g.MapGet("/{id:guid}/occurrences", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var sch = await db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Calendars).AsSplitQuery().FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (sch is null) return Results.NotFound();
+            var calendars = await CalendarsAsync(db, sch.Calendars.Select(c => c.ScheduleCalendarId), ct);
+            var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+            var nonWorking = PmGenerator.Rules(sch, settings).NonWorking;
+            var names = await db.PmTasks.AsNoTracking().ToDictionaryAsync(t => t.Id, t => t.Name, ct);
+            var dates = PmTriggers.Forecast(sch, Today.AddYears(30), Occurrences, calendars).ToList();
+            var made = await db.WorkOrders.AsNoTracking().Where(w => w.PmScheduleId == id && w.GroupId == null && w.PmDueDate != null && dates.Contains(w.PmDueDate.Value))
+                .Select(w => new { Date = w.PmDueDate!.Value, w.Id, w.Number, w.Status }).ToListAsync(ct);
+            var groups = await db.WorkOrderGroups.AsNoTracking().Where(g => g.PmScheduleId == id && g.PmDueDate != null && dates.Contains(g.PmDueDate.Value))
+                .Select(g => new { Date = g.PmDueDate!.Value, g.Id, g.Number }).ToListAsync(ct);
+            var list = dates.Select((d, k) =>
+            {
+                var start = PmCalendar.NextWorkingDay(d, nonWorking);
+                var wo = made.FirstOrDefault(x => x.Date == d);
+                var grp = groups.FirstOrDefault(x => x.Date == d);
+                return new
+                {
+                    Date = d, DueDate = PmCalendar.DueDate(sch, start, nonWorking), TemplateName = names.GetValueOrDefault(PmCalendar.TaskFor(sch, sch.GenerationCount + 1 + k)),
+                    Status = wo is not null || grp is not null ? "Generated" : "Planned", WorkOrderId = wo?.Id, WorkOrderNumber = wo?.Number, WorkOrderStatus = wo?.Status,
+                    GroupId = grp?.Id, GroupNumber = grp?.Number,
+                };
+            }).ToList();
+            return Results.Ok(new { Dates = list, Readings = await ProjectedReadingsAsync(db, sch, ct) });
+        }).RequirePermission(Permissions.PmView);
+
+        // "Generate this one now" for any of the next occurrences (0.12.0).
+        g.MapPost("/{id:guid}/occurrences/generate", async (Guid id, OccurrenceInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
+        {
+            var sch = await db.PmSchedules.Include(x => x.ExtraTasks).Include(x => x.Asset).Include(x => x.Assets).Include(x => x.Calendars).Include(x => x.ExtraMeters)
+                .AsSplitQuery().FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (sch is null) return Results.NotFound();
+            var result = await PmGenerator.GenerateOccurrenceAsync(db, ctx, sch, input.Date, ct, mail);
+            return Results.Ok(result);
+        }).RequirePermission(Permissions.PmGenerate);
+
         // "Make a copy for this PM" (0.12.0): later edits to the shared template no longer reach this PM.
         g.MapPost("/{id:guid}/own-template", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
@@ -664,6 +705,29 @@ public static class PmEndpoints
         if ((i.RecipientIds ?? []).Distinct().Count() > 20) v.Add("recipientIds", "At most 20 recipients.");
         else await CheckRecipientsAsync(db, v, i.RecipientIds, ct);
         return v;
+    }
+
+    /// <summary>
+    /// A meter PM's next <see cref="Occurrences"/> due readings, each with an estimated date from the meter's use over the last 90
+    /// days (none with too little history).
+    /// </summary>
+    private static async Task<object> ProjectedReadingsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct)
+    {
+        if (s.Type != PmScheduleType.Meter || s.MeterTrigger != MeterTrigger.Incremental || s.NextDueReading is not { } next || s.MeterInterval is not > 0 || s.MeterId is not { } meterId)
+            return Array.Empty<object>();
+        var since = DateTimeOffset.UtcNow.AddDays(-90);
+        var readings = await db.MeterReadings.AsNoTracking().Where(r => r.MeterId == meterId && r.ReadAt >= since).OrderBy(r => r.ReadAt)
+            .Select(r => new { r.Value, r.ReadAt }).ToListAsync(ct);
+        var current = await db.Meters.AsNoTracking().Where(m => m.Id == meterId).Select(m => m.CurrentReading).FirstOrDefaultAsync(ct) ?? 0;
+        decimal? perDay = null;
+        if (readings.Count >= 2 && (readings[^1].ReadAt - readings[0].ReadAt).TotalDays is var days && days >= 1 && readings[^1].Value > readings[0].Value)
+            perDay = (readings[^1].Value - readings[0].Value) / (decimal)days;
+        return Enumerable.Range(0, Occurrences).Select(k =>
+        {
+            var reading = next + k * s.MeterInterval.Value;
+            DateOnly? estimated = perDay is { } rate ? Today.AddDays((int)Math.Round(Math.Max(0, reading - current) / rate)) : null;
+            return new { Reading = reading, EstimatedDate = estimated };
+        }).ToList();
     }
 
     public const string NoStepsWarning = "These assets get no checklist steps: {0}.";
