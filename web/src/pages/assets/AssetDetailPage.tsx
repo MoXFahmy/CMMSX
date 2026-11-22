@@ -27,6 +27,7 @@ import { fmtDate, fmtDateTime, fmtMoney, handleFormError, notifyError, notifySuc
 import { AssetDowntimeTab } from './AssetDowntime';
 import { AssetPartsTab } from './AssetParts';
 import { ChecklistsCard } from './AssetChecklists';
+import { AssetMeasurements } from './AssetMeasurements';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -104,6 +105,7 @@ export function AssetDetailPage() {
           <Tabs.Tab value="downtime" rightSection={a.downSince ? <Badge size="xs" color="red" variant="filled">{t('downtime.down')}</Badge> : null}>{t('downtime.tab')}</Tabs.Tab>
           <Tabs.Tab value="parts">{t('assetParts.tab')}</Tabs.Tab>
           {can(P.pmView) && <Tabs.Tab value="pm">{t('pm.maintenancePlan')}</Tabs.Tab>}
+          <Tabs.Tab value="measurements">{t('measurements.tab')}</Tabs.Tab>
           <Tabs.Tab value="files">{t('assets.files')}</Tabs.Tab>
           <Tabs.Tab value="transfers">{t('assets.transfers')}</Tabs.Tab>
           <Tabs.Tab value="history">{t('assets.history')}</Tabs.Tab>
@@ -203,6 +205,7 @@ export function AssetDetailPage() {
               ]} />
           </Card>
         </Tabs.Panel>
+        <Tabs.Panel value="measurements"><AssetMeasurements assetId={a.id} /></Tabs.Panel>
         <Tabs.Panel value="pm">
           <Stack>
             <ChecklistsCard assetId={a.id} categoryId={a.categoryId} canEdit={can(P.assetsEdit)} />

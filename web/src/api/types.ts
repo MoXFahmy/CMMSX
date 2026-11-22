@@ -241,6 +241,8 @@ export type WorkRequestListItem = {
   requestTypeName?: string | null;
 };
 export type WorkRequestDetail = {
+  /** A request raised by a failed checklist step (0.13.0). */
+  source?: StepSource | null;
   id: string; number: string; title: string; description?: string; status: WorkRequestStatus; priority: WorkPriority; type: WorkType;
   siteId: string; site: { id: string; name: string }; locationId?: string; locationName?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
   requesterName?: string; requesterEmail?: string; requesterPhone?: string; requiredBy?: string; decisionNote?: string; decidedAt?: string; decidedBy?: string;

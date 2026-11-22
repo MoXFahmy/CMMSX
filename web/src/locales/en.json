@@ -1994,5 +1994,44 @@
       "WorkOrder": "Work order from a template",
       "Request": "Request for triage"
     }
+  },
+  "checklist": {
+    "allOk": "All OK",
+    "allOkDone": "{{count}} step(s) answered OK",
+    "safetyFirst": "Safety steps first",
+    "safetyFirstBody": "Answer the safety steps before starting the work; the other steps unlock after them.",
+    "lockedHint": "Answer the safety steps first",
+    "ok": "OK",
+    "notOk": "Not OK",
+    "na": "N/A",
+    "value": "Value",
+    "answer": "Answer",
+    "chooseMeter": "Choose the meter",
+    "addPhoto": "Add a photo",
+    "followUp": "Follow-up {{number}}",
+    "followUpRaised": "Follow-up {{number}} raised",
+    "outOfRange": "Enter a value from {{min}} to {{max}} {{unit}}.",
+    "fromStep": "From step {{step}} of",
+    "answers": {
+      "Ok": "OK",
+      "NotOk": "Not OK",
+      "NotApplicable": "N/A"
+    },
+    "levels": {
+      "Normal": "Normal",
+      "AlertHigh": "Alert high",
+      "AlarmHigh": "Alarm high",
+      "AlertLow": "Alert low",
+      "AlarmLow": "Alarm low"
+    }
+  },
+  "measurements": {
+    "tab": "Measurements",
+    "none": "No measurement points on this asset yet. Add them in PM › Measurement points.",
+    "add": "Add reading",
+    "needTwo": "The chart shows from two readings.",
+    "onWork": "Work order",
+    "followUp": "Follow-up",
+    "savedWithFollowUp": "Saved — follow-up work raised"
   }
 }
