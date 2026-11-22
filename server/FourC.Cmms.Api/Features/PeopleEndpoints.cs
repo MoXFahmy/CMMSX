@@ -18,10 +18,10 @@ public static class PeopleEndpoints
     public static void MapPeopleEndpoints(this RouteGroupBuilder api)
     {
         MapLookup(api, "/trades", "Trades", db => db.Trades, () => new Trade { Code = "", Name = "" }, Permissions.PeopleManage,
-            async (db, id, ct) => await db.Employees.AnyAsync(e => e.TradeIds.Contains(id), ct) || await db.WorkOrders.AnyAsync(w => w.TradeId == id, ct),
+            async (db, id, ct) => await db.Employees.AnyAsync(e => e.TradeIds.Contains(id), ct) || await db.WorkOrders.AllSites().AnyAsync(w => w.TradeId == id, ct),
             (t, color) => t.Color = color, t => t.Color);
         MapLookup(api, "/failure-codes", "Failure codes", db => db.FailureCodes, () => new FailureCode { Code = "", Name = "" }, Permissions.SettingsManage,
-            async (db, id, ct) => await db.WorkOrders.AnyAsync(w => w.FailureCodeId == id, ct), null, null);
+            async (db, id, ct) => await db.WorkOrders.AllSites().AnyAsync(w => w.FailureCodeId == id, ct), null, null);
 
         var g = api.MapGroup("/employees").WithTags("Employees");
         g.MapGet("/", async (CmmsDbContext db, string? search, Guid? tradeId, bool? activeOnly, CancellationToken ct) =>
@@ -71,7 +71,7 @@ public static class PeopleEndpoints
         {
             var e = await db.Employees.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (e is null) return Results.NotFound();
-            if (await db.WorkOrderLabor.AnyAsync(l => l.EmployeeId == id, ct) || await db.WorkOrderAssignees.AnyAsync(a => a.EmployeeId == id, ct))
+            if (await db.WorkOrderLabor.AllSites().AnyAsync(l => l.EmployeeId == id, ct) || await db.WorkOrderAssignees.AllSites().AnyAsync(a => a.EmployeeId == id, ct))
                 throw new DomainException("This person has work order history. Mark them inactive instead.");
             db.Employees.Remove(e);
             await db.SaveChangesAsync(ct);

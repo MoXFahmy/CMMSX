@@ -126,7 +126,7 @@ public static class PmEndpoints
         {
             var x = await db.PmTasks.FirstOrDefaultAsync(y => y.Id == id, ct);
             if (x is null) return Results.NotFound();
-            if (await db.PmSchedules.AnyAsync(s => s.PmTaskId == id || s.LowerTaskId == id || s.UpperTaskId == id || s.ExtraTasks.Any(e => e.PmTaskId == id), ct))
+            if (await db.PmSchedules.AllSites().AnyAsync(s => s.PmTaskId == id || s.LowerTaskId == id || s.UpperTaskId == id || s.ExtraTasks.Any(e => e.PmTaskId == id), ct))
                 throw new DomainException("This task is used by PM schedules. Mark it inactive instead.");
             db.PmTasks.Remove(x);
             await db.SaveChangesAsync(ct);

@@ -64,7 +64,8 @@ public static class StockLedger
         if (p.Type == StockTransactionType.Receipt)
         {
             if (p.UnitCost is not { } price || price < 0) throw new DomainException("Enter the unit price.");
-            var balance = await db.StockLevels.Where(l => l.PartId == part.Id).SumAsync(l => (decimal?)l.QuantityOnHand, ct) ?? 0;
+            // The part's stock in every store: its average cost is the organization's, whatever sites the person sees.
+            var balance = await db.StockLevels.AllSites().Where(l => l.PartId == part.Id).SumAsync(l => (decimal?)l.QuantityOnHand, ct) ?? 0;
             var basis = Math.Max(balance, 0);
             part.AverageCost = basis + p.Quantity > 0 ? Math.Round((part.AverageCost * basis + price * p.Quantity) / (basis + p.Quantity), 4) : price;
             part.LastPurchasePrice = price;

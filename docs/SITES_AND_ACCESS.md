@@ -20,7 +20,13 @@ dashboard, the alert bell, e-mails and the technician app. A record outside it a
   requests, an asset is enough: they take its location).
 - Shared lists stay shared by every site: parts (each person sees the stock of their own sites' stores), suppliers, the
   PM task library, trades, failure codes, categories and custom fields.
-- Someone whose own access is limited can only give access inside it, and can't add new sites.
+- Someone whose own access is limited can only give access inside it, can only change (or reset the password of) people
+  whose access is inside theirs, and can't add new sites.
+- People limited to parts of the tree add places only under places they see, and can't change the site's own record or
+  settings (that's for people who see the whole site).
+- Decisions that concern the whole organization still count every site: a part's average cost, and whether a shared
+  record (part, supplier, PM task, trade, category, person) is in use before it can be deleted.
+- Downloads (list exports) follow the site switch too.
 - Codes and numbers stay unique across the whole organization. A clash with a record in a site the person can't see is
   refused with "… is used in a site you can't see." (in the import: that row is a problem).
 - Changes apply at once: the person doesn't need to sign in again.

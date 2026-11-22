@@ -674,6 +674,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<PmScheduleTask>().HasQueryFilter(SiteFilter, x => PmSchedules.Any(p => p.Id == x.PmScheduleId));
         b.Entity<PmScheduleAsset>().HasQueryFilter(SiteFilter, x => PmSchedules.Any(p => p.Id == x.PmScheduleId));
         b.Entity<PurchaseOrderLine>().HasQueryFilter(SiteFilter, x => PurchaseOrders.Any(p => p.Id == x.PurchaseOrderId));
+        b.Entity<StockReservation>().HasQueryFilter(SiteFilter, x => Stores.Any(s => s.Id == x.StoreId));
     }
 
     private static void ConfigureTenantEntity<T>(EntityTypeBuilder<T> e) where T : TenantEntity

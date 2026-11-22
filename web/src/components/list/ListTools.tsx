@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { ActionIcon, Button, Checkbox, Group, Menu, Modal, Stack, Text, TextInput, Tooltip } from '@mantine/core';
+import { getSite } from '@/components/siteSwitch';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { IconBookmark, IconCheck, IconColumns3, IconDeviceFloppy, IconDownload, IconPencil, IconStar, IconStarOff, IconTrash } from '@tabler/icons-react';
@@ -29,6 +30,9 @@ function exportColumns<T>(cols: ListColumn<T>[]): ExportSpec[] {
 export function exportUrl<T>(path: string, query: Query, cols: ListColumn<T>[], format: 'xlsx' | 'csv') {
   const sp = new URLSearchParams(toQuery(query).replace(/^\?/, ''));
   sp.set('format', format);
+  // The site switch: a download link can't send it as a header, so it goes in the address.
+  const site = getSite();
+  if (site) sp.set('cmxSite', site);
   for (const c of exportColumns(cols)) { sp.append('c', c.key); sp.append('t', c.title ?? c.key); }
   return `/api${path}?${sp.toString()}`;
 }

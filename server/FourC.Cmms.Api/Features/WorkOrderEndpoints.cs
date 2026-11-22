@@ -192,6 +192,9 @@ public static class WorkOrderEndpoints
             var w = await db.WorkOrders.Include(x => x.Assignees).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (w is null) return Results.NotFound();
             if (w.Status is WorkOrderStatus.Closed or WorkOrderStatus.Cancelled) throw new DomainException("Reopen the work order before editing it.");
+            // People limited to a branch: work with only an asset takes the asset's location (as when created), so it stays in the branch.
+            if (db.CurrentBranchPaths is not null && input.LocationId is null && input.AssetId is { } onlyAsset)
+                input = input with { LocationId = await db.Assets.Where(a => a.Id == onlyAsset).Select(a => a.LocationId).FirstOrDefaultAsync(ct) };
             var v = await ValidateAsync(input, db, ct, w.TeamId);
             var teamBefore = w.TeamId;
             if (!v.IsValid) return v.Problem();

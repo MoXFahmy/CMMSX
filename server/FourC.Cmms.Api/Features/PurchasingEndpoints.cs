@@ -127,7 +127,7 @@ public static class PurchasingEndpoints
         {
             var x = await db.Suppliers.FirstOrDefaultAsync(y => y.Id == id, ct);
             if (x is null) return Results.NotFound();
-            if (await db.PurchaseOrders.AnyAsync(o => o.SupplierId == id, ct) || await db.StockTransactions.AnyAsync(t => t.SupplierId == id, ct))
+            if (await db.PurchaseOrders.AllSites().AnyAsync(o => o.SupplierId == id, ct) || await db.StockTransactions.AllSites().AnyAsync(t => t.SupplierId == id, ct))
                 throw new DomainException("This supplier has purchasing history. Mark it inactive instead.");
             await db.Parts.Where(p => p.PreferredSupplierId == id).ExecuteUpdateAsync(u => u.SetProperty(p => p.PreferredSupplierId, (Guid?)null), ct);
             db.Suppliers.Remove(x);

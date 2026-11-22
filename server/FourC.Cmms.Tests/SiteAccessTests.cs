@@ -203,11 +203,13 @@ public class SiteAccessTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var other = await limitedAdmin.PostAsJsonAsync("/api/users", new { fullName = "Other", email = $"{Guid.NewGuid():N}@test.local", isActive = true, roleIds = new[] { viewer }, password = UserPassword, siteIds = new[] { w.B.Site } });
         Assert.Equal(HttpStatusCode.BadRequest, other.StatusCode);
 
-        // A user who already has site B can still be edited (name only) by the limited admin.
+        // A user who sees site B is not theirs to change at all (a new e-mail or password would hand them that account).
         var email = $"{Guid.NewGuid():N}@test.local";
         var bUser = Id(await Ok(await w.Admin.PostAsJsonAsync("/api/users", new { fullName = "B person", email, isActive = true, roleIds = new[] { viewer }, password = UserPassword, siteIds = new[] { w.B.Site } })));
-        await Ok(await limitedAdmin.PutAsJsonAsync($"/api/users/{bUser}", new { fullName = "B person renamed", email, isActive = true, roleIds = new[] { viewer }, siteIds = new[] { w.B.Site } }));
+        var rename = await limitedAdmin.PutAsJsonAsync($"/api/users/{bUser}", new { fullName = "B person renamed", email, isActive = true, roleIds = new[] { viewer }, siteIds = new[] { w.B.Site } });
+        Assert.Equal(HttpStatusCode.BadRequest, rename.StatusCode);
         var listed = (await Ok(await w.Admin.GetAsync("/api/users"))).EnumerateArray().First(u => u.GetProperty("id").GetGuid() == bUser);
+        Assert.Equal("B person", listed.GetProperty("fullName").GetString());
         Assert.Equal([w.B.Site], listed.GetProperty("siteIds").EnumerateArray().Select(x => x.GetGuid()).ToArray());
     }
 

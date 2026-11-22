@@ -49,7 +49,7 @@ public static class AssetCategoryEndpoints
         {
             var c = await db.AssetCategories.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (c is null) return Results.NotFound();
-            if (await db.Assets.AnyAsync(a => a.CategoryId == id, ct)) throw new DomainException("This category is used by assets. Re-categorize them first or mark the category inactive.");
+            if (await db.Assets.AllSites().AnyAsync(a => a.CategoryId == id, ct)) throw new DomainException("This category is used by assets. Re-categorize them first or mark the category inactive.");
             db.AssetCategories.Remove(c);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();

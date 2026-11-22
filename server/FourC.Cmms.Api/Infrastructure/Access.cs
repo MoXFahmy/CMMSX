@@ -51,6 +51,12 @@ public static class Access
         if (db.CurrentBranchPaths is not null && locationId is null && assetId is null) v.Add("locationId", "Choose a location in your part of the site.");
     }
 
+    /// <summary>Whether a site-level record (a purchase order, a store) at <paramref name="siteId"/> is visible: its site is enough, branches or not.</summary>
+    public static bool CoversSite(UserAccess access, Guid siteId) => access.SiteIds is null || access.SiteIds.Contains(siteId);
+
+    /// <summary>The site switch's query-string twin, for downloads a browser opens directly (no headers).</summary>
+    public const string SiteQuery = "cmxSite";
+
     /// <summary>The signed-in person's whole access (before the header switch), or null outside a signed-in request.</summary>
     public static UserAccess? Of(HttpContext http) => http.Items[AccessKey] as UserAccess;
 
@@ -62,7 +68,9 @@ public static class Access
     {
         if (http.Items.ContainsKey(ScopeKey) || !Guid.TryParse(principal?.FindFirstValue(ClaimTypes.NameIdentifier), out var userId)) return;
         var access = await http.RequestServices.GetRequiredService<AccessService>().GetAsync(userId, http.RequestAborted);
-        Guid? requested = Guid.TryParse(http.Request.Headers[SiteHeader].ToString(), out var s) ? s : null;
+        var asked = http.Request.Headers[SiteHeader].ToString();
+        if (asked.Length == 0) asked = http.Request.Query[SiteQuery].ToString();
+        Guid? requested = Guid.TryParse(asked, out var s) ? s : null;
         http.Items[AccessKey] = access;
         http.Items[ScopeKey] = Narrow(access, requested);
     }

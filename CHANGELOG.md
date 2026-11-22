@@ -32,7 +32,11 @@ work can be given to teams. Nothing changes until you set something. See [docs/S
 - E-mails go only to people who can see the record's site.
 - Codes and numbers stay unique across the organization even when the clash is in a site the person can't see (the
   message says so, and the import makes that row a problem instead of failing).
-- People whose own access is limited can't add sites and can only give access inside their own.
+- People whose own access is limited can't add sites, can only give access inside their own, and can only change people
+  whose access is inside theirs. People limited to parts of the tree add places only under what they see and can't change
+  the site record.
+- A part's average cost and the "is it still in use?" check before deleting a shared record (part, supplier, PM task,
+  trade, category, person) always count every site.
 
 ## [0.8.1] - 2026-11-21
 

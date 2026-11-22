@@ -57,8 +57,10 @@ public static class AdminEndpoints
         {
             var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id && u.TenantId == db.CurrentTenantId, ct);
             if (user is null) return Results.NotFound();
+            var editor = Access.Of(http) ?? UserAccess.Everything;
+            if (await OutsideAsync(db, editor, user, ct) is { } outside) throw new DomainException(outside);
             var v = await ValidateUserAsync(input, id, db, um, ct);
-            var access = await CheckAccessAsync(input, user, db, Access.Of(http) ?? UserAccess.Everything, v, ct);
+            var access = await CheckAccessAsync(input, user, db, editor, v, ct);
             if (id == ctx.UserId && !input.IsActive) v.Add("isActive", "You cannot deactivate your own account.");
             var adminRole = await db.Roles.Where(r => r.IsSystem).Select(r => r.Id).FirstOrDefaultAsync(ct);
             if (id == ctx.UserId && !input.RoleIds.Contains(adminRole) && await db.UserRoles.AnyAsync(r => r.UserId == id && r.RoleId == adminRole, ct))
@@ -82,10 +84,11 @@ public static class AdminEndpoints
             return Results.Ok(new { user.Id });
         });
 
-        users.MapPost("/{id:guid}/password", async (Guid id, PasswordInput input, CmmsDbContext db, UserManager<AppUser> um, CancellationToken ct) =>
+        users.MapPost("/{id:guid}/password", async (Guid id, PasswordInput input, CmmsDbContext db, UserManager<AppUser> um, HttpContext http, CancellationToken ct) =>
         {
             var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id && u.TenantId == db.CurrentTenantId, ct);
             if (user is null) return Results.NotFound();
+            if (await OutsideAsync(db, Access.Of(http) ?? UserAccess.Everything, user, ct) is { } outside) throw new DomainException(outside);
             var v = new Validator();
             foreach (var pv in um.PasswordValidators)
                 foreach (var e in (await pv.ValidateAsync(um, user, input.Password ?? "")).Errors) v.Add("password", e.Description);
@@ -186,6 +189,24 @@ public static class AdminEndpoints
     private static bool OutOfRange(int? minutes) => minutes is < 1 or > 365 * 24 * 60;
 
     private static List<string> CleanPermissions(List<string>? p) => (p ?? []).Intersect(Permissions.All.Select(x => x.Code)).Distinct().ToList();
+
+    /// <summary>
+    /// Someone whose own access is limited may only change people whose access is inside theirs; otherwise they could take over
+    /// (a new password or e-mail) or cut down someone who sees more. Null when the change is allowed.
+    /// </summary>
+    private static async Task<string?> OutsideAsync(CmmsDbContext db, UserAccess editor, AppUser target, CancellationToken ct)
+    {
+        const string outside = "You can only change people whose access is inside yours.";
+        if (!editor.Limited) return null;
+        if (target.LocationIds.Count > 0)
+        {
+            var ids = target.LocationIds;
+            var places = await db.Locations.AllSites().AsNoTracking().Where(l => ids.Contains(l.Id)).Select(l => new { l.SiteId, l.Path }).ToListAsync(ct);
+            return places.Count > 0 && places.All(p => Access.Covers(editor, p.SiteId, p.Path)) ? null : outside;
+        }
+        if (target.SiteIds.Count == 0 || editor.Branches is not null) return outside; // every site, or whole sites: more than the editor's
+        return target.SiteIds.All(s => editor.SiteIds!.Contains(s)) ? null : outside;
+    }
 
     /// <summary>
     /// The person's new site and branch lists (null input keeps what they have). Branches decide the sites (theirs), so the

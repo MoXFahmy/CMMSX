@@ -45,6 +45,7 @@ public static class SiteEndpoints
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
+            if (db.CurrentBranchPaths is not null) throw new DomainException(OnlyWholeSiteChangesIt);
             var v = await ValidateAsync(input, id, db, ct);
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(site).Property(s => s.RowVersion).OriginalValue = input.RowVersion.ToVersion();
@@ -57,6 +58,7 @@ public static class SiteEndpoints
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
+            if (db.CurrentBranchPaths is not null) throw new DomainException(OnlyWholeSiteChangesIt);
             if (await db.Locations.AnyAsync(l => l.SiteId == id, ct) || await db.Assets.AnyAsync(a => a.SiteId == id, ct))
                 throw new DomainException("This site still has locations or assets. Move or delete them first, or mark the site inactive.");
             db.Sites.Remove(site);
@@ -67,6 +69,8 @@ public static class SiteEndpoints
 
     /// <summary>The checks that need no database (shared with the import).</summary>
     internal const string OnlyEveryoneAddsSites = "Only people who see every site can add sites.";
+    /// <summary>People limited to a branch see only part of the site: its record and settings are for those who see all of it.</summary>
+    internal const string OnlyWholeSiteChangesIt = "Only people who see the whole site can change it.";
 
     internal static Validator SiteRules(SiteInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200)
         .MaxLength("address", i.Address, "Address", 500).MaxLength("city", i.City, "City", 100).MaxLength("country", i.Country, "Country", 100)
@@ -277,8 +281,12 @@ public static class LocationEndpoints
     {
         var v = LocationRules(i, id);
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
-        if (i.ParentId is not null && !await db.Locations.AnyAsync(l => l.Id == i.ParentId && l.SiteId == i.SiteId, ct))
+        // A place keeping its parent and site isn't moved (for people limited to a branch, its parent may be above what they see).
+        var current = id is { } lid ? await db.Locations.AllSites().AsNoTracking().Where(l => l.Id == lid).Select(l => new { l.ParentId, l.SiteId }).FirstOrDefaultAsync(ct) : null;
+        var unmoved = current is not null && current.ParentId == i.ParentId && current.SiteId == i.SiteId;
+        if (i.ParentId is not null && !unmoved && !await db.Locations.AnyAsync(l => l.Id == i.ParentId && l.SiteId == i.SiteId, ct))
             v.Add("parentId", "Parent location must belong to the selected site.");
+        if (db.CurrentBranchPaths is not null && i.ParentId is null && !unmoved) v.Add("parentId", "Choose a parent place in your part of the site.");
         if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.Locations, l => l.SiteId == i.SiteId && l.Code == i.Code.Trim() && l.Id != id,
                 "Another location in this site already uses this code.", "This code is already used in a part of the site you can't see.", ct) is { } locationClash)
             v.Add("code", locationClash);
@@ -298,7 +306,8 @@ public static class LocationEndpoints
     public static async Task<Func<string?, string>> ResolvePathNamesAsync(CmmsDbContext db, IEnumerable<string?> paths, CancellationToken ct)
     {
         var ids = paths.Where(p => p is not null).SelectMany(p => PathIds(p!)).Distinct().ToList();
-        var names = ids.Count == 0 ? [] : await db.Locations.AsNoTracking().Where(l => ids.Contains(l.Id)).ToDictionaryAsync(l => l.Id, l => l.Name, ct);
+        // Names of the places above a visible one (people limited to a branch see where it sits, not what else is there).
+        var names = ids.Count == 0 ? [] : await db.Locations.AllSites().AsNoTracking().Where(l => ids.Contains(l.Id)).ToDictionaryAsync(l => l.Id, l => l.Name, ct);
         return p => p is null ? "" : string.Join(" › ", PathIds(p).Select(id => names.GetValueOrDefault(id, "?")));
     }
 }
