@@ -140,4 +140,12 @@ public class PmCalendarTests
         Assert.Null(PmRound.CommonLocationId([R(Guid.NewGuid(), 1, P(x, y)), R(Guid.NewGuid(), 2)]));
         Assert.Null(PmRound.CommonLocationId([]));
     }
+
+    [Fact]
+    public void Calendar_pms_are_described_by_their_calendars()
+    {
+        var s = S(x => x.Type = PmScheduleType.Calendar);
+        Assert.Equal("On its calendars' dates", PmCalendar.Describe(s));
+        Assert.Equal("في تواريخ تقويماتها", PmCalendar.Describe(s, "ar"));
+    }
 }

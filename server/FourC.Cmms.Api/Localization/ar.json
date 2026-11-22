@@ -816,5 +816,7 @@
  "Unknown calendar.": "تقويم غير معروف.",
  "Unknown meter.": "عداد غير معروف.",
  "Unknown work template.": "قالب عمل غير معروف.",
- "You can't close, cancel or reopen closed work orders.": "لا يمكنك إغلاق أوامر العمل أو إلغاؤها أو إعادة فتح المغلقة منها."
+ "You can't close, cancel or reopen closed work orders.": "لا يمكنك إغلاق أوامر العمل أو إلغاؤها أو إعادة فتح المغلقة منها.",
+ "Spread over at most {0} parts: one a day.": "وزّع على {0} أجزاء على الأكثر: جزء لكل يوم.",
+ "This template is a checklist on assets or categories. Remove it there or mark it inactive instead.": "هذا القالب قائمة فحص على أصول أو فئات. أزله من هناك أو اجعله غير نشط بدلًا من ذلك."
 }

@@ -79,4 +79,45 @@ public class PmSpreadTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var tooMany = Schedule(org.Site, await TemplateAsync(org.Admin, "U"), Today, assets: [.. assets], extra: new() { ["spreadParts"] = 4 });
         Assert.Contains("spreadParts", await Bad(await org.Admin.PostAsJsonAsync("/api/pm-schedules", tooMany)));
     }
+
+    [SkippableFact]
+    public async Task Spread_needs_a_day_for_each_part()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var assets = await AssetsAsync(org.Admin, org.Site, 10);
+        var weekly = Schedule(org.Site, await TemplateAsync(org.Admin, "W"), Today, assets: [.. assets], extra: new() { ["unit"] = "Week", ["spreadParts"] = 10 });
+        Assert.Contains("Spread over at most 7 parts: one a day.", await Bad(await org.Admin.PostAsJsonAsync("/api/pm-schedules", weekly)));
+        weekly["spreadParts"] = 7;
+        await SaveScheduleAsync(org.Admin, weekly);
+    }
+
+    [SkippableFact]
+    public async Task Spread_parts_keep_their_assets_when_one_is_skipped()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var assets = await AssetsAsync(org.Admin, org.Site, 3);
+        var start = Today.AddDays(-15);
+        var pm = Id(await SaveScheduleAsync(org.Admin, Schedule(org.Site, await TemplateAsync(org.Admin, "K"), start, assets: [.. assets], extra: new()
+        {
+            ["spreadParts"] = 3, ["managesRules"] = true, ["skipStatusesOverride"] = new[] { "UnderRepair" },
+        })));
+        var days = start.AddMonths(1).DayNumber - start.DayNumber;
+        var covered = new List<Guid>();
+        async Task RunAsync(DateOnly until)
+        {
+            foreach (var r in Made(await GenerateAsync(org.Admin, until, pm)))
+            {
+                var wo = r.GetProperty("workOrderId").GetGuid();
+                covered.AddRange(await DbAsync(fx, db => db.WorkOrderAssets.IgnoreQueryFilters().Where(a => a.WorkOrderId == wo).Select(a => a.AssetId).ToListAsync()));
+            }
+        }
+        await RunAsync(start);                                   // part 1: the first asset
+        await Ok(await org.Admin.PostAsJsonAsync("/api/assets/bulk", new { ids = new[] { assets[1] }, status = "UnderRepair" }));
+        await RunAsync(start.AddDays(days / 3));                 // part 2: its asset is under repair, so nothing
+        await Ok(await org.Admin.PostAsJsonAsync("/api/assets/bulk", new { ids = new[] { assets[1] }, status = "Active" }));
+        await RunAsync(start.AddDays(2 * days / 3));             // part 3: the third asset, once
+        Assert.Equal([assets[0], assets[2]], covered);
+    }
 }

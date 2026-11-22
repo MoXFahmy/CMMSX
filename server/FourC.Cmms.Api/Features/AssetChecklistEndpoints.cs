@@ -30,7 +30,7 @@ public static class AssetChecklists
             .OrderBy(c => c.CreatedAt).ToListAsync(ct);
         if (links.Count == 0) return;
         var templateIds = links.Select(l => l.PmTaskId).Distinct().ToList();
-        var steps = (await db.PmTaskSteps.AsNoTracking().Where(s => templateIds.Contains(s.PmTaskId)).OrderBy(s => s.Sequence).ToListAsync(ct)).ToLookup(s => s.PmTaskId);
+        var steps = (await db.PmTaskSteps.AsNoTracking().Where(s => templateIds.Contains(s.PmTaskId) && db.PmTasks.Any(t => t.Id == s.PmTaskId)).OrderBy(s => s.Sequence).ToListAsync(ct)).ToLookup(s => s.PmTaskId);
         var seq = db.ChangeTracker.Entries<WorkOrderTask>().Where(e => e.State == EntityState.Added && e.Entity.WorkOrderId == w.Id)
             .Select(e => e.Entity.Sequence).DefaultIfEmpty(0).Max();
         var round = assetIds.Count > 1 || w.Assets.Count > 0;

@@ -140,8 +140,13 @@ public static class PmEndpoints
         {
             var x = await db.PmTasks.FirstOrDefaultAsync(y => y.Id == id, ct);
             if (x is null) return Results.NotFound();
-            if (await db.PmSchedules.AllSites().AnyAsync(s => s.PmTaskId == id || s.LowerTaskId == id || s.UpperTaskId == id || s.ExtraTasks.Any(e => e.PmTaskId == id), ct))
+            if (await db.PmSchedules.AllSites().AnyAsync(s => s.PmTaskId == id || s.LowerTaskId == id || s.UpperTaskId == id || s.ExtraTasks.Any(e => e.PmTaskId == id)
+                    || s.Assets.Any(a => a.PmTaskId == id), ct))
                 throw new DomainException("This task is used by PM schedules. Mark it inactive instead.");
+            // A checklist on an asset (still there) or a category, in any site (0.12.0).
+            if (await db.AssetChecklists.IgnoreQueryFilters().AnyAsync(c => c.TenantId == db.CurrentTenantId && !c.IsDeleted && c.PmTaskId == id
+                    && (c.AssetId == null || db.Assets.IgnoreQueryFilters().Any(a => a.Id == c.AssetId && !a.IsDeleted)), ct))
+                throw new DomainException(UsedAsChecklist);
             db.PmTasks.Remove(x);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
@@ -300,7 +305,7 @@ public static class PmEndpoints
         // The next 24 occurrences (0.12.0): dates, or projected meter readings with an estimated date.
         g.MapGet("/{id:guid}/occurrences", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
-            var sch = await db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Calendars).AsSplitQuery().FirstOrDefaultAsync(x => x.Id == id, ct);
+            var sch = await db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Calendars).Include(x => x.Assets).AsSplitQuery().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (sch is null) return Results.NotFound();
             var calendars = await CalendarsAsync(db, sch.Calendars.Select(c => c.ScheduleCalendarId), ct);
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
@@ -318,7 +323,7 @@ public static class PmEndpoints
                 var grp = groups.FirstOrDefault(x => x.Date == d);
                 return new
                 {
-                    Date = d, DueDate = PmCalendar.DueDate(sch, start, nonWorking), TemplateName = names.GetValueOrDefault(PmCalendar.TaskFor(sch, sch.GenerationCount + 1 + k)),
+                    Date = d, DueDate = PmCalendar.DueDate(sch, start, nonWorking), TemplateName = names.GetValueOrDefault(PmCalendar.TaskFor(sch, sch.GenerationCount + 1 + PmTriggers.PeriodOffset(sch, k))),
                     Status = wo is not null || grp is not null ? "Generated" : "Planned", WorkOrderId = wo?.Id, WorkOrderNumber = wo?.Number, WorkOrderStatus = wo?.Status,
                     GroupId = grp?.Id, GroupNumber = grp?.Number,
                 };
@@ -368,7 +373,7 @@ public static class PmEndpoints
         {
             if (input.Until > Today.AddYears(1)) throw new DomainException("Generate at most one year ahead.");
             var results = await PmGenerator.RunAsync(db, ctx, input.Until, input.SiteId, input.ScheduleIds, dryRun: false, ct, mail);
-            return Results.Ok(new { created = results.Count(r => r.WorkOrderId is not null), results });
+            return Results.Ok(new { created = results.Sum(r => r.Made), results });
         }).RequirePermission(Permissions.PmGenerate);
         pm.MapGet("/forecast", async (DateOnly from, DateOnly to, Guid? siteId, CmmsDbContext db, CancellationToken ct) =>
         {
@@ -617,6 +622,8 @@ public static class PmEndpoints
         if (i.SpreadParts is >= 2 && (i.Type != PmScheduleType.FixedInterval || i.Basis != PmBasis.Scheduled || calendars > 0 || extra.Count > 0))
             v.Add("spreadParts", "Spread needs a fixed interval, the Scheduled basis, and no calendars or extra meters.");
         else if (i.SpreadParts is >= 2 && (round.Count < 2 || i.SpreadParts > round.Count)) v.Add("spreadParts", $"Spread over 2 to {Math.Max(2, round.Count)} parts.");
+        else if (i.SpreadParts is >= 2 && i.SpreadParts > ShortestPeriodDays(i.Frequency, i.Unit))
+            v.Add("spreadParts", string.Format(SpreadDays, ShortestPeriodDays(i.Frequency, i.Unit)));
         if (i.MultiAssetMode == MultiAssetMode.Group && round.Count < 2) v.Add("multiAssetMode", "Choose several assets for a group.");
         else if (i.MultiAssetMode == MultiAssetMode.Group && i.Basis == PmBasis.Actual) v.Add("multiAssetMode", "Groups need the Scheduled basis.");
         if ((i.ExtraTasks ?? []).Any(e => e.EveryNth is < 2 or > 1000)) v.Add("extraTasks", "\"Every Nth\" must be between 2 and 1000.");
@@ -634,6 +641,16 @@ public static class PmEndpoints
     internal static Validator ScheduleChangeRules(PmSchedule s, ScheduleInput i) => new Validator()
         .When(i.Basis != s.Basis && s.GenerationCount > 0, "basis", "The generation basis cannot change after work orders were generated (as in 4CSQL). Create a new schedule instead.")
         .When(i.MultiAssetMode is { } mode && mode != s.MultiAssetMode && s.GenerationCount > 0, "multiAssetMode", ModeLocked);
+
+    public const string UsedAsChecklist = "This template is a checklist on assets or categories. Remove it there or mark it inactive instead.";
+    public const string SpreadDays = "Spread over at most {0} parts: one a day.";
+
+    /// <summary>The fewest days a period of this length can have (a month: 28), so every spread part gets a day of its own.</summary>
+    internal static int ShortestPeriodDays(int frequency, FrequencyUnit unit)
+    {
+        var n = Math.Max(1, frequency);
+        return unit switch { FrequencyUnit.Day => n, FrequencyUnit.Week => 7 * n, FrequencyUnit.Month => 28 * n, _ => 365 * n };
+    }
 
     public const string ModeLocked = "The multi-asset mode can't change after the PM has generated work.";
 
@@ -662,11 +679,18 @@ public static class PmEndpoints
         s.Name = i.Name.Trim();
         if (i.Code.Clean() is { } c) s.Code = c;
         var wasActive = s.IsActive;
+        var loadedNext = s.NextDueDate;
+        var calendarsBefore = s.Calendars.Select(x => x.ScheduleCalendarId).ToHashSet();
         ApplySchedule(s, i);
         // The import doesn't read calendars: a PM whose dates come only from them keeps its next date there.
         if (calendars is null && s.Type == PmScheduleType.Calendar) return;
         calendars ??= [];
-        if (PmTriggers.UsesDates(s, calendars.Count))
+        // Calendars linked or unlinked (0.12.0), the next date not typed over: it follows the new set, as when a calendar is edited.
+        var calendarsChanged = i.CalendarIds is not null && !calendarsBefore.SetEquals(s.Calendars.Select(x => x.ScheduleCalendarId));
+        if (PmTriggers.UsesDates(s, calendars.Count) && calendarsChanged && wasActive && s.IsActive && s.Basis == PmBasis.Scheduled
+            && (i.NextDueDate is null || i.NextDueDate == loadedNext))
+            s.NextDueDate = PmTriggers.Retrigger(s, calendars, Today);
+        else if (PmTriggers.UsesDates(s, calendars.Count))
             s.NextDueDate = i.NextDueDate ?? (!wasActive && s.IsActive ? PmTriggers.First(s, Today, calendars)
                 : s.NextDueDate ?? (s.GenerationCount == 0 ? PmTriggers.First(s, i.StartDate, calendars) : null));
         else s.NextDueDate = null;
@@ -897,8 +921,8 @@ public static class PmEndpoints
         return list.SelectMany(i => PmTriggers.Forecast(i.S, to, 400, CalendarsOf(i.S.Id)).Select((d, k) => new ForecastRow
         {
             Date = d, Id = i.S.Id, Code = i.S.Code, Name = i.S.Name, AssetId = i.S.AssetId, AssetNumber = i.AssetNumber, SiteId = i.S.SiteId, SiteName = i.SiteName, Type = i.S.Type,
-            TaskName = taskNames.GetValueOrDefault(PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + k)) ?? i.TaskName,
-            Cost = costs.GetValueOrDefault((i.S.Id, PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + k))),
+            TaskName = taskNames.GetValueOrDefault(PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + PmTriggers.PeriodOffset(i.S, k))) ?? i.TaskName,
+            Cost = costs.GetValueOrDefault((i.S.Id, PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + PmTriggers.PeriodOffset(i.S, k)))),
             Overdue = d < Today,
             // The schedule's next occurrence: generating it creates no other work order.
             IsNext = k == 0,

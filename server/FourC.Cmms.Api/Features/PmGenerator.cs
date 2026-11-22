@@ -11,7 +11,11 @@ namespace FourC.Cmms.Api.Features;
 public static class PmGenerator
 {
     public sealed record Result(Guid ScheduleId, string Code, string Name, DateOnly? DueDate, string? TaskName, string? AssetNumber,
-        Guid? WorkOrderId, string? WorkOrderNumber, string? Skipped, Guid? GroupId = null, string? GroupNumber = null);
+        Guid? WorkOrderId, string? WorkOrderNumber, string? Skipped, Guid? GroupId = null, string? GroupNumber = null, int Children = 0)
+    {
+        /// <summary>Work orders this result made: its own, or its group's (0.12.0).</summary>
+        public int Made => WorkOrderId is not null ? 1 : Children;
+    }
 
     private static readonly WorkOrderStatus[] Active = [WorkOrderStatus.Open, WorkOrderStatus.InProgress, WorkOrderStatus.OnHold];
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
@@ -77,6 +81,8 @@ public static class PmGenerator
         var taskIds = s.ExtraTasks.Select(x => x.PmTaskId).Append(s.PmTaskId).Distinct().ToList();
         var tasks = await db.PmTasks.AsNoTracking().Include(t => t.Steps).Where(t => taskIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
         var calendars = await PmEndpoints.CalendarsAsync(db, s.Calendars.Select(c => c.ScheduleCalendarId), ct);
+        // Spread blocks come from the whole list (assets in a skip status included), so a skipped asset doesn't shift the others' parts.
+        var listed = PmTriggers.Spreads(s) && round is not null ? await RoundAssetsAsync(db, s, ct) : null;
         DateOnly? last = null;
         for (var guard = 0; guard < 120 && s.NextDueDate is { } due && due <= limit; guard++)
         {
@@ -89,8 +95,9 @@ public static class PmGenerator
             var part = round;
             if (spread)
             {
-                var (from, size) = PmTriggers.Spread(round!.Count, s.SpreadParts!.Value, Math.Min(s.SpreadIndex, s.SpreadParts.Value - 1));
-                part = round.Skip(from).Take(size).ToList();
+                var (from, size) = PmTriggers.Spread(listed!.Count, s.SpreadParts!.Value, Math.Min(s.SpreadIndex, s.SpreadParts.Value - 1));
+                var available = round!.Select(a => a.Id).ToHashSet();
+                part = listed.Skip(from).Take(size).Where(a => available.Contains(a.Id)).ToList();
             }
             WorkOrder? wo = null;
             var exists = await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && w.PmDueDate == due, ct)
@@ -122,7 +129,8 @@ public static class PmGenerator
                 else wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct, part, rules.NonWorking, mail);
             }
             results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, wo?.Id, wo?.Number,
-                task is null ? "PM task not found" : exists ? "Already generated" : part is { Count: 0 } ? "No active assets in this part" : null, group?.Id, group?.Number));
+                task is null ? "PM task not found" : exists ? "Already generated" : part is { Count: 0 } ? "No active assets in this part" : null, group?.Id, group?.Number,
+                group is null ? 0 : part!.Count));
             s.LastDueDate = due; s.LastGeneratedAt = DateTimeOffset.UtcNow; s.LastWorkOrderId = wo?.Id ?? s.LastWorkOrderId;
             if (spread) AdvanceSpread(s, countPeriod: true);
             else
@@ -192,7 +200,7 @@ public static class PmGenerator
         if (s.MultiAssetMode == MultiAssetMode.Group && round is { Count: > 0 })
         {
             var group = await WorkGroups.CreateGroupAsync(db, ctx, s, task, date, round, rules.NonWorking, ct, mail);
-            return new Result(s.Id, s.Code, s.Name, date, task.Name, null, null, null, null, group.Id, group.Number);
+            return new Result(s.Id, s.Code, s.Name, date, task.Name, null, null, null, null, group.Id, group.Number, round.Count);
         }
         var wo = await CreateWorkOrderAsync(db, ctx, s, task, date, null, ct, round, rules.NonWorking, mail);
         return new Result(s.Id, s.Code, s.Name, date, task.Name, s.Asset?.AssetNumber, wo.Id, wo.Number, null);
@@ -400,7 +408,7 @@ public sealed class PmSchedulerService(IServiceScopeFactory scopes, IConfigurati
         {
             await using var db = new CmmsDbContext(options, new FixedTenantContext(tenantId, null, "PM scheduler"));
             var created = (await PmGenerator.RunAsync(db, new FixedTenantContext(tenantId, null, "PM scheduler"), null, null, null, false, ct,
-                scope.ServiceProvider.GetService<EmailOutbox>())).Count(r => r.WorkOrderId is not null);
+                scope.ServiceProvider.GetService<EmailOutbox>())).Sum(r => r.Made);
             if (created > 0) log.LogInformation("PM scheduler created {Count} work orders for tenant {Tenant}", created, tenantId);
         }
     }

@@ -134,6 +134,8 @@ public class TemplatesModelTests(ApiFixture fx) : IClassFixture<ApiFixture>
     [InlineData("Unknown meter.")]
     [InlineData("Unknown work template.")]
     [InlineData("You can't close, cancel or reopen closed work orders.")]
+    [InlineData("Spread over at most 7 parts: one a day.")]
+    [InlineData("This template is a checklist on assets or categories. Remove it there or mark it inactive instead.")]
     public void New_messages_have_Arabic(string english) =>
         Assert.NotEqual(english, FourC.Cmms.Api.Infrastructure.Translator.T(english, "ar"));
 }

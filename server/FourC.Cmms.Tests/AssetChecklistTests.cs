@@ -98,4 +98,22 @@ public class AssetChecklistTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Contains("This template is already on it.", await Bad(await org.Admin.PostAsJsonAsync("/api/asset-checklists", new { assetId = asset, pmTaskId = t })));
         Assert.Contains("assetId", await Bad(await org.Admin.PostAsJsonAsync("/api/asset-checklists", new { pmTaskId = t })));
     }
+
+    [SkippableFact]
+    public async Task Templates_on_assets_or_categories_cannot_be_deleted()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var asset = await AssetAsync(org.Admin, org.Site, "Press");
+        var checklist = await TemplateAsync(org.Admin, "CL1", ["Lock out"]);
+        await AttachAsync(org.Admin, checklist, asset: asset);
+        Assert.Contains("This template is a checklist on assets or categories. Remove it there or mark it inactive instead.",
+            await Bad(await org.Admin.DeleteAsync($"/api/pm-tasks/{checklist}")));
+        var a = await AssetAsync(org.Admin, org.Site, "A");
+        var b = await AssetAsync(org.Admin, org.Site, "B");
+        var own = await TemplateAsync(org.Admin, "OWN", ["Own step"]);
+        await SaveScheduleAsync(org.Admin, Schedule(org.Site, await TemplateAsync(org.Admin, "PMT"), Today, assets: [a, b],
+            extra: new() { ["assetTemplates"] = new[] { new { assetId = a, pmTaskId = own } } }));
+        Assert.Contains("This task is used by PM schedules. Mark it inactive instead.", await Bad(await org.Admin.DeleteAsync($"/api/pm-tasks/{own}")));
+    }
 }

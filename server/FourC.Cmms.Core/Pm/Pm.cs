@@ -352,6 +352,7 @@ public static class PmCalendar
             PmScheduleType.FixedInterval => Every(s.Frequency, s.Unit) + (s.Basis == PmBasis.Actual ? " بعد الإنجاز" : ""),
             PmScheduleType.DayOfWeekInMonth => $"{days[(int)(s.DayOfWeek ?? System.DayOfWeek.Monday)]} {weeks[Math.Clamp(s.WeekOfMonth ?? 1, 1, 5)]} · {Every(s.Frequency, FrequencyUnit.Month)}",
             PmScheduleType.DateOfMonth => $"اليوم {s.DayOfMonth} · {Every(s.Frequency, FrequencyUnit.Month)}",
+            PmScheduleType.Calendar => "في تواريخ تقويماتها",
             _ => s.MeterTrigger == Pm.MeterTrigger.Threshold
                 ? (s.LowerLimit, s.UpperLimit) switch
                 {
@@ -373,6 +374,7 @@ public static class PmCalendar
             PmScheduleType.FixedInterval => Every(s.Frequency, s.Unit.ToString().ToLowerInvariant()) + (s.Basis == PmBasis.Actual ? " after completion" : ""),
             PmScheduleType.DayOfWeekInMonth => $"{weeks[Math.Clamp(s.WeekOfMonth ?? 1, 1, 5)]} {s.DayOfWeek} · {Every(s.Frequency, "month").ToLowerInvariant()}",
             PmScheduleType.DateOfMonth => $"Day {s.DayOfMonth} · {Every(s.Frequency, "month").ToLowerInvariant()}",
+            PmScheduleType.Calendar => "On its calendars' dates",
             _ => s.MeterTrigger == Pm.MeterTrigger.Threshold
                 ? (s.LowerLimit, s.UpperLimit) switch
                 {

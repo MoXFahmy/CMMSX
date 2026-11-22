@@ -120,4 +120,52 @@ public class PmTriggerGenerationTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal($"No next date: its calendars have no dates after {Iso(Today)}.", results[1].GetProperty("skipped").GetString());
         Assert.Equal(JsonValueKind.Null, (await DetailAsync(org.Admin, pm)).GetProperty("nextDueDate").ValueKind);
     }
+
+    [SkippableFact]
+    public async Task Editing_a_calendar_moves_its_pms()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var asset = await AssetAsync(org.Admin, org.Site, "Boiler");
+        var cal = await CalendarAsync(org.Admin, "LOW", Today.AddDays(10), Today.AddDays(40));
+        var pm = Id(await SaveScheduleAsync(org.Admin, Schedule(org.Site, await TemplateAsync(org.Admin, "T"), Today, asset,
+            extra: new() { ["type"] = "Calendar", ["calendarIds"] = new[] { cal } })));
+        Assert.Equal(Iso(Today.AddDays(10)), (await DetailAsync(org.Admin, pm)).GetProperty("nextDueDate").GetString());
+        await Ok(await org.Admin.PutAsJsonAsync($"/api/pm-calendars/{cal}", new { code = "LOW", name = "LOW", kind = "Dates", dates = new[] { Iso(Today.AddDays(17)), Iso(Today.AddDays(47)) }, isActive = true }));
+        Assert.Equal(Iso(Today.AddDays(17)), (await DetailAsync(org.Admin, pm)).GetProperty("nextDueDate").GetString());
+        await Ok(await org.Admin.PutAsJsonAsync($"/api/pm-calendars/{cal}", new { code = "LOW", name = "LOW", kind = "Dates", dates = new[] { Iso(Today.AddDays(17)) }, isActive = false }));
+        Assert.Equal(JsonValueKind.Null, (await DetailAsync(org.Admin, pm)).GetProperty("nextDueDate").ValueKind);
+    }
+
+    [SkippableFact]
+    public async Task Linking_a_calendar_brings_the_next_date_forward()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var asset = await AssetAsync(org.Admin, org.Site, "Fan");
+        var body = Schedule(org.Site, await TemplateAsync(org.Admin, "T"), Today.AddDays(-10), asset);
+        var pm = Id(await SaveScheduleAsync(org.Admin, body));
+        await GenerateAsync(org.Admin, Today, pm);
+        var loaded = (await DetailAsync(org.Admin, pm)).GetProperty("nextDueDate").GetString();
+        Assert.Equal(Iso(Today.AddDays(-10).AddMonths(1)), loaded);
+        var cal = await CalendarAsync(org.Admin, "SHUT", Today.AddDays(5));
+        body["calendarIds"] = new[] { cal };
+        body["nextDueDate"] = loaded; // the edit page sends the date it loaded
+        await Ok(await org.Admin.PutAsJsonAsync($"/api/pm-schedules/{pm}", body));
+        Assert.Equal(Iso(Today.AddDays(5)), (await DetailAsync(org.Admin, pm)).GetProperty("nextDueDate").GetString());
+    }
+
+    [SkippableFact]
+    public async Task Forecast_includes_calendar_dates()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var asset = await AssetAsync(org.Admin, org.Site, "Lift");
+        var cal = await CalendarAsync(org.Admin, "INSP", Today.AddDays(5), Today.AddDays(20));
+        var pm = Id(await SaveScheduleAsync(org.Admin, Schedule(org.Site, await TemplateAsync(org.Admin, "T"), Today, asset,
+            extra: new() { ["type"] = "Calendar", ["calendarIds"] = new[] { cal } })));
+        var items = (await Ok(await org.Admin.GetAsync($"/api/pm/forecast?from={Iso(Today)}&to={Iso(Today.AddDays(30))}"))).EnumerateArray()
+            .Where(i => Id(i) == pm).Select(i => i.GetProperty("date").GetString()).ToList();
+        Assert.Equal([Iso(Today.AddDays(5)), Iso(Today.AddDays(20))], items);
+    }
 }

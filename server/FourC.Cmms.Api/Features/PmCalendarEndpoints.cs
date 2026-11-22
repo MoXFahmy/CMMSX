@@ -70,6 +70,7 @@ public static class PmCalendarEndpoints
             if (input.RowVersion is not null) db.Entry(c).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
             c.Code = input.Code.Trim(); c.Name = input.Name.Trim();
             Apply(c, input);
+            await RetriggerAsync(db, c, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { c.Id });
         }).RequirePermission(Permissions.PmManage);
@@ -85,6 +86,24 @@ public static class PmCalendarEndpoints
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.PmManage);
+    }
+
+    /// <summary>
+    /// Moves the next date of every active Scheduled PM using <paramref name="edited"/> (in every site: the calendar is the organization's)
+    /// to follow its dates now; spread and Actual PMs don't use calendars.
+    /// </summary>
+    private static async Task RetriggerAsync(CmmsDbContext db, ScheduleCalendar edited, CancellationToken ct)
+    {
+        var pms = await db.PmSchedules.AllSites().Include(s => s.Calendars)
+            .Where(s => s.IsActive && s.Basis == PmBasis.Scheduled && s.Calendars.Any(x => x.ScheduleCalendarId == edited.Id)).ToListAsync(ct);
+        if (pms.Count == 0) return;
+        var ids = pms.SelectMany(s => s.Calendars.Select(x => x.ScheduleCalendarId)).Where(x => x != edited.Id).Distinct().ToList();
+        var others = await db.ScheduleCalendars.AsNoTracking().Where(x => ids.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
+        foreach (var s in pms)
+        {
+            var calendars = s.Calendars.Select(x => x.ScheduleCalendarId == edited.Id ? edited : others.GetValueOrDefault(x.ScheduleCalendarId)).OfType<ScheduleCalendar>().ToList();
+            s.NextDueDate = PmTriggers.Retrigger(s, calendars, Today);
+        }
     }
 
     private static void Apply(ScheduleCalendar c, CalendarInput i)

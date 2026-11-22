@@ -124,4 +124,14 @@ public class GroupGenerationTests(ApiFixture fx) : IClassFixture<ApiFixture>
         actual["basis"] = "Actual";
         Assert.Contains("multiAssetMode", await Bad(await s.Org.Admin.PostAsJsonAsync("/api/pm-schedules", Schedule(s.Org.Site, s.Template, Today, assets: [s.A, s.B], extra: actual))));
     }
+
+    [SkippableFact]
+    public async Task Generate_counts_the_groups_work_orders()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync();
+        var pm = Id(await SaveScheduleAsync(s.Org.Admin, Schedule(s.Org.Site, s.Template, Today, assets: [s.A, s.B], extra: Group())));
+        var answer = await Ok(await s.Org.Admin.PostAsJsonAsync("/api/pm/generate", new { until = Iso(Today), scheduleIds = new[] { pm } }));
+        Assert.Equal(2, answer.GetProperty("created").GetInt32());
+    }
 }

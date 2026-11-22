@@ -93,6 +93,25 @@ public static class PmTriggers
     }
 
     /// <summary>The PM generates by date: its own rule or any calendar.</summary>
+    /// <summary>
+    /// The next date after a PM's calendars change (a calendar edited, linked or unlinked): its own rule as generation would continue it
+    /// from the last occurrence (or its first date), or its calendars' first date after both the last occurrence and yesterday —
+    /// whichever comes first.
+    /// </summary>
+    public static DateOnly? Retrigger(PmSchedule s, IReadOnlyList<ScheduleCalendar> calendars, DateOnly today)
+    {
+        DateOnly? best = !OwnRule(s) ? null : s.LastDueDate is { } last ? PmCalendar.Next(s, last) : PmCalendar.FirstOnOrAfter(s, s.StartDate);
+        var after = s.LastDueDate ?? s.StartDate.AddDays(-1);
+        if (after < today.AddDays(-1)) after = today.AddDays(-1);
+        foreach (var c in calendars)
+            if (CalendarNext(c, after) is { } d && (best is null || d < best)) best = d;
+        return best;
+    }
+
+    /// <summary>How many periods after the next one the <paramref name="k"/>-th coming occurrence falls in: "every Nth" counts periods, and a
+    /// spread PM has several occurrences per period.</summary>
+    public static int PeriodOffset(PmSchedule s, int k) => Spreads(s) ? (s.SpreadIndex + k) / s.SpreadParts!.Value : k;
+
     public static bool UsesDates(PmSchedule s, int calendarCount) => OwnRule(s) || calendarCount > 0;
 
     /// <summary>The PM has a date rule of its own (not only calendars, and not a meter without "or time").</summary>
