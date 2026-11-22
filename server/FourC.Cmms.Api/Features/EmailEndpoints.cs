@@ -21,6 +21,8 @@ public static class EmailEndpoints
             {
                 Available = mail.Available, Allowed = mail.AllowedFor(tenant), tenant.Slug, From = mail.Available ? options.Value.From : null,
                 Enabled = tenant.Settings.EmailEnabled, Events = EmailEvents.All,
+                // The Settings › Notifications grid: who each work and request e-mail can go to, and who it goes to by default.
+                Grid = EmailEvents.All.Where(EmailEvents.Grid.ContainsKey).Select(k => new { Key = k, EmailEvents.Grid[k].Applicable, EmailEvents.Grid[k].Defaults }),
             });
         }).RequireAuthorization();
 

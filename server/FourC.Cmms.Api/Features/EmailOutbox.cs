@@ -36,11 +36,13 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     public async Task AssigneesAddedAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, IReadOnlyCollection<Guid> employeeIds, CancellationToken ct)
     {
         if (!Available || employeeIds.Count == 0) return;
-        var to = await EmployeesAsync(db, employeeIds, ct);
-        var facts = await FactsAsync(db, w, ct);
         var pm = w.PmScheduleId is not null;
-        await QueueAsync(db, ctx, pm ? EmailEvents.PmAssigned : EmailEvents.WorkOrderAssigned, to,
-            org => EmailTemplates.Assigned(org, facts, Link($"/work-orders/{w.Id}"), pm), "WorkOrder", w.Id, ct, siteId: w.SiteId, locationId: w.LocationId);
+        var key = pm ? EmailEvents.PmAssigned : EmailEvents.WorkOrderAssigned;
+        var to = Union(await GroupsAsync(db, key, w, null, employeeIds, ct));
+        if (to.Count == 0) return;
+        var facts = await FactsAsync(db, w, ct);
+        await QueueAsync(db, ctx, key, to, org => EmailTemplates.Assigned(org, facts, Link($"/work-orders/{w.Id}"), pm), "WorkOrder", w.Id, ct,
+            siteId: w.SiteId, locationId: w.LocationId);
     }
 
     /// <summary>Given to a team: its members hear, as when assigned (those already assigned heard that already).</summary>
@@ -53,18 +55,21 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         await AssigneesAddedAsync(db, ctx, w, active.Where(m => !assigned.Contains(m)).ToList(), ct);
     }
 
-    /// <summary>Completed: whoever created the work hears, and so does the requester when it came from a request.</summary>
+    /// <summary>Completed: the grid's recipients hear (by default whoever created the work); the requester is asked to accept or refuse.</summary>
     public async Task WorkOrderCompletedAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, CancellationToken ct)
     {
         if (!Available) return;
         var facts = await FactsAsync(db, w, ct);
-        if (w.CreatedById is { } creator)
-            await QueueAsync(db, ctx, EmailEvents.WorkOrderCompleted, await UsersAsync(db, [creator], ct),
+        var to = Union(await GroupsAsync(db, EmailEvents.WorkOrderCompleted, w, null, null, ct));
+        if (to.Count > 0)
+            await QueueAsync(db, ctx, EmailEvents.WorkOrderCompleted, to,
                 org => EmailTemplates.WorkOrderCompleted(org, facts, Link($"/work-orders/{w.Id}")), "WorkOrder", w.Id, ct, siteId: w.SiteId, locationId: w.LocationId);
-        if (w.WorkRequestId is { } rid && await db.WorkRequests.FirstOrDefaultAsync(r => r.Id == rid, ct) is { } r)
+        if (w.WorkRequestId is { } rid && await db.WorkRequests.AllSites().AsNoTracking().FirstOrDefaultAsync(r => r.Id == rid, ct) is { } r)
         {
+            var requester = Union(await GroupsAsync(db, EmailEvents.RequestCompleted, w, r, null, ct));
+            if (requester.Count == 0) return;
             var rf = await FactsAsync(db, r, ct);
-            await QueueAsync(db, ctx, EmailEvents.RequestCompleted, [await RequesterAsync(db, r, ct)],
+            await QueueAsync(db, ctx, EmailEvents.RequestCompleted, requester,
                 org => EmailTemplates.RequestCompleted(org, rf, w.Number, w.CompletionNotes, Link($"/work-requests?open={r.Id}")), "WorkRequest", r.Id, ct,
                 siteId: r.SiteId, locationId: r.LocationId);
         }
@@ -72,29 +77,82 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
 
     // ---------------- Work requests ----------------
 
-    /// <summary>A new request: the site's request recipients hear, else the people who triage requests (only those who can see the site).</summary>
+    /// <summary>A new request: its recipients hear (the site's, the type's and its own extra ones; else the people who triage requests).</summary>
     public async Task RequestSubmittedAsync(CmmsDbContext db, ITenantContext ctx, WorkRequest r, CancellationToken ct)
     {
         if (!Available) return;
+        var to = Union(await GroupsAsync(db, EmailEvents.RequestSubmitted, null, r, null, ct));
+        if (to.Count == 0) return;
         var facts = await FactsAsync(db, r, ct);
-        var recipients = await RequestRecipientsAsync(db, r, ct);
-        await QueueAsync(db, ctx, EmailEvents.RequestSubmitted, recipients,
+        await QueueAsync(db, ctx, EmailEvents.RequestSubmitted, to,
             org => EmailTemplates.RequestSubmitted(org, facts, r.RequesterName, Link($"/work-requests?open={r.Id}")), "WorkRequest", r.Id, ct,
             siteId: r.SiteId, locationId: r.LocationId);
     }
 
-    /// <summary>Approved or rejected (by the request's status): the requester hears.</summary>
+    /// <summary>Approved or rejected (by the request's status): the grid's recipients hear (by default the requester).</summary>
     public async Task RequestDecidedAsync(CmmsDbContext db, ITenantContext ctx, WorkRequest r, string? workOrderNumber, CancellationToken ct)
     {
         if (!Available) return;
+        var key = r.Status switch { WorkRequestStatus.Approved => EmailEvents.RequestApproved, WorkRequestStatus.Rejected => EmailEvents.RequestRejected, _ => null };
+        if (key is null) return;
+        var w = r.WorkOrderId is { } wid ? await db.WorkOrders.AllSites().AsNoTracking().Include(x => x.Assignees).FirstOrDefaultAsync(x => x.Id == wid, ct) : null;
+        var to = Union(await GroupsAsync(db, key, w, r, null, ct));
+        if (to.Count == 0) return;
         var facts = await FactsAsync(db, r, ct);
         var link = Link($"/work-requests?open={r.Id}");
-        if (r.Status == WorkRequestStatus.Approved)
-            await QueueAsync(db, ctx, EmailEvents.RequestApproved, [await RequesterAsync(db, r, ct)],
-                org => EmailTemplates.RequestApproved(org, facts, workOrderNumber ?? "", link), "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
-        else if (r.Status == WorkRequestStatus.Rejected)
-            await QueueAsync(db, ctx, EmailEvents.RequestRejected, [await RequesterAsync(db, r, ct)],
-                org => EmailTemplates.RequestRejected(org, facts, r.DecisionNote ?? "", link), "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
+        await QueueAsync(db, ctx, key, to, org => key == EmailEvents.RequestApproved
+                ? EmailTemplates.RequestApproved(org, facts, workOrderNumber ?? "", link)
+                : EmailTemplates.RequestRejected(org, facts, r.DecisionNote ?? "", link),
+            "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
+    }
+
+    // ---------------- Who gets each e-mail (0.10.0 grid) ----------------
+
+    /// <summary>
+    /// The people each recipient kind switched on for <paramref name="eventKey"/> stands for. Technicians and contractors are the work's
+    /// assignees and the members of its team (split by "contractor"), or only <paramref name="onlyEmployees"/> when given (people just added).
+    /// </summary>
+    internal async Task<Dictionary<string, List<EmailRecipient>>> GroupsAsync(CmmsDbContext db, string eventKey, WorkOrder? w, WorkRequest? r,
+        IReadOnlyCollection<Guid>? onlyEmployees, CancellationToken ct)
+    {
+        var groups = new Dictionary<string, List<EmailRecipient>>();
+        var tenant = await db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == db.CurrentTenantId, ct);
+        if (tenant is null) return groups;
+        var kinds = EmailEvents.KindsOn(tenant.Settings, eventKey);
+        if (kinds.Count == 0) return groups;
+        if (r is null && w?.WorkRequestId is { } rid) r = await db.WorkRequests.AllSites().AsNoTracking().FirstOrDefaultAsync(x => x.Id == rid, ct);
+        foreach (var kind in kinds)
+            groups[kind] = kind switch
+            {
+                EmailRecipientKinds.Requester => r is null ? [] : [await RequesterAsync(db, r, ct)],
+                EmailRecipientKinds.RequestRecipients => r is null ? [] : await RequestRecipientsAsync(db, r, ct),
+                EmailRecipientKinds.Technicians => w is null ? [] : await WorkersAsync(db, w, onlyEmployees, contractors: false, ct),
+                EmailRecipientKinds.Contractors => w is null ? [] : await WorkersAsync(db, w, onlyEmployees, contractors: true, ct),
+                EmailRecipientKinds.Issuer => (w is not null ? w.CreatedById : r?.CreatedById) is { } issuer ? await UsersAsync(db, [issuer], ct) : [],
+                _ => [],
+            };
+        return groups;
+    }
+
+    /// <summary>Everyone in <paramref name="groups"/> (one entry per address is kept later, when queuing).</summary>
+    internal static List<EmailRecipient> Union(Dictionary<string, List<EmailRecipient>> groups) => groups.Values.SelectMany(x => x).ToList();
+
+    /// <summary>The work's people: assignees (also those not saved yet) and active team members, in-house or contractors.</summary>
+    private static async Task<List<EmailRecipient>> WorkersAsync(CmmsDbContext db, WorkOrder w, IReadOnlyCollection<Guid>? onlyEmployees, bool contractors,
+        CancellationToken ct)
+    {
+        List<Guid> ids;
+        if (onlyEmployees is not null) ids = [.. onlyEmployees];
+        else
+        {
+            var saved = await db.WorkOrderAssignees.Where(a => a.WorkOrderId == w.Id).Select(a => a.EmployeeId).ToListAsync(ct);
+            var members = w.TeamId is { } team ? await db.Teams.AllSites().Where(t => t.Id == team).Select(t => t.MemberIds).FirstOrDefaultAsync(ct) ?? [] : [];
+            var activeMembers = members.Count == 0 ? [] : await db.Employees.Where(e => members.Contains(e.Id) && e.IsActive).Select(e => e.Id).ToListAsync(ct);
+            ids = [.. w.Assignees.Select(a => a.EmployeeId).Concat(saved).Concat(activeMembers).Distinct()];
+        }
+        if (ids.Count == 0) return [];
+        var kept = await db.Employees.AsNoTracking().Where(e => ids.Contains(e.Id) && e.IsContractor == contractors).Select(e => e.Id).ToListAsync(ct);
+        return kept.Count == 0 ? [] : await EmployeesAsync(db, kept, ct);
     }
 
     // ---------------- Purchasing ----------------
@@ -135,7 +193,10 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             if (w is null || w.Assignees.Count == 0) continue;
             var facts = await FactsAsync(db, w, ct);
             var lines = group.Select(g => g.Line).ToList();
-            await QueueAsync(db, ctx, EmailEvents.PartsReceived, await EmployeesAsync(db, w.Assignees.Select(a => a.EmployeeId).ToList(), ct),
+            // The assignees on the work (not its team): they are the ones waiting for these parts.
+            var to = Union(await GroupsAsync(db, EmailEvents.PartsReceived, w, null, w.Assignees.Select(a => a.EmployeeId).ToList(), ct));
+            if (to.Count == 0) continue;
+            await QueueAsync(db, ctx, EmailEvents.PartsReceived, to,
                 org => EmailTemplates.PartsReceived(org, facts, po.Number, lines, Link($"/work-orders/{w.Id}")), "WorkOrder", w.Id, ct, siteId: w.SiteId, locationId: w.LocationId);
         }
     }
