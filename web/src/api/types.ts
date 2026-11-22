@@ -20,6 +20,8 @@ export type TenantSettings = {
   workOrderNumberPrefix: string; workRequestNumberPrefix: string; requireCompletionNotes: boolean; autoGeneratePm: boolean;
   purchaseOrderNumberPrefix: string; defaultTaxPercent: number; currency: string; dateFormat: string; timeZone: string;
   requireLaborToComplete: boolean; requireAllTasksDone: boolean; requireFailureCodeForBreakdowns: boolean; autoStartWork: boolean;
+  /** Smart checklists (0.13.0): what a failed step raises by default, its template, and readings needed to complete. */
+  followUpDefault?: FollowUpKind; followUpTemplateId?: string | null; requireReadingSteps?: boolean;
   emailEnabled: boolean; disabledEmails: string[];
   /** Who gets each work and request e-mail (0.10.0): event key → recipient kinds; an event not listed uses its defaults. */
   emailRecipients?: Record<string, string[]>;
@@ -181,6 +183,12 @@ export type WorkOrderListItem = {
   /** Its group (0.12.0). */
   groupId?: string | null; groupNumber?: string | null;
 };
+/** A work order's checklist step (0.13.0 adds its type, answer, photos and follow-up). */
+export type WorkOrderStep = { id: string; sequence: number; description: string; isDone: boolean; doneAt?: string; doneBy?: string; assetId?: string; reading?: string;
+  remarks?: string; updatedAt?: string; updatedByName?: string; type: import('@/components/measure').StepType; unit?: string | null; decimals?: number | null;
+  measurementPointId?: string | null; meterId?: string | null; meterName?: string | null; photoRequired: boolean; beforeStart: boolean; followUpKind: FollowUpKind;
+  answer?: import('@/components/measure').StepAnswer | null; value?: number | null; textValue?: string | null; level?: import('@/components/measure').MeasureLevel | null;
+  photos: { id: string; fileName: string; contentType: string }[]; followUp?: FollowUpLink | null };
 export type WorkOrderDetail = {
   id: string; number: string; title: string; description?: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
   siteId: string; site: { id: string; name: string }; locationId?: string; locationTrail: { id: string; name: string }[];
@@ -199,7 +207,9 @@ export type WorkOrderDetail = {
   pm?: { id: string; code: string; name: string }; pmDueDate?: string;
   /** Assets a PM round work order covers, in order (empty otherwise). */
   assets: { id: string; assetNumber: string; name: string }[];
-  tasks: { id: string; sequence: number; description: string; isDone: boolean; doneAt?: string; doneBy?: string; assetId?: string; reading?: string; remarks?: string }[];
+  tasks: WorkOrderStep[];
+  /** Smart checklists (0.13.0): the points its steps use, and the work order and step a follow-up came from. */
+  points?: PointView[]; source?: StepSource | null;
   labor: { id: string; employeeId: string; employeeName: string; workDate: string; createdAt: string; hours: number; overtimeHours: number; rate: number; overtimeRate: number; notes?: string; cost: number }[];
   costs: { id: string; description: string; quantity: number; unitCost: number; vendor?: string; reference?: string; total: number; createdAt: string }[];
   parts: WoPartItem[];
@@ -263,7 +273,36 @@ export const DAY_NAMES: DayName[] = ['Monday', 'Tuesday', 'Wednesday', 'Thursday
 
 export type PmTaskListItem = { id: string; code: string; name: string; tradeId?: string; estimatedHours?: number; isActive: boolean; stepCount: number; scheduleCount: number };
 export type PmTaskPart = { partId: string; partNumber: string; partName: string; unitOfMeasure: string; quantity: number; unitCost: number };
+// ---------------- Smart checklists (0.13.0) ----------------
+export const STEP_TYPES = ['Check', 'Number', 'Meter', 'Text'] as const;
+export type { StepType, StepAnswer, MeasureLevel } from '@/components/measure';
+export const FOLLOW_UP_KINDS = ['Default', 'None', 'WorkOrder', 'Request'] as const;
+export type FollowUpKind = (typeof FOLLOW_UP_KINDS)[number];
+export const MEASUREMENT_KINDS = ['Temperature', 'Pressure', 'Current', 'Voltage', 'Level', 'Consumption', 'Other'] as const;
+export type MeasurementKind = (typeof MEASUREMENT_KINDS)[number];
+/** A template step's definition. */
+export type StepDetail = { description: string; type: import('@/components/measure').StepType; unit?: string | null; decimals?: number | null;
+  measurementPointId?: string | null; photoRequired: boolean; beforeStart: boolean; followUp: FollowUpKind; followUpTemplateId?: string | null };
+export type PointLevels = { validMin?: number | null; validMax?: number | null; alarmLow?: number | null; alertLow?: number | null; target?: number | null;
+  alertHigh?: number | null; alarmHigh?: number | null };
+export type MeasurementPointItem = PointLevels & { id: string; code: string; name: string; kind: MeasurementKind; unit?: string | null; decimals: number; isActive: boolean;
+  assetCount: number; readingCount: number };
+export type MeasurementPointDetail = PointLevels & { id: string; code: string; name: string; kind: MeasurementKind; unit?: string | null; decimals: number; isActive: boolean;
+  alarmLowTemplateId?: string | null; alertLowTemplateId?: string | null; alertHighTemplateId?: string | null; alarmHighTemplateId?: string | null;
+  assets: { id: string; assetNumber: string; name: string; siteId: string }[]; usedBy: { id: string; code: string; name: string }[]; rowVersion: string };
+export type PointView = PointLevels & { id: string; code: string; name: string; kind: MeasurementKind; unit?: string | null; decimals: number };
+export type MeasurementReadingItem = { id: string; value: number; readAt: string; level: import('@/components/measure').MeasureLevel; assetId?: string | null;
+  assetNumber?: string | null; workOrderId?: string | null; workOrderNumber?: string | null; followUpWorkOrderId?: string | null; followUpRequestId?: string | null;
+  followUpNumber?: string | null; note?: string | null; byName?: string | null };
+export type AssetMeasurement = PointView & { isActive: boolean; readings: { id: string; readAt: string; value: number; level: import('@/components/measure').MeasureLevel;
+  workOrderId?: string | null; followUpWorkOrderId?: string | null; followUpRequestId?: string | null; byName?: string | null; note?: string | null }[] };
+export type FollowUpLink = { kind: 'workOrder' | 'request'; id: string; number: string };
+export type StepSource = { workOrderId: string; number: string; title: string; stepSequence?: number | null; stepDescription?: string | null;
+  answer?: import('@/components/measure').StepAnswer | null; value?: number | null; unit?: string | null; level?: import('@/components/measure').MeasureLevel | null;
+  textValue?: string | null; remarks?: string | null; photos: { id: string; fileName: string; contentType: string }[] };
+
 export type PmTaskDetail = { id: string; code: string; name: string; description?: string; tradeId?: string; estimatedHours?: number; safetyNotes?: string; isActive: boolean; steps: string[];
+  stepDetails: StepDetail[];
   parts: PmTaskPart[]; partsCost: number; rowVersion: string;
   /** Work template fields (0.12.0). */
   title?: string | null; workType: WorkType; priority?: WorkPriority | null; recipientIds: string[]; expectedStopHours?: number | null;

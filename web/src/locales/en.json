@@ -385,7 +385,10 @@
       "reopen": "Reopening work",
       "cancel": "Cancelling work",
       "complete": "Completing work (the \"work done\" report)"
-    }
+    },
+    "requireReadingSteps": "Require every number, meter and text step answered before completing",
+    "followUpDefault": "A failed step raises",
+    "followUpDefaultHint": "Used by steps set to \"Default\" and by readings entered on an asset."
   },
   "audit": {
     "Created": "created this record",
@@ -765,7 +768,8 @@
     "unitPlaceholder": "h, km, cycles, °C",
     "autoPlaceholder": "Auto",
     "nextReadingPlaceholder": "current + interval",
-    "calendars": "Calendars"
+    "calendars": "Calendars",
+    "points": "Measurement points"
   },
   "txType": {
     "Receipt": "Receipt",
@@ -1926,5 +1930,69 @@
     "fromCategory": "From category",
     "add": "Add a work template",
     "addButton": "Add"
+  },
+  "points": {
+    "title": "Measurement points",
+    "hint": "What number steps measure: the values possible at all, and levels that raise follow-up work.",
+    "new": "New measurement point",
+    "edit": "Edit measurement point",
+    "kind": "Measures",
+    "unit": "Unit",
+    "decimals": "Decimals",
+    "levels": "Levels",
+    "levelsHint": "Leave a level empty if it isn't used. Each alert or alarm level can raise work from its own template; otherwise the step's follow-up applies.",
+    "validMin": "Lowest possible value",
+    "validMax": "Highest possible value",
+    "validHint": "Values outside are refused (a typo such as 850 for 85.0).",
+    "levelTemplate": "Raises work from",
+    "noTemplate": "The step's follow-up",
+    "assets": "Assets",
+    "assetsHint": "The assets it is measured on; they show its chart.",
+    "readings": "Readings",
+    "usedBy": "Used by",
+    "kinds": {
+      "Temperature": "Temperature",
+      "Pressure": "Pressure",
+      "Current": "Current",
+      "Voltage": "Voltage",
+      "Level": "Level",
+      "Consumption": "Consumption",
+      "Other": "Other"
+    },
+    "level": {
+      "alarmHigh": "Alarm high",
+      "alertHigh": "Alert high",
+      "target": "Target",
+      "alertLow": "Alert low",
+      "alarmLow": "Alarm low"
+    }
+  },
+  "steps": {
+    "hint": "Open a step to choose what it asks for, whether it needs a photo or must be answered before work starts, and what a failed answer raises.",
+    "details": "Step details",
+    "type": "Asks for",
+    "point": "Measurement point",
+    "noPoint": "None (just a number)",
+    "meterUnit": "Meter unit",
+    "pointLimits": "Limits and unit ({{unit}}) come from the measurement point.",
+    "beforeStart": "Before starting (safety)",
+    "photoRequired": "Photo required",
+    "followUp": "If it fails",
+    "followUpTemplate": "Work template",
+    "failsCheck": "Fails when answered Not OK.",
+    "failsNumber": "Fails when the reading reaches an alert or alarm level of its measurement point.",
+    "failsNever": "This kind of step doesn't fail.",
+    "types": {
+      "Check": "OK / Not OK / N/A",
+      "Number": "Number",
+      "Meter": "Meter reading",
+      "Text": "Text"
+    },
+    "followUps": {
+      "Default": "Organization default",
+      "None": "Nothing",
+      "WorkOrder": "Work order from a template",
+      "Request": "Request for triage"
+    }
   }
 }

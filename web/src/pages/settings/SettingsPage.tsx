@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ActionIcon, Badge, Button, Card, Checkbox, ColorInput, Group, Modal, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Table, Tabs, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
-import { useForm } from '@mantine/form';
+import { useForm, type UseFormReturnType } from '@mantine/form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -13,7 +13,7 @@ import { TargetsEditor, timeZones } from './TargetsEditor';
 import { WorkingHoursEditor, organizationHours } from '@/components/WorkingHoursEditor';
 import { LANGUAGES } from '@/language';
 import { del, get, getAllSites, post, put } from '@/api/client';
-import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type Hierarchy, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
+import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type FollowUpKind, type Hierarchy, type PermissionInfo, type PmTaskListItem, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { NotificationSettings } from './NotificationSettings';
 import { ImportSettings } from './ImportSettings';
@@ -128,6 +128,8 @@ function OrganizationSettings() {
           </SimpleGrid>
           <Switch label={t('settings.requireLaborToComplete')} disabled={!editable} {...form.getInputProps('settings.requireLaborToComplete', { type: 'checkbox' })} />
           <Switch label={t('settings.requireAllTasksDone')} disabled={!editable} {...form.getInputProps('settings.requireAllTasksDone', { type: 'checkbox' })} />
+          <Switch label={t('settings.requireReadingSteps')} disabled={!editable} {...form.getInputProps('settings.requireReadingSteps', { type: 'checkbox' })} />
+          <FollowUpDefault form={form} editable={editable} />
           <Switch label={t('settings.requireFailureCodeForBreakdowns')} disabled={!editable} {...form.getInputProps('settings.requireFailureCodeForBreakdowns', { type: 'checkbox' })} />
           <Switch label={t('settings.autoStartWork')} disabled={!editable} {...form.getInputProps('settings.autoStartWork', { type: 'checkbox' })} />
           <Switch label={t('settings.autoGeneratePm')} disabled={!editable} {...form.getInputProps('settings.autoGeneratePm', { type: 'checkbox' })} />
@@ -175,6 +177,25 @@ function OrganizationSettings() {
         )}
       </Stack>
     </form>
+  );
+}
+
+/** What a failed checklist step raises when the step says "Default" (0.13.0): a request for triage, a work order from a template, or nothing. */
+function FollowUpDefault({ form, editable }: { form: UseFormReturnType<{ name: string; settings: TenantSettings }>; editable: boolean }) {
+  const { t } = useTranslation();
+  const { data: templates } = useQuery({ queryKey: ['pm-tasks'], queryFn: () => get<PmTaskListItem[]>('/pm-tasks') });
+  const kind = form.values.settings.followUpDefault ?? 'Request';
+  return (
+    <Group gap="xs" align="flex-end" wrap="wrap">
+      <Select w={240} label={t('settings.followUpDefault')} description={t('settings.followUpDefaultHint')} disabled={!editable}
+        data={(['Request', 'WorkOrder', 'None'] as const).map((x) => ({ value: x, label: t(`steps.followUps.${x}`) }))} value={kind}
+        onChange={(x) => form.setFieldValue('settings.followUpDefault', (x ?? 'Request') as FollowUpKind)} />
+      {kind === 'WorkOrder' && (
+        <Select style={{ flex: 1, minWidth: 240 }} searchable label={t('steps.followUpTemplate')} disabled={!editable} error={form.errors['settings.followUpTemplateId']}
+          data={(templates ?? []).filter((x) => x.isActive).map((x) => ({ value: x.id, label: `${x.code} · ${x.name}` }))}
+          value={form.values.settings.followUpTemplateId ?? null} onChange={(x) => form.setFieldValue('settings.followUpTemplateId', x)} />
+      )}
+    </Group>
   );
 }
 

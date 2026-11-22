@@ -18,10 +18,11 @@ import { AssetPicker } from '@/components/AssetPicker';
 import { useHierarchy } from '@/components/LocationPicker';
 import { generateNow } from './generateNow';
 import { CalendarsTab } from './CalendarsTab';
+import { MeasurementPointsTab } from './MeasurementPointsTab';
 import { fmtDate, fmtDateTime, fmtMoney, fmtNumber, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { BulkBar, FilterChips, ListTools, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
-const TABS = ['schedules', 'tasks', 'calendars', 'generate', 'forecast', 'meters'] as const;
+const TABS = ['schedules', 'tasks', 'calendars', 'points', 'generate', 'forecast', 'meters'] as const;
 
 export function PmPage() {
   const { t } = useTranslation();
@@ -38,6 +39,7 @@ export function PmPage() {
         <Tabs.Panel value="schedules"><SchedulesTab /></Tabs.Panel>
         <Tabs.Panel value="tasks"><TasksTab /></Tabs.Panel>
         <Tabs.Panel value="calendars"><CalendarsTab /></Tabs.Panel>
+        <Tabs.Panel value="points"><MeasurementPointsTab /></Tabs.Panel>
         <Tabs.Panel value="generate"><GenerateTab /></Tabs.Panel>
         <Tabs.Panel value="forecast"><ForecastTab /></Tabs.Panel>
         <Tabs.Panel value="meters"><MetersTab /></Tabs.Panel>
