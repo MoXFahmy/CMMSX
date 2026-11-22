@@ -20,6 +20,22 @@ public class FailureCode : TenantEntity, ICodeLookup
     public bool IsActive { get; set; } = true;
 }
 
+/// <summary>What people saw (0.14.0): the first of symptom → cause → remedy. Causes are the <see cref="FailureCode"/> list.</summary>
+public class Symptom : TenantEntity, ICodeLookup
+{
+    public required string Code { get; set; }
+    public required string Name { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+/// <summary>What was done about it (0.14.0): the last of symptom → cause → remedy.</summary>
+public class Remedy : TenantEntity, ICodeLookup
+{
+    public required string Code { get; set; }
+    public required string Name { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
 /// <summary>A request for work from anyone in the organization, triaged into a work order (legacy worequest).</summary>
 public class WorkRequest : TenantEntity
 {
@@ -51,6 +67,9 @@ public class WorkRequest : TenantEntity
     /// <summary>The asset stop this request reported ("The asset is down").</summary>
     public Guid? DowntimeEventId { get; set; }
     public Guid? RequestTypeId { get; set; }
+    /// <summary>What the requester saw (0.14.0); copied to the work order when the request is approved.</summary>
+    public Guid? SymptomId { get; set; }
+    public Symptom? Symptom { get; set; }
     public RequestType? RequestType { get; set; }
     /// <summary>A request raised by a failed checklist step (0.13.0): its work order and step.</summary>
     public Guid? SourceWorkOrderId { get; set; }
@@ -94,7 +113,13 @@ public class WorkOrder : TenantEntity
     /// <summary>Target start of the PM occurrence that generated this work order (prevents duplicate generation).</summary>
     public DateOnly? PmDueDate { get; set; }
     public Guid? FailureCodeId { get; set; }
+    /// <summary>The cause (0.14.0 screens call the failure code the cause).</summary>
     public FailureCode? FailureCode { get; set; }
+    /// <summary>What was seen and what was done (0.14.0).</summary>
+    public Guid? SymptomId { get; set; }
+    public Symptom? Symptom { get; set; }
+    public Guid? RemedyId { get; set; }
+    public Remedy? Remedy { get; set; }
 
     public DateOnly? PlannedStart { get; set; }
     /// <summary>The local day of <see cref="DueAt"/> (organization's time zone), for everything that works by date.</summary>

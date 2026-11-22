@@ -73,6 +73,51 @@ public static class AssetEndpoints
             ListExport.FileAsync(http, db, "assets", (page, size) => ListAsync(db, f, page, size, ct, ListExport.MaxRows), ct))
             .RequirePermission(Permissions.AssetsView);
 
+        // An asset's costs by year (0.14.0): labour, parts, other costs and downtime cost (its running hours stopped × the cost per hour, the asset's
+        // or its category's), optionally with its components; the last five years and this one, plus any older year with costs.
+        g.MapGet("/{id:guid}/costs", async (Guid id, bool? components, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var root = await db.Assets.AsNoTracking().Where(x => x.Id == id)
+                .Select(x => new { x.Id, Own = x.DowntimeCostPerHour, FromCategory = x.Category == null ? null : x.Category.DowntimeCostPerHour }).FirstOrDefaultAsync(ct);
+            if (root is null) return Results.NotFound();
+            var ids = new HashSet<Guid> { id };
+            if (components == true)
+            {
+                var children = (await db.Assets.AsNoTracking().Where(x => x.ParentAssetId != null).Select(x => new { x.Id, Parent = x.ParentAssetId!.Value }).ToListAsync(ct))
+                    .ToLookup(x => x.Parent, x => x.Id);
+                var queue = new Queue<Guid>(ids);
+                while (queue.Count > 0) foreach (var c in children[queue.Dequeue()]) if (ids.Add(c)) queue.Enqueue(c);
+            }
+            var assets = await db.Assets.AsNoTracking().Where(x => ids.Contains(x.Id))
+                .Select(x => new { x.Id, x.RunsHoursPerDay, x.RunsOn, Cost = x.DowntimeCostPerHour ?? (x.Category == null ? null : x.Category.DowntimeCostPerHour) }).ToListAsync(ct);
+            var lines = await ReportEndpoints.CostLinesAsync(db, db.WorkOrders.AsNoTracking().Where(w => w.AssetId != null && ids.Contains(w.AssetId.Value)), null, null, ct);
+            var thisYear = DateTime.UtcNow.Year;
+            var years = Enumerable.Range(thisYear - 5, 6).Union(lines.Select(l => l.Y)).Where(y => y <= thisYear).OrderBy(y => y).ToList();
+            var tz = Downtime.Zone((await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings.TimeZone);
+            var now = DateTimeOffset.UtcNow;
+            var rows = new List<object>();
+            foreach (var y in years)
+            {
+                var (from, to) = (new DateOnly(y, 1, 1), new DateOnly(y, 12, 31));
+                var history = await Downtime.LoadAsync(db, ids, from, to, tz, ct);
+                decimal down = 0, downCost = 0; var priced = false;
+                foreach (var x in assets)
+                {
+                    if (!history.TryGetValue(x.Id, out var h)) continue;
+                    var hours = DowntimeMath.Measure(h.Stops, h.Typed, from, to, now, x.RunsHoursPerDay, x.RunsOn, tz).DownHours;
+                    down += hours;
+                    if (x.Cost is { } cph) { downCost += cph * hours; priced = true; }
+                }
+                var mine = lines.Where(l => l.Y == y).ToList();
+                decimal labor = mine.Sum(l => l.Labor), parts = mine.Sum(l => l.Parts), other = mine.Sum(l => l.Other);
+                decimal? cost = priced ? Math.Round(downCost, 2) : null;
+                rows.Add(new { Year = y, Labor = Math.Round(labor, 2), Parts = Math.Round(parts, 2), Other = Math.Round(other, 2), DowntimeHours = Math.Round(down, 2), DowntimeCost = cost,
+                    Total = Math.Round(labor + parts + other + (cost ?? 0), 2) });
+            }
+            return Results.Ok(new { Years = rows, CostPerHour = CostMath.DowntimeCostPerHour(root.Own, root.FromCategory), FromCategory = root.Own is null && root.FromCategory is not null,
+                Components = components == true });
+        }).RequirePermission(Permissions.WorkOrdersView);
+
         g.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
             var a = await db.Assets.AsNoTracking().Include(x => x.Category).Include(x => x.Site).Include(x => x.Location).Include(x => x.ParentAsset)
@@ -91,7 +136,7 @@ public static class AssetEndpoints
                 .OrderByDescending(x => x.IsPrimaryImage).ThenBy(x => x.CreatedAt).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
             return Results.Ok(new
             {
-                a.Id, a.AssetNumber, a.Name, a.Description, a.CategoryId, Category = a.Category is null ? null : new { a.Category.Id, a.Category.Code, a.Category.Name, a.Category.Color },
+                a.Id, a.AssetNumber, a.Name, a.Description, a.CategoryId, Category = a.Category is null ? null : new { a.Category.Id, a.Category.Code, a.Category.Name, a.Category.Color, a.Category.DowntimeCostPerHour },
                 a.SiteId, Site = new { a.Site!.Id, a.Site.Code, a.Site.Name }, a.LocationId, LocationTrail = locationTrail,
                 a.ParentAssetId, ParentAsset = a.ParentAsset is null ? null : new { a.ParentAsset.Id, a.ParentAsset.AssetNumber, a.ParentAsset.Name },
                 a.Status, a.Criticality, a.Manufacturer, a.Model, a.SerialNumber, a.Barcode, a.OperationNumber,

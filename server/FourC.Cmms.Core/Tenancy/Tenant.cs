@@ -38,7 +38,11 @@ public class TenantSettings
     public FourC.Cmms.Core.Pm.FollowUpKind FollowUpDefault { get; set; } = FourC.Cmms.Core.Pm.FollowUpKind.Request;
     /// <summary>The work template for follow-up work orders when the default is a work order.</summary>
     public Guid? FollowUpTemplateId { get; set; }
-    /// <summary>Completing breakdown work needs a failure code.</summary>
+    /// <summary>The organization's logo (0.14.0): when it was last uploaded (Unix ms), or null when there is none. Pages add it to the logo's address.</summary>
+    public long? LogoVersion { get; set; }
+    /// <summary>The logo's media type (image/png, image/jpeg or image/webp), from its first bytes.</summary>
+    public string? LogoContentType { get; set; }
+    /// <summary>Completing breakdown work needs a failure code (a cause).</summary>
     public bool RequireFailureCodeForBreakdowns { get; set; }
     /// <summary>Logging labour or ticking a checklist step on an Open work order moves it to In progress.</summary>
     public bool AutoStartWork { get; set; }

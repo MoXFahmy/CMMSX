@@ -15,6 +15,7 @@ import { SourceBanner } from './SourceBanner';
 import { WORK_PRIORITIES, WORK_TYPES, type AccessWindow, type AssetDetail, type Lookup, type Paged, type RequestType, type TenantSettings, type WorkRequestDetail, type WorkRequestListItem, type WorkRequestStatus } from '@/api/types';
 import { AccessWindowsEditor, AccessWindowsList, StoppedBadge } from '@/components/AccessWindowsEditor';
 import { windowProblem } from '@/components/accessWindows';
+import { CodeSelect } from '@/components/CodeSelect';
 import { FeedbackPanel, RequestComments } from './RequestLoop';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
@@ -58,6 +59,7 @@ export function WorkRequestsPage() {
     { accessor: 'priority', title: t('priority.label'), sortable: true, noWrap: true, render: (r) => <PriorityBadge value={r.priority} /> },
     { accessor: 'type', title: t('workType.label'), noWrap: true, render: (r) => t(`workType.${r.type}`) },
     { accessor: 'requestTypeName', title: t('requestTypes.label'), noWrap: true, render: (r) => r.requestTypeName ?? '—' },
+    { accessor: 'symptomName', title: t('codes.symptom'), noWrap: true, render: (r) => r.symptomName ?? '—' },
     { accessor: 'site', title: terms.site, sortable: true, noWrap: true, export: [{ key: 'siteName' }], render: (r) => r.siteName },
     { accessor: 'location', title: terms.location, noWrap: true, export: [{ key: 'locationName' }], render: (r) => r.locationName ?? '—' },
     { accessor: 'asset', title: terms.asset, noWrap: true, export: [{ key: 'assetNumber' }, { key: 'assetName', title: `${terms.asset} · ${t('common.name')}` }],
@@ -120,7 +122,7 @@ export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean
   const { data: asset } = useQuery({ queryKey: ['asset', assetId], queryFn: () => get<AssetDetail>(`/assets/${assetId}`), enabled: !!assetId && opened });
   const blank = { title: '', description: '', siteId: null as string | null, locationId: null as string | null, assetId: null as string | null, priority: 'Medium', type: 'Corrective',
     requesterName: me?.user.fullName ?? '', requesterPhone: '', requiredBy: null as Date | null, assetIsDown: false,
-    requestTypeId: null as string | null, extraRecipientIds: [] as string[], accessWindows: [] as AccessWindow[] };
+    requestTypeId: null as string | null, extraRecipientIds: [] as string[], accessWindows: [] as AccessWindow[], symptomId: null as string | null };
   const form = useForm({ initialValues: blank, validate: { accessWindows: (v) => (windowProblem(v) ? t(windowProblem(v)!) : null) } });
   const { data: types } = useQuery({ queryKey: ['request-types'], queryFn: () => get<RequestType[]>('/request-types'), enabled: opened });
   const { data: people } = useQuery({ queryKey: ['request-people', form.values.siteId], queryFn: () => get<{ id: string; name: string }[]>('/work-requests/people', { siteId: form.values.siteId! }),
@@ -157,6 +159,8 @@ export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean
         <AssetPicker label={t('wo.asset')} value={form.values.assetId} onChange={(v) => form.setFieldValue('assetId', v)} error={form.errors.assetId}
           initial={asset ? { id: asset.id, assetNumber: asset.assetNumber, name: asset.name } : null} />
         <AssetCheck assetId={form.values.assetId} />
+        <CodeSelect path="/symptoms" label={t('codes.symptom')} description={t('codes.symptomHint')} value={form.values.symptomId}
+          onChange={(v) => form.setFieldValue('symptomId', v)} error={form.errors.symptomId} />
         {form.values.assetId && <Checkbox label={t('downtime.assetIsDown')} description={t('downtime.assetIsDownHint')} color="red"
           {...form.getInputProps('assetIsDown', { type: 'checkbox' })} />}
         <SimpleGrid cols={{ base: 1, sm: 3 }}>
@@ -212,6 +216,7 @@ function RequestDrawer({ id, onClose }: { id: string | null; onClose: () => void
             <Stack gap={2}><Text fz="xs" c="dimmed">{t('wo.asset')}</Text>{r.asset ? <Anchor component={Link} to={`/assets/${r.asset.id}`} fz="sm">{r.asset.assetNumber} · {r.asset.name}</Anchor> : <Text fz="sm">—</Text>}</Stack>
             <Stack gap={2}><Text fz="xs" c="dimmed">{t('wr.requester')}</Text><Text fz="sm">{r.requesterName ?? r.createdBy}{r.requesterPhone && ` · ${r.requesterPhone}`}</Text></Stack>
             <Stack gap={2}><Text fz="xs" c="dimmed">{t('wr.requiredBy')}</Text><Text fz="sm">{fmtDate(r.requiredBy)}</Text></Stack>
+            {r.symptom && <Stack gap={2}><Text fz="xs" c="dimmed">{t('codes.symptom')}</Text><Text fz="sm">{r.symptom.code} · {r.symptom.name}</Text></Stack>}
             <Stack gap={2}><Text fz="xs" c="dimmed">{t('sla.respondBy')}</Text><SlaText deadline={r.sla.respondBy} state={r.sla.response} /></Stack>
             <Stack gap={2}><Text fz="xs" c="dimmed">{t('wo.due')}</Text><SlaText deadline={r.dueAt} state={r.sla.completion} /></Stack>
             <Stack gap={2}><Text fz="xs" c="dimmed">{t('wo.createdOn')}</Text><Text fz="sm">{fmtDateTime(r.createdAt)}</Text></Stack>

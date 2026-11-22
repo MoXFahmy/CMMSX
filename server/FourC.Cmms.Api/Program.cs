@@ -162,6 +162,7 @@ api.MapRequestTypeEndpoints();
 api.MapRequestFeedbackEndpoints();
 api.MapStockCountEndpoints();
 api.MapWorkOrderEndpoints();
+api.MapCodeEndpoints();
 api.MapDowntimeEndpoints();
 api.MapPlanningEndpoints();
 api.MapPlanningBoardEndpoints();

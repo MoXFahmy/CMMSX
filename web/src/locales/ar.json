@@ -429,7 +429,7 @@
     "requireCompletionNotes": "اشتراط ملاحظات \"العمل المنجز\" لإكمال أمر العمل",
     "requireLaborToComplete": "اشتراط تسجيل ساعات عمل قبل إكمال أمر العمل",
     "requireAllTasksDone": "اشتراط إنجاز كل خطوات قائمة الفحص قبل الإكمال",
-    "requireFailureCodeForBreakdowns": "اشتراط رمز عطل في أعمال الأعطال",
+    "requireFailureCodeForBreakdowns": "اشتراط سبب لأعمال الأعطال",
     "autoStartWork": "بدء العمل تلقائيًا عند تسجيل ساعات عمل أو إنجاز خطوة من قائمة الفحص",
     "autoGeneratePm": "إنشاء أوامر الصيانة الوقائية تلقائيًا (ضمن مهلة كل جدول)",
     "pmRules": "الصيانة الوقائية",
@@ -470,7 +470,22 @@
     },
     "requireReadingSteps": "اشتراط الإجابة عن كل خطوات الأرقام والعدادات والنصوص قبل الإكمال",
     "followUpDefault": "الخطوة غير السليمة تُنشئ",
-    "followUpDefaultHint": "تُستخدم للخطوات المضبوطة على \"الافتراضي\" وللقراءات المسجلة على الأصل."
+    "followUpDefaultHint": "تُستخدم للخطوات المضبوطة على \"الافتراضي\" وللقراءات المسجلة على الأصل.",
+    "symptoms": "الأعراض",
+    "newSymptom": "عَرَض جديد",
+    "causes": "الأسباب",
+    "newCause": "سبب جديد",
+    "remedies": "المعالجات",
+    "newRemedy": "معالجة جديدة",
+    "downtimeCostPerHour": "تكلفة التوقف للساعة",
+    "downtimeCostHint": "تُستخدم لأصول هذه الفئة التي ليست لها تكلفة خاصة بها.",
+    "logo": "الشعار",
+    "noLogo": "لا يوجد شعار بعد.",
+    "uploadLogo": "رفع الشعار",
+    "replaceLogo": "استبدال",
+    "removeLogo": "إزالة",
+    "logoHint": "PNG أو JPEG أو WebP بحد أقصى 1 ميغابايت. يظهر في التقارير المطبوعة وبطاقات العمل.",
+    "logoTooBig": "يجب ألا يزيد حجم الشعار على 1 ميغابايت."
   },
   "wo": {
     "title": "أوامر العمل",
@@ -519,7 +534,7 @@
     "post": "نشر",
     "completeTitle": "إكمال أمر العمل",
     "completionNotes": "العمل المنجز (الإجراء المتخذ)",
-    "causeNotes": "السبب",
+    "causeNotes": "تفاصيل السبب",
     "failureCode": "رمز العطل",
     "assetWasDown": "كان الأصل متوقفًا عن الخدمة",
     "downtimeHours": "مدة التوقف (ساعات)",
@@ -582,7 +597,8 @@
     "dueAt": "تاريخ ووقت الاستحقاق",
     "dueAtHint": "اتركه فارغًا لاستخدام هدف الأولوية",
     "completedSince": "مكتمل منذ",
-    "cancelReason": "سبب الإلغاء"
+    "cancelReason": "سبب الإلغاء",
+    "completedUntil": "اكتمل حتى"
   },
   "wr": {
     "title": "طلبات العمل",
@@ -1081,7 +1097,21 @@
       "custom": "مخصص"
     },
     "noData": "لا توجد بيانات لعوامل التصفية المختارة",
-    "generated": "أُنشئ في {{date}}"
+    "generated": "أُنشئ في {{date}}",
+    "plan": {
+      "done": "منجز",
+      "late": "متأخر",
+      "missed": "فائت",
+      "cancelled": "ملغى",
+      "planned": "مخطط"
+    },
+    "year": "السنة",
+    "withComponents": "مع مكوناته",
+    "chooseAsset": "اختر أصلًا لعرض سجل أعماله.",
+    "printPdf": "طباعة أو حفظ PDF",
+    "printPeriod": "الفترة: {{from}} – {{to}}",
+    "printSite": "الموقع",
+    "printed": "طُبع {{date}} بواسطة {{name}}"
   },
   "alerts": {
     "title": "يحتاج إلى انتباه",
@@ -1403,8 +1433,8 @@
     "overtime": "ساعات إضافية",
     "holdReason": "لماذا عُلّق؟",
     "workDone": "العمل المنجز",
-    "cause": "السبب",
-    "failureCode": "رمز العطل",
+    "cause": "تفاصيل السبب",
+    "failureCode": "السبب",
     "assetWasDown": "كان الأصل متوقفًا عن الخدمة",
     "downtime": "مدة التوقف (ساعات)",
     "mySignature": "توقيعك",
@@ -1413,7 +1443,7 @@
     "clear": "مسح",
     "rule": {
       "notes": "صف العمل الذي تم.",
-      "failureCode": "اختر رمز عطل لأعمال الأعطال.",
+      "failureCode": "اختر سببًا لأعمال الأعطال.",
       "labour": "سجّل ساعات على هذا العمل قبل الإكمال.",
       "allSteps": "أنجز كل خطوات قائمة الفحص قبل الإكمال.",
       "photos": "التقط صورة لـ: {{steps}}",
@@ -2084,5 +2114,27 @@
     "onWork": "أمر العمل",
     "followUp": "المتابعة",
     "savedWithFollowUp": "تم الحفظ — أُنشئ عمل متابعة"
+  },
+  "codes": {
+    "mostUsed": "الأكثر استخدامًا معًا",
+    "all": "الكل",
+    "symptom": "العَرَض",
+    "cause": "السبب",
+    "remedy": "المعالجة",
+    "symptomHint": "ماذا لاحظت؟",
+    "notRecorded": "غير مسجّل",
+    "inFailureTree": "ضمن شجرة الأعطال"
+  },
+  "costs": {
+    "tab": "التكاليف",
+    "fromCategory": "من فئته",
+    "noRate": "لا توجد تكلفة توقف للساعة على الأصل أو فئته.",
+    "rate": "ساعة التوقف تكلف {{cost}}",
+    "labour": "العمالة",
+    "parts": "القطع",
+    "other": "أخرى",
+    "downtime": "تكلفة التوقف",
+    "downtimeHours": "التوقف (ساعات)",
+    "total": "الإجمالي"
   }
 }

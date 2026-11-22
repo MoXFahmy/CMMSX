@@ -11,9 +11,9 @@ namespace FourC.Cmms.Api.Features;
 public static partial class WorkGroups
 {
     public sealed record AssignInput(List<Guid> EmployeeIds, List<Guid>? ChildIds = null);
-    public sealed record ReportInput(string? CompletionNotes, string? CauseNotes, string? PreventionNotes, Guid? FailureCodeId, List<Guid>? ChildIds = null);
+    public sealed record ReportInput(string? CompletionNotes, string? CauseNotes, string? PreventionNotes, Guid? FailureCodeId, List<Guid>? ChildIds = null, Guid? RemedyId = null);
     public sealed record GroupStatusInput(WorkOrderStatus Status, HoldReason? HoldReason = null, string? Note = null, string? CompletionNotes = null, string? CauseNotes = null,
-        Guid? FailureCodeId = null, string? PreventionNotes = null, Guid? CancelReasonId = null, List<Guid>? ChildIds = null);
+        Guid? FailureCodeId = null, string? PreventionNotes = null, Guid? CancelReasonId = null, List<Guid>? ChildIds = null, Guid? RemedyId = null);
     public sealed record DueInput(DateOnly? DueDate, DateTimeOffset? DueAt);
     public sealed record CommentInput(string Body);
 
@@ -121,7 +121,8 @@ public static partial class WorkGroups
         g.MapPost("/{id:guid}/report", async (Guid id, ReportInput input, CmmsDbContext db, CancellationToken ct) =>
         {
             if (!await db.WorkOrderGroups.AnyAsync(x => x.Id == id, ct)) return Results.NotFound();
-            if (input.FailureCodeId is { } fc && !await db.FailureCodes.AnyAsync(f => f.Id == fc, ct)) throw new DomainException("Unknown failure code.");
+            if (await Codes.CheckAsync(db.FailureCodes, input.FailureCodeId, null, Codes.UnknownCause, ct) is { } badCause) throw new DomainException(badCause);
+            if (await Codes.CheckAsync(db.Remedies, input.RemedyId, null, Codes.UnknownRemedy, ct) is { } badRemedy) throw new DomainException(badRemedy);
             var v = new Validator().MaxLength("completionNotes", input.CompletionNotes, "Action taken", 4000).MaxLength("causeNotes", input.CauseNotes, "Cause", 4000)
                 .MaxLength("preventionNotes", input.PreventionNotes, "Prevention", 4000);
             if (!v.IsValid) return v.Problem();
@@ -132,6 +133,7 @@ public static partial class WorkGroups
                 if (string.IsNullOrWhiteSpace(w.CauseNotes) && input.CauseNotes.Clean() is { } cause) w.CauseNotes = cause;
                 if (string.IsNullOrWhiteSpace(w.PreventionNotes) && input.PreventionNotes.Clean() is { } pn) w.PreventionNotes = pn;
                 if (w.FailureCodeId is null && input.FailureCodeId is not null) w.FailureCodeId = input.FailureCodeId;
+                if (w.RemedyId is null && input.RemedyId is not null) w.RemedyId = input.RemedyId;
                 updated++;
             }
             await db.SaveChangesAsync(ct);
@@ -146,7 +148,7 @@ public static partial class WorkGroups
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
             var canClose = (await perms.GetAsync(ctx.UserId!.Value)).Contains(Permissions.WorkOrdersClose);
             var change = new WorkOrderEndpoints.StatusInput(input.Status, input.HoldReason, input.Note, input.CompletionNotes, input.CauseNotes, input.FailureCodeId, null, null,
-                input.PreventionNotes, CancelReasonId: input.CancelReasonId);
+                input.PreventionNotes, CancelReasonId: input.CancelReasonId, RemedyId: input.RemedyId);
             var refused = new List<object>();
             var changed = 0;
             foreach (var w in await ChildrenAsync(db, id, input.ChildIds, ct))

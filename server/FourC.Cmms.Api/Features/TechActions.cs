@@ -30,10 +30,10 @@ public static partial class TechEndpoints
     private sealed record CommentPayload(string? Body);
     private sealed record ReadingPayload(Guid MeterId, decimal Value, string? Note, bool Confirm = false);
     private sealed record StatusPayload(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes, Guid? FailureCodeId,
-        bool? AssetWasDown, decimal? DowntimeHours, Guid? CancelReasonId = null);
+        bool? AssetWasDown, decimal? DowntimeHours, Guid? CancelReasonId = null, Guid? RemedyId = null);
     /// <summary>AssetIsDown: "The asset is down" (0.8.1); older app versions don't send it.</summary>
     private sealed record RequestPayload(string? Title, string? Description, WorkPriority? Priority, Guid? AssetId, Guid? LocationId, Guid? SiteId, bool? AssetIsDown = null,
-        Guid? RequestTypeId = null);
+        Guid? RequestTypeId = null, Guid? SymptomId = null);
 
     /// <summary>A part used on, returned from or issued to a job (0.11.0); a planned line's store is used when no store is given.</summary>
     private sealed record PartPayload(Guid PartId, Guid? StoreId, decimal Quantity, Guid? LineId = null, Guid? WorkOrderId = null);
@@ -47,7 +47,7 @@ public static partial class TechEndpoints
     private sealed record PmTasksPayload(Guid PmTaskId);
     /// <summary>A work order raised on the phone (0.11.0), by someone who may create work orders; assigned to them unless AssignToMe is false.</summary>
     private sealed record WorkOrderPayload(string? Title, string? Description, WorkPriority? Priority, WorkType? Type, Guid? SiteId, Guid? LocationId, Guid? AssetId,
-        bool? AssignToMe = null);
+        bool? AssignToMe = null, Guid? SymptomId = null);
     /// <summary>A change that can't be applied; rolls back anything it did and is answered "rejected".</summary>
     private sealed class Rejected(string message, string? code = null) : Exception(message) { public string? Code { get; } = code; }
 
@@ -374,8 +374,10 @@ public static partial class TechEndpoints
                            ?? (p.LocationId is { } lid ? await db.Locations.Where(x => x.Id == lid).Select(x => (Guid?)x.SiteId).FirstOrDefaultAsync(ct) : null)
                            ?? throw new Rejected("Choose where the work is.");
                 var me = await EmployeeAsync(db, ctx, ct);
+                // A symptom picked offline is accepted even if made inactive since (0.14.0).
+                if (await Codes.CheckAsync(db.Symptoms, p.SymptomId, null, Codes.UnknownSymptom, ct, anyState: true) is { } badSymptom) throw new Rejected(badSymptom);
                 var woInput = new WorkOrderEndpoints.WorkOrderInput(p.Title ?? "", p.Description, p.Type ?? WorkType.Corrective, p.Priority ?? WorkPriority.Medium, site, p.LocationId,
-                    p.AssetId, null, p.AssignToMe != false && me is not null ? [me.EmployeeId] : null, null, null, null, null);
+                    p.AssetId, null, p.AssignToMe != false && me is not null ? [me.EmployeeId] : null, null, null, null, null, SymptomId: p.SymptomId);
                 Ensure(await WorkOrderEndpoints.ValidateAsync(woInput, db, ct));
                 await WorkOrderEndpoints.CreateAsync(db, ctx, woInput, null, ct, mail: mail, raisedAt: at, note: "Created on the phone");
                 return new Answer("done");
@@ -388,7 +390,8 @@ public static partial class TechEndpoints
                            ?? (p.LocationId is { } lid ? await db.Locations.Where(x => x.Id == lid).Select(x => (Guid?)x.SiteId).FirstOrDefaultAsync(ct) : null)
                            ?? throw new Rejected("Choose where the problem is.");
                 var (v, _) = await WorkRequestEndpoints.CreateAsync(db, ctx, mail, access, new WorkRequestEndpoints.RequestInput(p.Title ?? "", p.Description, site, p.LocationId, p.AssetId,
-                    p.Priority ?? WorkPriority.Medium, WorkType.Corrective, null, null, null, null, AssetIsDown: p.AssetIsDown == true, RequestTypeId: p.RequestTypeId), ct, raisedAt: at);
+                    p.Priority ?? WorkPriority.Medium, WorkType.Corrective, null, null, null, null, AssetIsDown: p.AssetIsDown == true, RequestTypeId: p.RequestTypeId, SymptomId: p.SymptomId),
+                    ct, raisedAt: at, fromPhone: true);
                 Ensure(v);
                 return new Answer("done");
             }
@@ -442,8 +445,8 @@ public static partial class TechEndpoints
         var input = new WorkOrderEndpoints.StatusInput(p.Status, p.HoldReason, p.Note, p.CompletionNotes, p.CauseNotes, p.FailureCodeId, p.AssetWasDown, p.DowntimeHours,
             // When the technician started (offline) or, on completion, never later than when they finished.
             ActualStart: p.Status == WorkOrderStatus.InProgress || (completed && w.StartedAt > at) ? at : null, ActualEnd: completed ? at : null, At: at,
-            CancelReasonId: p.CancelReasonId);
-        Ensure(await WorkOrderEndpoints.ChangeStatusAsync(db, ctx, mail, settings, w, input, ct));
+            CancelReasonId: p.CancelReasonId, RemedyId: p.RemedyId);
+        Ensure(await WorkOrderEndpoints.ChangeStatusAsync(db, ctx, mail, settings, w, input, ct, fromPhone: true));
         await db.SaveChangesAsync(ct);
         return new Answer("done");
     }

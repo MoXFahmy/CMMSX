@@ -23,7 +23,8 @@ import { StoppedBadge } from '@/components/AccessWindowsEditor';
 import { BulkBar, FilterChips, ListTools, listText, rangeText, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
 /** Filters behind "More filters"; they live in the address like the others. */
-const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source', 'completedFrom', 'cancelReasonId', 'onlyWhenStopped', 'groupId'] as const;
+const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source', 'completedFrom', 'cancelReasonId', 'onlyWhenStopped', 'groupId',
+  'completedTo', 'symptomId', 'causeId', 'remedyId', 'inFailureTree'] as const;
 const isoDay = (d: string | Date | null) => (d ? dayjs(d).format('YYYY-MM-DD') : null);
 
 const TABS: { key: string; statuses: WorkOrderStatus[] | null }[] = [
@@ -53,6 +54,7 @@ export function WorkOrdersPage() {
     locationId: p('locationId'), assigneeId: p('assigneeId'), teamId: p('teamId'), createdFrom: p('createdFrom'), createdTo: p('createdTo'),
     dueFrom: p('dueFrom'), dueTo: p('dueTo'), source: p('source'), completedFrom: p('completedFrom'),
     cancelReasonId: p('cancelReasonId'), onlyWhenStopped: p('onlyWhenStopped'), groupId: p('groupId'),
+    completedTo: p('completedTo'), symptomId: p('symptomId'), causeId: p('causeId'), remedyId: p('remedyId'), inFailureTree: p('inFailureTree'),
   };
   const listQuery = { ...base, status: statuses ?? undefined, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
   const { data, isFetching } = useQuery({
@@ -64,6 +66,12 @@ export function WorkOrdersPage() {
   const { data: h } = useHierarchy();
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
   const { data: cancelReasons } = useQuery({ queryKey: ['cancel-reasons'], queryFn: () => get<Lookup[]>('/cancel-reasons') });
+  // Symptom, cause and remedy (0.14.0): filters (a code, or "none" for not recorded) and their chips.
+  const { data: symptoms } = useQuery({ queryKey: ['codes', '/symptoms'], queryFn: () => get<Lookup[]>('/symptoms') });
+  const { data: causes } = useQuery({ queryKey: ['codes', '/failure-codes'], queryFn: () => get<Lookup[]>('/failure-codes') });
+  const { data: remedies } = useQuery({ queryKey: ['codes', '/remedies'], queryFn: () => get<Lookup[]>('/remedies') });
+  const codeName = (list: Lookup[] | undefined) => ([v]: string[]) => (v === 'none' ? t('codes.notRecorded') : list?.find((x) => x.id === v)?.name ?? '…');
+  const codeFilter = (list: Lookup[] | undefined) => [{ value: 'none', label: t('codes.notRecorded') }, ...(list ?? []).map((x) => ({ value: x.id, label: `${x.code} · ${x.name}` }))];
   const { data: filterAsset } = useQuery({ queryKey: ['asset', p('assetId')], queryFn: () => get<{ assetNumber: string; name: string }>(`/assets/${p('assetId')}`), enabled: !!p('assetId') });
   const count = (s: WorkOrderStatus[] | null) => (summary?.byStatus ?? []).filter((x) => !s || s.includes(x.status)).reduce((a, b) => a + b.count, 0);
   const filtersActive = ['search', 'siteId', 'priority', 'type', 'tradeId', ...EXTRA_FILTERS].some((k) => p(k));
@@ -89,6 +97,9 @@ export function WorkOrdersPage() {
     { accessor: 'type', title: t('workType.label'), sortable: true, noWrap: true, render: (w) => t(`workType.${w.type}`) },
     { accessor: 'trade', title: t('wo.trade'), noWrap: true, export: [{ key: 'tradeName' }], render: (w) => w.tradeName ?? '—' },
     { accessor: 'team', title: t('teams.team'), noWrap: true, export: [{ key: 'teamName' }], render: (w) => w.teamName ?? '—' },
+    { accessor: 'symptom', title: t('codes.symptom'), noWrap: true, export: [{ key: 'symptomName' }], render: (w) => w.symptomName ?? '—' },
+    { accessor: 'cause', title: t('codes.cause'), noWrap: true, export: [{ key: 'causeName' }], render: (w) => w.causeName ?? '—' },
+    { accessor: 'remedy', title: t('codes.remedy'), noWrap: true, export: [{ key: 'remedyName' }], render: (w) => w.remedyName ?? '—' },
     { accessor: 'asset', title: terms.asset, sortable: true, width: 220,
       export: [{ key: 'assetNumber' }, { key: 'assetName', title: `${terms.asset} · ${t('common.name')}` }],
       render: (w) => w.assetId ? <Stack gap={0}><Text fz="sm" lineClamp={1}>{w.assetNumber}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{w.assetName}</Text></Stack> : <Text fz="sm" c="dimmed" lineClamp={1}>{w.locationPath ?? w.siteName}</Text> },
@@ -107,7 +118,7 @@ export function WorkOrdersPage() {
     { accessor: 'createdAt', title: t('wo.createdOn'), sortable: true, noWrap: true, render: (w) => fmtDate(w.createdAt) },
     { accessor: 'completedAt', title: t('wo.completedOn'), sortable: true, noWrap: true, render: (w) => fmtDate(w.completedAt) },
   ];
-  const cols = useListColumns('work-orders', allColumns, { defaultHidden: ['type', 'trade', 'team', 'group', 'site', 'location', 'completedAt'] });
+  const cols = useListColumns('work-orders', allColumns, { defaultHidden: ['type', 'trade', 'team', 'group', 'site', 'location', 'completedAt', 'symptom', 'cause', 'remedy'] });
 
   const chips: FilterDef[] = [
     { keys: ['search'], label: t('common.search') },
@@ -121,6 +132,11 @@ export function WorkOrdersPage() {
     { keys: ['assigneeId'], label: t('wo.filterAssignee'), format: ([v]) => empOpts.find((o) => o.value === v)?.label ?? '…' },
     { keys: ['createdFrom', 'createdTo'], label: t('wo.createdBetween'), format: rangeText(fmtDate, t) },
     { keys: ['completedFrom'], label: t('wo.completedSince'), format: ([v]) => fmtDate(v) },
+    { keys: ['completedTo'], label: t('wo.completedUntil'), format: ([v]) => fmtDate(v) },
+    { keys: ['symptomId'], label: t('codes.symptom'), format: codeName(symptoms) },
+    { keys: ['causeId'], label: t('codes.cause'), format: codeName(causes) },
+    { keys: ['remedyId'], label: t('codes.remedy'), format: codeName(remedies) },
+    { keys: ['inFailureTree'], label: t('codes.inFailureTree'), format: () => t('common.yes') },
     { keys: ['dueFrom', 'dueTo'], label: t('wo.dueBetween'), format: rangeText(fmtDate, t) },
     { keys: ['source'], label: t('wo.source'), format: ([v]) => sources[v] ?? v },
     { keys: ['cancelReasonId'], label: t('wo.cancelReason'), format: ([v]) => cancelReasons?.find((x) => x.id === v)?.name ?? '…' },
@@ -197,6 +213,9 @@ export function WorkOrdersPage() {
               data={[{ value: 'pm', label: t('wo.sourcePm') }, { value: 'request', label: t('wo.sourceRequest') }, { value: 'direct', label: t('wo.sourceDirect') }]} />
             <Select label={t('wo.cancelReason')} placeholder={t('common.all')} data={(cancelReasons ?? []).map((x) => ({ value: x.id, label: x.name }))}
               value={p('cancelReasonId') || null} onChange={(v) => set({ cancelReasonId: v })} clearable />
+            <Select label={t('codes.symptom')} placeholder={t('common.all')} data={codeFilter(symptoms)} value={p('symptomId') || null} onChange={(v) => set({ symptomId: v })} clearable searchable />
+            <Select label={t('codes.cause')} placeholder={t('common.all')} data={codeFilter(causes)} value={p('causeId') || null} onChange={(v) => set({ causeId: v })} clearable searchable />
+            <Select label={t('codes.remedy')} placeholder={t('common.all')} data={codeFilter(remedies)} value={p('remedyId') || null} onChange={(v) => set({ remedyId: v })} clearable searchable />
             <Select label={t('accessWindows.onlyWhenStopped')} placeholder={t('common.all')} data={[{ value: 'true', label: t('common.yes') }]}
               value={p('onlyWhenStopped') || null} onChange={(v) => set({ onlyWhenStopped: v })} clearable />
             <DatePickerInput type="range" label={t('wo.createdBetween')} placeholder={t('common.all')} clearable valueFormat="DD MMM YYYY" allowSingleDateInRange

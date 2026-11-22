@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActionIcon, Badge, Button, Card, Checkbox, ColorInput, Group, Modal, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Table, Tabs, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { ActionIcon, Badge, Button, Card, Checkbox, ColorInput, FileButton, Group, Modal, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Table, Tabs, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useForm, type UseFormReturnType } from '@mantine/form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -12,7 +12,7 @@ import { DevicesModal } from '@/components/DevicesModal';
 import { TargetsEditor, timeZones } from './TargetsEditor';
 import { WorkingHoursEditor, organizationHours } from '@/components/WorkingHoursEditor';
 import { LANGUAGES } from '@/language';
-import { del, get, getAllSites, post, put } from '@/api/client';
+import { api, del, get, getAllSites, post, put } from '@/api/client';
 import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type FollowUpKind, type Hierarchy, type PermissionInfo, type PmTaskListItem, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { NotificationSettings } from './NotificationSettings';
@@ -34,7 +34,9 @@ export function SettingsPage() {
     { value: 'categories', label: t('settings.categories'), show: can(P.assetsView) },
     { value: 'fields', label: t('settings.customFields'), show: can(P.settingsManage) },
     { value: 'notifications', label: t('settings.notifications'), show: can(P.settingsManage) },
-    { value: 'failure-codes', label: t('settings.failureCodes'), show: can(P.woView) },
+    { value: 'symptoms', label: t('settings.symptoms'), show: can(P.woView) },
+    { value: 'failure-codes', label: t('settings.causes'), show: can(P.woView) },
+    { value: 'remedies', label: t('settings.remedies'), show: can(P.woView) },
     { value: 'request-types', label: t('requestTypes.title'), show: can(P.settingsManage) },
     { value: 'cancel-reasons', label: t('settings.cancelReasons'), show: can(P.woView) },
     { value: 'users', label: t('settings.users'), show: can(P.usersManage) },
@@ -51,7 +53,9 @@ export function SettingsPage() {
         <Tabs.Panel value="categories"><CategorySettings /></Tabs.Panel>
         <Tabs.Panel value="fields"><FieldSettings /></Tabs.Panel>
         <Tabs.Panel value="notifications"><NotificationSettings /></Tabs.Panel>
-        <Tabs.Panel value="failure-codes"><LookupTable path="/failure-codes" title={t('settings.failureCodes')} newLabel={t('settings.newFailureCode')} editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="symptoms"><LookupTable path="/symptoms" title={t('settings.symptoms')} newLabel={t('settings.newSymptom')} editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="failure-codes"><LookupTable path="/failure-codes" title={t('settings.causes')} newLabel={t('settings.newCause')} editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="remedies"><LookupTable path="/remedies" title={t('settings.remedies')} newLabel={t('settings.newRemedy')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="request-types"><RequestTypesSettings editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="cancel-reasons"><LookupTable path="/cancel-reasons" title={t('settings.cancelReasons')} newLabel={t('settings.newCancelReason')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="users"><UserSettings /></Tabs.Panel>
@@ -100,6 +104,7 @@ function OrganizationSettings() {
         <Card><Stack>
           <Title order={5}>{t('settings.organization')}</Title>
           <TextInput label={t('auth.organizationName')} disabled={!editable} {...form.getInputProps('name')} />
+          <LogoSetting editable={editable} version={data.settings.logoVersion ?? null} onChange={async () => { await refresh(); await qc.invalidateQueries({ queryKey: ['settings'] }); }} />
           <SimpleGrid cols={2}>
             <TextInput label={t('settings.currency')} description={t('settings.currencyHint')} maxLength={3} disabled={!editable} {...form.getInputProps('settings.currency')} />
             <Select label={t('locations.timeZone')} disabled={!editable} searchable data={timeZones(form.values.settings.timeZone)} {...form.getInputProps('settings.timeZone')} />
@@ -207,13 +212,16 @@ function CategorySettings() {
   const { data, isFetching } = useQuery({ queryKey: ['categories'], queryFn: () => get<Category[]>('/asset-categories') });
   const [opened, m] = useDisclosure();
   const [editing, setEditing] = useState<Category | null>(null);
-  const form = useForm({ initialValues: { code: '', name: '', description: '', color: '#228be6', isActive: true } });
+  const form = useForm<{ code: string; name: string; description: string; color: string; isActive: boolean; downtimeCostPerHour: number | '' }>({
+    initialValues: { code: '', name: '', description: '', color: '#228be6', isActive: true, downtimeCostPerHour: '' } });
   const open = (c: Category | null) => {
     setEditing(c);
-    form.setValues(c ? { code: c.code, name: c.name, description: c.description ?? '', color: c.color ?? '#228be6', isActive: c.isActive } : { code: '', name: '', description: '', color: '#228be6', isActive: true });
+    form.setValues(c ? { code: c.code, name: c.name, description: c.description ?? '', color: c.color ?? '#228be6', isActive: c.isActive, downtimeCostPerHour: c.downtimeCostPerHour ?? '' }
+      : { code: '', name: '', description: '', color: '#228be6', isActive: true, downtimeCostPerHour: '' });
     form.clearErrors(); m.open();
   };
-  const submit = form.onSubmit(async (v) => {
+  const submit = form.onSubmit(async (values) => {
+    const v = { ...values, downtimeCostPerHour: values.downtimeCostPerHour === '' ? null : values.downtimeCostPerHour };
     try { if (editing) await put(`/asset-categories/${editing.id}`, v); else await post('/asset-categories', v); notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['categories'] }); m.close(); }
     catch (e) { handleFormError(form, e); }
   });
@@ -236,6 +244,7 @@ function CategorySettings() {
           <SimpleGrid cols={3}><TextInput label={t('common.code')} required {...form.getInputProps('code')} /><TextInput label={t('common.name')} required style={{ gridColumn: 'span 2' }} {...form.getInputProps('name')} /></SimpleGrid>
           <Textarea label={t('common.description')} autosize {...form.getInputProps('description')} />
           <ColorInput label={t('settings.color')} {...form.getInputProps('color')} />
+          <NumberInput label={t('settings.downtimeCostPerHour')} description={t('settings.downtimeCostHint')} min={0} decimalScale={2} {...form.getInputProps('downtimeCostPerHour')} />
           <Checkbox label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
           <Group justify="flex-end"><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>
         </Stack></form>
@@ -438,3 +447,30 @@ function RoleSettings() {
     </Card>
   );
 }
+
+/** The organization's logo (0.14.0), shown on printed reports and job cards: PNG, JPEG or WebP up to 1 MB. */
+function LogoSetting({ editable, version, onChange }: { editable: boolean; version: number | null; onChange: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const upload = async (file: File | null) => {
+    if (!file) return;
+    if (file.size > 1024 * 1024) { notifyError(new Error(t('settings.logoTooBig'))); return; }
+    const fd = new FormData(); fd.append('file', file);
+    try { await api('/settings/logo', { method: 'POST', body: fd }); notifySuccess(t('common.saved')); await onChange(); } catch (e) { notifyError(e); }
+  };
+  const remove = async () => { try { await del('/settings/logo'); await onChange(); } catch (e) { notifyError(e); } };
+  return (
+    <Stack gap={4}>
+      <Text fz="sm" fw={500}>{t('settings.logo')}</Text>
+      <Group gap="sm">
+        {version ? <img src={`/api/settings/logo?v=${version}`} alt={t('settings.logo')} style={{ height: 48, maxWidth: 192, objectFit: 'contain' }} />
+          : <Text fz="sm" c="dimmed">{t('settings.noLogo')}</Text>}
+        {editable && <FileButton onChange={(f) => void upload(f)} accept="image/png,image/jpeg,image/webp">
+          {(props) => <Button {...props} size="xs" variant="light">{version ? t('settings.replaceLogo') : t('settings.uploadLogo')}</Button>}
+        </FileButton>}
+        {editable && version && <Button size="xs" variant="subtle" color="red" onClick={() => void remove()}>{t('settings.removeLogo')}</Button>}
+      </Group>
+      <Text fz="xs" c="dimmed">{t('settings.logoHint')}</Text>
+    </Stack>
+  );
+}
+

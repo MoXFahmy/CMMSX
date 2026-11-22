@@ -13,6 +13,7 @@ import { downFor } from '@/components/downtime';
 import { withQueued } from './overlay';
 import { shrink } from './photos';
 import { dueLabel } from './due';
+import { codeOptions } from '@/components/codes';
 import { alreadySigned, needsLabour, safetyOpen, staleCompletions, stepProblems } from './complete';
 import { Checklist } from './Checklist';
 import { SignaturePad, type SignatureHandle } from './SignaturePad';
@@ -73,6 +74,7 @@ export function JobPage() {
         {job.asset && <Text fz="sm" mt={6}>{job.asset.assetNumber} · {job.asset.name}</Text>}
         {job.location?.path && <Text fz="xs" c="dimmed">{job.location.path}</Text>}
         {job.teamName && <Text fz="xs" c="dimmed">{t('tech.team', { team: job.teamName })}</Text>}
+        <JobCodes job={job} />
         {job.group && <Text fz="xs" c="dimmed">{t('tech.inGroup', { number: job.group.number })}</Text>}
         {job.description && <Text fz="sm" mt={6} style={{ whiteSpace: 'pre-wrap' }}>{job.description}</Text>}
       </Card>
@@ -213,7 +215,8 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
   const rules = bundle?.completionRules;
   const [notes, setNotes] = useState('');
   const [cause, setCause] = useState('');
-  const [failure, setFailure] = useState<string | null>(null);
+  const [failure, setFailure] = useState<string | null>(job.failureCodeId ?? null);
+  const [remedy, setRemedy] = useState<string | null>(job.remedyId ?? null);
   const [down, setDown] = useState(false);
   const [downtime, setDowntime] = useState<number | string>('');
   const [signer, setSigner] = useState('');
@@ -239,7 +242,7 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
       const b = alreadySigned(signer.trim(), job.files, queue, job.id, fullName) ? null : await theirs.current?.toBlob();
       if (b) await add({ type: 'photo.add', workOrderId: job.id, payload: { kind: 'signature', signedBy: signer.trim() || null } }, { blob: b, fileName: 'signature.png' });
       await add({ type: 'status.change', workOrderId: job.id, payload: {
-        status: 'Completed', completionNotes: notes.trim() || null, causeNotes: cause.trim() || null, failureCodeId: failure,
+        status: 'Completed', completionNotes: notes.trim() || null, causeNotes: cause.trim() || null, failureCodeId: failure, remedyId: remedy,
         // With a stop on the asset's downtime log, the server fills the downtime from the stop.
         ...(job.downtime ? {} : { assetWasDown: down, downtimeHours: down && downtime !== '' ? Number(downtime) : null }),
       } });
@@ -252,8 +255,11 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
       <Stack maw={560} mx="auto">
         <Textarea label={t('tech.workDone')} autosize minRows={3} required={rules?.notes} value={notes} onChange={(e) => setNotes(e.currentTarget.value)} />
         <Textarea label={t('tech.cause')} autosize value={cause} onChange={(e) => setCause(e.currentTarget.value)} />
-        <Select label={t('tech.failureCode')} clearable searchable data={(bundle?.failureCodes ?? []).map((f) => ({ value: f.id, label: `${f.code} · ${f.name}` }))}
+        {/* Causes most often found with the job's symptom, and remedies most often used for the cause, come first (0.14.0). */}
+        <Select label={t('tech.failureCode')} clearable searchable data={codeOptions(bundle?.failureCodes ?? [], bundle?.codePairs?.symptomCause ?? [], job.symptomId, t)}
           value={failure} onChange={setFailure} required={rules?.failureCodeOnBreakdown && job.type === 'Breakdown'} />
+        <Select label={t('codes.remedy')} clearable searchable data={codeOptions(bundle?.remedies ?? [], bundle?.codePairs?.causeRemedy ?? [], failure, t)}
+          value={remedy} onChange={setRemedy} />
         {job.downtime
           ? <Alert color="blue" variant="light" title={t('tech.assetWasDown')}>
               {job.downtime.endedAt
@@ -277,3 +283,18 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
     </Modal>
   );
 }
+
+/** The job's symptom, cause and remedy (0.14.0), as the phone's lists name them. */
+function JobCodes({ job }: { job: TechJob }) {
+  const { t } = useTranslation();
+  const { bundle } = useTech();
+  const name = (list: { id: string; code: string; name: string }[] | undefined, id?: string | null) => {
+    const c = id ? list?.find((x) => x.id === id) : undefined;
+    return c ? `${c.code} · ${c.name}` : null;
+  };
+  const lines = ([['codes.symptom', name(bundle?.symptoms, job.symptomId)], ['codes.cause', name(bundle?.failureCodes, job.failureCodeId)], ['codes.remedy', name(bundle?.remedies, job.remedyId)]] as const)
+    .filter(([, v]) => v);
+  if (lines.length === 0) return null;
+  return <>{lines.map(([k, v]) => <Text key={k} fz="xs" c="dimmed">{t(k)}: {v}</Text>)}</>;
+}
+

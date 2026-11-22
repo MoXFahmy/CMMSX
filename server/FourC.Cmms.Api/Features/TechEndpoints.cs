@@ -56,7 +56,7 @@ public static partial class TechEndpoints
                     // The job's own stop: completing it ends the stop and fills the downtime from it.
                     Downtime = db.DowntimeEvents.Where(e => e.Id == w.DowntimeEventId).Select(e => new { e.StartedAt, e.EndedAt }).FirstOrDefault(),
                     w.LocationId, LocationPath = w.Location == null ? null : w.Location.Path, LocationNotes = w.Location == null ? null : w.Location.NotesToTechnician,
-                    w.AccessWindows, w.OnlyWhenStopped, w.GroupId, w.PmTaskId,
+                    w.AccessWindows, w.OnlyWhenStopped, w.GroupId, w.PmTaskId, w.SymptomId, w.FailureCodeId, w.RemedyId,
                 }).ToListAsync(ct);
             var ids = jobs.Select(j => j.Id).ToList();
             // The jobs' groups and their comments (0.12.0).
@@ -117,7 +117,7 @@ public static partial class TechEndpoints
                 Jobs = jobs.Select(j => new
                 {
                     j.Id, j.Number, j.Title, j.Description, j.Type, j.Priority, j.Status, j.HoldReason, j.DueDate, j.DueAt, j.PlannedStart, j.SiteId, j.TeamName, j.Asset, j.Downtime,
-                    j.AccessWindows, j.OnlyWhenStopped,
+                    j.AccessWindows, j.OnlyWhenStopped, j.SymptomId, j.FailureCodeId, j.RemedyId,
                     Location = j.LocationId is null ? null : new { Id = j.LocationId, Path = PathText(j.LocationPath, names), NotesToTechnician = j.LocationNotes },
                     RoundAssets = round[j.Id].Select(a => new { a.Id, a.AssetNumber, a.Name }),
                     Tasks = tasks[j.Id].Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName,
@@ -148,6 +148,10 @@ public static partial class TechEndpoints
                 // The measurement points the jobs' steps use (0.13.0): the phone judges a reading as it is typed.
                 Points = await Checklists.PointsAsync(db, tasks.SelectMany(g => g).Select(t => t.MeasurementPointId), ct),
                 FailureCodes = await db.FailureCodes.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
+                // Symptoms and remedies (0.14.0), and the codes most often recorded together on my sites' work, for ordering offline.
+                Symptoms = await db.Symptoms.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
+                Remedies = await db.Remedies.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
+                CodePairs = await Codes.PairsAsync(db, DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-2), ct),
                 CompletionRules = new
                 {
                     Notes = settings.RequireCompletionNotes, Labour = settings.RequireLaborToComplete, AllSteps = settings.RequireAllTasksDone,

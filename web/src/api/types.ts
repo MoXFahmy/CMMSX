@@ -22,6 +22,8 @@ export type TenantSettings = {
   requireLaborToComplete: boolean; requireAllTasksDone: boolean; requireFailureCodeForBreakdowns: boolean; autoStartWork: boolean;
   /** Smart checklists (0.13.0): what a failed step raises by default, its template, and readings needed to complete. */
   followUpDefault?: FollowUpKind; followUpTemplateId?: string | null; requireReadingSteps?: boolean;
+  /** The organization's logo (0.14.0): when it was uploaded, or null when there is none. */
+  logoVersion?: number | null;
   emailEnabled: boolean; disabledEmails: string[];
   /** Who gets each work and request e-mail (0.10.0): event key → recipient kinds; an event not listed uses its defaults. */
   emailRecipients?: Record<string, string[]>;
@@ -99,7 +101,7 @@ export type AssetListItem = {
 export type AssetDetail = {
   onlyWhenStopped?: boolean;
   id: string; assetNumber: string; name: string; description?: string; categoryId?: string;
-  category?: { id: string; code: string; name: string; color?: string }; siteId: string; site: { id: string; code: string; name: string };
+  category?: { id: string; code: string; name: string; color?: string; downtimeCostPerHour?: number | null }; siteId: string; site: { id: string; code: string; name: string };
   locationId?: string; locationTrail: { id: string; code: string; name: string }[]; parentAssetId?: string;
   parentAsset?: { id: string; assetNumber: string; name: string }; status: AssetStatus; criticality: Criticality;
   manufacturer?: string; model?: string; serialNumber?: string; barcode?: string; operationNumber?: string;
@@ -121,7 +123,7 @@ export type AssetDowntime = {
   availability30?: number | null; plannedHours30: number; downHours30: number; stops: DowntimeStop[];
 };
 export type AssetPartLine = { partId: string; partNumber: string; name: string; unitOfMeasure: string; quantity: number; note?: string | null };
-export type Category = { id: string; code: string; name: string; description?: string; color?: string; isActive: boolean; assetCount: number };
+export type Category = { id: string; code: string; name: string; description?: string; color?: string; isActive: boolean; assetCount: number; downtimeCostPerHour?: number | null };
 export type CustomField = {
   id: string; entityType: string; key: string; label: string; dataType: CustomFieldType; options: string[];
   isRequired: boolean; sortOrder: number; categoryIds: string[]; showInList: boolean;
@@ -182,6 +184,8 @@ export type WorkOrderListItem = {
   dueAt?: string | null; startBy?: string | null; respondedAt?: string | null; responseState: SlaState; completionState: SlaState;
   /** Its group (0.12.0). */
   groupId?: string | null; groupNumber?: string | null;
+  /** Codes (0.14.0). */
+  symptomName?: string | null; causeName?: string | null; remedyName?: string | null;
 };
 /** A work order's checklist step (0.13.0 adds its type, answer, photos and follow-up). */
 export type WorkOrderStep = { id: string; sequence: number; description: string; isDone: boolean; doneAt?: string; doneBy?: string; assetId?: string; reading?: string;
@@ -194,7 +198,9 @@ export type WorkOrderDetail = {
   siteId: string; site: { id: string; name: string }; locationId?: string; locationTrail: { id: string; name: string }[];
   assetId?: string; asset?: { id: string; assetNumber: string; name: string; serialNumber?: string; status: AssetStatus; criticality: Criticality; notesToTechnician?: string; warrantyType: WarrantyType; warrantyExpiresOn?: string; underWarranty: boolean };
   requestedBy?: string; preventionNotes?: string;
-  tradeId?: string; tradeName?: string; failureCodeId?: string; failureCode?: { code: string; name: string };
+  tradeId?: string; tradeName?: string; failureCodeId?: string; failureCode?: CodeRef | null;
+  /** What was seen and what was done (0.14.0); the failure code is the cause. */
+  symptomId?: string | null; symptom?: CodeRef | null; remedyId?: string | null; remedy?: CodeRef | null;
   teamId?: string | null; team?: { id: string; code: string; name: string; color?: string | null } | null;
   assignees: { employeeId: string; fullName: string; code: string; plannedHours?: number | null; hourlyRate?: number | null }[]; plannedStart?: string; dueDate?: string; estimatedHours?: number;
   startedAt?: string; completedAt?: string; closedAt?: string; completionNotes?: string; causeNotes?: string; assetWasDown: boolean; downtimeHours?: number;
@@ -239,8 +245,12 @@ export type WorkRequestListItem = {
   workOrderId?: string; workOrderNumber?: string;
   respondBy?: string | null; dueAt?: string | null; responseState: SlaState; completionState: SlaState;
   requestTypeName?: string | null;
+  symptomName?: string | null;
 };
+/** A symptom, cause or remedy as a record shows it (0.14.0). */
+export type CodeRef = { id: string; code: string; name: string };
 export type WorkRequestDetail = {
+  symptomId?: string | null; symptom?: CodeRef | null;
   /** A request raised by a failed checklist step (0.13.0). */
   source?: StepSource | null;
   id: string; number: string; title: string; description?: string; status: WorkRequestStatus; priority: WorkPriority; type: WorkType;
@@ -430,11 +440,11 @@ export type PoDetail = {
 };
 
 // ---------------- Reports ----------------
-export type ReportParam = { name: string; type: 'dateRange' | 'site' | 'select' | 'number'; options?: { value: string; label: string }[]; default?: string | number };
+export type ReportParam = { name: string; type: 'dateRange' | 'site' | 'select' | 'number' | 'asset' | 'year' | 'bool'; options?: { value: string; label: string }[]; default?: string | number };
 export type ReportDef = { key: string; category: string; title: string; description: string; permission: string; params: ReportParam[] };
-export type ReportColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date' | 'datetime' | 'hours';
+export type ReportColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date' | 'datetime' | 'hours' | 'plan';
 export type ReportResult = {
-  key: string; title: string; subtitle?: string; columns: { key: string; label: string; type: ReportColumnType }[]; rows: Record<string, string | number | null>[];
+  key: string; title: string; subtitle?: string; columns: { key: string; label: string; type: ReportColumnType }[]; rows: Record<string, unknown>[];
   chart?: { type: 'bar' | 'line' | 'donut'; x: string; series: string[]; stacked: boolean }; summary: { label: string; value: number | null; type: ReportColumnType }[];
 };
 

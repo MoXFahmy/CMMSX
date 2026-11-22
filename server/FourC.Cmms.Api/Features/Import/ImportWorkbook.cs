@@ -132,6 +132,9 @@ public static class ImportWorkbook
             case "Locations": return Of(new LocationImporter(), c, await db.Locations.AsNoTracking().OrderBy(x => x.Path).Take(take).ToListAsync(ct));
             case "Categories": return Of(new CategoryImporter(), c, await db.AssetCategories.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
             case "Trades": return Of(new TradeImporter(), c, await db.Trades.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
+            case "Symptoms": return Of(new SymptomImporter(), c, await db.Symptoms.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
+            case "Causes": return Of(new CauseImporter(), c, await db.FailureCodes.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
+            case "Remedies": return Of(new RemedyImporter(), c, await db.Remedies.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
             case "PartGroups": return Of(new PartGroupImporter(), c, await db.PartGroups.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
             case "Suppliers": return Of(new SupplierImporter(), c, await db.Suppliers.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
             case "Stores": return Of(new StoreImporter(), c, await db.Stores.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));

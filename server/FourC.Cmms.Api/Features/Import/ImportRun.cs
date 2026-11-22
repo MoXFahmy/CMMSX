@@ -59,6 +59,10 @@ public sealed class ImportContext(CmmsDbContext db, ITenantContext tenant, Tenan
     public Dictionary<string, Guid> Categories { get; } = Codes();
     public Dictionary<string, Guid> Trades { get; } = Codes();
     public Dictionary<string, Guid> PartGroups { get; } = Codes();
+    public Dictionary<string, Guid> Symptoms { get; } = Codes();
+    /// <summary>Causes are the failure codes (0.14.0).</summary>
+    public Dictionary<string, Guid> Causes { get; } = Codes();
+    public Dictionary<string, Guid> Remedies { get; } = Codes();
     public Dictionary<string, Guid> Suppliers { get; } = Codes();
     public Dictionary<string, Guid> Stores { get; } = Codes();
     public Dictionary<string, Guid> Assets { get; } = Codes();
