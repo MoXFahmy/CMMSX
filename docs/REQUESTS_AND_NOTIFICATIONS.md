@@ -1,9 +1,14 @@
 # Requests that close the loop
 
 From 0.10.0 a request goes to the right people, the requester hears what happens and says whether the work is done, and
-an administrator decides which actions need a comment and who gets which e-mail. Nothing changes for existing
-organizations until you set something, except that cancelling a work order now asks for a reason (four reasons are
-already in the list).
+an administrator decides which actions need a comment and who gets which e-mail.
+
+What changes for an existing organization without setting anything:
+
+- Cancelling a work order asks for a reason (four reasons are already in the list).
+- When work raised from a request is completed, the requester is asked to accept or refuse it.
+- Four new e-mails are on: comments on requests, finished work refused, work cancelled and work overdue (see the end of
+  this page). Every e-mail that existed before still goes to the same people.
 
 ## Request types
 

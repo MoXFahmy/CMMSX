@@ -31,9 +31,12 @@ public static class RequestFeedbackService
         if (w.WorkRequestId is not { } rid) return null;
         var r = await db.WorkRequests.AllSites().FirstOrDefaultAsync(x => x.Id == rid, ct);
         if (r is null || r.Status != WorkRequestStatus.Approved) return null;
+        var inApp = await AnswersInAppAsync(db, r, ct);
+        // Nobody can answer (no contact address and nobody who raised it in CMX, e.g. imported): don't wait for an answer that can't come.
+        if (!inApp && string.IsNullOrWhiteSpace(r.RequesterEmail)) return null;
         r.AwaitingFeedbackSince = now;
         r.FeedbackTokenHash = null; r.FeedbackTokenExpiresAt = null;
-        if (await AnswersInAppAsync(db, r, ct) || string.IsNullOrWhiteSpace(r.RequesterEmail)) return new FeedbackAsk(null);
+        if (inApp) return new FeedbackAsk(null);
         var token = WebEncoders.Base64UrlEncode(RandomNumberGenerator.GetBytes(32));
         r.FeedbackTokenHash = Hash(token);
         r.FeedbackTokenExpiresAt = now + LinkLifetime;
@@ -47,6 +50,13 @@ public static class RequestFeedbackService
         var email = await db.Users.AsNoTracking().Where(u => u.Id == creator && u.IsActive).Select(u => u.Email).FirstOrDefaultAsync(ct);
         return email is not null && (r.RequesterEmail is null || string.Equals(email, r.RequesterEmail, StringComparison.OrdinalIgnoreCase));
     }
+
+    /// <summary>
+    /// <paramref name="userId"/> is the request's requester: they raised it and it is their own contact address. Someone who logged it for a
+    /// caller (a typed e-mail) is maintenance's side: they don't answer for the caller, and their comments go to the caller.
+    /// </summary>
+    public static async Task<bool> IsRequesterAsync(CmmsDbContext db, WorkRequest r, Guid? userId, CancellationToken ct) =>
+        userId is { } u && r.CreatedById == u && await AnswersInAppAsync(db, r, ct);
 
     /// <summary>Maintenance reopened or cancelled the work: nothing is waiting for the requester any more, and the link stops working.</summary>
     public static async Task EndWaitAsync(CmmsDbContext db, WorkOrder w, CancellationToken ct)
@@ -104,7 +114,7 @@ public static class RequestFeedbackService
         {
             var r = await db.WorkRequests.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) return Results.NotFound();
-            if (r.CreatedById != ctx.UserId) return Results.Forbid();
+            if (!await IsRequesterAsync(db, r, ctx.UserId, ct)) return Results.Forbid();
             var v = await db.InTransactionAsync(async token =>
             {
                 var result = await AnswerAsync(db, ctx, mail, r, input, viaLink: false, ctx.UserName, token);

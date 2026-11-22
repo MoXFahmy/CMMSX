@@ -197,11 +197,18 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
                 EmailRecipientKinds.RequestRecipients => r is null ? [] : await RequestRecipientsAsync(db, r, ct),
                 EmailRecipientKinds.Technicians => w is null ? [] : await WorkersAsync(db, w, onlyEmployees, contractors: false, ct),
                 EmailRecipientKinds.Contractors => w is null ? [] : await WorkersAsync(db, w, onlyEmployees, contractors: true, ct),
-                EmailRecipientKinds.Issuer => (w is not null ? w.CreatedById : r?.CreatedById) is { } issuer ? await UsersAsync(db, [issuer], ct) : [],
+                EmailRecipientKinds.Issuer => IssuerOf(w, r) is { } issuer ? await UsersAsync(db, [issuer], ct) : [],
                 _ => [],
             };
         return groups;
     }
+
+    /// <summary>
+    /// Who created the work order (for e-mails about a request only, who raised it). Work approved automatically (decided by nobody) has no
+    /// issuer: the requester raised the request, not the work.
+    /// </summary>
+    private static Guid? IssuerOf(WorkOrder? w, WorkRequest? r) =>
+        w is null ? r?.CreatedById : r is { DecidedById: null, DecidedAt: not null } ? null : w.CreatedById;
 
     /// <summary>Everyone in <paramref name="groups"/> (one entry per address is kept later, when queuing).</summary>
     internal static List<EmailRecipient> Union(Dictionary<string, List<EmailRecipient>> groups) => groups.Values.SelectMany(x => x).ToList();

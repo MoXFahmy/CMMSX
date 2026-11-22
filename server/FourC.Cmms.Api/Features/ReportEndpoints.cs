@@ -185,7 +185,7 @@ public static class ReportEndpoints
         if (a.SiteId is { } site) requests = requests.Where(r => r.SiteId == site);
         // Finished: decided, or completed/closed. Finished with no recorded time (imported history) can't be judged, so it isn't counted.
         var response = (await requests.Select(r => new { r.Priority, Deadline = r.RespondBy!.Value, Done = r.DecidedAt,
-                    Finished = r.Status == WorkRequestStatus.Approved || r.Status == WorkRequestStatus.Rejected }).ToListAsync(ct))
+                    Finished = r.Status == WorkRequestStatus.Approved || r.Status == WorkRequestStatus.Closed || r.Status == WorkRequestStatus.Rejected }).ToListAsync(ct))
             .Concat(await Wo(db, a).Where(w => w.WorkRequestId == null && w.Status != WorkOrderStatus.Cancelled && w.StartBy >= s && w.StartBy < e)
                 .Select(w => new { w.Priority, Deadline = w.StartBy!.Value, Done = w.RespondedAt,
                     Finished = w.Status == WorkOrderStatus.Completed || w.Status == WorkOrderStatus.Closed }).ToListAsync(ct))

@@ -249,7 +249,11 @@ public static class WorkOrderEndpoints
             if (w is null) return Results.NotFound();
             if (await db.WorkOrderLabor.AnyAsync(l => l.WorkOrderId == id, ct)) throw new DomainException("Work with logged labour cannot be deleted. Cancel it instead.");
             db.WorkOrders.Remove(w);
-            await db.WorkRequests.Where(r => r.WorkOrderId == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.WorkOrderId, (Guid?)null).SetProperty(r => r.Status, WorkRequestStatus.New), ct);
+            // Its request waits again for a decision (an accepted one stays closed); nothing waits for the requester any more, and their link stops working.
+            await db.WorkRequests.Where(r => r.WorkOrderId == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.WorkOrderId, (Guid?)null)
+                .SetProperty(r => r.Status, r => r.Status == WorkRequestStatus.Closed ? WorkRequestStatus.Closed : WorkRequestStatus.New)
+                .SetProperty(r => r.AwaitingFeedbackSince, (DateTimeOffset?)null).SetProperty(r => r.FeedbackTokenHash, (string?)null)
+                .SetProperty(r => r.FeedbackTokenExpiresAt, (DateTimeOffset?)null), ct);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.WorkOrdersDelete);

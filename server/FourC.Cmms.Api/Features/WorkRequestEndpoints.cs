@@ -80,7 +80,7 @@ public static class WorkRequestEndpoints
             return new WorkRequestListItem(r.Id, r.Number, r.Title, r.Status, r.Priority, r.Type, r.SiteId, r.SiteName, r.LocationName, r.AssetId, r.AssetNumber, r.AssetName,
                 r.RequesterName, r.RequiredBy, r.CreatedAt, r.WorkOrderId, r.Work?.Number, r.RespondBy,
                 // Approved: the work order's deadline, the one its state is about.
-                r.Status == WorkRequestStatus.Approved && r.Work is { } wo ? wo.DueAt : r.DueAt, sla.Response, sla.Completion, r.RequestTypeName);
+                r.Status is WorkRequestStatus.Approved or WorkRequestStatus.Closed && r.Work is { } wo ? wo.DueAt : r.DueAt, sla.Response, sla.Completion, r.RequestTypeName);
         }).ToList(), paged.Total, paged.Page, paged.PageSize);
     }
 
@@ -105,6 +105,7 @@ public static class WorkRequestEndpoints
                 .FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) return Results.NotFound();
             var users = await db.Users.Where(u => u.Id == r.CreatedById || u.Id == r.DecidedById).ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
+            var canAnswer = r.AwaitingFeedbackSince != null && await RequestFeedbackService.IsRequesterAsync(db, r, ctx.UserId, ct);
             var feedback = await db.RequestFeedback.AsNoTracking().Where(f => f.WorkRequestId == r.Id).OrderBy(f => f.AnsweredAt)
                 .Select(f => new { f.Id, f.Accepted, f.Rating, f.Comment, f.ByName, f.AnsweredAt, f.ViaLink }).ToListAsync(ct);
             var extra = r.ExtraRecipientIds.Count == 0 ? [] : await db.Users.AsNoTracking().Where(u => r.ExtraRecipientIds.Contains(u.Id))
@@ -120,19 +121,20 @@ public static class WorkRequestEndpoints
             {
                 r.Id, r.Number, r.Title, r.Description, r.Status, r.Priority, r.Type, r.SiteId, Site = new { r.Site!.Id, r.Site.Name }, r.LocationId, LocationName = r.Location?.Name,
                 r.AssetId, Asset = r.Asset is null ? null : new { r.Asset.Id, r.Asset.AssetNumber, r.Asset.Name }, r.RequesterName, r.RequesterEmail, r.RequesterPhone,
-                r.RequiredBy, r.RespondBy, DueAt = r.Status == WorkRequestStatus.Approved && work is not null ? work.DueAt : r.DueAt, r.DueFromTarget, Sla = sla,
+                r.RequiredBy, r.RespondBy, DueAt = r.Status is WorkRequestStatus.Approved or WorkRequestStatus.Closed && work is not null ? work.DueAt : r.DueAt, r.DueFromTarget, Sla = sla,
                 r.DecisionNote, r.DecidedAt, DecidedBy = r.DecidedById is { } d ? users.GetValueOrDefault(d) : null, WorkOrder = wo, r.DowntimeEventId,
                 r.CreatedAt, CreatedBy = r.CreatedById is { } c ? users.GetValueOrDefault(c) : null, CanCancel = r.Status == WorkRequestStatus.New && r.CreatedById == ctx.UserId,
                 r.RequestTypeId, RequestType = r.RequestType is null ? null : new { r.RequestType.Id, r.RequestType.Name, r.RequestType.DefaultTradeId },
                 ExtraRecipients = extra, r.AccessWindows, r.OnlyWhenStopped,
-                AwaitingFeedback = r.AwaitingFeedbackSince != null, r.AwaitingFeedbackSince, CanAnswer = r.AwaitingFeedbackSince != null && r.CreatedById == ctx.UserId,
+                AwaitingFeedback = r.AwaitingFeedbackSince != null, r.AwaitingFeedbackSince, CanAnswer = canAnswer,
                 Feedback = feedback,
             });
         }).RequireAuthorization();
 
-        // People who can see a site, for the request form's "keep informed" picker (names only).
+        // People who can see a site, for the request form's "keep informed" picker (names only); only for a site the asker sees.
         g.MapGet("/people", async (Guid siteId, CmmsDbContext db, AccessService access, CancellationToken ct) =>
         {
+            if (!await db.Sites.AnyAsync(s => s.Id == siteId, ct)) return Results.Ok(Array.Empty<object>());
             var users = await db.Users.AsNoTracking().Where(u => u.IsActive && u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
                 .Select(u => new { u.Id, Name = u.FullName }).Take(1000).ToListAsync(ct);
             var seen = new List<object>();
@@ -189,7 +191,8 @@ public static class WorkRequestEndpoints
             if (!v.IsValid) return v.Problem();
             var c = new WorkRequestComment
             {
-                WorkRequestId = r.Id, Body = input.Body!.Trim(), UserId = ctx.UserId, UserName = ctx.UserName, ByRequester = r.CreatedById == ctx.UserId,
+                WorkRequestId = r.Id, Body = input.Body!.Trim(), UserId = ctx.UserId, UserName = ctx.UserName,
+                ByRequester = await RequestFeedbackService.IsRequesterAsync(db, r, ctx.UserId, ct),
                 CreatedAt = DateTimeOffset.UtcNow,
             };
             db.WorkRequestComments.Add(c);
