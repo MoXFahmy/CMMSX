@@ -115,6 +115,10 @@ public static class WorkOrderEndpoints
                     .OrderBy(l => l.Depth).Select(l => new { l.Id, l.Name }));
             }
             var tasks = await db.WorkOrderTasks.AsNoTracking().Where(t => t.WorkOrderId == id).OrderBy(t => t.Sequence).ToListAsync(ct);
+            var followIds = tasks.SelectMany(t => new[] { t.FollowUpWorkOrderId, t.FollowUpRequestId }).OfType<Guid>().ToList();
+            var followUpNumbers = followIds.Count == 0 ? [] : (await db.WorkOrders.AllSites().AsNoTracking().Where(x => followIds.Contains(x.Id)).Select(x => new { x.Id, x.Number }).ToListAsync(ct))
+                .Concat(await db.WorkRequests.AllSites().AsNoTracking().Where(x => followIds.Contains(x.Id)).Select(x => new { x.Id, x.Number }).ToListAsync(ct))
+                .ToDictionary(x => x.Id, x => x.Number);
             var roundAssets = await db.WorkOrderAssets.AsNoTracking().Where(a => a.WorkOrderId == id && a.Asset != null).OrderBy(a => a.Sequence)
                 .Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name }).ToListAsync(ct);
             var labor = await db.WorkOrderLabor.AsNoTracking().Where(l => l.WorkOrderId == id).OrderByDescending(l => l.WorkDate).ThenByDescending(l => l.CreatedAt)
@@ -192,7 +196,13 @@ public static class WorkOrderEndpoints
                 Recipients = recipients,
                 Group = group is null ? null : new { group.Id, group.Number, group.Title, Comments = groupComments },
                 Assets = roundAssets,
-                Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName }),
+                Tasks = tasks.Select(t => new
+                {
+                    t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName,
+                    FollowUp = t.FollowUpWorkOrderId is { } fw ? new { Kind = "workOrder", Id = fw, Number = followUpNumbers.GetValueOrDefault(fw) }
+                        : t.FollowUpRequestId is { } fr ? new { Kind = "request", Id = fr, Number = followUpNumbers.GetValueOrDefault(fr) } : null,
+                }),
+                Source = await Checklists.SourceAsync(db, w.SourceWorkOrderId, w.SourceTaskId, ct),
                 Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned, Signatures = signatures,
                 Planned = new { LaborHours = labour.Hours, LaborCost = labour.Cost, PartsCost = plannedParts, TotalCost = labour.Cost + plannedParts },
                 Totals = new
@@ -392,7 +402,9 @@ public static class WorkOrderEndpoints
                 new Checklists.StepChange(input.IsDone, input.Answer, input.Value, input.Text, input.MeterId, input.Reading, input.Remarks, input.Confirm), DateTimeOffset.UtcNow, ct);
             if (!answered.IsValid) return answered.Problem();
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { t.Id, t.IsDone, t.Level });
+            var followUp = t.FollowUpWorkOrderId is { } fw ? new { Kind = "workOrder", Id = fw, Number = await db.WorkOrders.AllSites().Where(x => x.Id == fw).Select(x => x.Number).FirstAsync(ct) }
+                : t.FollowUpRequestId is { } fr ? new { Kind = "request", Id = fr, Number = await db.WorkRequests.AllSites().Where(x => x.Id == fr).Select(x => x.Number).FirstAsync(ct) } : null;
+            return Results.Ok(new { t.Id, t.IsDone, t.Level, FollowUp = followUp });
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
         g.MapDelete("/{id:guid}/tasks/{taskId:guid}", async (Guid id, Guid taskId, CmmsDbContext db, CancellationToken ct) =>

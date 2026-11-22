@@ -35,6 +35,8 @@ public static class Checklists
         }
         if (c.Text?.Trim() is { Length: > 1000 }) { v.Add("text", "Text can be at most 1000 characters."); return v; }
         var changed = false;
+        var point = t.Type == StepType.Number && t.MeasurementPointId is { } pointId
+            ? await db.MeasurementPoints.IgnoreQueryFilters().AsNoTracking().FirstOrDefaultAsync(p => p.Id == pointId && p.TenantId == db.CurrentTenantId, ct) : null;
         switch (t.Type)
         {
             case StepType.Check:
@@ -46,8 +48,6 @@ public static class Checklists
             case StepType.Number:
                 if (c.Value is { } raw)
                 {
-                    var point = t.MeasurementPointId is { } pid
-                        ? await db.MeasurementPoints.IgnoreQueryFilters().AsNoTracking().FirstOrDefaultAsync(p => p.Id == pid && p.TenantId == db.CurrentTenantId, ct) : null;
                     if (point is not null && MeasureLevels.OutOfRange(point, raw)) { v.Add("value", MeasureLevels.RangeMessage(point)); return v; }
                     var value = Math.Round(raw, Math.Clamp(point?.Decimals ?? t.Decimals ?? 2, 0, 4));
                     if (value != t.Value)
@@ -96,7 +96,83 @@ public static class Checklists
             if (done) await WorkOrderEndpoints.StepDoneAsync(db, ctx, w.Id, at, ct);
         }
         if (changed) { t.UpdatedAt = at; t.UpdatedById = ctx.UserId; t.UpdatedByName = ctx.UserName; }
+        // Follow-up work (0.13.0): once per step, in the same save as the answer.
+        if (StepRules.Failed(t) && t.FollowUpWorkOrderId is null && t.FollowUpRequestId is null)
+        {
+            var (woId, requestId, _) = await RaiseFollowUpAsync(db, ctx, mail, settings, w, t, point, t.Level ?? MeasureLevel.Normal, t.Value, t.AssetId ?? w.AssetId, w.SiteId,
+                t.Remarks, ct);
+            t.FollowUpWorkOrderId = woId; t.FollowUpRequestId = requestId;
+            if (point is not null && await db.MeasurementReadings.FirstOrDefaultAsync(r => r.WorkOrderTaskId == t.Id, ct) is { } reading)
+            { reading.FollowUpWorkOrderId = woId; reading.FollowUpRequestId = requestId; }
+        }
         return v;
+    }
+
+    public const string FromStep = "{0} — from step {1} of {2}";
+    public const string FromReading = "{0} — from a reading of {1}";
+
+    public static string LevelWord(MeasureLevel l) => l switch
+    {
+        MeasureLevel.AlarmHigh => "Alarm high", MeasureLevel.AlertHigh => "Alert high", MeasureLevel.AlertLow => "Alert low", MeasureLevel.AlarmLow => "Alarm low", _ => "Normal",
+    };
+
+    private static string Num(decimal d) => d.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
+
+    /// <summary>
+    /// Raises the follow-up for a failed step or an alert/alarm reading: nothing when the step says None; a work order from the point's template
+    /// for the level, else from the step's (or the organization's) template when the kind is a work order; else a request for triage.
+    /// </summary>
+    internal static async Task<(Guid? WorkOrderId, Guid? RequestId, string? Number)> RaiseFollowUpAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail,
+        TenantSettings settings, WorkOrder? source, WorkOrderTask? step, MeasurementPoint? point, MeasureLevel level, decimal? value, Guid? assetId, Guid siteId,
+        string? remarks, CancellationToken ct)
+    {
+        var kind = step is null || step.FollowUp == FollowUpKind.Default ? settings.FollowUpDefault : step.FollowUp;
+        if (kind == FollowUpKind.None || kind == FollowUpKind.Default) return (null, null, null);
+        var templateId = point is not null ? MeasureLevels.TemplateFor(point, level) : null;
+        if (templateId is null && kind == FollowUpKind.WorkOrder) templateId = step?.FollowUpTemplateId ?? settings.FollowUpTemplateId;
+        var template = templateId is { } tid ? await db.PmTasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tid, ct) : null;
+        var locationId = assetId is { } aid ? await db.Assets.AllSites().Where(a => a.Id == aid).Select(a => a.LocationId).FirstOrDefaultAsync(ct) : source?.LocationId;
+        var unit = point?.Unit ?? step?.Unit;
+        var reading = value is { } v ? $"{Num(v)} {unit}".Trim() : null;
+        var lines = new List<string?> { step?.Description ?? point?.Name };
+        if (step?.Answer == StepAnswer.NotOk) lines.Add(Translator.T(string.Format("Answer: {0}", Translator.T("Not OK"))));
+        if (value is { } val && level != MeasureLevel.Normal) lines.Add(Translator.T(string.Format("Value: {0} {1} ({2})", Num(val), unit ?? "", Translator.T(LevelWord(level)))));
+        lines.Add(remarks);
+        var description = string.Join("\n", lines.Where(x => !string.IsNullOrWhiteSpace(x)));
+        string Title(string what) => Translator.T(source is not null && step is not null ? string.Format(FromStep, what, step.Sequence, source.Number)
+            : string.Format(FromReading, what, reading ?? ""));
+        if (template is not null)
+        {
+            var title = Title(template.Title is { Length: > 0 } tt ? tt : template.Name);
+            var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description, template.WorkType,
+                template.Priority ?? source?.Priority ?? WorkPriority.Medium, siteId, locationId, assetId, template.TradeId, null, null, null, template.EstimatedHours, null,
+                TemplateId: template.Id);
+            var wo = await WorkOrderEndpoints.CreateAsync(db, ctx, input, null, ct, x => { x.SourceWorkOrderId = source?.Id; x.SourceTaskId = step?.Id; },
+                source is null ? "Follow-up of a reading" : $"Follow-up of {source.Number}", mail);
+            return (wo.Id, null, wo.Number);
+        }
+        var requestTitle = Title(step?.Description ?? point?.Name ?? "");
+        var request = await WorkRequestEndpoints.CreateFollowUpAsync(db, ctx, mail, new WorkRequestEndpoints.RequestInput(requestTitle.Length > 300 ? requestTitle[..300] : requestTitle,
+            description, siteId, locationId, assetId, source?.Priority ?? WorkPriority.Medium, WorkType.Corrective, null, null, null, null),
+            r => { r.SourceWorkOrderId = source?.Id; r.SourceTaskId = step?.Id; }, ct);
+        return (null, request.Id, request.Number);
+    }
+
+    /// <summary>The work order and step a follow-up came from, for its page; null when there is none or it can't be seen.</summary>
+    internal static async Task<object?> SourceAsync(CmmsDbContext db, Guid? workOrderId, Guid? taskId, CancellationToken ct)
+    {
+        if (workOrderId is not { } wid) return null;
+        var wo = await db.WorkOrders.AsNoTracking().Where(w => w.Id == wid).Select(w => new { w.Id, w.Number, w.Title }).FirstOrDefaultAsync(ct);
+        if (wo is null) return null;
+        var t = taskId is { } tid ? await db.WorkOrderTasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tid, ct) : null;
+        var unit = t?.Unit ?? (t?.MeasurementPointId is { } pid ? await db.MeasurementPoints.IgnoreQueryFilters().Where(p => p.Id == pid).Select(p => p.Unit).FirstOrDefaultAsync(ct) : null);
+        var photos = taskId is { } ptid ? await db.Attachments.AsNoTracking().Where(a => a.WorkOrderTaskId == ptid).OrderBy(a => a.CreatedAt)
+            .Select(a => new { a.Id, a.FileName, a.ContentType }).ToListAsync(ct) : [];
+        return new
+        {
+            WorkOrderId = wo.Id, wo.Number, wo.Title, StepSequence = t?.Sequence, StepDescription = t?.Description, t?.Answer, t?.Value, Unit = unit, t?.Level, t?.TextValue,
+            t?.Remarks, Photos = photos,
+        };
     }
 
     /// <summary>A Number step's one reading: written on its first answer, changed with it.</summary>

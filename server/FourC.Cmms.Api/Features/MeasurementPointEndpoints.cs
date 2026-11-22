@@ -119,7 +119,7 @@ public static class MeasurementPointEndpoints
             }).ToListAsync(ct));
         }).RequirePermission(Permissions.PmView);
 
-        g.MapPost("/{id:guid}/readings", async (Guid id, DirectReadingInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/readings", async (Guid id, DirectReadingInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             var p = await db.MeasurementPoints.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (p is null) return Results.NotFound();
@@ -137,8 +137,14 @@ public static class MeasurementPointEndpoints
                 Note = input.Note.Clean() is { } n ? n.Length > 1000 ? n[..1000] : n : null, ById = ctx.UserId, ByName = ctx.UserName,
             };
             db.MeasurementReadings.Add(reading);
+            if (reading.Level != MeasureLevel.Normal)
+            {
+                var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+                var (woId, requestId, _) = await Checklists.RaiseFollowUpAsync(db, ctx, mail, settings, null, null, p, reading.Level, value, asset.Id, asset.SiteId, reading.Note, ct);
+                reading.FollowUpWorkOrderId = woId; reading.FollowUpRequestId = requestId;
+            }
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { reading.Id, reading.Level });
+            return Results.Ok(new { reading.Id, reading.Level, reading.FollowUpWorkOrderId, reading.FollowUpRequestId });
         }).RequirePermission(Permissions.MetersRecord);
     }
 
