@@ -17,6 +17,8 @@ public class Attachment : Entity, ITenantOwned, IAuditable
     public bool IsSignature { get; set; }
     /// <summary>Who signed (the technician, or the customer/supervisor's name).</summary>
     public string? SignedBy { get; set; }
+    /// <summary>A work order photo taken on one of its checklist steps (0.13.0).</summary>
+    public Guid? WorkOrderTaskId { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public Guid? CreatedById { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }

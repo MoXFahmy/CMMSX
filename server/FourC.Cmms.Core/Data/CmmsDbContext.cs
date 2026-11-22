@@ -88,6 +88,9 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<WorkOrderGroup> WorkOrderGroups => Set<WorkOrderGroup>();
     public DbSet<WorkOrderGroupComment> WorkOrderGroupComments => Set<WorkOrderGroupComment>();
     public DbSet<AssetChecklist> AssetChecklists => Set<AssetChecklist>();
+    public DbSet<MeasurementPoint> MeasurementPoints => Set<MeasurementPoint>();
+    public DbSet<MeasurementPointAsset> MeasurementPointAssets => Set<MeasurementPointAsset>();
+    public DbSet<MeasurementReading> MeasurementReadings => Set<MeasurementReading>();
     public DbSet<WorkOrderAsset> WorkOrderAssets => Set<WorkOrderAsset>();
     public DbSet<Meter> Meters => Set<Meter>();
     public DbSet<MeterReading> MeterReadings => Set<MeterReading>();
@@ -292,6 +295,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.SignedBy).HasMaxLength(200);
             e.Property(x => x.StorageKey).HasMaxLength(400);
             e.HasIndex(x => new { x.TenantId, x.EntityType, x.EntityId });
+            e.HasIndex(x => x.WorkOrderTaskId).HasFilter("[WorkOrderTaskId] IS NOT NULL");
         });
 
         b.Entity<NumberSequence>(e =>
@@ -386,6 +390,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Reading).HasMaxLength(100); e.Property(x => x.Remarks).HasMaxLength(2000); e.Property(x => x.LegacyRef).HasMaxLength(200);
             e.Property(x => x.UpdatedByName).HasMaxLength(200);
             e.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.Unit).HasMaxLength(20); e.Property(x => x.TextValue).HasMaxLength(1000); e.Property(x => x.Value).HasPrecision(18, 4);
             e.HasIndex(x => new { x.TenantId, x.LegacyRef }).HasFilter("[LegacyRef] IS NOT NULL");
         });
         b.Entity<WorkOrderAsset>(e =>
@@ -475,7 +480,35 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasMany(x => x.Parts).WithOne().HasForeignKey(x => x.PmTaskId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
-        b.Entity<PmTaskStep>(e => e.Property(x => x.Description).HasMaxLength(2000));
+        b.Entity<PmTaskStep>(e =>
+        {
+            e.Property(x => x.Description).HasMaxLength(2000); e.Property(x => x.Unit).HasMaxLength(20);
+            e.HasOne<MeasurementPoint>().WithMany().HasForeignKey(x => x.MeasurementPointId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.MeasurementPointId).HasFilter("[MeasurementPointId] IS NOT NULL");
+        });
+        b.Entity<MeasurementPoint>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.Unit).HasMaxLength(20);
+            foreach (var p in new[] { "ValidMin", "ValidMax", "AlarmLow", "AlertLow", "Target", "AlertHigh", "AlarmHigh" }) e.Property(p).HasPrecision(18, 4);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasMany(x => x.Assets).WithOne().HasForeignKey(x => x.PointId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<MeasurementPointAsset>(e =>
+        {
+            e.HasKey(x => new { x.PointId, x.AssetId });
+            e.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => x.AssetId);
+        });
+        b.Entity<MeasurementReading>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Value).HasPrecision(18, 4); e.Property(x => x.Note).HasMaxLength(1000); e.Property(x => x.ByName).HasMaxLength(200);
+            e.HasOne<MeasurementPoint>().WithMany().HasForeignKey(x => x.PointId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.PointId, x.AssetId, x.ReadAt });
+            e.HasIndex(x => new { x.TenantId, x.WorkOrderTaskId }).HasFilter("[WorkOrderTaskId] IS NOT NULL");
+            e.HasIndex(x => new { x.TenantId, x.ReadAt, x.Level });
+        });
         b.Entity<PmTaskPart>(e =>
         {
             e.Property(x => x.Quantity).HasPrecision(18, 3);
@@ -801,6 +834,9 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<StockTransaction>().HasQueryFilter(SiteFilter, x => Stores.Any(s => s.Id == x.StoreId));
         b.Entity<Meter>().HasQueryFilter(SiteFilter, x => Assets.Any(a => a.Id == x.AssetId));
         b.Entity<MeterReading>().HasQueryFilter(SiteFilter, x => Meters.Any(m => m.Id == x.MeterId));
+        // A reading follows its asset (and so branch limits), else its site; a point's asset links follow the asset.
+        b.Entity<MeasurementReading>().HasQueryFilter(SiteFilter, x => x.AssetId != null ? Assets.Any(a => a.Id == x.AssetId) : Sites.Any(s => s.Id == x.SiteId));
+        b.Entity<MeasurementPointAsset>().HasQueryFilter(SiteFilter, x => Assets.Any(a => a.Id == x.AssetId));
         b.Entity<DowntimeEvent>().HasQueryFilter(SiteFilter, x => Assets.Any(a => a.Id == x.AssetId));
         b.Entity<AssetPart>().HasQueryFilter(SiteFilter, x => Assets.Any(a => a.Id == x.AssetId));
         b.Entity<AssetTransfer>().HasQueryFilter(SiteFilter, x => Assets.Any(a => a.Id == x.AssetId));

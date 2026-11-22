@@ -52,6 +52,9 @@ public class WorkRequest : TenantEntity
     public Guid? DowntimeEventId { get; set; }
     public Guid? RequestTypeId { get; set; }
     public RequestType? RequestType { get; set; }
+    /// <summary>A request raised by a failed checklist step (0.13.0): its work order and step.</summary>
+    public Guid? SourceWorkOrderId { get; set; }
+    public Guid? SourceTaskId { get; set; }
     /// <summary>Users the requester asked to keep informed, on top of the site's and the type's request recipients.</summary>
     public List<Guid> ExtraRecipientIds { get; set; } = [];
     /// <summary>When the work may be done; copied to the work order on approval.</summary>
@@ -134,6 +137,9 @@ public class WorkOrder : TenantEntity
     public List<Guid> RecipientIds { get; set; } = [];
     /// <summary>The group this work order belongs to (one per asset of a group PM occurrence, 0.12.0).</summary>
     public Guid? GroupId { get; set; }
+    /// <summary>Follow-up work (0.13.0): the work order and checklist step that raised it.</summary>
+    public Guid? SourceWorkOrderId { get; set; }
+    public Guid? SourceTaskId { get; set; }
 
     public List<WorkOrderAssignee> Assignees { get; set; } = [];
     /// <summary>Assets a PM round work order covers, in round order. Empty for all other work orders (they use <see cref="AssetId"/>).</summary>
@@ -193,6 +199,23 @@ public class WorkOrderTask : Entity, ITenantOwned
     public string? Reading { get; set; }
     public string? Remarks { get; set; }
     public string? LegacyRef { get; set; }
+    // Smart checklists (0.13.0): the step's definition, copied from its template step, and its answer.
+    public FourC.Cmms.Core.Pm.StepType Type { get; set; }
+    public string? Unit { get; set; }
+    public int? Decimals { get; set; }
+    public Guid? MeasurementPointId { get; set; }
+    /// <summary>The meter a Meter step reads (found when the work order is made, or chosen with the answer).</summary>
+    public Guid? MeterId { get; set; }
+    public bool PhotoRequired { get; set; }
+    public bool BeforeStart { get; set; }
+    public FourC.Cmms.Core.Pm.FollowUpKind FollowUp { get; set; }
+    public Guid? FollowUpTemplateId { get; set; }
+    public FourC.Cmms.Core.Pm.StepAnswer? Answer { get; set; }
+    public decimal? Value { get; set; }
+    public string? TextValue { get; set; }
+    public FourC.Cmms.Core.Pm.MeasureLevel? Level { get; set; }
+    public Guid? FollowUpWorkOrderId { get; set; }
+    public Guid? FollowUpRequestId { get; set; }
     /// <summary>Last change to the tick, reading or remarks (a phone's queued change to the step loses to a later one).</summary>
     public DateTimeOffset? UpdatedAt { get; set; }
     public Guid? UpdatedById { get; set; }

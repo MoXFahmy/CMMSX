@@ -59,6 +59,17 @@ public class PmTaskStep : Entity
     public Guid PmTaskId { get; set; }
     public int Sequence { get; set; }
     public required string Description { get; set; }
+    // Smart checklists (0.13.0): what the step asks for, copied onto each work order's step.
+    public StepType Type { get; set; }
+    /// <summary>A Number step's unit (a step with a measurement point uses the point's); a Meter step's unit picks the asset's meter.</summary>
+    public string? Unit { get; set; }
+    public int? Decimals { get; set; }
+    public Guid? MeasurementPointId { get; set; }
+    public bool PhotoRequired { get; set; }
+    /// <summary>A safety step: answered before the work starts and before any other step.</summary>
+    public bool BeforeStart { get; set; }
+    public FollowUpKind FollowUp { get; set; }
+    public Guid? FollowUpTemplateId { get; set; }
 }
 
 /// <summary>When and where a PM task is performed (legacy pmschedule / pmmeters).</summary>

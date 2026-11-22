@@ -32,6 +32,12 @@ public class TenantSettings
     public bool RequireLaborToComplete { get; set; }
     /// <summary>Completing a work order needs every checklist step ticked (none to tick passes).</summary>
     public bool RequireAllTasksDone { get; set; }
+    /// <summary>Completing a work order needs every Number, Meter and Text step answered (0.13.0).</summary>
+    public bool RequireReadingSteps { get; set; }
+    /// <summary>What a failed checklist step raises when the step says "Default" (0.13.0).</summary>
+    public FourC.Cmms.Core.Pm.FollowUpKind FollowUpDefault { get; set; } = FourC.Cmms.Core.Pm.FollowUpKind.Request;
+    /// <summary>The work template for follow-up work orders when the default is a work order.</summary>
+    public Guid? FollowUpTemplateId { get; set; }
     /// <summary>Completing breakdown work needs a failure code.</summary>
     public bool RequireFailureCodeForBreakdowns { get; set; }
     /// <summary>Logging labour or ticking a checklist step on an Open work order moves it to In progress.</summary>
