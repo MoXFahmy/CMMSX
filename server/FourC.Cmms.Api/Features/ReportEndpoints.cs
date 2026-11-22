@@ -4,6 +4,7 @@ using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Inventory;
+using FourC.Cmms.Core.Pm;
 using FourC.Cmms.Core.Purchasing;
 using FourC.Cmms.Core.Work;
 using Microsoft.EntityFrameworkCore;
@@ -33,6 +34,9 @@ public static class ReportEndpoints
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
     private static readonly Param Range = new("range", "dateRange");
     private static readonly Param SiteP = new("siteId", "site");
+    private static readonly Param YearP = new("year", "year");
+    private static readonly Param AssetP = new("assetId", "asset");
+    private static readonly Param ComponentsP = new("components", "bool");
     private static Param GroupBy(object def, params (string, string)[] o) => new("groupBy", "select", o.Select(x => new Option(x.Item1, x.Item2)).ToList(), def);
 
     public static readonly List<ReportDef> Catalog =
@@ -44,7 +48,8 @@ public static class ReportEndpoints
             [Range, SiteP, GroupBy("order", ("order", "Order"), ("priority", "Priority"), ("trade", "Trade"))]),
         new("wo-throughput", "Work", "Work order throughput", "Work orders raised and completed per month, on-time completion and average turnaround.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("pm-compliance", "Work", "PM compliance", "Preventive work due in the period: completed on time, late, or missed.", Permissions.PmView,
-            [Range, SiteP, GroupBy("month", ("month", "Month"), ("schedule", "PM schedule"), ("trade", "Trade"))]),
+            [Range, SiteP, GroupBy("month", ("month", "Month"), ("schedule", "PM schedule"), ("trade", "Trade"), ("category", "Asset category"))]),
+        new("pm-annual-plan", "Work", "PM annual plan", "Each PM's year, month by month: what was done, late, missed or cancelled, and what is still planned.", Permissions.PmView, [YearP, SiteP]),
         new("requester-satisfaction", "Work", "Requester satisfaction", "Requesters' answers to finished work: accepted or refused, and their ratings.", Permissions.WorkOrdersView,
             [Range, SiteP, GroupBy("month", ("month", "Month"), ("type", "Request type"), ("trade", "Trade"), ("team", "Team"), ("site", "Site"))]),
         new("cancelled-work", "Work", "Cancelled work", "Work orders cancelled in the period, by reason.", Permissions.WorkOrdersView,
@@ -57,7 +62,9 @@ public static class ReportEndpoints
         new("failure-tree", "Reliability", "Failure tree", "Completed work by symptom, cause and remedy, with hours, downtime and cost.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("failure-pareto", "Reliability", "Failure analysis", "Breakdowns by failure code — the few causes behind most of the downtime.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("maintenance-costs", "Costs", "Maintenance costs", "Labour, parts and other costs booked in the period.", Permissions.WorkOrdersView,
-            [Range, SiteP, GroupBy("asset", ("asset", "Asset"), ("site", "Site"), ("category", "Asset category"), ("type", "Work type"), ("trade", "Trade"), ("team", "Team"), ("month", "Month"))]),
+            [Range, SiteP, GroupBy("asset", ("asset", "Asset"), ("site", "Site"), ("category", "Asset category"), ("type", "Work type"), ("trade", "Trade"), ("team", "Team"), ("technician", "Technician"), ("month", "Month"))]),
+        new("asset-work-history", "Assets", "Asset work history", "Every work order on one asset in the period, with its codes, hours, cost and downtime.", Permissions.WorkOrdersView,
+            [AssetP, Range, ComponentsP]),
         new("assets-by-category", "Assets", "Asset register summary", "Assets by category and status with purchase and current value.", Permissions.AssetsView, [SiteP]),
         new("stock-valuation", "Inventory", "Stock valuation", "Value of stock on hand at average cost.", Permissions.InventoryView,
             [SiteP, GroupBy("store", ("store", "Store"), ("group", "Part group"))]),
@@ -92,6 +99,7 @@ public static class ReportEndpoints
             var allowed = def.Params.FirstOrDefault(p => p.Name == "groupBy");
             var gb = allowed?.Options?.Any(o => o.Value == groupBy) == true ? groupBy : allowed?.Default as string;
             if (def.Params.Any(p => p.Type == "asset") && assetId is null) throw new FourC.Cmms.Core.Common.DomainException(ChooseAsset);
+            if (assetId is { } chosen && def.Params.Any(p => p.Type == "asset") && !await db.Assets.AnyAsync(x => x.Id == chosen, ct)) return Results.NotFound();
             var y = year ?? Today.Year;
             if (def.Params.Any(p => p.Type == "year") && y is < 2000 or > 2100) throw new FourC.Cmms.Core.Common.DomainException(ChooseYear);
             var a = new ReportArgs(f, t, siteId, gb, Math.Clamp(days ?? 180, 1, 3650), assetId, y, components == true);
@@ -101,6 +109,8 @@ public static class ReportEndpoints
                 "wo-throughput" => await ThroughputAsync(db, a, ct),
                 "targets-met" => await TargetsMetAsync(db, a, ct),
                 "pm-compliance" => await PmComplianceAsync(db, a, ct),
+                "pm-annual-plan" => await PmAnnualPlanAsync(db, a, ct),
+                "asset-work-history" => await AssetHistoryAsync(db, a, ct),
                 "labor-hours" => await LaborAsync(db, a, ct),
                 "requester-satisfaction" => await SatisfactionAsync(db, a, ct),
                 "cancelled-work" => await CancelledAsync(db, a, ct),
@@ -265,16 +275,17 @@ public static class ReportEndpoints
     {
         var items = await Wo(db, a).Where(w => w.PmScheduleId != null && (w.PmDueDate ?? w.DueDate) >= a.From && (w.PmDueDate ?? w.DueDate) <= a.To)
             .Select(w => new { Due = (w.PmDueDate ?? w.DueDate)!.Value, w.CompletedAt, w.Status, w.PmScheduleId, Schedule = db.PmSchedules.Where(p => p.Id == w.PmScheduleId).Select(p => p.Code + " " + p.Name).FirstOrDefault(),
-                Trade = w.Trade!.Name }).ToListAsync(ct);
+                Trade = w.Trade!.Name, Category = w.Asset!.Category!.Name }).ToListAsync(ct);
         string Outcome(DateOnly due, DateTimeOffset? completed, WorkOrderStatus st) =>
             st == WorkOrderStatus.Cancelled ? "skipped"
             : completed is { } c ? (DateOnly.FromDateTime(c.UtcDateTime) <= due ? "onTime" : "late")
             : due < Today ? "missed" : "pending";
-        var tagged = items.Select(x => new { x.Due, x.Schedule, x.Trade, O = Outcome(x.Due, x.CompletedAt, x.Status) }).ToList();
+        var tagged = items.Select(x => new { x.Due, x.Schedule, x.Trade, x.Category, O = Outcome(x.Due, x.CompletedAt, x.Status) }).ToList();
         var groups = a.GroupBy switch
         {
             "schedule" => tagged.GroupBy(x => x.Schedule ?? "—").OrderBy(g => g.Key).Select(g => (g.Key, g.ToList())),
             "trade" => tagged.GroupBy(x => x.Trade ?? "No trade").OrderBy(g => g.Key).Select(g => (g.Key, g.ToList())),
+            "category" => tagged.GroupBy(x => x.Category ?? "Uncategorised").OrderBy(g => g.Key).Select(g => (g.Key, g.ToList())),
             _ => Months(a).Select(m => (MonthLabel(m.Y, m.M), tagged.Where(x => x.Due.Year == m.Y && x.Due.Month == m.M).ToList())),
         };
         var rows = groups.Select(g =>
@@ -284,7 +295,7 @@ public static class ReportEndpoints
                 ("compliance", Pct(C("onTime"), C("onTime") + C("late") + C("missed"))));
         }).ToList();
         int T(string o) => tagged.Count(x => x.O == o);
-        var label = a.GroupBy switch { "schedule" => "PM schedule", "trade" => "Trade", _ => "Month due" };
+        var label = a.GroupBy switch { "schedule" => "PM schedule", "trade" => "Trade", "category" => "Asset category", _ => "Month due" };
         return new("pm-compliance", "PM compliance", Period(a),
             [new("group", label), new("due", "Due", "number"), new("onTime", "On time", "number"), new("late", "Late", "number"), new("missed", "Missed", "number"),
              new("pending", "Not yet due", "number"), new("skipped", "Cancelled", "number"), new("compliance", "Compliance", "percent")],
@@ -674,17 +685,106 @@ public static class ReportEndpoints
             "site" => dims[l.WoId].Site, "type" => dims[l.WoId].Type, "trade" => dims[l.WoId].Trade, "team" => dims[l.WoId].Team, "category" => dims[l.WoId].Category,
             "month" => $"{l.Y:0000}-{l.M:00}", _ => dims[l.WoId].Asset,
         };
-        var grouped = lines.GroupBy(Key).Select(g => Row(("group", a.GroupBy == "month" ? MonthLabel(int.Parse(g.Key[..4]), int.Parse(g.Key[5..])) : g.Key), ("sortKey", g.Key),
+        var grouped = a.GroupBy == "technician" ? await ByTechnicianAsync(db, a, ct) : lines.GroupBy(Key).Select(g => Row(("group", a.GroupBy == "month" ? MonthLabel(int.Parse(g.Key[..4]), int.Parse(g.Key[5..])) : g.Key), ("sortKey", g.Key),
             ("labor", R2(g.Sum(x => x.Labor))), ("parts", R2(g.Sum(x => x.Parts))), ("other", R2(g.Sum(x => x.Other))), ("total", R2(g.Sum(x => x.Labor + x.Parts + x.Other))),
-            ("workOrders", g.Select(x => x.WoId).Distinct().Count())));
+            ("workOrders", g.Select(x => x.WoId).Distinct().Count()), ("hours", R2(g.Sum(x => x.Hours)))));
         var rows = (a.GroupBy == "month" ? grouped.OrderBy(r => (string)r["sortKey"]!) : grouped.OrderByDescending(r => (decimal)r["total"]!)).Take(a.GroupBy == "asset" ? 200 : 1000).ToList();
         foreach (var r in rows) r.Remove("sortKey");
         var total = lines.Sum(x => x.Labor + x.Parts + x.Other);
-        var label = a.GroupBy switch { "site" => "Site", "type" => "Work type", "trade" => "Trade", "team" => "Team", "category" => "Asset category", "month" => "Month", _ => "Asset" };
+        var label = a.GroupBy switch { "site" => "Site", "type" => "Work type", "trade" => "Trade", "team" => "Team", "category" => "Asset category", "technician" => "Technician", "month" => "Month", _ => "Asset" };
         return new("maintenance-costs", "Maintenance costs", Period(a),
-            [new("group", label), new("labor", "Labour", "currency"), new("parts", "Parts", "currency"), new("other", "Other", "currency"), new("total", "Total", "currency"), new("workOrders", "Work orders", "number")],
+            [new("group", label), new("labor", "Labour", "currency"), new("parts", "Parts", "currency"), new("other", "Other", "currency"), new("total", "Total", "currency"), new("workOrders", "Work orders", "number"),
+             new("hours", "Labour hours", "hours")],
             rows, new Chart("bar", "group", ["labor", "parts", "other"], true),
             [new("Total cost", R2(total), "currency"), new("Labour", R2(lines.Sum(x => x.Labor)), "currency"), new("Parts", R2(lines.Sum(x => x.Parts)), "currency"), new("Other", R2(lines.Sum(x => x.Other)), "currency")]);
+    }
+
+    /// <summary>Maintenance costs by technician (0.14.0): each person's labour hours and cost and the work orders they logged hours on; parts and other costs aren't per person.</summary>
+    private static async Task<IEnumerable<Dictionary<string, object?>>> ByTechnicianAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
+    {
+        var labour = await (from l in db.WorkOrderLabor.AsNoTracking() join w in Wo(db, a) on l.WorkOrderId equals w.Id
+                            where l.WorkDate >= a.From && l.WorkDate <= a.To
+                            select new { l.EmployeeId, l.WorkOrderId, Cost = l.Hours * l.Rate + l.OvertimeHours * l.OvertimeRate, Hours = l.Hours + l.OvertimeHours }).ToListAsync(ct);
+        var ids = labour.Select(l => l.EmployeeId).Distinct().ToList();
+        var names = await db.Employees.AllSites().AsNoTracking().Where(e => ids.Contains(e.Id)).ToDictionaryAsync(e => e.Id, e => $"{e.FullName} · {e.Code}", ct);
+        return labour.GroupBy(l => l.EmployeeId).Select(g => Row(("group", names.GetValueOrDefault(g.Key) ?? "—"), ("sortKey", names.GetValueOrDefault(g.Key) ?? "—"),
+            ("labor", R2(g.Sum(x => x.Cost))), ("parts", null), ("other", null), ("total", R2(g.Sum(x => x.Cost))),
+            ("workOrders", g.Select(x => x.WorkOrderId).Distinct().Count()), ("hours", R2(g.Sum(x => x.Hours)))));
+    }
+
+    // ---------------------------------------------------------------- assets
+    private static async Task<ReportResult> PmAnnualPlanAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
+    {
+        var (first, last) = (new DateOnly(a.Year, 1, 1), new DateOnly(a.Year, 12, 31));
+        var today = Today;
+        var generated = await Wo(db, a).Where(w => w.PmScheduleId != null && (w.PmDueDate ?? w.DueDate) >= first && (w.PmDueDate ?? w.DueDate) <= last)
+            .Select(w => new { Pm = w.PmScheduleId!.Value, Due = (w.PmDueDate ?? w.DueDate)!.Value, w.CompletedAt, w.Status, Key = w.GroupId ?? w.Id }).ToListAsync(ct);
+        // As PM compliance: cancelled, done on time, late, missed (past due, not done) — work generated but not yet due is still planned.
+        string Outcome(DateOnly due, DateTimeOffset? completed, WorkOrderStatus st) =>
+            st == WorkOrderStatus.Cancelled ? "cancelled" : completed is { } c ? (DateOnly.FromDateTime(c.UtcDateTime) <= due ? "done" : "late") : due < today ? "missed" : "planned";
+        static int Rank(string o) => o switch { "missed" => 4, "late" => 3, "planned" => 2, "done" => 1, _ => 0 };
+        // A group's work orders are one visit: the worst outcome among them counts.
+        var visits = generated.GroupBy(w => (w.Pm, w.Key)).Select(g => (g.Key.Pm, Due: g.Min(x => x.Due), Outcome: g.Select(x => Outcome(x.Due, x.CompletedAt, x.Status)).MaxBy(Rank)!))
+            .Concat((await PmEndpoints.ForecastAsync(db, first, last, a.SiteId, ct)).Where(f => f.Date >= first && f.Date <= last).Select(f => (Pm: f.Id, Due: f.Date, Outcome: "planned")))
+            .ToList();
+        var ids = visits.Select(v => v.Pm).Distinct().ToList();
+        var pms = await db.PmSchedules.AsNoTracking().Where(p => ids.Contains(p.Id))
+            .Select(p => new { p.Id, p.Code, p.Name, p.AssetId, AssetNumber = p.Asset!.AssetNumber, AssetName = p.Asset.Name, p.MultiAssetMode, Count = p.Assets.Count }).ToListAsync(ct);
+        string Asset(Guid? assetId, string? number, string? name, MultiAssetMode mode, int count) => assetId is not null ? $"{number} · {name}"
+            : count > 0 ? Translator.T(string.Format(mode == MultiAssetMode.Group ? "Group of {0} assets" : "Round of {0} assets", count)) : "—";
+        var rows = pms.OrderBy(p => p.AssetNumber ?? "\uffff").ThenBy(p => p.Code).Select(p =>
+        {
+            var mine = visits.Where(v => v.Pm == p.Id).ToList();
+            var row = Row(("asset", Asset(p.AssetId, p.AssetNumber, p.AssetName, p.MultiAssetMode, p.Count)), ("pm", $"{p.Code} · {p.Name}"), ("pmId", p.Id), ("assetId", p.AssetId));
+            for (var m = 1; m <= 12; m++)
+            {
+                var month = mine.Where(v => v.Due.Month == m).ToList();
+                int C(string o) => month.Count(v => v.Outcome == o);
+                row[$"m{m}"] = month.Count == 0 ? null : new PlanCell(C("done"), C("late"), C("missed"), C("cancelled"), C("planned"));
+            }
+            row["total"] = mine.Count;
+            return row;
+        }).ToList();
+        int T(string o) => visits.Where(v => pms.Any(p => p.Id == v.Pm)).Count(v => v.Outcome == o);
+        return new("pm-annual-plan", "PM annual plan", a.Year.ToString(CultureInfo.InvariantCulture),
+            [new("asset", "Asset"), new("pm", "PM"), .. Enumerable.Range(1, 12).Select(m => new Column($"m{m}", new DateOnly(a.Year, m, 1).ToString("MMM", Dates), "plan")),
+             new("total", "Total", "number")],
+            rows, null,
+            [new("PMs", rows.Count), new("Done on time", T("done")), new("Late", T("late")), new("Missed", T("missed")), new("Planned", T("planned"))]);
+    }
+
+    private static async Task<ReportResult> AssetHistoryAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
+    {
+        var root = await db.Assets.AsNoTracking().Where(x => x.Id == a.AssetId).Select(x => new { x.Id, x.AssetNumber, x.Name }).FirstAsync(ct);
+        var ids = new HashSet<Guid> { root.Id };
+        if (a.Components)
+        {
+            // Every level below it.
+            var children = (await db.Assets.AsNoTracking().Where(x => x.ParentAssetId != null).Select(x => new { x.Id, Parent = x.ParentAssetId!.Value }).ToListAsync(ct))
+                .ToLookup(x => x.Parent, x => x.Id);
+            var queue = new Queue<Guid>(ids);
+            while (queue.Count > 0) foreach (var c in children[queue.Dequeue()]) if (ids.Add(c)) queue.Enqueue(c);
+        }
+        var (s, e) = (Start(a.From), End(a.To));
+        var wos = db.WorkOrders.AsNoTracking().Where(w => w.AssetId != null && ids.Contains(w.AssetId.Value) && w.CreatedAt >= s && w.CreatedAt < e);
+        var items = await wos.OrderByDescending(w => w.CreatedAt).Select(w => new
+        {
+            w.Id, w.Number, w.Title, w.Type, w.CreatedAt, w.DowntimeHours, Asset = w.Asset!.AssetNumber,
+            Symptom = w.Symptom == null ? null : w.Symptom.Code + " · " + w.Symptom.Name, Cause = w.FailureCode == null ? null : w.FailureCode.Code + " · " + w.FailureCode.Name,
+            Remedy = w.Remedy == null ? null : w.Remedy.Code + " · " + w.Remedy.Name,
+        }).Take(5000).ToListAsync(ct);
+        var costs = (await CostLinesAsync(db, wos, null, null, ct)).GroupBy(c => c.WoId)
+            .ToDictionary(g => g.Key, g => (Hours: g.Sum(x => x.Hours), Cost: g.Sum(x => x.Labor + x.Parts + x.Other)));
+        var rows = items.Select(w => Row(("number", w.Number), ("date", w.CreatedAt), ("asset", w.Asset), ("type", Translator.T(w.Type.ToString())), ("title", w.Title),
+            ("symptom", w.Symptom), ("cause", w.Cause), ("remedy", w.Remedy), ("hours", R2(costs.GetValueOrDefault(w.Id).Hours)), ("cost", R2(costs.GetValueOrDefault(w.Id).Cost)),
+            ("downtime", w.DowntimeHours), ("workOrderId", w.Id))).ToList();
+        var subtitle = $"{root.AssetNumber} · {root.Name} · {Period(a)}" + (a.Components ? $" · {Translator.T("with its components")}" : "");
+        return new("asset-work-history", "Asset work history", subtitle,
+            [new("number", "Number"), new("date", "Raised", "date"), .. a.Components ? new[] { new Column("asset", "Asset") } : [], new("type", "Type"), new("title", "Title"),
+             new("symptom", "Symptom"), new("cause", "Cause"), new("remedy", "Remedy"), new("hours", "Labour hours", "hours"), new("cost", "Cost", "currency"), new("downtime", "Downtime (h)", "hours")],
+            rows, null,
+            [new("Work orders", rows.Count), new("Labour hours", R2(costs.Values.Sum(c => c.Hours)), "hours"), new("Cost", R2(costs.Values.Sum(c => c.Cost)), "currency"),
+             new("Downtime (h)", R2(items.Sum(w => w.DowntimeHours ?? 0)), "hours")]);
     }
 
     private static async Task<ReportResult> AssetsAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)

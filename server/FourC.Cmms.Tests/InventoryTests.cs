@@ -150,10 +150,13 @@ public class InventoryTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var (c, site, store, _) = await SetupAsync();
         var part = await PartAsync(c, store, "P-REP");
         await Ok(await c.PostAsJsonAsync("/api/inventory/receive", new { partId = part, storeId = store, quantity = 3, unitCost = 4 }));
+        // A report about one asset (0.14.0) needs one.
+        var asset = Id(await Ok(await c.PostAsJsonAsync("/api/assets", new { name = "Report asset", siteId = site, status = "Active", criticality = "High", warrantyType = "None" })));
         foreach (var r in (await Ok(await c.GetAsync("/api/reports"))).EnumerateArray())
         {
             var key = r.GetProperty("key").GetString();
-            var report = await Ok(await c.GetAsync($"/api/reports/{key}"));
+            var needsAsset = r.GetProperty("params").EnumerateArray().Any(x => x.GetProperty("type").GetString() == "asset");
+            var report = await Ok(await c.GetAsync($"/api/reports/{key}{(needsAsset ? $"?assetId={asset}" : "")}"));
             Assert.True(report.GetProperty("columns").GetArrayLength() > 0, key);
         }
         var valuation = await Ok(await c.GetAsync("/api/reports/stock-valuation"));
