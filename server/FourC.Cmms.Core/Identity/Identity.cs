@@ -67,6 +67,8 @@ public static class Permissions
     public const string WorkOrdersExecute = "workorders.execute";
     public const string WorkOrdersClose = "workorders.close";
     public const string WorkOrdersDelete = "workorders.delete";
+    /// <summary>A crew leader logs hours for the other technicians on a job (0.11.0).</summary>
+    public const string WorkOrdersLogForOthers = "workorders.logForOthers";
     public const string PmView = "pm.view";
     public const string PmManage = "pm.manage";
     public const string PmGenerate = "pm.generate";
@@ -106,6 +108,7 @@ public static class Permissions
         new(WorkOrdersExecute, "Work orders", "Start work, log labour, tick tasks, complete work"),
         new(WorkOrdersClose, "Work orders", "Close, cancel and reopen work orders"),
         new(WorkOrdersDelete, "Work orders", "Delete work orders"),
+        new(WorkOrdersLogForOthers, "Work orders", "Log hours for others"),
         new(PmView, "Preventive maintenance", "View PM tasks, schedules, meters and forecast"),
         new(PmManage, "Preventive maintenance", "Create and edit PM tasks, schedules and meters"),
         new(PmGenerate, "Preventive maintenance", "Generate PM work orders"),
