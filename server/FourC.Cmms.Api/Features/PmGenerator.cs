@@ -150,7 +150,7 @@ public static class PmGenerator
             planned.Add(new WorkOrderPart { PartId = tp.PartId, Quantity = tp.Quantity * (round?.Count ?? 1), StoreId = await Planning.DefaultStoreAsync(db, tp.PartId, s.SiteId, ct) });
         return await WorkOrderEndpoints.CreateAsync(db, ctx, input, null, ct, w =>
         {
-            w.PmScheduleId = s.Id; w.PmTaskId = task.Id; w.PmDueDate = due;
+            w.PmScheduleId = s.Id; w.PmTaskId = task.Id; w.PmDueDate = due; w.OnlyWhenStopped = s.OnlyWhenStopped;
             foreach (var p in planned) { p.WorkOrderId = w.Id; db.WorkOrderParts.Add(p); }
             if (round is null) return;
             for (var n = 0; n < round.Count; n++) w.Assets.Add(new WorkOrderAsset { WorkOrderId = w.Id, AssetId = round[n].Id, Sequence = n + 1 });

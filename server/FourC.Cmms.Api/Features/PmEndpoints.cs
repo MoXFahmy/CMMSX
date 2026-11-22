@@ -24,7 +24,7 @@ public static class PmEndpoints
         int? WeekOfMonth, DayOfWeek? DayOfWeek, int? DayOfMonth, int WorkPeriodDays, bool WholeMonth, int LeadDays, DateOnly StartDate, DateOnly? NextDueDate,
         Guid? MeterId, MeterTrigger? MeterTrigger, decimal? MeterInterval, decimal? NextDueReading, decimal? LowerLimit, decimal? UpperLimit,
         Guid? LowerTaskId, Guid? UpperTaskId, bool TimeBased, bool IsActive = true, string? RowVersion = null, List<Guid>? AssetIds = null, Guid? TeamId = null,
-        bool? ManagesTeam = null);
+        bool? ManagesTeam = null, bool? OnlyWhenStopped = null);
     public sealed record GenerateInput(DateOnly Until, Guid? SiteId, List<Guid>? ScheduleIds);
     public sealed record MeterInput(string Code, string Name, Guid AssetId, string Unit, decimal? MaxDailyIncrement, bool IsActive = true);
     public sealed record ReadingInput(decimal Value, DateTimeOffset? ReadAt, string? Note, bool Confirm = false);
@@ -54,7 +54,7 @@ public static class PmEndpoints
     public sealed record PmScheduleListItem(Guid Id, string Code, string Name, PmScheduleType Type, PmBasis Basis, bool IsActive, Guid SiteId, string SiteName,
         Guid? AssetId, string? AssetNumber, string? AssetName, string? LocationName, string? TaskCode, string? TaskName, string Schedule, DateOnly? NextDueDate,
         decimal? NextDueReading, string? MeterUnit, decimal? MeterReading, DateTimeOffset? LastGeneratedAt, Guid? LastWorkOrderId, string? LastWorkOrderNumber,
-        int OpenWorkOrders, bool IsOverdue, int MultipleTasks, int AssetCount);
+        int OpenWorkOrders, bool IsOverdue, int MultipleTasks, int AssetCount, bool OnlyWhenStopped = false);
 
     /// <summary>One page of the PM schedule list (the list screen and its export share it).</summary>
     internal static async Task<PagedResult<PmScheduleListItem>> ListAsync(CmmsDbContext db, PmScheduleFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
@@ -76,7 +76,7 @@ public static class PmEndpoints
         return new PagedResult<PmScheduleListItem>(paged.Items.Select(i => new PmScheduleListItem(
             i.S.Id, i.S.Code, i.S.Name, i.S.Type, i.S.Basis, i.S.IsActive, i.S.SiteId, i.SiteName, i.S.AssetId, i.AssetNumber, i.AssetName, i.LocationName,
             i.TaskCode, i.TaskName, PmCalendar.Describe(i.S, Translator.CurrentLanguage), i.S.NextDueDate, i.S.NextDueReading, i.MeterUnit, i.MeterReading, i.S.LastGeneratedAt,
-            i.S.LastWorkOrderId, i.LastWorkOrderNumber, i.OpenWorkOrders, i.S.IsActive && i.S.NextDueDate < today, i.S.ExtraTasks.Count, i.AssetCount)).ToList(),
+            i.S.LastWorkOrderId, i.LastWorkOrderNumber, i.OpenWorkOrders, i.S.IsActive && i.S.NextDueDate < today, i.S.ExtraTasks.Count, i.AssetCount, i.S.OnlyWhenStopped)).ToList(),
             paged.Total, paged.Page, paged.PageSize);
     }
 
@@ -192,6 +192,9 @@ public static class PmEndpoints
             var code = input.Code.Clean() ?? await Numbering.NextAsync(db, "PmSchedule", "PM-", 5, n => db.PmSchedules.AllSites().AnyAsync(x => x.Code == n, ct),
                 p => db.PmSchedules.AllSites().Where(x => x.Code.StartsWith(p)).Select(x => x.Code).ToListAsync(ct), ct);
             var s = CreateSchedule(db, input, code);
+            // "Only while stopped" comes from the asset unless the form says otherwise.
+            if (input.OnlyWhenStopped is null && s.AssetId is { } stopAsset)
+                s.OnlyWhenStopped = await db.Assets.AllSites().Where(a => a.Id == stopAsset).Select(a => a.OnlyWhenStopped).FirstOrDefaultAsync(ct);
             if (s.Type == PmScheduleType.Meter && s.MeterTrigger == MeterTrigger.Incremental && s.NextDueReading is null)
                 s.NextDueReading = (await db.Meters.Where(m => m.Id == s.MeterId).Select(m => m.CurrentReading).FirstOrDefaultAsync(ct) ?? 0) + (s.MeterInterval ?? 0);
             await db.SaveChangesAsync(ct);
@@ -518,6 +521,7 @@ public static class PmEndpoints
     internal static void ApplySchedule(PmSchedule s, ScheduleInput i)
     {
         s.Description = i.Description.Clean(); s.SiteId = i.SiteId; s.LocationId = i.LocationId; s.AssetId = i.AssetId; s.TradeId = i.TradeId; s.TeamId = i.TeamId; s.Priority = i.Priority;
+        if (i.OnlyWhenStopped is { } stopped) s.OnlyWhenStopped = stopped; // left out (older pages, the import): unchanged
         s.AssigneeIds = (i.AssigneeIds ?? []).Distinct().ToList(); s.PmTaskId = i.PmTaskId; s.Type = i.Type; s.Basis = i.Basis; s.Frequency = i.Frequency;
         s.Unit = i.Type == PmScheduleType.FixedInterval || i.TimeBased ? i.Unit : FrequencyUnit.Month;
         s.WeekOfMonth = i.Type == PmScheduleType.DayOfWeekInMonth ? i.WeekOfMonth : null; s.DayOfWeek = i.Type == PmScheduleType.DayOfWeekInMonth ? i.DayOfWeek : null;

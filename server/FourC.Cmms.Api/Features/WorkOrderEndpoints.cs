@@ -16,7 +16,7 @@ public static class WorkOrderEndpoints
     public sealed record WorkOrderInput(string Title, string? Description, WorkType Type, WorkPriority Priority, Guid SiteId, Guid? LocationId, Guid? AssetId,
         Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? PlannedStart, DateOnly? DueDate, decimal? EstimatedHours, List<string>? Tasks, string? RowVersion = null,
         string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null, bool? AssetIsDown = null, Guid? TeamId = null,
-        bool? ManagesTeam = null);
+        bool? ManagesTeam = null, List<AccessWindow>? AccessWindows = null, bool? OnlyWhenStopped = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
         DateTimeOffset? At = null, Guid? CancelReasonId = null);
@@ -165,6 +165,8 @@ public static class WorkOrderEndpoints
                 w.PlannedStart, w.DueDate, w.DueAt, w.DueFromTarget, w.StartBy, w.RespondedAt, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 Downtime = downtime, AssetDownSince = assetDownSince,
                 LocationNotesToTechnician = locationNotes,
+                // Planned on a day none of its access windows touches.
+                OutsideWindows = w.PlannedStart is { } plannedDay && !AccessWindows.Covers(w.AccessWindows, plannedDay, Sla.Zone(settings.TimeZone)),
                 CancelReason = w.CancelReason is null ? null : new { w.CancelReason.Id, w.CancelReason.Code, w.CancelReason.Name },
                 Request = request is null ? null : new
                 {
@@ -650,6 +652,7 @@ public static class WorkOrderEndpoints
         if (i.AssetId is not null && !await db.Assets.AnyAsync(a => a.Id == i.AssetId && a.SiteId == i.SiteId, ct)) v.Add("assetId", "Asset must belong to the selected site.");
         if (i.TradeId is not null && !await db.Trades.AnyAsync(t => t.Id == i.TradeId, ct)) v.Add("tradeId", "Unknown trade.");
         await TeamEndpoints.CheckForWorkAsync(db, v, i.TeamId, i.SiteId, currentTeamId, ct);
+        if (AccessWindows.Problem(i.AccessWindows) is { } windows) v.Add("accessWindows", windows);
         var who = (i.AssigneeIds ?? []).Distinct().ToList();
         if (who.Count > 0 && await db.Employees.CountAsync(e => who.Contains(e.Id), ct) != who.Count) v.Add("assigneeIds", "Unknown person.");
         return v;
@@ -667,6 +670,9 @@ public static class WorkOrderEndpoints
         if (input.AssetId is not null && input.LocationId is null)
             input = input with { LocationId = await db.Assets.Where(a => a.Id == input.AssetId).Select(a => a.LocationId).FirstOrDefaultAsync(ct) };
         Apply(w, input);
+        // "Only while stopped" comes from the asset unless the form says otherwise (a request's or PM's own flag is set by the caller).
+        if (input.OnlyWhenStopped is null && w.AssetId is { } stopAsset)
+            w.OnlyWhenStopped = await db.Assets.AllSites().Where(a => a.Id == stopAsset).Select(a => a.OnlyWhenStopped).FirstOrDefaultAsync(ct);
         Deadlines.OnCreate(w, input.DueAt, input.DueDate, settings, raisedAt ?? DateTimeOffset.UtcNow, requestId is not null, applyTargets);
         SyncAssignees(w, input.AssigneeIds);
         configure?.Invoke(w);
@@ -686,6 +692,9 @@ public static class WorkOrderEndpoints
         w.Title = i.Title.Trim(); w.Description = i.Description.Clean(); w.Type = i.Type; w.Priority = i.Priority; w.SiteId = i.SiteId; w.LocationId = i.LocationId;
         w.AssetId = i.AssetId; w.TradeId = i.TradeId; w.TeamId = i.TeamId; w.PlannedStart = i.PlannedStart; w.EstimatedHours = i.EstimatedHours; // deadlines: Deadlines
         w.RequestedBy = i.RequestedBy.Clean() is { } rb && rb.Length > 200 ? rb[..200] : i.RequestedBy.Clean();
+        // Left out (older pages, the phone): unchanged.
+        if (i.AccessWindows is not null) w.AccessWindows = AccessWindows.Clean(i.AccessWindows);
+        if (i.OnlyWhenStopped is { } stopped) w.OnlyWhenStopped = stopped;
     }
 
     private static void SyncAssignees(WorkOrder w, List<Guid>? ids)
