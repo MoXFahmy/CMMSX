@@ -12,7 +12,8 @@ public static class PeopleEndpoints
 {
     public sealed record LookupInput(string Code, string Name, string? Color, bool IsActive = true);
     public sealed record EmployeeInput(string Code, string FullName, string? JobTitle, string? Email, string? Phone, List<Guid>? TradeIds, List<Guid>? SiteIds,
-        decimal? HourlyRate, decimal? OvertimeRate, bool IsContractor, string? Company, Guid? UserId, string? Notes, bool IsActive = true, string? RowVersion = null);
+        decimal? HourlyRate, decimal? OvertimeRate, bool IsContractor, string? Company, Guid? UserId, string? Notes, bool IsActive = true, string? RowVersion = null,
+        List<WorkingDay>? WorkingHours = null);
 
     public static void MapPeopleEndpoints(this RouteGroupBuilder api)
     {
@@ -81,14 +82,15 @@ public static class PeopleEndpoints
     private static object ToDto(Employee e, int openWork) => new
     {
         e.Id, e.Code, e.FullName, e.JobTitle, e.Email, e.Phone, e.TradeIds, e.SiteIds, e.HourlyRate, e.OvertimeRate, e.IsContractor, e.Company,
-        e.UserId, e.Notes, e.IsActive, OpenWorkOrders = openWork, RowVersion = Convert.ToBase64String(e.RowVersion),
+        e.UserId, e.Notes, e.IsActive, e.WorkingHours, OpenWorkOrders = openWork, RowVersion = Convert.ToBase64String(e.RowVersion),
     };
 
     /// <summary>The checks that need no database (shared with the import).</summary>
     internal static Validator EmployeeRules(EmployeeInput i) => new Validator().Required("code", i.Code, "Employee no.", 50).Required("fullName", i.FullName, "Name", 200)
         .MaxLength("email", i.Email, "Email", 256).MaxLength("phone", i.Phone, "Phone", 50).MaxLength("company", i.Company, "Company", 200)
         .When(i.HourlyRate < 0 || i.OvertimeRate < 0, "hourlyRate", "Rates cannot be negative.")
-        .When(i.Email.Clean() is { } em && !em.Contains('@'), "email", "Enter a valid email address.");
+        .When(i.Email.Clean() is { } em && !em.Contains('@'), "email", "Enter a valid email address.")
+        .When(WorkingHours.Problem(i.WorkingHours) is not null, "workingHours", WorkingHours.Problem(i.WorkingHours) ?? "");
 
     internal static Employee CreateEmployee(CmmsDbContext db, EmployeeInput i)
     {
@@ -123,6 +125,8 @@ public static class PeopleEndpoints
         e.JobTitle = i.JobTitle.Clean(); e.Email = i.Email.Clean(); e.Phone = i.Phone.Clean(); e.TradeIds = (i.TradeIds ?? []).Distinct().ToList();
         e.SiteIds = (i.SiteIds ?? []).Distinct().ToList(); e.HourlyRate = i.HourlyRate; e.OvertimeRate = i.OvertimeRate; e.IsContractor = i.IsContractor;
         e.Company = i.Company.Clean(); e.UserId = i.UserId; e.Notes = i.Notes.Clean(); e.IsActive = i.IsActive;
+        // Null keeps the person's hours (older apps, the import); an empty list goes back to the default.
+        if (i.WorkingHours is not null) e.WorkingHours = i.WorkingHours.Count == 0 ? null : i.WorkingHours.OrderBy(d => d.Day).ToList();
     }
 
     /// <summary>Generic code/name CRUD for simple lookups.</summary>

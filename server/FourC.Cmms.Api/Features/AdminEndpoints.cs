@@ -150,6 +150,8 @@ public static class AdminEndpoints
                 .When(input.Settings.PmNonWorkingDays.Distinct().Count() >= 7, "settings.pmNonWorkingDays", "Leave at least one working day.")
                 .When(!TimeZoneInfo.TryFindSystemTimeZoneById(input.Settings.TimeZone ?? "", out _), "settings.timeZone", "Choose a time zone from the list.")
                 .When(input.Settings.DailyCapacityHours is < 1 or > 24, "settings.dailyCapacityHours", "Hours per day must be between 1 and 24.")
+                .When(FourC.Cmms.Core.People.WorkingHours.Problem(input.Settings.WorkingHours) is not null, "settings.workingHours",
+                    FourC.Cmms.Core.People.WorkingHours.Problem(input.Settings.WorkingHours) ?? "")
                 .When(input.Settings.SlaTargets.GroupBy(x => x.Priority).Any(g => g.Count() > 1), "settings.slaTargets", "Set each priority's targets once.")
                 .When(input.Settings.SlaTargets.Any(x => !Enum.IsDefined(x.Priority) || OutOfRange(x.RespondMinutes) || OutOfRange(x.CompleteMinutes)),
                     "settings.slaTargets", "Targets must be between 1 minute and 365 days.");

@@ -169,4 +169,21 @@ public class PlanningBoardTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(D(Today), (await DetailAsync(o.C, done)).GetProperty("plannedStart").GetString());
         Assert.Equal(D(Today), (await DetailAsync(other.C, theirs)).GetProperty("plannedStart").GetString());
     }
+
+    [SkippableFact]
+    public async Task The_board_uses_each_persons_working_hours()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var e = await Ok(await o.C.GetAsync($"/api/employees/{o.A}"));
+        var days = new[] { "Sunday", "Monday", "Tuesday", "Wednesday", "Thursday" }.Select(d => new { day = d, start = "08:00", end = "16:00" }).ToArray();
+        await Ok(await o.C.PutAsJsonAsync($"/api/employees/{o.A}", new { code = "A", fullName = "Ann Fitter", isContractor = false, siteIds = new[] { o.Site }, workingHours = days,
+            rowVersion = e.GetProperty("rowVersion").GetString() }));
+        var board = await BoardAsync(o.C, Today, Today);
+        var ann = board.GetProperty("people").EnumerateArray().Single(p => Id(p) == o.A).GetProperty("hours");
+        Assert.Equal(0m, ann[5].GetDecimal()); // Friday
+        Assert.Equal(8m, ann[0].GetDecimal()); // Sunday
+        var bob = board.GetProperty("people").EnumerateArray().Single(p => Id(p) == o.B).GetProperty("hours");
+        Assert.Equal(8m, bob[5].GetDecimal()); // no hours of his own: the organization's (every day, 8 h)
+    }
 }
