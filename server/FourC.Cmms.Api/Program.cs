@@ -88,6 +88,7 @@ if (emailOptions.Available)
     else services.AddSingleton<IEmailSender, SmtpEmailSender>();
 }
 services.AddSingleton<EmailOutbox>();
+services.AddScoped<DbContextOptionsFactory>();
 services.AddSingleton<EmailSenderService>();
 services.AddHostedService(sp => sp.GetRequiredService<EmailSenderService>());
 services.AddExceptionHandler<ApiExceptionHandler>();
@@ -151,6 +152,7 @@ api.MapTeamEndpoints();
 api.MapImportEndpoints();
 api.MapWorkRequestEndpoints();
 api.MapRequestTypeEndpoints();
+api.MapRequestFeedbackEndpoints();
 api.MapWorkOrderEndpoints();
 api.MapDowntimeEndpoints();
 api.MapPlanningEndpoints();

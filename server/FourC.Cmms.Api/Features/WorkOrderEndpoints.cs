@@ -118,7 +118,11 @@ public static class WorkOrderEndpoints
                 .OrderByDescending(t => t.Date).ThenByDescending(t => t.CreatedAt)
                 .Select(t => new { t.Id, t.Type, t.Date, t.PartId, t.Part!.PartNumber, PartName = t.Part.Name, t.Part.UnitOfMeasure, t.StoreId, StoreCode = t.Store!.Code,
                     Quantity = -t.Quantity, t.UnitCost, Total = Math.Round(-t.Quantity * t.UnitCost, 2), t.BatchNumber, t.Notes, t.CreatedByName }).ToListAsync(ct);
-            var request = w.WorkRequestId is { } rid ? await db.WorkRequests.AsNoTracking().Where(r => r.Id == rid).Select(r => new { r.Id, r.Number, r.RequesterName, r.RespondBy, r.DecidedAt }).FirstOrDefaultAsync(ct) : null;
+            var request = w.WorkRequestId is { } rid ? await db.WorkRequests.AsNoTracking().Where(r => r.Id == rid)
+                .Select(r => new { r.Id, r.Number, r.RequesterName, r.RespondBy, r.DecidedAt, r.Status, AwaitingFeedback = r.AwaitingFeedbackSince != null }).FirstOrDefaultAsync(ct) : null;
+            // The requester's latest answer to the finished work.
+            var feedback = request is null ? null : await db.RequestFeedback.AsNoTracking().Where(f => f.WorkRequestId == request.Id).OrderByDescending(f => f.AnsweredAt)
+                .Select(f => new { f.Accepted, f.Rating, f.Comment, f.ByName, f.AnsweredAt }).FirstOrDefaultAsync(ct);
             // The request's thread, shown read-only (not copied).
             var requestComments = request is null ? [] : await WorkRequestEndpoints.CommentsAsync(db, request.Id, ct);
             var downtime = w.DowntimeEventId is { } did ? await db.DowntimeEvents.AsNoTracking().Where(e => e.Id == did)
@@ -157,7 +161,11 @@ public static class WorkOrderEndpoints
                 w.PlannedStart, w.DueDate, w.DueAt, w.DueFromTarget, w.StartBy, w.RespondedAt, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 Downtime = downtime, AssetDownSince = assetDownSince,
                 LocationNotesToTechnician = locationNotes,
-                Request = request is null ? null : new { request.Id, request.Number, request.RequesterName, request.RespondBy, request.DecidedAt, Comments = requestComments },
+                Request = request is null ? null : new
+                {
+                    request.Id, request.Number, request.RequesterName, request.RespondBy, request.DecidedAt, request.Status, request.AwaitingFeedback,
+                    Feedback = feedback, Comments = requestComments,
+                },
                 Pm = pm, w.PmDueDate, w.AccessWindows, w.OnlyWhenStopped,
                 Assets = roundAssets,
                 Tasks = tasks.Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName }),
@@ -457,6 +465,9 @@ public static class WorkOrderEndpoints
         if (!v.IsValid) return v;
 
             var now = DateTimeOffset.UtcNow;
+        // Reopened or cancelled by maintenance: the requester is no longer asked to answer (their link stops working).
+        if (w.Status is WorkOrderStatus.Completed or WorkOrderStatus.Closed && input.Status is not WorkOrderStatus.Closed)
+            await RequestFeedbackService.EndWaitAsync(db, w, ct);
         db.WorkOrderStatusChanges.Add(new WorkOrderStatusChange
         {
             WorkOrderId = w.Id, FromStatus = w.Status, ToStatus = input.Status, HoldReason = input.Status == WorkOrderStatus.OnHold ? input.HoldReason : null,
@@ -486,7 +497,8 @@ public static class WorkOrderEndpoints
             case WorkOrderStatus.Closed: w.ClosedAt = now; w.CompletedAt ??= now; break;
             case WorkOrderStatus.Open: w.CompletedAt = null; w.ClosedAt = null; break;
         }
-        if (input.Status == WorkOrderStatus.Completed) await mail.WorkOrderCompletedAsync(db, ctx, w, ct);
+        if (input.Status == WorkOrderStatus.Completed)
+            await mail.WorkOrderCompletedAsync(db, ctx, w, ct, await RequestFeedbackService.AskAsync(db, w, now, ct));
         if (w.PmScheduleId is not null && input.Status is WorkOrderStatus.Completed or WorkOrderStatus.Cancelled)
             await PmGenerator.OnWorkOrderFinishedAsync(db, w, ct);
         return v;

@@ -49,10 +49,15 @@ public static class EmailTemplates
         $"Your request {r.Number} was not approved", "Your work request was not approved",
         [("Request", $"{r.Number} · {r.Title}"), ("Where", r.Place)], $"Reason: {reason}", link, "View your request");
 
-    public static EmailContent RequestCompleted(string org, RequestFacts r, string workOrderNumber, string? notes, string? link) => Layout(org,
-        $"Done: your request {r.Number}", "The work you asked for has been done",
-        [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place)],
-        notes is { } n ? $"Work done: {n}" : null, link, "View your request");
+    public static EmailContent RequestCompleted(string org, RequestFacts r, string workOrderNumber, string? notes, string? link, bool askAnswer = false) => Layout(org,
+        $"Done: your request {r.Number}", askAnswer ? "The work you asked for has been done. Please accept or refuse it." : "The work you asked for has been done",
+        [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place), ("Work done", notes)],
+        null, link, askAnswer ? "Accept or refuse the work" : "View your request");
+
+    public static EmailContent RequestRefused(string org, RequestFacts r, string workOrderNumber, string? byName, string? reason, string? link) => Layout(org,
+        $"Refused: work order {workOrderNumber}", "The requester refused the finished work. The work order was reopened.",
+        [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place), ("Refused by", byName), ("Reason", reason)],
+        null, link, "Open the work order");
 
     public static EmailContent RequestComment(string org, RequestFacts r, string? author, string body, string? link) => Layout(org,
         $"New comment on request {r.Number}", "A new comment on the request",

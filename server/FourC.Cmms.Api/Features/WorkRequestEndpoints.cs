@@ -105,6 +105,8 @@ public static class WorkRequestEndpoints
                 .FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) return Results.NotFound();
             var users = await db.Users.Where(u => u.Id == r.CreatedById || u.Id == r.DecidedById).ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
+            var feedback = await db.RequestFeedback.AsNoTracking().Where(f => f.WorkRequestId == r.Id).OrderBy(f => f.AnsweredAt)
+                .Select(f => new { f.Id, f.Accepted, f.Rating, f.Comment, f.ByName, f.AnsweredAt, f.ViaLink }).ToListAsync(ct);
             var extra = r.ExtraRecipientIds.Count == 0 ? [] : await db.Users.AsNoTracking().Where(u => r.ExtraRecipientIds.Contains(u.Id))
                 .OrderBy(u => u.FullName).Select(u => new { u.Id, Name = u.FullName }).ToListAsync(ct);
             var wo = r.WorkOrderId is { } wid ? await db.WorkOrders.Where(w => w.Id == wid).Select(w => new { w.Id, w.Number, w.Status }).FirstOrDefaultAsync(ct) : null;
@@ -123,6 +125,8 @@ public static class WorkRequestEndpoints
                 r.CreatedAt, CreatedBy = r.CreatedById is { } c ? users.GetValueOrDefault(c) : null, CanCancel = r.Status == WorkRequestStatus.New && r.CreatedById == ctx.UserId,
                 r.RequestTypeId, RequestType = r.RequestType is null ? null : new { r.RequestType.Id, r.RequestType.Name, r.RequestType.DefaultTradeId },
                 ExtraRecipients = extra, r.AccessWindows, r.OnlyWhenStopped,
+                AwaitingFeedback = r.AwaitingFeedbackSince != null, r.AwaitingFeedbackSince, CanAnswer = r.AwaitingFeedbackSince != null && r.CreatedById == ctx.UserId,
+                Feedback = feedback,
             });
         }).RequireAuthorization();
 

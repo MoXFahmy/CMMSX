@@ -56,7 +56,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     }
 
     /// <summary>Completed: the grid's recipients hear (by default whoever created the work); the requester is asked to accept or refuse.</summary>
-    public async Task WorkOrderCompletedAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, CancellationToken ct)
+    public async Task WorkOrderCompletedAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, CancellationToken ct, FeedbackAsk? ask = null)
     {
         if (!Available) return;
         var facts = await FactsAsync(db, w, ct);
@@ -69,8 +69,10 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             var requester = Union(await GroupsAsync(db, EmailEvents.RequestCompleted, w, r, null, ct));
             if (requester.Count == 0) return;
             var rf = await FactsAsync(db, r, ct);
+            // Asked to accept or refuse: through the single-use link when they have no login, else on the request page.
+            var link = ask?.Token is { } token ? Link($"/feedback/{token}") : Link($"/work-requests?open={r.Id}");
             await QueueAsync(db, ctx, EmailEvents.RequestCompleted, requester,
-                org => EmailTemplates.RequestCompleted(org, rf, w.Number, w.CompletionNotes, Link($"/work-requests?open={r.Id}")), "WorkRequest", r.Id, ct,
+                org => EmailTemplates.RequestCompleted(org, rf, w.Number, w.CompletionNotes, link, ask is not null), "WorkRequest", r.Id, ct,
                 siteId: r.SiteId, locationId: r.LocationId);
         }
     }
@@ -104,6 +106,17 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
                 ? EmailTemplates.RequestApproved(org, facts, workOrderNumber ?? "", link)
                 : EmailTemplates.RequestRejected(org, facts, r.DecisionNote ?? "", link),
             "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
+    }
+
+    /// <summary>The requester refused the finished work: the grid's recipients hear why (the work order was reopened).</summary>
+    public async Task RequestRefusedAsync(CmmsDbContext db, ITenantContext ctx, WorkRequest r, WorkOrder w, string? byName, string? comment, CancellationToken ct)
+    {
+        if (!Available) return;
+        var to = Union(await GroupsAsync(db, EmailEvents.RequestRefused, w, r, null, ct));
+        if (to.Count == 0) return;
+        var facts = await FactsAsync(db, r, ct);
+        await QueueAsync(db, ctx, EmailEvents.RequestRefused, to, org => EmailTemplates.RequestRefused(org, facts, w.Number, byName, comment, Link($"/work-orders/{w.Id}")),
+            "WorkOrder", w.Id, ct, siteId: w.SiteId, locationId: w.LocationId);
     }
 
     /// <summary>

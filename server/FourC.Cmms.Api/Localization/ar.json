@@ -721,5 +721,15 @@
  "Unknown recipient: {0}.": "مستلم غير معروف: {0}.",
  "Give at most {0} access windows.": "أدخل {0} فترات وصول على الأكثر.",
  "An access window must end after it starts.": "يجب أن تنتهي فترة الوصول بعد بدايتها.",
- "An access window's note can be at most {0} characters.": "ملاحظة فترة الوصول لا تتجاوز {0} حرفًا."
+ "An access window's note can be at most {0} characters.": "ملاحظة فترة الوصول لا تتجاوز {0} حرفًا.",
+ "Nothing is waiting for your answer.": "لا يوجد ما ينتظر ردك.",
+ "Give a rating from 1 to 5.": "اختر تقييمًا من 1 إلى 5.",
+ "Say why the work isn't done.": "اذكر سبب عدم اكتمال العمل.",
+ "This link was already used or has expired.": "تم استخدام هذا الرابط من قبل أو انتهت صلاحيته.",
+ "The work you asked for has been done. Please accept or refuse it.": "تم تنفيذ العمل الذي طلبته. يُرجى قبوله أو رفضه.",
+ "Accept or refuse the work": "اقبل العمل أو ارفضه",
+ "Work done": "العمل المنجز",
+ "Refused: work order {0}": "مرفوض: أمر العمل {0}",
+ "The requester refused the finished work. The work order was reopened.": "رفض مقدم الطلب العمل المنجز. أُعيد فتح أمر العمل.",
+ "Refused by": "رفضه"
 }
