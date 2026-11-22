@@ -65,6 +65,7 @@ public sealed class ImportContext(CmmsDbContext db, ITenantContext tenant, Tenan
     public Dictionary<string, Guid> Employees { get; } = Codes();
     public Dictionary<string, Guid> Parts { get; } = Codes();
     public Dictionary<string, Guid> PmTasks { get; } = Codes();
+    public Dictionary<string, Guid> MeasurementPoints { get; } = Codes();
 
     /// <summary>Code by id, for showing a record's current references ("old" values) as codes.</summary>
     public Dictionary<Guid, string> CodeOf { get; } = [];
@@ -343,5 +344,6 @@ public static class ImportRun
         foreach (var x in await db.Employees.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.Employees, x.Code, x.Id);
         foreach (var x in await db.Parts.AsNoTracking().Select(x => new { x.Id, x.PartNumber }).ToListAsync(ct)) c.Remember(c.Parts, x.PartNumber, x.Id);
         foreach (var x in await db.PmTasks.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.PmTasks, x.Code, x.Id);
+        foreach (var x in await db.MeasurementPoints.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.MeasurementPoints, x.Code, x.Id);
     }
 }

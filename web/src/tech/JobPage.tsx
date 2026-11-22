@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from 'react';
 import { AccessWindowsList, StoppedBadge } from '@/components/AccessWindowsEditor';
-import { Alert, Anchor, Badge, Button, Card, Checkbox, Divider, Group, Modal, NumberInput, Select, Stack, Switch, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { Alert, Anchor, Badge, Button, Card, Divider, Group, Modal, NumberInput, Select, Stack, Switch, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -13,7 +13,8 @@ import { downFor } from '@/components/downtime';
 import { withQueued } from './overlay';
 import { shrink } from './photos';
 import { dueLabel } from './due';
-import { alreadySigned, needsLabour, staleCompletions } from './complete';
+import { alreadySigned, needsLabour, safetyOpen, staleCompletions, stepProblems } from './complete';
+import { Checklist } from './Checklist';
 import { SignaturePad, type SignatureHandle } from './SignaturePad';
 import { useTech } from './useTech';
 import { JobParts } from './StockPages';
@@ -25,11 +26,11 @@ export function JobPage() {
   const { t } = useTranslation();
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { bundle, queue, sent, add, online } = useTech();
+  const { bundle, places, queue, sent, add, online } = useTech();
   const base = bundle?.jobs.find((j) => j.id === id);
   // Sent changes first (they are older), then those still waiting.
   const canIssue = bundle?.can?.issueStock ?? true;
-  const job = useMemo(() => (base ? withQueued(base, [...sent, ...queue], { canIssue }) : undefined), [base, sent, queue, canIssue]);
+  const job = useMemo(() => (base ? withQueued(base, [...sent, ...queue], { canIssue, points: bundle?.points }) : undefined), [base, sent, queue, canIssue, bundle?.points]);
   const [hoursOpen, setHoursOpen] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
@@ -42,10 +43,13 @@ export function JobPage() {
   const canStart = job.status === 'Open' || job.status === 'OnHold';
   const canHold = job.status === 'Open' || job.status === 'InProgress';
   const canComplete = job.status === 'Open' || job.status === 'InProgress' || job.status === 'OnHold';
-  const groups = job.roundAssets.length > 0
-    ? job.roundAssets.map((a) => ({ key: a.id, title: `${a.assetNumber} · ${a.name}` as string | null, tasks: job.tasks.filter((x) => x.assetId === a.id) }))
-      .concat([{ key: 'other', title: null, tasks: job.tasks.filter((x) => !job.roundAssets.some((a) => a.id === x.assetId)) }]).filter((g) => g.tasks.length > 0)
-    : [{ key: 'all', title: null as string | null, tasks: job.tasks }];
+  // Safety steps first (0.13.0): the work doesn't start until they are answered.
+  const safetyBlocked = safetyOpen(job.tasks, null).some((s) => !s.assetId);
+  const start = () => (safetyBlocked ? notifyError(new Error(t('checklist.safetyFirstBody'))) : void change('status.change', { status: 'InProgress' }));
+  const addStepPhoto = async (taskId: string, f: File) => {
+    try { await add({ type: 'photo.add', workOrderId: job.id, payload: { kind: 'photo', taskId } }, { blob: await shrink(f), fileName: f.name.replace(/\.\w+$/, '') + '.jpg' }); }
+    catch (e) { notifyError(e); }
+  };
 
   const addPhoto = async (files: FileList | null) => {
     for (const f of Array.from(files ?? [])) {
@@ -89,21 +93,13 @@ export function JobPage() {
         </Stack></Card>
       )}
       <Group grow>
-        {canStart && <Button leftSection={<IconPlayerPlay size={16} />} onClick={() => void change('status.change', { status: 'InProgress' })}>{t('tech.start')}</Button>}
+        {canStart && <Button leftSection={<IconPlayerPlay size={16} />} onClick={start}>{t('tech.start')}</Button>}
         {canHold && <Button variant="default" leftSection={<IconPlayerPause size={16} />} onClick={() => setHoldOpen(true)}>{t('tech.hold')}</Button>}
         {canComplete && <Button color="teal" leftSection={<IconCheck size={16} />} onClick={() => setCompleteOpen(true)}>{t('tech.complete')}</Button>}
       </Group>
 
       {job.tasks.length > 0 && (
-        <Card withBorder p="sm">
-          <Text fw={600} mb={6}>{t('tech.checklist')} · {job.tasks.filter((x) => x.isDone).length}/{job.tasks.length}</Text>
-          {groups.map((g) => (
-            <Stack key={g.key} gap={8}>
-              {g.title && <Text fz="xs" fw={700} c="dimmed" mt={6}>{g.title}</Text>}
-              {g.tasks.map((s) => <Step key={s.id} step={s} onChange={(p) => void change('task.update', { taskId: s.id, ...p })} />)}
-            </Stack>
-          ))}
-        </Card>
+        <Checklist job={job} bundle={bundle} meters={places?.meters ?? []} stepPhotos={job.stepPhotos} onChange={(taskId, p) => void change('task.update', { taskId, ...p })} onPhoto={(taskId, f) => void addStepPhoto(taskId, f)} />
       )}
 
       <StopCard job={job} />
@@ -159,22 +155,6 @@ export function JobPage() {
   );
 }
 
-function Step({ step, onChange }: { step: TechJob['tasks'][number]; onChange: (p: { isDone?: boolean; reading?: string; remarks?: string }) => void }) {
-  const { t } = useTranslation();
-  const [reading, setReading] = useState(step.reading ?? '');
-  const [remarks, setRemarks] = useState(step.remarks ?? '');
-  return (
-    <div>
-      <Checkbox label={step.description} checked={step.isDone} onChange={(e) => onChange({ isDone: e.currentTarget.checked })} />
-      <Group grow gap="xs" mt={4} pl={30}>
-        <TextInput size="xs" placeholder={t('tech.reading')} maxLength={100} value={reading} onChange={(e) => setReading(e.currentTarget.value)}
-          onBlur={() => { if (reading !== (step.reading ?? '')) onChange({ reading }); }} />
-        <TextInput size="xs" placeholder={t('tech.remarks')} maxLength={2000} value={remarks} onChange={(e) => setRemarks(e.currentTarget.value)}
-          onBlur={() => { if (remarks !== (step.remarks ?? '')) onChange({ remarks }); }} />
-      </Group>
-    </div>
-  );
-}
 
 function HoursModal({ opened, onClose, onSave, crew, me }: {
   opened: boolean; onClose: () => void; onSave: (p: { workDate: string; hours: number; overtimeHours: number; notes: string | null; employeeId?: string }) => void;
@@ -245,6 +225,8 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
     rules?.failureCodeOnBreakdown && job.type === 'Breakdown' && !failure && t('tech.rule.failureCode'),
     rules?.labour && needsLabour(job) && t('tech.rule.labour'),
     rules?.allSteps && job.tasks.some((x) => !x.isDone) && t('tech.rule.allSteps'),
+    ...(() => { const sp = stepProblems(job, queue, { readings: rules?.readings });
+      return [sp.safety.length > 0 && t('tech.rule.safety', { steps: sp.safety.join(', ') }), sp.photos.length > 0 && t('tech.rule.photos', { steps: sp.photos.join(', ') }), sp.readings.length > 0 && t('tech.rule.readings', { steps: sp.readings.join(', ') })]; })(),
   ].filter(Boolean) as string[];
 
   const submit = async () => {

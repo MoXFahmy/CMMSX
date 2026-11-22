@@ -141,11 +141,20 @@ public static class ImportWorkbook
             case "Stock":
                 return Of(new StockImporter(), c, await db.StockLevels.AsNoTracking().OrderBy(x => x.Part!.PartNumber).ThenBy(x => x.Store!.Code).Take(take).ToListAsync(ct));
             case "PmTasks": return Of(new PmTaskImporter(), c, await db.PmTasks.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
+            case "MeasurementPoints":
+                return Of(new MeasurementPointImporter(), c, await db.MeasurementPoints.AsNoTracking().Include(x => x.Assets).OrderBy(x => x.Code).Take(take).ToListAsync(ct));
             case "PmSteps":
                 // Ordered by task code, with room to finish the task at the 5,000-row boundary (at most 300 steps a task).
                 return (await (from s in db.PmTaskSteps.AsNoTracking() join t in db.PmTasks on s.PmTaskId equals t.Id
-                               orderby t.Code, s.Sequence select new { t.Code, s.Sequence, s.Description }).Take(take + 300).ToListAsync(ct))
-                    .Select(s => new Dictionary<string, object?> { ["taskCode"] = s.Code, ["step"] = s.Sequence, ["description"] = s.Description }).ToList();
+                               orderby t.Code, s.Sequence select new { t.Code, s.Sequence, s.Description, s.Type, s.Unit, s.Decimals, s.MeasurementPointId, s.PhotoRequired,
+                                   s.BeforeStart, s.FollowUp, s.FollowUpTemplateId }).Take(take + 300).ToListAsync(ct))
+                    .Select(s => new Dictionary<string, object?>
+                    {
+                        ["taskCode"] = s.Code, ["step"] = s.Sequence, ["description"] = s.Description, ["type"] = s.Type, ["unit"] = s.Unit, ["decimals"] = s.Decimals,
+                        ["measurementPoint"] = s.MeasurementPointId is { } mp ? c.CodeOf.GetValueOrDefault(mp) : null, ["photoRequired"] = s.PhotoRequired,
+                        ["beforeStart"] = s.BeforeStart, ["followUp"] = s.FollowUp,
+                        ["followUpTemplate"] = s.FollowUpTemplateId is { } ft ? c.CodeOf.GetValueOrDefault(ft) : null,
+                    }).ToList();
             case "PmParts":
                 return (await (from p in db.PmTaskParts.AsNoTracking() join t in db.PmTasks on p.PmTaskId equals t.Id join part in db.Parts on p.PartId equals part.Id
                                orderby t.Code, part.PartNumber select new { t.Code, part.PartNumber, p.Quantity }).Take(take + 200).ToListAsync(ct))

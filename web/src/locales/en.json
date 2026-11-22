@@ -385,7 +385,10 @@
       "reopen": "Reopening work",
       "cancel": "Cancelling work",
       "complete": "Completing work (the \"work done\" report)"
-    }
+    },
+    "requireReadingSteps": "Require every number, meter and text step answered before completing",
+    "followUpDefault": "A failed step raises",
+    "followUpDefaultHint": "Used by steps set to \"Default\" and by readings entered on an asset."
   },
   "audit": {
     "Created": "created this record",
@@ -765,7 +768,8 @@
     "unitPlaceholder": "h, km, cycles, °C",
     "autoPlaceholder": "Auto",
     "nextReadingPlaceholder": "current + interval",
-    "calendars": "Calendars"
+    "calendars": "Calendars",
+    "points": "Measurement points"
   },
   "txType": {
     "Receipt": "Receipt",
@@ -1090,7 +1094,8 @@
     "completion": "Completion",
     "technician": "Technician",
     "supervisor": "Supervisor / customer",
-    "signDate": "Date"
+    "signDate": "Date",
+    "result": "Result"
   },
   "email": {
     "title": "E-mail notifications",
@@ -1376,7 +1381,10 @@
       "notes": "Describe the work that was done.",
       "failureCode": "Choose a failure code for breakdown work.",
       "labour": "Log hours on this job before completing.",
-      "allSteps": "Tick every checklist step before completing."
+      "allSteps": "Tick every checklist step before completing.",
+      "photos": "Take a photo for: {{steps}}",
+      "readings": "Answer these steps first: {{steps}}",
+      "safety": "Answer the safety steps first: {{steps}}"
     },
     "notOnPhone": "This isn't on your phone's list (it may be on another site). Try again with a connection.",
     "openInFullApp": "Open it in the full app",
@@ -1926,5 +1934,111 @@
     "fromCategory": "From category",
     "add": "Add a work template",
     "addButton": "Add"
+  },
+  "points": {
+    "title": "Measurement points",
+    "hint": "What number steps measure: the values possible at all, and levels that raise follow-up work.",
+    "new": "New measurement point",
+    "edit": "Edit measurement point",
+    "kind": "Measures",
+    "unit": "Unit",
+    "decimals": "Decimals",
+    "levels": "Levels",
+    "levelsHint": "Leave a level empty if it isn't used. Each alert or alarm level can raise work from its own template; otherwise the step's follow-up applies.",
+    "validMin": "Lowest possible value",
+    "validMax": "Highest possible value",
+    "validHint": "Values outside are refused (a typo such as 850 for 85.0).",
+    "levelTemplate": "Raises work from",
+    "noTemplate": "The step's follow-up",
+    "assets": "Assets",
+    "assetsHint": "The assets it is measured on; they show its chart.",
+    "readings": "Readings",
+    "usedBy": "Used by",
+    "kinds": {
+      "Temperature": "Temperature",
+      "Pressure": "Pressure",
+      "Current": "Current",
+      "Voltage": "Voltage",
+      "Level": "Level",
+      "Consumption": "Consumption",
+      "Other": "Other"
+    },
+    "level": {
+      "alarmHigh": "Alarm high",
+      "alertHigh": "Alert high",
+      "target": "Target",
+      "alertLow": "Alert low",
+      "alarmLow": "Alarm low"
+    }
+  },
+  "steps": {
+    "hint": "Open a step to choose what it asks for, whether it needs a photo or must be answered before work starts, and what a failed answer raises.",
+    "details": "Step details",
+    "type": "Asks for",
+    "point": "Measurement point",
+    "noPoint": "None (just a number)",
+    "meterUnit": "Meter unit",
+    "pointLimits": "Limits and unit ({{unit}}) come from the measurement point.",
+    "beforeStart": "Before starting (safety)",
+    "photoRequired": "Photo required",
+    "followUp": "If it fails",
+    "followUpTemplate": "Work template",
+    "failsCheck": "Fails when answered Not OK.",
+    "failsNumber": "Fails when the reading reaches an alert or alarm level of its measurement point.",
+    "failsNever": "This kind of step doesn't fail.",
+    "types": {
+      "Check": "OK / Not OK / N/A",
+      "Number": "Number",
+      "Meter": "Meter reading",
+      "Text": "Text"
+    },
+    "followUps": {
+      "Default": "Organization default",
+      "None": "Nothing",
+      "WorkOrder": "Work order from a template",
+      "Request": "Request for triage"
+    }
+  },
+  "checklist": {
+    "allOk": "All OK",
+    "allOkDone": "{{count}} step(s) answered OK",
+    "safetyFirst": "Safety steps first",
+    "safetyFirstBody": "Answer the safety steps before starting the work; the other steps unlock after them.",
+    "lockedHint": "Answer the safety steps first",
+    "ok": "OK",
+    "notOk": "Not OK",
+    "na": "N/A",
+    "value": "Value",
+    "answer": "Answer",
+    "chooseMeter": "Choose the meter",
+    "addPhoto": "Add a photo",
+    "followUp": "Follow-up {{number}}",
+    "followUpRaised": "Follow-up {{number}} raised",
+    "outOfRange": "Enter a value from {{min}} to {{max}} {{unit}}.",
+    "fromStep": "From step {{step}} of",
+    "answers": {
+      "Ok": "OK",
+      "NotOk": "Not OK",
+      "NotApplicable": "N/A"
+    },
+    "levels": {
+      "Normal": "Normal",
+      "AlertHigh": "Alert high",
+      "AlarmHigh": "Alarm high",
+      "AlertLow": "Alert low",
+      "AlarmLow": "Alarm low"
+    },
+    "followUpOnSync": "Follow-up work is raised when this change reaches the office.",
+    "outOfRangeMax": "Enter a value of at most {{max}} {{unit}}.",
+    "outOfRangeMin": "Enter a value of at least {{min}} {{unit}}."
+  },
+  "measurements": {
+    "tab": "Measurements",
+    "none": "No measurement points on this asset yet. Add them in PM › Measurement points.",
+    "add": "Add reading",
+    "needTwo": "The chart shows from two readings.",
+    "onWork": "Work order",
+    "followUp": "Follow-up",
+    "savedWithFollowUp": "Saved — follow-up work raised"
   }
 }

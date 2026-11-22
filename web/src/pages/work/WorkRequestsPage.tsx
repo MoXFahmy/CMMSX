@@ -11,6 +11,7 @@ import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
 import { IconCheck, IconPlus, IconSearch, IconX } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
+import { SourceBanner } from './SourceBanner';
 import { WORK_PRIORITIES, WORK_TYPES, type AccessWindow, type AssetDetail, type Lookup, type Paged, type RequestType, type TenantSettings, type WorkRequestDetail, type WorkRequestListItem, type WorkRequestStatus } from '@/api/types';
 import { AccessWindowsEditor, AccessWindowsList, StoppedBadge } from '@/components/AccessWindowsEditor';
 import { windowProblem } from '@/components/accessWindows';
@@ -204,6 +205,7 @@ function RequestDrawer({ id, onClose }: { id: string | null; onClose: () => void
           <Group gap="xs"><WrStatusBadge status={r.status} /><PriorityBadge value={r.priority} /><Badge variant="default">{t(`workType.${r.type}`)}</Badge>
             {r.requestType && <Badge variant="light" color="grape">{r.requestType.name}</Badge>}<StoppedBadge show={r.onlyWhenStopped} /></Group>
           <Title order={4}>{r.title}</Title>
+          {r.source && <SourceBanner source={r.source} />}
           {r.description && <Text fz="sm" style={{ whiteSpace: 'pre-wrap' }}>{r.description}</Text>}
           <Card><SimpleGrid cols={2} spacing="sm">
             <Stack gap={2}><Text fz="xs" c="dimmed">{t('wo.location')}</Text><Text fz="sm">{[r.site.name, r.locationName].filter(Boolean).join(' › ')}</Text></Stack>

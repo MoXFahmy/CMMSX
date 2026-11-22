@@ -46,6 +46,7 @@ public static class ReportEndpoints
             [Range, SiteP, GroupBy("employee", ("employee", "Employee"), ("trade", "Trade"), ("team", "Team"), ("type", "Work type"))]),
         new("reliability", "Reliability", "Asset reliability (MTBF / MTTR)", "Breakdowns per asset with downtime, mean time between failures and mean time to repair.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("downtime", "Reliability", "Downtime log", "Every stop in the period with how long the asset was stopped during its running time.", Permissions.WorkOrdersView, [Range, SiteP]),
+        new("out-of-limits", "Reliability", "Out of limits", "Readings at an alert or alarm level, with the work they raised.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("failure-pareto", "Reliability", "Failure analysis", "Breakdowns by failure code — the few causes behind most of the downtime.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("maintenance-costs", "Costs", "Maintenance costs", "Labour, parts and other costs booked in the period.", Permissions.WorkOrdersView,
             [Range, SiteP, GroupBy("asset", ("asset", "Asset"), ("site", "Site"), ("category", "Asset category"), ("type", "Work type"), ("trade", "Trade"), ("team", "Team"), ("month", "Month"))]),
@@ -93,6 +94,7 @@ public static class ReportEndpoints
                 "cancelled-work" => await CancelledAsync(db, a, ct),
                 "reliability" => await ReliabilityAsync(db, a, ct),
                 "failure-pareto" => await FailureParetoAsync(db, a, ct),
+                "out-of-limits" => await OutOfLimitsAsync(db, a, ct),
                 "downtime" => await DowntimeLogAsync(db, a, ct),
                 "maintenance-costs" => await CostsAsync(db, a, ct),
                 "assets-by-category" => await AssetsAsync(db, a, ct),
@@ -436,6 +438,35 @@ public static class ReportEndpoints
              new("share", "Share", "percent")],
             rows, new Chart("bar", "group", ["cancelled"]),
             [new("Cancelled", cancelled.Count), new("Without a reason", cancelled.Count(x => x.Reason is null))]);
+    }
+
+    /// <summary>Measurement readings (0.13.0) at an alert or alarm level in the period, newest first, through the readings the person can see.</summary>
+    private static async Task<ReportResult> OutOfLimitsAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
+    {
+        var (from, to) = (Start(a.From), End(a.To));
+        var q = db.MeasurementReadings.AsNoTracking().Where(r => r.Level != FourC.Cmms.Core.Pm.MeasureLevel.Normal && r.ReadAt >= from && r.ReadAt < to);
+        if (a.SiteId is { } site) q = q.Where(r => r.SiteId == site);
+        const int most = 5000;
+        var list = await q.OrderByDescending(r => r.ReadAt).Take(most + 1).Select(r => new
+        {
+            r.ReadAt, r.Value, r.Level, r.AssetId, r.PointId, Asset = db.Assets.Where(x => x.Id == r.AssetId).Select(x => x.AssetNumber + " · " + x.Name).FirstOrDefault(),
+            WorkOrder = db.WorkOrders.Where(w => w.Id == r.WorkOrderId).Select(w => w.Number).FirstOrDefault(),
+            FollowUp = db.WorkOrders.Where(w => w.Id == r.FollowUpWorkOrderId).Select(w => w.Number).FirstOrDefault()
+                ?? db.WorkRequests.Where(w => w.Id == r.FollowUpRequestId).Select(w => w.Number).FirstOrDefault(),
+        }).ToListAsync(ct);
+        var cut = list.Count > most;
+        if (cut) list = list.Take(most).ToList();
+        // Points looked up on their own: IgnoreQueryFilters inside the readings query would lift the site filter from all of it.
+        var points = (await Checklists.PointsAsync(db, list.Select(x => (Guid?)x.PointId), ct)).ToDictionary(p => p.Id);
+        var rows = list.Select(x => Row(("date", x.ReadAt), ("asset", x.Asset), ("assetId", x.AssetId),
+            ("point", points.TryGetValue(x.PointId, out var pt) ? $"{pt.Code} · {pt.Name}" : null), ("value", x.Value), ("unit", points.GetValueOrDefault(x.PointId)?.Unit),
+            ("level", Translator.T(Checklists.LevelWord(x.Level))), ("workOrder", x.WorkOrder), ("followUp", x.FollowUp))).ToList();
+        var alarms = list.Count(x => x.Level is FourC.Cmms.Core.Pm.MeasureLevel.AlarmHigh or FourC.Cmms.Core.Pm.MeasureLevel.AlarmLow);
+        return new("out-of-limits", "Out of limits", cut ? $"{Period(a)} · the latest 5,000 readings" : Period(a),
+            [new("date", "Read at", "datetime"), new("asset", "Asset"), new("point", "Measurement point"), new("value", "Value", "number"), new("unit", "Unit"),
+             new("level", "Level"), new("workOrder", "Work order"), new("followUp", "Follow-up")],
+            rows, null,
+            [new("Alarms", alarms), new("Alerts", list.Count - alarms), new("Follow-ups raised", list.Count(x => x.FollowUp is not null))]);
     }
 
     private static async Task<ReportResult> FailureParetoAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)

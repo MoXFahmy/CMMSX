@@ -127,7 +127,7 @@ public static class WorkRequestEndpoints
                 r.RequestTypeId, RequestType = r.RequestType is null ? null : new { r.RequestType.Id, r.RequestType.Name, r.RequestType.DefaultTradeId },
                 ExtraRecipients = extra, r.AccessWindows, r.OnlyWhenStopped,
                 AwaitingFeedback = r.AwaitingFeedbackSince != null, r.AwaitingFeedbackSince, CanAnswer = canAnswer,
-                Feedback = feedback,
+                Feedback = feedback, Source = await Checklists.SourceAsync(db, r.SourceWorkOrderId, r.SourceTaskId, ct),
             });
         }).RequireAuthorization();
 
@@ -274,8 +274,12 @@ public static class WorkRequestEndpoints
         return await AtomicallyAsync(db, token => CreateCoreAsync(db, ctx, mail, input, v, raisedAt, token), ct);
     }
 
+    /// <summary>A request raised by a failed checklist step or reading (0.13.0), inside the answer's own save; the requester is the person answering.</summary>
+    internal static async Task<WorkRequest> CreateFollowUpAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, RequestInput input, Action<WorkRequest> configure,
+        CancellationToken ct) => (await CreateCoreAsync(db, ctx, mail, input, new Validator(), null, ct, configure)).Request!;
+
     private static async Task<(Validator V, WorkRequest? Request)> CreateCoreAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, RequestInput input, Validator v,
-        DateTimeOffset? raisedAt, CancellationToken ct)
+        DateTimeOffset? raisedAt, CancellationToken ct, Action<WorkRequest>? configure = null)
     {
 
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
@@ -301,6 +305,7 @@ public static class WorkRequestEndpoints
         // "The asset is down": the stop starts when the request was raised, or joins the asset's open stop.
         if (input.AssetIsDown && r.AssetId is { } downAsset)
             r.DowntimeEventId = (await Downtime.StartOrJoinAsync(db, downAsset, r.CreatedAt, r.Title, FourC.Cmms.Core.Assets.DowntimeSource.Request, r.Number, ct)).Id;
+        configure?.Invoke(r);
         db.WorkRequests.Add(r);
         await mail.RequestSubmittedAsync(db, ctx, r, ct);
         await db.SaveChangesAsync(ct);

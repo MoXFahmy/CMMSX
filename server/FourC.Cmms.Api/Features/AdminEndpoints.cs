@@ -167,7 +167,12 @@ public static class AdminEndpoints
                     FourC.Cmms.Core.People.WorkingHours.Problem(input.Settings.WorkingHours) ?? "")
                 .When(input.Settings.SlaTargets.GroupBy(x => x.Priority).Any(g => g.Count() > 1), "settings.slaTargets", "Set each priority's targets once.")
                 .When(input.Settings.SlaTargets.Any(x => !Enum.IsDefined(x.Priority) || OutOfRange(x.RespondMinutes) || OutOfRange(x.CompleteMinutes)),
-                    "settings.slaTargets", "Targets must be between 1 minute and 365 days.");
+                    "settings.slaTargets", "Targets must be between 1 minute and 365 days.")
+                .When(!Enum.IsDefined(input.Settings.FollowUpDefault) || input.Settings.FollowUpDefault == FourC.Cmms.Core.Pm.FollowUpKind.Default, "settings.followUpDefault",
+                    "Choose what a failed step raises.")
+                .When(input.Settings.FollowUpDefault == FourC.Cmms.Core.Pm.FollowUpKind.WorkOrder && input.Settings.FollowUpTemplateId is null, "settings.followUpTemplateId",
+                    PmEndpoints.NeedsTemplate);
+            if (input.Settings.FollowUpTemplateId is { } fut && !await db.PmTasks.AnyAsync(x => x.Id == fut, ct)) v.Add("settings.followUpTemplateId", "Unknown work template.");
             foreach (var action in input.Settings.CommentRequiredFor.Where(a => !CommentActions.All.Contains(a)))
                 v.Add("settings.commentRequiredFor", $"Unknown action: {action}.");
             foreach (var (key, kinds) in input.Settings.EmailRecipients)

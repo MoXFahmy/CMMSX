@@ -52,7 +52,7 @@ public static partial class WorkGroups
                 .Where(x => !string.IsNullOrWhiteSpace(x)));
             var input = new WorkOrderEndpoints.WorkOrderInput(childTitle.Length > 300 ? childTitle[..300] : childTitle, description.Length == 0 ? null : description,
                 task.WorkType, task.Priority ?? s.Priority, s.SiteId, asset.LocationId, asset.Id, s.TradeId ?? t.TradeId, assignees, start, group.DueDate,
-                t.EstimatedHours is { } h ? Math.Round(h / share, 2) : null, t.Steps.OrderBy(x => x.Sequence).Select(x => x.Description).ToList(), TeamId: s.TeamId);
+                t.EstimatedHours is { } h ? Math.Round(h / share, 2) : null, null, TeamId: s.TeamId);
             var planned = new List<WorkOrderPart>();
             foreach (var p in t.Parts)
                 planned.Add(new WorkOrderPart { PartId = p.PartId, Quantity = Math.Round(p.Quantity / share, 3), StoreId = await Planning.DefaultStoreAsync(db, p.PartId, s.SiteId, ct) });
@@ -60,7 +60,7 @@ public static partial class WorkGroups
             {
                 w.PmScheduleId = s.Id; w.PmTaskId = t.Id; w.PmDueDate = due; w.GroupId = group.Id; w.OnlyWhenStopped = s.OnlyWhenStopped; w.RecipientIds = [.. recipients];
                 foreach (var p in planned.Where(p => p.Quantity > 0)) { p.WorkOrderId = w.Id; db.WorkOrderParts.Add(p); }
-            }, $"Generated from PM {s.Code} (group {group.Number})", mail, applyTargets: false);
+            }, $"Generated from PM {s.Code} (group {group.Number})", mail, applyTargets: false, typedSteps: t.Steps.OrderBy(x => x.Sequence).ToList());
         }
         return group;
     }

@@ -1,5 +1,6 @@
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Assets;
+using FourC.Cmms.Core.Pm;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Identity;
@@ -40,12 +41,7 @@ public static class AssetChecklists
             var own = links.Where(l => l.AssetId == assetId).Concat(links.Where(l => l.AssetCategoryId != null && l.AssetCategoryId == category))
                 .Select(l => l.PmTaskId).Distinct().Where(t => t != w.PmTaskId);
             foreach (var templateId in own)
-                foreach (var step in steps[templateId])
-                    db.WorkOrderTasks.Add(new WorkOrderTask
-                    {
-                        WorkOrderId = w.Id, Sequence = ++seq, AssetId = round ? assetId : null,
-                        Description = step.Description.Length > 1000 ? step.Description[..1000] : step.Description,
-                    });
+                foreach (var step in steps[templateId]) db.WorkOrderTasks.Add(StepCopy.ToWorkOrder(step, w.Id, ++seq, round ? assetId : null));
         }
     }
 

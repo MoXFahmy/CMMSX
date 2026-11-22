@@ -1,6 +1,7 @@
 using System.Text.Json;
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Common;
+using FourC.Cmms.Core.Pm;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
@@ -22,7 +23,8 @@ public static partial class TechEndpoints
     public sealed record ActionInput(Guid ClientId, DateTimeOffset? At, string? Type, Guid? WorkOrderId, JsonElement Payload, Guid? UserId = null);
     public sealed record Answer(string Status, string? Message = null, string? Code = null);
 
-    private sealed record TaskPayload(Guid TaskId, bool? IsDone, string? Reading, string? Remarks, bool Force = false);
+    private sealed record TaskPayload(Guid TaskId, bool? IsDone, string? Reading, string? Remarks, bool Force = false, StepAnswer? Answer = null, decimal? Value = null,
+        string? Text = null, Guid? MeterId = null);
     /// <summary>EmployeeId (0.11.0): a crew leader logging another technician's hours (needs "Log hours for others").</summary>
     private sealed record LaborPayload(DateOnly? WorkDate, decimal Hours, decimal OvertimeHours, string? Notes, Guid? EmployeeId = null);
     private sealed record CommentPayload(string? Body);
@@ -113,6 +115,9 @@ public static partial class TechEndpoints
                     if (file.Length > MaxImageBytes) throw new Rejected($"{file.FileName} is larger than 10 MB.");
                 }
                 var att = await AttachmentEndpoints.SaveAttachmentAsync(db, storage, "WorkOrder", w.Id, file, ct);
+                // A photo taken on a checklist step (0.13.0).
+                if (Guid.TryParse(form["taskId"], out var taskId))
+                    att.WorkOrderTaskId = await db.WorkOrderTasks.AnyAsync(t => t.Id == taskId && t.WorkOrderId == w.Id, ct) ? taskId : throw new Rejected("This checklist step was removed.");
                 if (signature)
                 {
                     var by = form["signedBy"].ToString().Clean() ?? ctx.UserName;
@@ -226,7 +231,9 @@ public static partial class TechEndpoints
                     throw new Rejected($"Changed by {t.UpdatedByName ?? "someone else"} at {await LocalTimeAsync(db, changed, ct)}.", "conflict");
                 if (p.Reading is { Length: > 100 }) throw new Rejected("Reading can be at most 100 characters.");
                 if (p.Remarks is { Length: > 2000 }) throw new Rejected("Remarks can be at most 2000 characters.");
-                await WorkOrderEndpoints.ApplyTaskChangeAsync(db, ctx, w.Id, t, p.IsDone, p.Reading, p.Remarks, at, ct);
+                var settings = (await db.Tenants.AsNoTracking().FirstAsync(x => x.Id == db.CurrentTenantId, ct)).Settings;
+                Ensure(await Checklists.AnswerAsync(db, ctx, mail, settings, w, t,
+                    new Checklists.StepChange(p.IsDone, p.Answer, p.Value, p.Text, p.MeterId, p.Reading, p.Remarks, Confirm: true), at, ct));
                 await db.SaveChangesAsync(ct);
                 return new Answer("done");
             }
@@ -351,11 +358,11 @@ public static partial class TechEndpoints
                 var w = await WorkOrderAsync(db, input.WorkOrderId, ct);
                 RequireNotClosed(w);
                 var p = Read<PmTasksPayload>(input.Payload, options);
-                var steps = await db.PmTaskSteps.AsNoTracking().Where(s => s.PmTaskId == p.PmTaskId).OrderBy(s => s.Sequence).Select(s => s.Description).ToListAsync(ct);
+                var steps = await db.PmTaskSteps.AsNoTracking().Where(s => s.PmTaskId == p.PmTaskId).OrderBy(s => s.Sequence).ToListAsync(ct);
                 if (steps.Count == 0 && !await db.PmTasks.AnyAsync(t => t.Id == p.PmTaskId, ct)) throw new Rejected("This checklist no longer exists.");
                 var next = (await db.WorkOrderTasks.Where(t => t.WorkOrderId == w.Id).MaxAsync(t => (int?)t.Sequence, ct) ?? 0) + 1;
-                foreach (var step in steps)
-                    db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = next++, Description = step.Length > 1000 ? step[..1000] : step });
+                foreach (var step in steps) db.WorkOrderTasks.Add(StepCopy.ToWorkOrder(step, w.Id, next++, null));
+                await Checklists.ResolveMetersAsync(db, w, ct);
                 await db.SaveChangesAsync(ct);
                 return new Answer("done");
             }

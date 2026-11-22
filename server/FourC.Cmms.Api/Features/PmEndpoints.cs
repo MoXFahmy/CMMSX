@@ -17,8 +17,13 @@ public static class PmEndpoints
     /// <param name="Parts">The parts each generated work order needs; null on an update keeps the task's parts.</param>
     public sealed record TaskInput(string Code, string Name, string? Description, Guid? TradeId, decimal? EstimatedHours, string? SafetyNotes, List<string>? Steps, bool IsActive = true,
         string? RowVersion = null, List<TaskPartInput>? Parts = null, string? Title = null, WorkType? WorkType = null, WorkPriority? Priority = null,
-        List<Guid>? RecipientIds = null, decimal? ExpectedStopHours = null);
+        List<Guid>? RecipientIds = null, decimal? ExpectedStopHours = null, List<StepInput>? StepDetails = null);
+    /// <summary>A typed template step (0.13.0); <c>TaskInput.StepDetails</c> wins over the plain <c>Steps</c> texts.</summary>
+    public sealed record StepInput(string Description, StepType Type = StepType.Check, string? Unit = null, int? Decimals = null, Guid? MeasurementPointId = null,
+        bool PhotoRequired = false, bool BeforeStart = false, FollowUpKind FollowUp = FollowUpKind.Default, Guid? FollowUpTemplateId = null);
     public sealed record TaskPartInput(Guid PartId, decimal Quantity);
+    public const string NeedsTemplate = "Choose a work template for this follow-up.";
+    public const string UsedForFollowUps = "This template is used for follow-up work. Mark it inactive instead.";
     public sealed record ExtraTaskInput(Guid PmTaskId, int EveryNth);
     public sealed record ScheduleInput(string? Code, string Name, string? Description, Guid SiteId, Guid? LocationId, Guid? AssetId, Guid? TradeId, WorkPriority Priority,
         List<Guid>? AssigneeIds, Guid PmTaskId, List<ExtraTaskInput>? ExtraTasks, PmScheduleType Type, PmBasis Basis, int Frequency, FrequencyUnit Unit,
@@ -113,6 +118,8 @@ public static class PmEndpoints
             return Results.Ok(new
             {
                 x.Id, x.Code, x.Name, x.Description, x.TradeId, x.EstimatedHours, x.SafetyNotes, x.IsActive, Steps = x.Steps.OrderBy(s => s.Sequence).Select(s => s.Description),
+                StepDetails = x.Steps.OrderBy(s => s.Sequence).Select(s => new StepInput(s.Description, s.Type, s.Unit, s.Decimals, s.MeasurementPointId, s.PhotoRequired,
+                    s.BeforeStart, s.FollowUp, s.FollowUpTemplateId)),
                 Parts = parts, PartsCost = Math.Round(parts.Sum(p => p.Quantity * p.UnitCost), 2), RowVersion = Convert.ToBase64String(x.RowVersion),
                 x.Title, x.WorkType, x.Priority, x.RecipientIds, x.ExpectedStopHours, UsedBy = await UsedByAsync(db, id, ct),
             });
@@ -147,6 +154,12 @@ public static class PmEndpoints
             if (await db.AssetChecklists.IgnoreQueryFilters().AnyAsync(c => c.TenantId == db.CurrentTenantId && !c.IsDeleted && c.PmTaskId == id
                     && (c.AssetId == null || db.Assets.IgnoreQueryFilters().Any(a => a.Id == c.AssetId && !a.IsDeleted)), ct))
                 throw new DomainException(UsedAsChecklist);
+            // A measurement point's level, any template step's follow-up, or the organization's default (0.13.0).
+            var settings = (await db.Tenants.AsNoTracking().FirstAsync(tn => tn.Id == db.CurrentTenantId, ct)).Settings;
+            if (settings.FollowUpTemplateId == id
+                || await db.MeasurementPoints.AnyAsync(p => p.AlarmLowTemplateId == id || p.AlertLowTemplateId == id || p.AlertHighTemplateId == id || p.AlarmHighTemplateId == id, ct)
+                || await db.PmTasks.AnyAsync(o => o.Id != id && o.Steps.Any(st => st.FollowUpTemplateId == id), ct))
+                throw new DomainException(UsedForFollowUps);
             db.PmTasks.Remove(x);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
@@ -358,7 +371,7 @@ public static class PmEndpoints
                 SafetyNotes = src.SafetyNotes, IsActive = true, Title = src.Title, WorkType = src.WorkType, Priority = src.Priority, RecipientIds = [.. src.RecipientIds],
                 ExpectedStopHours = src.ExpectedStopHours,
             };
-            foreach (var st in src.Steps.OrderBy(x => x.Sequence)) copy.Steps.Add(new PmTaskStep { PmTaskId = copy.Id, Sequence = st.Sequence, Description = st.Description });
+            foreach (var st in src.Steps.OrderBy(x => x.Sequence)) copy.Steps.Add(StepCopy.Copy(st, copy.Id));
             foreach (var pt in src.Parts) copy.Parts.Add(new PmTaskPart { PmTaskId = copy.Id, PartId = pt.PartId, Quantity = pt.Quantity });
             db.PmTasks.Add(copy);
             sch.PmTaskId = copy.Id;
@@ -438,8 +451,9 @@ public static class PmEndpoints
     }
 
     /// <summary>Records a meter reading (with the spike guard unless confirmed) and runs the meter's PM schedules.</summary>
+    /// <param name="workOrderId">The work order the reading was taken on (a checklist's Meter step, 0.13.0).</param>
     internal static async Task<(Validator V, List<PmGenerator.Result> Generated)> RecordReadingAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, Meter meter,
-        ReadingInput input, CancellationToken ct)
+        ReadingInput input, CancellationToken ct, Guid? workOrderId = null)
     {
         {
             var id = meter.Id;
@@ -456,7 +470,7 @@ public static class PmEndpoints
             if (!v.IsValid) return (v, []);
             var previous = meter.CurrentReading;
             var latest = meter.LastReadAt is null || at >= meter.LastReadAt;
-            db.MeterReadings.Add(new MeterReading { MeterId = id, Value = input.Value, ReadAt = at, Note = input.Note.Clean(), ByName = ctx.UserName });
+            db.MeterReadings.Add(new MeterReading { MeterId = id, Value = input.Value, ReadAt = at, Note = input.Note.Clean(), ByName = ctx.UserName, WorkOrderId = workOrderId });
             if (latest) { meter.CurrentReading = input.Value; meter.LastReadAt = at; }
             await db.SaveChangesAsync(ct);
             var generated = meter.IsActive ? await PmGenerator.OnReadingAsync(db, ctx, meter, input.Value, ct, mail) : [];
@@ -497,7 +511,13 @@ public static class PmEndpoints
             .When(i.EstimatedHours < 0, "estimatedHours", "Estimate cannot be negative.").When((i.Steps ?? []).Count > 300, "steps", "At most 300 steps.")
             .When(parts.Count > 200, "parts", "At most 200 parts.")
             .When(parts.Any(p => Math.Round(p.Quantity, 3) is <= 0 or > 1_000_000_000m), "parts", "Each part needs a quantity above zero.")
-            .When(parts.GroupBy(p => p.PartId).Any(g => g.Count() > 1), "parts", "List each part once.");
+            .When(parts.GroupBy(p => p.PartId).Any(g => g.Count() > 1), "parts", "List each part once.")
+            .When((i.StepDetails ?? []).Count > 300, "steps", "At most 300 steps.")
+            .When((i.StepDetails ?? []).Any(st => !Enum.IsDefined(st.Type) || !Enum.IsDefined(st.FollowUp)), "steps", "Choose what each step asks for.")
+            .When((i.StepDetails ?? []).Any(st => st.Unit is { Length: > 20 }), "steps", "Unit can be at most 20 characters.")
+            .When((i.StepDetails ?? []).Any(st => st.Decimals is < 0 or > 4), "steps", "Decimals can be 0 to 4.")
+            .When((i.StepDetails ?? []).Any(st => st.MeasurementPointId is not null && st.Type != StepType.Number), "steps", "Only number steps can use a measurement point.")
+            .When((i.StepDetails ?? []).Any(st => st.FollowUp == FollowUpKind.WorkOrder && st.FollowUpTemplateId is null), "steps", NeedsTemplate);
     }
 
     internal static PmTask CreateTask(CmmsDbContext db, TaskInput i)
@@ -513,9 +533,10 @@ public static class PmEndpoints
     internal static void UpdateTask(CmmsDbContext db, PmTask x, TaskInput i)
     {
         x.Name = i.Name.Trim();
+        var before = x.Steps.ToList();
         db.PmTaskSteps.RemoveRange(x.Steps);
         x.Steps = [];
-        ApplyTask(x, i);
+        ApplyTask(x, i, before);
         // The new steps already have ids, so EF would take them for existing rows and update nothing (a 409): they are new.
         foreach (var st in x.Steps) db.Entry(st).State = EntityState.Added;
         if (i.Parts is not null) UpdateParts(db, x, i.Parts);
@@ -530,6 +551,10 @@ public static class PmEndpoints
         var ids = parts.Select(p => p.PartId).Distinct().ToList();
         if (ids.Count > 0 && await db.Parts.CountAsync(p => ids.Contains(p.Id), ct) != ids.Count) v.Add("parts", "Unknown part.");
         await CheckRecipientsAsync(db, v, i.RecipientIds, ct);
+        var points = (i.StepDetails ?? []).Select(st => st.MeasurementPointId).OfType<Guid>().Distinct().ToList();
+        if (points.Count > 0 && await db.MeasurementPoints.CountAsync(p => points.Contains(p.Id), ct) != points.Count) v.Add("steps", MeasurementPointEndpoints.Unknown);
+        var followUps = (i.StepDetails ?? []).Select(st => st.FollowUpTemplateId).OfType<Guid>().Distinct().ToList();
+        if (followUps.Count > 0 && await db.PmTasks.CountAsync(t => followUps.Contains(t.Id), ct) != followUps.Count) v.Add("steps", "Unknown work template.");
         return v;
     }
 
@@ -588,16 +613,29 @@ public static class PmEndpoints
         }
     }
 
-    internal static void ApplyTask(PmTask x, TaskInput i)
+    /// <param name="before">The task's steps before an update: plain step texts (an older page, the import) keep the definition of the step with the same text.</param>
+    internal static void ApplyTask(PmTask x, TaskInput i, IReadOnlyList<PmTaskStep>? before = null)
     {
         x.Description = i.Description.Clean(); x.TradeId = i.TradeId; x.EstimatedHours = i.EstimatedHours; x.SafetyNotes = i.SafetyNotes.Clean(); x.IsActive = i.IsActive;
         // Template fields (0.12.0): a type or recipient list left out keeps what is there.
         x.Title = i.Title.Clean(); x.Priority = i.Priority; x.ExpectedStopHours = i.ExpectedStopHours is { } esh ? Math.Round(esh, 2) : null;
         if (i.WorkType is { } wt) x.WorkType = wt;
         if (i.RecipientIds is not null) x.RecipientIds = i.RecipientIds.Distinct().ToList();
+        var details = i.StepDetails?.Where(st => st.Description.Clean() is not null).ToList()
+            ?? StepCopy.Match((i.Steps ?? []).Select(s => s.Clean()).OfType<string>(), before ?? [])
+                .Select(st => new StepInput(st.Description, st.Type, st.Unit, st.Decimals, st.MeasurementPointId, st.PhotoRequired, st.BeforeStart, st.FollowUp, st.FollowUpTemplateId)).ToList();
         var seq = 0;
-        foreach (var step in (i.Steps ?? []).Select(s => s.Clean()).OfType<string>())
-            x.Steps.Add(new PmTaskStep { PmTaskId = x.Id, Sequence = ++seq, Description = step.Length > 2000 ? step[..2000] : step });
+        foreach (var st in details)
+        {
+            var text = st.Description.Clean()!;
+            var point = st.Type == StepType.Number ? st.MeasurementPointId : null; // a point gives the unit and decimals
+            x.Steps.Add(new PmTaskStep
+            {
+                PmTaskId = x.Id, Sequence = ++seq, Description = text.Length > 2000 ? text[..2000] : text, Type = st.Type,
+                Unit = point is null ? st.Unit.Clean() : null, Decimals = point is null ? st.Decimals : null, MeasurementPointId = point, PhotoRequired = st.PhotoRequired, BeforeStart = st.BeforeStart,
+                FollowUp = st.FollowUp, FollowUpTemplateId = st.FollowUp == FollowUpKind.None ? null : st.FollowUpTemplateId,
+            });
+        }
     }
 
     /// <summary>The checks that need no database (shared with the import).</summary>

@@ -1,12 +1,13 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
 import { ActionIcon, Anchor, Badge, Button, Card, Center, Checkbox, Grid, Group, Loader, MultiSelect, NumberInput, Select, SimpleGrid, Stack, Table, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { IconArrowDown, IconArrowUp, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconTrash } from '@tabler/icons-react';
 import { del, get, post, put } from '@/api/client';
-import { WORK_PRIORITIES, WORK_TYPES, type Lookup, type PmTaskDetail } from '@/api/types';
+import { WORK_PRIORITIES, WORK_TYPES, type Lookup, type PmTaskDetail, type StepDetail } from '@/api/types';
+import { TemplateSteps } from './TemplateSteps';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { PartPicker } from '@/components/PartPicker';
@@ -17,7 +18,7 @@ import { fmtMoney, handleFormError, notifyError, notifySuccess } from '@/compone
 type PartRow = { partId: string; label: string; unit: string; quantity: number | ''; unitCost: number };
 type F = {
   code: string; name: string; title: string; workType: string; priority: string | null; tradeId: string | null; estimatedHours: number | ''; expectedStopHours: number | '';
-  description: string; safetyNotes: string; steps: string[]; parts: PartRow[]; recipientIds: string[]; isActive: boolean;
+  description: string; safetyNotes: string; steps: StepDetail[]; parts: PartRow[]; recipientIds: string[]; isActive: boolean;
 };
 const blank: F = {
   code: '', name: '', title: '', workType: 'Preventive', priority: null, tradeId: null, estimatedHours: '', expectedStopHours: '', description: '', safetyNotes: '', steps: [],
@@ -39,13 +40,13 @@ export function TemplatePage() {
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
   const { data: people } = useQuery({ queryKey: ['users-lookup'], queryFn: () => get<{ id: string; fullName: string }[]>('/users/lookup'), retry: false });
   const form = useForm<F>({ initialValues: blank });
-  const [step, setStep] = useState('');
 
   useEffect(() => {
     if (!x) return;
     const saved: F = {
       code: x.code, name: x.name, title: x.title ?? '', workType: x.workType ?? 'Preventive', priority: x.priority ?? null, tradeId: x.tradeId ?? null,
-      estimatedHours: x.estimatedHours ?? '', expectedStopHours: x.expectedStopHours ?? '', description: x.description ?? '', safetyNotes: x.safetyNotes ?? '', steps: x.steps,
+      estimatedHours: x.estimatedHours ?? '', expectedStopHours: x.expectedStopHours ?? '', description: x.description ?? '', safetyNotes: x.safetyNotes ?? '',
+      steps: x.stepDetails ?? x.steps.map((d) => ({ description: d, type: 'Check', photoRequired: false, beforeStart: false, followUp: 'Default' })),
       parts: x.parts.map((p) => ({ partId: p.partId, label: `${p.partNumber} · ${p.partName}`, unit: p.unitOfMeasure, quantity: p.quantity, unitCost: p.unitCost })),
       recipientIds: x.recipientIds ?? [], isActive: x.isActive,
     };
@@ -54,12 +55,11 @@ export function TemplatePage() {
   }, [x]);
 
   const v = form.values;
-  const addStep = () => { if (step.trim()) { form.insertListItem('steps', step.trim()); setStep(''); } };
-  const move = (i: number, d: number) => { const s = [...v.steps]; const j = i + d; if (j < 0 || j >= s.length) return; [s[i], s[j]] = [s[j], s[i]]; form.setFieldValue('steps', s); };
   const submit = form.onSubmit(async (vals) => {
     const body = {
       ...vals, title: vals.title || null, estimatedHours: num(vals.estimatedHours), expectedStopHours: num(vals.expectedStopHours), rowVersion: x?.rowVersion,
       parts: vals.parts.map((p) => ({ partId: p.partId, quantity: p.quantity || 0 })),
+      steps: vals.steps.map((s) => s.description), stepDetails: vals.steps,
     };
     try {
       if (editing) await put(`/pm-tasks/${id}`, body);
@@ -104,21 +104,7 @@ export function TemplatePage() {
                 data={(people ?? []).map((p) => ({ value: p.id, label: p.fullName }))} value={v.recipientIds} onChange={(r) => form.setFieldValue('recipientIds', r)} error={form.errors.recipientIds} />
               <Checkbox label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
             </Stack></Card>
-            <Card><Stack gap={4}>
-              <Title order={5}>{t('pm.steps')} ({v.steps.length})</Title>
-              {v.steps.map((_, i) => (
-                <Group key={i} gap={6} wrap="nowrap">
-                  <Text fz="sm" c="dimmed" w={28} ta="right">{i + 1}.</Text>
-                  <TextInput style={{ flex: 1 }} size="xs" {...form.getInputProps(`steps.${i}`)} />
-                  <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('pm.moveUp')} onClick={() => move(i, -1)}><IconArrowUp size={14} /></ActionIcon>
-                  <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('pm.moveDown')} onClick={() => move(i, 1)}><IconArrowDown size={14} /></ActionIcon>
-                  <ActionIcon variant="subtle" color="red" size="sm" aria-label={t('common.delete')} onClick={() => form.removeListItem('steps', i)}><IconTrash size={14} /></ActionIcon>
-                </Group>
-              ))}
-              {editable && <Group gap="xs"><TextInput style={{ flex: 1 }} placeholder={t('pm.addStep')} value={step} onChange={(e) => setStep(e.currentTarget.value)}
-                onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addStep(); } }} />
-                <Button variant="light" leftSection={<IconPlus size={14} />} onClick={addStep}>{t('common.create')}</Button></Group>}
-            </Stack></Card>
+            <TemplateSteps value={v.steps} onChange={(x) => form.setFieldValue('steps', x)} editable={editable} error={form.errors.steps} selfId={editing ? id : undefined} />
             <Card><Stack gap={4}>
               <Title order={5}>{t('pm.parts')} · {fmtMoney(v.parts.reduce((a, p) => a + Number(p.quantity || 0) * p.unitCost, 0), currency)}</Title>
               <Text fz="xs" c="dimmed">{t('pm.partsHint')}</Text>

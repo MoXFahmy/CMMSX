@@ -167,6 +167,7 @@ api.MapPlanningEndpoints();
 api.MapPlanningBoardEndpoints();
 api.MapPmEndpoints();
 api.MapPmCalendarEndpoints();
+api.MapMeasurementPointEndpoints();
 api.MapWorkGroupEndpoints();
 api.MapAssetChecklistEndpoints();
 api.MapInventoryEndpoints();

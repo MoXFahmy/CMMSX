@@ -18,7 +18,7 @@ internal static class SheetImporters
     [
         new SiteImporter(), new LocationImporter(), new CategoryImporter(), new TradeImporter(), new PartGroupImporter(),
         new SupplierImporter(), new StoreImporter(), new AssetImporter(), new PeopleImporter(), new PartImporter(), new StockImporter(),
-        new AssetPartImporter(), new PmTaskImporter(), new PmStepImporter(), new PmPartImporter(), new PmScheduleImporter(),
+        new AssetPartImporter(), new PmTaskImporter(), new MeasurementPointImporter(), new PmStepImporter(), new PmPartImporter(), new PmScheduleImporter(),
     ];
 
     /// <summary>The Assets sheet with one more column per custom field, headed by the field's label.</summary>
@@ -832,6 +832,57 @@ internal sealed class PmTaskImporter : RecordImporter<PmTask>
     protected override void Remember(ImportContext c, PmTask t, Dictionary<string, object?> v) => c.Remember(c.PmTasks, t.Code, t.Id);
 }
 
+/// <summary>Measurement points (0.13.0): add and update by code, with the screen's checks; level templates by template code, assets by number.</summary>
+internal sealed class MeasurementPointImporter : RecordImporter<MeasurementPoint>
+{
+    private static readonly string[] TemplateColumns = ["alarmLowTemplate", "alertLowTemplate", "alertHighTemplate", "alarmHighTemplate"];
+
+    public override string Sheet => "MeasurementPoints";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.MeasurementPoints.Include(p => p.Assets).Where(p => codes.Contains(p.Code)), p => p.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Defaults() => new() { ["active"] = true, ["kind"] = MeasurementKind.Other, ["decimals"] = 1 };
+
+    protected override Dictionary<string, object?> Values(ImportContext c, MeasurementPoint p) => new()
+    {
+        ["code"] = p.Code, ["name"] = p.Name, ["kind"] = p.Kind, ["unit"] = p.Unit, ["decimals"] = p.Decimals, ["validMin"] = p.ValidMin, ["validMax"] = p.ValidMax,
+        ["alarmLow"] = p.AlarmLow, ["alertLow"] = p.AlertLow, ["target"] = p.Target, ["alertHigh"] = p.AlertHigh, ["alarmHigh"] = p.AlarmHigh,
+        ["alarmLowTemplate"] = Code(c, p.AlarmLowTemplateId), ["alertLowTemplate"] = Code(c, p.AlertLowTemplateId),
+        ["alertHighTemplate"] = Code(c, p.AlertHighTemplateId), ["alarmHighTemplate"] = Code(c, p.AlarmHighTemplateId),
+        ["assets"] = p.Assets.Select(a => c.CodeOf.GetValueOrDefault(a.AssetId)).OfType<string>().ToList(), ["active"] = p.IsActive,
+    };
+
+    private static string? Code(ImportContext c, Guid? id) => id is { } x ? c.CodeOf.GetValueOrDefault(x) : null;
+
+    protected override Task<MeasurementPoint?> SaveAsync(ImportContext c, ImportRow row, MeasurementPoint? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var templates = TemplateColumns.Select(k => Ref(row, c.PmTasks, S(v, k), "Work template")).ToList();
+        var assets = L(v, "assets").Select(n => Ref(row, c.Assets, n, "Asset")).OfType<Guid>().Distinct().ToList();
+        var input = new MeasurementPointEndpoints.PointInput(S(v, "code") ?? "", S(v, "name") ?? "", E(v, "kind", MeasurementKind.Other), S(v, "unit"), I(v, "decimals") ?? 1,
+            N(v, "validMin"), N(v, "validMax"), N(v, "alarmLow"), N(v, "alertLow"), N(v, "target"), N(v, "alertHigh"), N(v, "alarmHigh"),
+            templates[0], templates[1], templates[2], templates[3], assets, B(v, "active", true));
+        // Checked on a copy, so a refused row changes nothing.
+        var probe = new MeasurementPoint { Code = input.Code, Name = input.Name };
+        MeasurementPointEndpoints.Apply(probe, input);
+        if (!Accept(row, MeasurementPointEndpoints.PointRules(probe, input)) || row.HasProblems) return Task.FromResult<MeasurementPoint?>(null);
+        var p = existing ?? new MeasurementPoint { Code = input.Code.Trim(), Name = input.Name.Trim() };
+        p.Name = input.Name.Trim();
+        MeasurementPointEndpoints.Apply(p, input);
+        foreach (var link in p.Assets.Where(a => !assets.Contains(a.AssetId)).ToList()) { p.Assets.Remove(link); c.Db.MeasurementPointAssets.Remove(link); }
+        foreach (var a in assets.Where(a => p.Assets.All(x => x.AssetId != a))) p.Assets.Add(new MeasurementPointAsset { PointId = p.Id, AssetId = a });
+        if (existing is not null) return Task.FromResult<MeasurementPoint?>(null);
+        c.Db.MeasurementPoints.Add(p);
+        return Task.FromResult<MeasurementPoint?>(p);
+    }
+
+    protected override void Remember(ImportContext c, MeasurementPoint p, Dictionary<string, object?> v) => c.Remember(c.MeasurementPoints, p.Code, p.Id);
+}
+
 /// <summary>
 /// A sheet of lists, one row per item, each list belonging to an owner (a PM task's steps or parts, an asset's spare parts).
 /// Each row says whether its item is new, changed or the same; at the end every owner named on the sheet gets the sheet's
@@ -910,10 +961,14 @@ internal abstract class PmTaskListImporter : ListSheetImporter
 
     protected PmTask TaskById(Guid id) => _tasks[id];
 
-    protected static PmEndpoints.TaskInput InputOf(PmTask t, List<string> steps, List<PmEndpoints.TaskPartInput>? parts) =>
-        new(t.Code, t.Name, t.Description, t.TradeId, t.EstimatedHours, t.SafetyNotes, steps, t.IsActive, null, parts);
+    protected static PmEndpoints.TaskInput InputOf(PmTask t, List<string> steps, List<PmEndpoints.TaskPartInput>? parts, List<PmEndpoints.StepInput>? details = null) =>
+        new(t.Code, t.Name, t.Description, t.TradeId, t.EstimatedHours, t.SafetyNotes, steps, t.IsActive, null, parts, StepDetails: details);
 
     protected static List<string> StepsOf(PmTask t) => t.Steps.OrderBy(s => s.Sequence).Select(s => s.Description).ToList();
+
+    /// <summary>A task's typed steps (0.13.0), in order.</summary>
+    protected static List<PmEndpoints.StepInput> DetailsOf(PmTask t) => t.Steps.OrderBy(s => s.Sequence)
+        .Select(s => new PmEndpoints.StepInput(s.Description, s.Type, s.Unit, s.Decimals, s.MeasurementPointId, s.PhotoRequired, s.BeforeStart, s.FollowUp, s.FollowUpTemplateId)).ToList();
 
     /// <summary>Replaces a task's lists through the screen's code, and makes sure the new step and part rows are inserted.</summary>
     internal static void Replace(ImportContext c, PmTask task, PmEndpoints.TaskInput input) => PmTaskImporter.Replace(c, task, input);
@@ -921,8 +976,8 @@ internal abstract class PmTaskListImporter : ListSheetImporter
 
 internal sealed class PmStepImporter : PmTaskListImporter
 {
-    private readonly Dictionary<Guid, SortedDictionary<int, string>> _wanted = [];
-    private readonly Dictionary<Guid, List<string>> _before = [];
+    private readonly Dictionary<Guid, SortedDictionary<int, PmEndpoints.StepInput>> _wanted = [];
+    private readonly Dictionary<Guid, List<PmEndpoints.StepInput>> _before = [];
 
     public override string Sheet => "PmSteps";
     public override IReadOnlyList<string> KeyColumns => ["taskCode", "step"];
@@ -935,16 +990,43 @@ internal sealed class PmStepImporter : PmTaskListImporter
         var text = row.Get<string>("description");
         if (step < 1) row.Problem(Translator.T("Steps are numbered from 1."));
         if (text is null) row.Problem(Translator.T($"{row.Sheet.Column("description").Heading} is required."));
+        // Step types (0.13.0): codes resolved; blank cells keep what the step with the same number and text has.
+        var pointCode = row.Get<string>("measurementPoint")?.Trim();
+        var templateCode = row.Get<string>("followUpTemplate")?.Trim();
+        Guid? pointId = null, templateId = null;
+        if (pointCode is { Length: > 0 }) { if (c.MeasurementPoints.TryGetValue(pointCode, out var pid)) pointId = pid; else row.Problem(Translator.T($"Measurement point {pointCode} not found.")); }
+        if (templateCode is { Length: > 0 }) { if (c.PmTasks.TryGetValue(templateCode, out var tid)) templateId = tid; else row.Problem(Translator.T($"Work template {templateCode} not found.")); }
         if (task is null || row.HasProblems) return Result(row, shown, RowOutcome.Problem);
-        var before = _before.TryGetValue(task.Id, out var b) ? b : _before[task.Id] = StepsOf(task);
+        var before = _before.TryGetValue(task.Id, out var b) ? b : _before[task.Id] = DetailsOf(task);
         var wanted = _wanted.TryGetValue(task.Id, out var w) ? w : _wanted[task.Id] = [];
         if (wanted.Count >= 300) { row.Problem(Translator.T("At most 300 steps.")); return Result(row, shown, RowOutcome.Problem); }
-        wanted[step] = text!;
         var old = step <= before.Count ? before[step - 1] : null;
+        var basis = old is not null && old.Description == text ? old : new PmEndpoints.StepInput(text!);
+        var def = basis with
+        {
+            Description = text!, Type = row.Get<StepType?>("type") ?? basis.Type, Unit = row.Get<string>("unit").Clean() ?? basis.Unit,
+            Decimals = row.Get<int?>("decimals") ?? basis.Decimals, MeasurementPointId = pointCode is { Length: > 0 } ? pointId : basis.MeasurementPointId,
+            PhotoRequired = row.Get<bool?>("photoRequired") ?? basis.PhotoRequired, BeforeStart = row.Get<bool?>("beforeStart") ?? basis.BeforeStart,
+            FollowUp = row.Get<FollowUpKind?>("followUp") ?? basis.FollowUp, FollowUpTemplateId = templateCode is { Length: > 0 } ? templateId : basis.FollowUpTemplateId,
+        };
+        if (def.MeasurementPointId is not null && def.Type != StepType.Number) row.Problem(Translator.T("Only number steps can use a measurement point."));
+        if (def.FollowUp == FollowUpKind.WorkOrder && def.FollowUpTemplateId is null) row.Problem(Translator.T(PmEndpoints.NeedsTemplate));
+        if (def.Unit is { Length: > 20 }) row.Problem(Translator.T("Unit can be at most 20 characters."));
+        if (def.Decimals is < 0 or > 4) row.Problem(Translator.T("Decimals can be 0 to 4."));
+        if (row.HasProblems) return Result(row, shown, RowOutcome.Problem);
+        wanted[step] = def;
         if (old is null) return Result(row, shown, RowOutcome.New);
-        return old == text ? Result(row, shown, RowOutcome.Unchanged)
-            : Result(row, shown, RowOutcome.Changed, [new FieldChange(row.Sheet.Column("description").Heading, old, text)]);
+        if (old == def) return Result(row, shown, RowOutcome.Unchanged);
+        return old.Description != def.Description
+            ? Result(row, shown, RowOutcome.Changed, [new FieldChange(row.Sheet.Column("description").Heading, old.Description, def.Description)])
+            : Result(row, shown, RowOutcome.Changed, [new FieldChange(Translator.T("Step"), Summary(old), Summary(def))]);
     }
+
+    private static string Summary(PmEndpoints.StepInput s) => string.Join(", ", new[]
+    {
+        ImportSheets.ChoiceText(s.Type), s.Unit, s.PhotoRequired ? Translator.T("Photo required") : null, s.BeforeStart ? Translator.T("Before starting") : null,
+        ImportSheets.ChoiceText(s.FollowUp),
+    }.Where(x => !string.IsNullOrWhiteSpace(x)));
 
     protected override void Forget(Guid taskId) => _wanted.Remove(taskId);
 
@@ -955,7 +1037,7 @@ internal sealed class PmStepImporter : PmTaskListImporter
             var before = _before[id];
             var renumbered = wanted.Keys.Select((step, i) => step != i + 1).Any(x => x);
             if (before.Count > wanted.Count || renumbered)
-                yield return (id, new FieldChange(Translator.T("Steps"), string.Join("; ", before), string.Join("; ", wanted.Values)));
+                yield return (id, new FieldChange(Translator.T("Steps"), string.Join("; ", before.Select(s => s.Description)), string.Join("; ", wanted.Values.Select(s => s.Description))));
         }
     }
 
@@ -966,7 +1048,7 @@ internal sealed class PmStepImporter : PmTaskListImporter
             var task = TaskById(id);
             var steps = wanted.Values.ToList();
             if (steps.SequenceEqual(_before[id])) continue;
-            Replace(c, task, InputOf(task, steps, null));
+            Replace(c, task, InputOf(task, steps.Select(s => s.Description).ToList(), null, steps));
         }
         return System.Threading.Tasks.Task.CompletedTask;
     }
