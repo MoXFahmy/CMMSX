@@ -65,7 +65,8 @@ public static class PmGenerator
             return [new Result(s.Id, s.Code, s.Name, first, null, s.Asset?.AssetNumber, null, null, "Previous PM work order is still open")];
         IReadOnlyList<RoundAsset>? round = null;
         string? roundSkip = null;
-        if (s.Assets.Count > 0 && (round = await RoundAssetsAsync(db, s, ct, settings.PmSkipAssetStatuses)).Count == 0)
+        var rules = Rules(s, settings);
+        if (s.Assets.Count > 0 && (round = await RoundAssetsAsync(db, s, ct, rules.Skip)).Count == 0)
         {
             // Every available asset is in a skip status (e.g. all under repair): skip like a single asset would, instead of piling up work.
             if ((await RoundAssetsAsync(db, s, ct)).Count == 0) return [new Result(s.Id, s.Code, s.Name, first, null, null, null, null, NoActiveAssets)];
@@ -96,7 +97,7 @@ public static class PmGenerator
                 if (s.Basis == PmBasis.Actual) break;
                 continue;
             }
-            if (!exists && !dryRun && task is not null) wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct, round, settings.PmNonWorkingDays, mail);
+            if (!exists && !dryRun && task is not null) wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct, round, rules.NonWorking, mail);
             results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, wo?.Id, wo?.Number,
                 task is null ? "PM task not found" : exists ? "Already generated" : null));
             s.GenerationCount = count; s.LastDueDate = due; s.LastGeneratedAt = DateTimeOffset.UtcNow; s.LastWorkOrderId = wo?.Id ?? s.LastWorkOrderId;
@@ -111,12 +112,17 @@ public static class PmGenerator
 
     public const string NoActiveAssets = "No active assets in the list";
 
+    /// <summary>The PM rules that apply to <paramref name="s"/>: its own (0.12.0) where it has them, else the organization's.</summary>
+    internal static (IReadOnlyCollection<Core.Assets.AssetStatus> Skip, IReadOnlyCollection<DayOfWeek> NonWorking, bool NoStacking) Rules(PmSchedule s, TenantSettings org) =>
+        (s.SkipStatusesOverride ?? org.PmSkipAssetStatuses, s.NonWorkingDaysOverride ?? org.PmNonWorkingDays, s.NoStackingOverride ?? org.PmNoStacking);
+
     /// <summary>Why the organization's PM rules hold back this occurrence, or null to generate it.</summary>
     private static async Task<string?> SkipReasonAsync(CmmsDbContext db, PmSchedule s, TenantSettings settings, CancellationToken ct)
     {
-        if (s.Assets.Count == 0 && s.Asset is { } a && settings.PmSkipAssetStatuses.Contains(a.Status))
+        var rules = Rules(s, settings);
+        if (s.Assets.Count == 0 && s.Asset is { } a && rules.Skip.Contains(a.Status))
             return $"the asset is {StatusLabel(a.Status)}";
-        if (settings.PmNoStacking && s.Basis == PmBasis.Scheduled && await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && Active.Contains(w.Status), ct))
+        if (rules.NoStacking && s.Basis == PmBasis.Scheduled && await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && Active.Contains(w.Status), ct))
             return "the previous work order is still open";
         return null;
     }
@@ -144,21 +150,37 @@ public static class PmGenerator
         var title = task.Title is { Length: > 0 } tt ? tt : task.Id == s.PmTaskId ? s.Name : $"{s.Name} — {task.Name}";
         var start = PmCalendar.NextWorkingDay(due ?? Today, nonWorkingDays ?? []);
         var steps = task.Steps.OrderBy(x => x.Sequence).Select(x => x.Description).ToList();
+        // A round's assets with their own template (0.12.0) use it on routine visits; an every-Nth visit uses the Nth template for all.
+        var own = round is null || task.Id != s.PmTaskId ? [] : s.Assets.Where(a => a.PmTaskId is not null && round.Any(r => r.Id == a.AssetId))
+            .ToDictionary(a => a.AssetId, a => a.PmTaskId!.Value);
+        var ownIds = own.Values.Distinct().ToList();
+        var ownTemplates = ownIds.Count == 0 ? [] : await db.PmTasks.AsNoTracking().Include(t => t.Steps).Include(t => t.Parts).Where(t => ownIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
+        IReadOnlyList<string> StepsFor(Guid assetId) => own.TryGetValue(assetId, out var tid) && ownTemplates.TryGetValue(tid, out var ot)
+            ? ot.Steps.OrderBy(x => x.Sequence).Select(x => x.Description).ToList() : steps;
         // A round's work order has no single asset: it lists the covered assets and repeats the steps for each of them.
         var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description.Length == 0 ? null : description, task.WorkType, task.Priority ?? s.Priority,
             s.SiteId, round is null ? s.LocationId : s.LocationId ?? PmRound.CommonLocationId(round), round is null ? s.AssetId : null, s.TradeId ?? task.TradeId, assignees,
             start, PmCalendar.DueDate(s, start, nonWorkingDays ?? []), task.EstimatedHours, round is null ? steps : null, TeamId: s.TeamId);
-        // The task's parts come along as planned parts (× covered assets on a round), reserved in the default store for the site.
+        // The template's parts come along as planned parts (once per covered asset on a round, from that asset's own template where
+        // it has one), reserved in the default store for the site.
+        var taskParts = await db.PmTaskParts.AsNoTracking().Where(p => p.PmTaskId == task.Id).Select(p => new { p.PartId, p.Quantity }).ToListAsync(ct);
+        var needs = new Dictionary<Guid, decimal>();
+        foreach (var assetId in round?.Select(r => (Guid?)r.Id) ?? [null])
+        {
+            var lines = assetId is { } aid && own.TryGetValue(aid, out var tid) && ownTemplates.TryGetValue(tid, out var ot)
+                ? ot.Parts.Select(p => new { p.PartId, p.Quantity }).ToList() : taskParts;
+            foreach (var l in lines) needs[l.PartId] = needs.GetValueOrDefault(l.PartId) + l.Quantity;
+        }
         var planned = new List<WorkOrderPart>();
-        foreach (var tp in await db.PmTaskParts.AsNoTracking().Where(p => p.PmTaskId == task.Id).Select(p => new { p.PartId, p.Quantity }).ToListAsync(ct))
-            planned.Add(new WorkOrderPart { PartId = tp.PartId, Quantity = tp.Quantity * (round?.Count ?? 1), StoreId = await Planning.DefaultStoreAsync(db, tp.PartId, s.SiteId, ct) });
+        foreach (var (partId, qty) in needs)
+            planned.Add(new WorkOrderPart { PartId = partId, Quantity = qty, StoreId = await Planning.DefaultStoreAsync(db, partId, s.SiteId, ct) });
         return await WorkOrderEndpoints.CreateAsync(db, ctx, input, null, ct, w =>
         {
             w.PmScheduleId = s.Id; w.PmTaskId = task.Id; w.PmDueDate = due; w.OnlyWhenStopped = s.OnlyWhenStopped; w.RecipientIds = recipients;
             foreach (var p in planned) { p.WorkOrderId = w.Id; db.WorkOrderParts.Add(p); }
             if (round is null) return;
             for (var n = 0; n < round.Count; n++) w.Assets.Add(new WorkOrderAsset { WorkOrderId = w.Id, AssetId = round[n].Id, Sequence = n + 1 });
-            foreach (var st in PmRound.Steps(round, steps))
+            foreach (var st in PmRound.Steps(round, StepsFor))
                 db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = st.Sequence, AssetId = st.AssetId, Description = st.Description.Length > 1000 ? st.Description[..1000] : st.Description });
         }, $"Generated from PM {s.Code}", mail, applyTargets: false);
     }

@@ -15,10 +15,13 @@ public static class PmRound
         listed.Where(a => a.Available && a.SiteId == siteId).OrderBy(a => a.Sequence).ToList();
 
     /// <summary>Every task step once per covered asset, grouped by asset in round order, numbered continuously from 1.</summary>
-    public static IReadOnlyList<RoundStep> Steps(IReadOnlyList<RoundAsset> covered, IReadOnlyList<string> taskSteps)
+    public static IReadOnlyList<RoundStep> Steps(IReadOnlyList<RoundAsset> covered, IReadOnlyList<string> taskSteps) => Steps(covered, _ => taskSteps);
+
+    /// <summary>Each covered asset's own steps (its template's, 0.12.0), grouped by asset in round order, numbered continuously from 1.</summary>
+    public static IReadOnlyList<RoundStep> Steps(IReadOnlyList<RoundAsset> covered, Func<Guid, IReadOnlyList<string>> stepsFor)
     {
         var seq = 0;
-        return covered.SelectMany(a => taskSteps.Select(d => new RoundStep(a.Id, ++seq, d))).ToList();
+        return covered.SelectMany(a => stepsFor(a.Id).Select(d => new RoundStep(a.Id, ++seq, d))).ToList();
     }
 
     /// <summary>The deepest location containing every covered asset (from their materialized paths), or null if they share none.</summary>

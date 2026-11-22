@@ -25,7 +25,11 @@ public static class PmEndpoints
         int? WeekOfMonth, DayOfWeek? DayOfWeek, int? DayOfMonth, int WorkPeriodDays, bool WholeMonth, int LeadDays, DateOnly StartDate, DateOnly? NextDueDate,
         Guid? MeterId, MeterTrigger? MeterTrigger, decimal? MeterInterval, decimal? NextDueReading, decimal? LowerLimit, decimal? UpperLimit,
         Guid? LowerTaskId, Guid? UpperTaskId, bool TimeBased, bool IsActive = true, string? RowVersion = null, List<Guid>? AssetIds = null, Guid? TeamId = null,
-        bool? ManagesTeam = null, bool? OnlyWhenStopped = null, List<Guid>? RecipientIds = null);
+        bool? ManagesTeam = null, bool? OnlyWhenStopped = null, List<Guid>? RecipientIds = null,
+        bool? ManagesRules = null, List<Core.Assets.AssetStatus>? SkipStatusesOverride = null, List<DayOfWeek>? NonWorkingDaysOverride = null, bool? NoStackingOverride = null,
+        List<AssetTemplateInput>? AssetTemplates = null);
+    /// <summary>A multi-asset PM's asset with its own template (empty = the PM's).</summary>
+    public sealed record AssetTemplateInput(Guid AssetId, Guid? PmTaskId);
     public sealed record GenerateInput(DateOnly Until, Guid? SiteId, List<Guid>? ScheduleIds);
     public sealed record MeterInput(string Code, string Name, Guid AssetId, string Unit, decimal? MaxDailyIncrement, bool IsActive = true);
     public sealed record ReadingInput(decimal Value, DateTimeOffset? ReadAt, string? Note, bool Confirm = false);
@@ -166,7 +170,8 @@ public static class PmEndpoints
             return Results.Ok(new
             {
                 s.Id, s.Code, s.Name, s.Description, s.SiteId, s.LocationId, s.AssetId, Asset = s.Asset is null ? null : new { s.Asset.Id, s.Asset.AssetNumber, s.Asset.Name },
-                Assets = s.Assets.Where(a => a.Asset is not null).OrderBy(a => a.Sequence).Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name }),
+                Assets = s.Assets.Where(a => a.Asset is not null).OrderBy(a => a.Sequence).Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name, a.PmTaskId }),
+                s.SkipStatusesOverride, s.NonWorkingDaysOverride, s.NoStackingOverride,
                 s.TradeId, s.TeamId, s.Priority, s.AssigneeIds, s.RecipientIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, s.PmTask.Name }, s.OnlyWhenStopped,
                 ExtraTasks = s.ExtraTasks.Select(e => new { e.PmTaskId, e.EveryNth }), s.Type, s.Basis, s.Frequency, s.Unit, s.WeekOfMonth, s.DayOfWeek, s.DayOfMonth,
                 s.WorkPeriodDays, s.WholeMonth, s.LeadDays, s.StartDate, s.NextDueDate, s.LastDueDate, s.LastGeneratedAt, s.GenerationCount,
@@ -200,7 +205,7 @@ public static class PmEndpoints
             if (s.Type == PmScheduleType.Meter && s.MeterTrigger == MeterTrigger.Incremental && s.NextDueReading is null)
                 s.NextDueReading = (await db.Meters.Where(m => m.Id == s.MeterId).Select(m => m.CurrentReading).FirstOrDefaultAsync(ct) ?? 0) + (s.MeterInterval ?? 0);
             await db.SaveChangesAsync(ct);
-            return Results.Created($"/api/pm-schedules/{s.Id}", new { s.Id, s.Code });
+            return Results.Created($"/api/pm-schedules/{s.Id}", new { s.Id, s.Code, Warnings = await WarningsAsync(db, s, ct) });
         }).RequirePermission(Permissions.PmManage);
 
         g.MapPut("/{id:guid}", async (Guid id, ScheduleInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
@@ -251,7 +256,7 @@ public static class PmEndpoints
                 });
             }
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { s.Id });
+            return Results.Ok(new { s.Id, Warnings = await WarningsAsync(db, s, ct) });
         }).RequirePermission(Permissions.PmManage);
 
         g.MapDelete("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
@@ -571,13 +576,30 @@ public static class PmEndpoints
         }
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct)) v.Add("locationId", "Location must belong to the selected site.");
         if (i.AssetId is not null && !await db.Assets.AnyAsync(a => a.Id == i.AssetId && a.SiteId == i.SiteId, ct)) v.Add("assetId", "Asset must belong to the selected site.");
-        var taskIds = new[] { (Guid?)i.PmTaskId, i.LowerTaskId, i.UpperTaskId }.OfType<Guid>().Concat((i.ExtraTasks ?? []).Select(e => e.PmTaskId)).Distinct().ToList();
+        var taskIds = new[] { (Guid?)i.PmTaskId, i.LowerTaskId, i.UpperTaskId }.OfType<Guid>().Concat((i.ExtraTasks ?? []).Select(e => e.PmTaskId))
+            .Concat((i.AssetTemplates ?? []).Select(a => a.PmTaskId).OfType<Guid>()).Distinct().ToList();
+        if ((i.AssetTemplates ?? []).Any(a => !round.Contains(a.AssetId))) v.Add("assetTemplates", "Give templates only to assets on the list.");
         if (await db.PmTasks.CountAsync(x => taskIds.Contains(x.Id), ct) != taskIds.Count) v.Add("pmTaskId", "Choose a valid PM task.");
         if (i.TradeId is not null && !await db.Trades.AnyAsync(x => x.Id == i.TradeId, ct)) v.Add("tradeId", "Unknown trade.");
         if (i.Type == PmScheduleType.Meter && (i.MeterId is null || !await db.Meters.AnyAsync(x => x.Id == i.MeterId, ct))) v.Add("meterId", "Choose a meter.");
+        if ((i.NonWorkingDaysOverride ?? []).Distinct().Count() >= 7) v.Add("nonWorkingDaysOverride", "Leave at least one working day.");
         if ((i.RecipientIds ?? []).Distinct().Count() > 20) v.Add("recipientIds", "At most 20 recipients.");
         else await CheckRecipientsAsync(db, v, i.RecipientIds, ct);
         return v;
+    }
+
+    public const string NoStepsWarning = "These assets get no checklist steps: {0}.";
+
+    /// <summary>What to point out after saving (0.12.0): a multi-asset PM's assets whose template has no steps.</summary>
+    internal static async Task<List<string>> WarningsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct)
+    {
+        if (s.Assets.Count == 0) return [];
+        var templateIds = s.Assets.Select(a => a.PmTaskId ?? s.PmTaskId).Distinct().ToList();
+        var stepless = (await db.PmTasks.AsNoTracking().Where(t => templateIds.Contains(t.Id) && !t.Steps.Any()).Select(t => t.Id).ToListAsync(ct)).ToHashSet();
+        var assets = s.Assets.Where(a => stepless.Contains(a.PmTaskId ?? s.PmTaskId)).OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList();
+        if (assets.Count == 0) return [];
+        var numbers = await db.Assets.AllSites().AsNoTracking().Where(a => assets.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => a.AssetNumber, ct);
+        return [Translator.T(string.Format(NoStepsWarning, string.Join(", ", assets.Select(a => numbers.GetValueOrDefault(a) ?? "?"))))];
     }
 
     /// <summary>Pauses or resumes a schedule; resuming a calendar schedule moves its next due date to the first one from today.</summary>
@@ -592,6 +614,12 @@ public static class PmEndpoints
         s.Description = i.Description.Clean(); s.SiteId = i.SiteId; s.LocationId = i.LocationId; s.AssetId = i.AssetId; s.TradeId = i.TradeId; s.TeamId = i.TeamId; s.Priority = i.Priority;
         if (i.OnlyWhenStopped is { } stopped) s.OnlyWhenStopped = stopped; // left out (older pages, the import): unchanged
         if (i.RecipientIds is not null) s.RecipientIds = i.RecipientIds.Distinct().ToList(); // left out: unchanged
+        if (i.ManagesRules == true)
+        {
+            // Null = the organization's rule (0.12.0); pages and the import that don't manage rules leave them as they are.
+            s.SkipStatusesOverride = i.SkipStatusesOverride?.Distinct().ToList(); s.NonWorkingDaysOverride = i.NonWorkingDaysOverride?.Distinct().ToList();
+            s.NoStackingOverride = i.NoStackingOverride;
+        }
         s.AssigneeIds = (i.AssigneeIds ?? []).Distinct().ToList(); s.PmTaskId = i.PmTaskId; s.Type = i.Type; s.Basis = i.Basis; s.Frequency = i.Frequency;
         s.Unit = i.Type == PmScheduleType.FixedInterval || i.TimeBased ? i.Unit : FrequencyUnit.Month;
         s.WeekOfMonth = i.Type == PmScheduleType.DayOfWeekInMonth ? i.WeekOfMonth : null; s.DayOfWeek = i.Type == PmScheduleType.DayOfWeekInMonth ? i.DayOfWeek : null;
@@ -608,6 +636,12 @@ public static class PmEndpoints
             var existing = s.Assets.FirstOrDefault(a => a.AssetId == listed[n]);
             if (existing is null) s.Assets.Add(new PmScheduleAsset { PmScheduleId = s.Id, AssetId = listed[n], Sequence = n + 1 });
             else existing.Sequence = n + 1;
+        }
+        if (i.AssetTemplates is not null)
+        {
+            // Each asset's own template (0.12.0); assets not named use the PM's. Left out: unchanged.
+            var own = i.AssetTemplates.GroupBy(a => a.AssetId).ToDictionary(g => g.Key, g => g.First().PmTaskId);
+            foreach (var a in s.Assets) a.PmTaskId = own.GetValueOrDefault(a.AssetId) is { } tid && tid != i.PmTaskId ? tid : null;
         }
         var want = (i.ExtraTasks ?? []).GroupBy(e => e.PmTaskId).Select(e => e.First()).Where(e => e.PmTaskId != i.PmTaskId).ToList();
         s.ExtraTasks.RemoveAll(e => want.All(w => w.PmTaskId != e.PmTaskId));
