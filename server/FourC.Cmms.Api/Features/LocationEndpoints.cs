@@ -34,6 +34,7 @@ public static class SiteEndpoints
         g.MapPost("/", async (SiteInput input, CmmsDbContext db, CancellationToken ct) =>
         {
             var v = await ValidateAsync(input, null, db, ct);
+            if (db.CurrentSiteIds is not null) v.Add("code", OnlyEveryoneAddsSites); // they couldn't see the new site
             if (!v.IsValid) return v.Problem();
             var site = CreateSite(db, input);
             await db.SaveChangesAsync(ct);
@@ -65,6 +66,8 @@ public static class SiteEndpoints
     }
 
     /// <summary>The checks that need no database (shared with the import).</summary>
+    internal const string OnlyEveryoneAddsSites = "Only people who see every site can add sites.";
+
     internal static Validator SiteRules(SiteInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200)
         .MaxLength("address", i.Address, "Address", 500).MaxLength("city", i.City, "City", 100).MaxLength("country", i.Country, "Country", 100)
         .When(i.Latitude is < -90 or > 90, "latitude", "Latitude must be between -90 and 90.")

@@ -697,5 +697,7 @@
  "This code is already used by a team in a site you can't see.": "هذا الرمز مستخدم بالفعل لفريق في موقع لا يمكنك رؤيته.",
  "Choose an active team of this site.": "اختر فريقًا نشطًا من هذا الموقع.",
  "This team has open work or PM schedules. Give them to someone else first, or mark the team inactive.": "لدى هذا الفريق أعمال مفتوحة أو جداول صيانة وقائية. أسندها إلى غيره أولًا، أو اجعل الفريق غير نشط.",
- "Colour": "اللون"
+ "Colour": "اللون",
+ "{0} is used in a site you can't see.": "{0} مستخدم في موقع لا يمكنك رؤيته.",
+ "Only people who see every site can add sites.": "لا يضيف المواقع إلا من يرى جميع المواقع."
 }

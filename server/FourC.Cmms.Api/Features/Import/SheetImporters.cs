@@ -1,5 +1,6 @@
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Assets;
+using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Inventory;
 using FourC.Cmms.Core.Locations;
 using FourC.Cmms.Core.People;
@@ -38,6 +39,12 @@ internal abstract class RecordImporter<TEntity> : ISheetImporter where TEntity :
     /// <summary>The records the sheet's keys refer to, tracked, by key.</summary>
     protected Dictionary<string, TEntity> Existing { get; } = new(StringComparer.OrdinalIgnoreCase);
 
+    /// <summary>Keys taken by records in sites the person can't see (codes unique across the organization): those rows are problems.</summary>
+    private readonly HashSet<string> _hidden = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>Notes keys found past the person's site limits that aren't among the visible records.</summary>
+    protected void Hide(IEnumerable<string> keys) { foreach (var k in keys) if (!Existing.ContainsKey(k)) _hidden.Add(k); }
+
     public abstract Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct);
 
     /// <summary>The order to take the rows in; the sheet's own by default.</summary>
@@ -68,6 +75,11 @@ internal abstract class RecordImporter<TEntity> : ISheetImporter where TEntity :
     {
         var key = KeyOf(row);
         Existing.TryGetValue(key, out var existing);
+        if (existing is null && _hidden.Contains(key))
+        {
+            row.Problem(Translator.T($"{Shown(row)} is used in a site you can't see."));
+            return new RowResult(row.Number, Shown(row), RowOutcome.Problem, [], row.Problems);
+        }
         var current = existing is null ? Defaults() : Values(c, existing);
         var next = new Dictionary<string, object?>(current);
         foreach (var k in row.Keys.Where(row.Has)) next[k] = row.Value(k);
@@ -178,6 +190,7 @@ internal sealed class SiteImporter : RecordImporter<Site>
     {
         var codes = Codes(rows, "code");
         Keep(await ByKey(c.Db.Sites.Where(s => codes.Contains(s.Code)), s => s.Code, ct));
+        if (c.Db.CurrentSiteIds is not null) Hide(await c.Db.Sites.AllSites().Where(s => codes.Contains(s.Code)).Select(s => s.Code).ToListAsync(ct));
     }
 
     protected override Dictionary<string, object?> Values(ImportContext c, Site s) => new()
@@ -192,6 +205,7 @@ internal sealed class SiteImporter : RecordImporter<Site>
         var rules = SiteEndpoints.SiteRules(input);
         if (row.Has("timeZone") && !TimeZoneInfo.TryFindSystemTimeZoneById(input.TimeZone!, out _))
             rules.Add("timeZone", $"{input.TimeZone} isn't a time zone CMX knows (for example Africa/Cairo).");
+        if (existing is null && c.Db.CurrentSiteIds is not null) rules.Add("code", SiteEndpoints.OnlyEveryoneAddsSites);
         if (!Accept(row, rules)) return Task.FromResult<Site?>(null);
         if (existing is not null) { SiteEndpoints.UpdateSite(existing, input); return Task.FromResult<Site?>(null); }
         return Task.FromResult<Site?>(SiteEndpoints.CreateSite(c.Db, input));
@@ -215,6 +229,9 @@ internal sealed class LocationImporter : RecordImporter<Location>
         var siteIds = Codes(rows, "siteCode").Select(s => c.Sites.TryGetValue(s, out var id) ? id : Guid.Empty).Where(id => id != Guid.Empty).ToList();
         var found = await c.Db.Locations.Where(l => siteIds.Contains(l.SiteId) && codes.Contains(l.Code)).ToListAsync(ct);
         foreach (var l in found) Existing[$"{c.CodeOf.GetValueOrDefault(l.SiteId)}|{l.Code}"] = l;
+        if (c.Db.CurrentBranchPaths is not null) // other branches of the same site
+            Hide((await c.Db.Locations.AllSites().Where(l => siteIds.Contains(l.SiteId) && codes.Contains(l.Code)).Select(l => new { l.SiteId, l.Code }).ToListAsync(ct))
+                .Select(l => $"{c.CodeOf.GetValueOrDefault(l.SiteId)}|{l.Code}"));
     }
 
     protected override Dictionary<string, object?> Values(ImportContext c, Location l) => new()
@@ -418,6 +435,7 @@ internal sealed class StoreImporter : RecordImporter<Store>
     {
         var codes = Codes(rows, "code");
         Keep(await ByKey(c.Db.Stores.Where(x => codes.Contains(x.Code)), x => x.Code, ct));
+        if (c.Db.CurrentSiteIds is not null) Hide(await c.Db.Stores.AllSites().Where(x => codes.Contains(x.Code)).Select(x => x.Code).ToListAsync(ct));
     }
 
     protected override Dictionary<string, object?> Values(ImportContext c, Store x) => new()
@@ -464,6 +482,7 @@ internal sealed class AssetImporter : RecordImporter<Asset>
     {
         var numbers = Codes(rows, "assetNumber");
         Keep(await ByKey(c.Db.Assets.Where(a => numbers.Contains(a.AssetNumber)), a => a.AssetNumber, ct));
+        if (c.Db.CurrentSiteIds is not null) Hide(await c.Db.Assets.AllSites().Where(a => numbers.Contains(a.AssetNumber)).Select(a => a.AssetNumber).ToListAsync(ct));
         _toNumber = c.Settings.AutoNumberAssets ? rows.Count(r => !r.HasProblems && !r.Has("assetNumber")) : 0;
     }
 
@@ -1086,6 +1105,7 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
     {
         var codes = Codes(rows, "code");
         Keep(await ByKey(c.Db.PmSchedules.Include(s => s.ExtraTasks).Include(s => s.Assets).Where(s => codes.Contains(s.Code)), s => s.Code, ct));
+        if (c.Db.CurrentSiteIds is not null) Hide(await c.Db.PmSchedules.AllSites().Where(s => codes.Contains(s.Code)).Select(s => s.Code).ToListAsync(ct));
     }
 
     protected override Dictionary<string, object?> Values(ImportContext c, PmSchedule s) => new()
