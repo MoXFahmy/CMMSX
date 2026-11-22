@@ -6,6 +6,8 @@ export type TechJob = {
   holdReason?: HoldReason | null; dueDate?: string | null; dueAt?: string | null; plannedStart?: string | null; siteId: string;
   /** The team the job was given to (0.9.0): it's on this phone because the person is in that team. */
   teamName?: string | null;
+  /** 0.10.0: when the work may be done, and "only while the asset is stopped". */
+  accessWindows?: { start: string; end: string; note?: string | null }[]; onlyWhenStopped?: boolean;
   /** downSince: when the asset's open stop began (as of the last refresh); empty while it runs. */
   asset?: { id: string; assetNumber: string; name: string; notesToTechnician?: string | null; downSince?: string | null } | null;
   /** The job's own stop on the asset's downtime log (as of the last refresh): completing the job ends it and fills the downtime. */
@@ -24,7 +26,7 @@ export type TechJob = {
 export type TechBundle = {
   employeeId: string; userId: string; jobs: TechJob[];
   failureCodes: { id: string; code: string; name: string }[];
-  completionRules: { notes: boolean; labour: boolean; allSteps: boolean; failureCodeOnBreakdown: boolean };
+  completionRules: { notes: boolean; labour: boolean; allSteps: boolean; failureCodeOnBreakdown: boolean; holdNote?: boolean };
 };
 
 /** The assets, locations and meters of my sites (GET /api/tech/places), for scanning offline. */

@@ -19,10 +19,11 @@ import { AssetPicker } from '@/components/AssetPicker';
 import { EmployeePicker, useEmployees } from '@/components/EmployeePicker';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, notifyError } from '@/components/utils';
+import { StoppedBadge } from '@/components/AccessWindowsEditor';
 import { BulkBar, FilterChips, ListTools, listText, rangeText, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
 /** Filters behind "More filters"; they live in the address like the others. */
-const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source', 'completedFrom'] as const;
+const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source', 'completedFrom', 'cancelReasonId', 'onlyWhenStopped'] as const;
 const isoDay = (d: string | Date | null) => (d ? dayjs(d).format('YYYY-MM-DD') : null);
 
 const TABS: { key: string; statuses: WorkOrderStatus[] | null }[] = [
@@ -33,11 +34,11 @@ const TABS: { key: string; statuses: WorkOrderStatus[] | null }[] = [
 /** Statuses a bulk change offers; closing, cancelling (and reopening those) need the close permission, as one at a time. */
 const BULK_STATUSES: WorkOrderStatus[] = ['InProgress', 'OnHold', 'Completed', 'Open', 'Closed', 'Cancelled'];
 
-type BulkBody = { status?: { status: WorkOrderStatus; holdReason?: HoldReason | null; completionNotes?: string | null }; priority?: WorkPriority; addAssigneeIds?: string[] };
+type BulkBody = { status?: { status: WorkOrderStatus; holdReason?: HoldReason | null; completionNotes?: string | null; cancelReasonId?: string | null; note?: string | null }; priority?: WorkPriority; addAssigneeIds?: string[] };
 
 export function WorkOrdersPage() {
   const { t } = useTranslation();
-  const { can, terms } = useAuth();
+  const { can, terms, me } = useAuth();
   const navigate = useNavigate();
   const qc = useQueryClient();
   const lp = useListParams<WorkOrderListItem>({ sort: 'createdAt', dir: 'desc' });
@@ -51,6 +52,7 @@ export function WorkOrdersPage() {
     dueSoon: view === 'dueSoon' ? 'true' : '', responseLate: view === 'responseLate' ? 'true' : '',
     locationId: p('locationId'), assigneeId: p('assigneeId'), teamId: p('teamId'), createdFrom: p('createdFrom'), createdTo: p('createdTo'),
     dueFrom: p('dueFrom'), dueTo: p('dueTo'), source: p('source'), completedFrom: p('completedFrom'),
+    cancelReasonId: p('cancelReasonId'), onlyWhenStopped: p('onlyWhenStopped'),
   };
   const listQuery = { ...base, status: statuses ?? undefined, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
   const { data, isFetching } = useQuery({
@@ -61,6 +63,7 @@ export function WorkOrdersPage() {
   const { data: summary } = useQuery({ queryKey: ['work-orders', 'summary', base], queryFn: () => get<{ byStatus: { status: WorkOrderStatus; count: number }[]; overdue: number }>('/work-orders/summary', base) });
   const { data: h } = useHierarchy();
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
+  const { data: cancelReasons } = useQuery({ queryKey: ['cancel-reasons'], queryFn: () => get<Lookup[]>('/cancel-reasons') });
   const { data: filterAsset } = useQuery({ queryKey: ['asset', p('assetId')], queryFn: () => get<{ assetNumber: string; name: string }>(`/assets/${p('assetId')}`), enabled: !!p('assetId') });
   const count = (s: WorkOrderStatus[] | null) => (summary?.byStatus ?? []).filter((x) => !s || s.includes(x.status)).reduce((a, b) => a + b.count, 0);
   const filtersActive = ['search', 'siteId', 'priority', 'type', 'tradeId', ...EXTRA_FILTERS].some((k) => p(k));
@@ -77,7 +80,8 @@ export function WorkOrdersPage() {
     { accessor: 'number', title: t('wo.number'), sortable: true, noWrap: true,
       render: (w) => <Anchor component={Link} to={`/work-orders/${w.id}`} fw={600} fz="sm" onClick={(e) => e.stopPropagation()}>{w.number}</Anchor> },
     { accessor: 'title', title: t('common.name'), sortable: true, width: 300,
-      render: (w) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{w.title}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{t(`workType.${w.type}`)}{w.tradeName && ` · ${w.tradeName}`}</Text></Stack> },
+      render: (w) => <Stack gap={0}><Group gap={4} wrap="nowrap"><Text fz="sm" lineClamp={1}>{w.title}</Text><StoppedBadge show={w.onlyWhenStopped} size="xs" /></Group>
+        <Text fz="xs" c="dimmed" lineClamp={1}>{t(`workType.${w.type}`)}{w.tradeName && ` · ${w.tradeName}`}{w.cancelReasonName && ` · ${w.cancelReasonName}`}</Text></Stack> },
     { accessor: 'status', title: t('common.status'), sortable: true, noWrap: true,
       export: [{ key: 'status' }, { key: 'holdReason', title: t('wo.holdReason') }],
       render: (w) => <Stack gap={2}><WoStatusBadge status={w.status} />{w.holdReason && <Text fz={11} c="dimmed">{t(`holdReason.${w.holdReason}`)}</Text>}</Stack> },
@@ -117,6 +121,8 @@ export function WorkOrdersPage() {
     { keys: ['completedFrom'], label: t('wo.completedSince'), format: ([v]) => fmtDate(v) },
     { keys: ['dueFrom', 'dueTo'], label: t('wo.dueBetween'), format: rangeText(fmtDate, t) },
     { keys: ['source'], label: t('wo.source'), format: ([v]) => sources[v] ?? v },
+    { keys: ['cancelReasonId'], label: t('wo.cancelReason'), format: ([v]) => cancelReasons?.find((x) => x.id === v)?.name ?? '…' },
+    { keys: ['onlyWhenStopped'], label: t('accessWindows.onlyWhenStopped'), format: () => t('common.yes') },
   ];
 
   // ---- bulk actions ----
@@ -127,6 +133,11 @@ export function WorkOrdersPage() {
   const selectionKey = JSON.stringify(listQuery);
   useEffect(() => setSelected([]), [selectionKey]);
   const [statusTarget, setStatusTarget] = useState<WorkOrderStatus | null>(null);
+  const [cancelReasonId, setCancelReasonId] = useState<string | null>(null);
+  const [statusNote, setStatusNote] = useState('');
+  const noteRule = statusTarget ? (statusTarget === 'OnHold' && (me?.tenant.settings.commentRequiredFor ?? []).includes('hold') ? 'hold'
+    : statusTarget === 'Cancelled' && (me?.tenant.settings.commentRequiredFor ?? []).includes('cancel') ? 'cancel' : null) : null;
+  const activeReasons = (cancelReasons ?? []).filter((x) => x.isActive);
   const [holdReason, setHoldReason] = useState<HoldReason | null>(null);
   const [notes, setNotes] = useState('');
   const [techOpen, setTechOpen] = useState(false);
@@ -181,6 +192,10 @@ export function WorkOrdersPage() {
             <Select label={t('teams.team')} placeholder={t('common.all')} data={teamOptions(teams, p('teamId'))} value={p('teamId') || null} onChange={(v) => set({ teamId: v })} clearable searchable />
             <Select label={t('wo.source')} placeholder={t('common.all')} value={p('source') || null} onChange={(v) => set({ source: v })} clearable
               data={[{ value: 'pm', label: t('wo.sourcePm') }, { value: 'request', label: t('wo.sourceRequest') }, { value: 'direct', label: t('wo.sourceDirect') }]} />
+            <Select label={t('wo.cancelReason')} placeholder={t('common.all')} data={(cancelReasons ?? []).map((x) => ({ value: x.id, label: x.name }))}
+              value={p('cancelReasonId') || null} onChange={(v) => set({ cancelReasonId: v })} clearable />
+            <Select label={t('accessWindows.onlyWhenStopped')} placeholder={t('common.all')} data={[{ value: 'true', label: t('common.yes') }]}
+              value={p('onlyWhenStopped') || null} onChange={(v) => set({ onlyWhenStopped: v })} clearable />
             <DatePickerInput type="range" label={t('wo.createdBetween')} placeholder={t('common.all')} clearable valueFormat="DD MMM YYYY" allowSingleDateInRange
               value={[p('createdFrom') || null, p('createdTo') || null]} onChange={([a, b]) => set({ createdFrom: isoDay(a), createdTo: isoDay(b) })} />
             <DatePickerInput type="range" label={t('wo.dueBetween')} placeholder={t('common.all')} clearable valueFormat="DD MMM YYYY" allowSingleDateInRange
@@ -229,12 +244,15 @@ export function WorkOrdersPage() {
           <Text fz="sm" c="dimmed">{t('list.statusHint')}</Text>
           {statusTarget === 'OnHold' && <Select label={t('wo.holdReason')} required data={HOLD_REASONS.map((r) => ({ value: r, label: t(`holdReason.${r}`) }))}
             value={holdReason} onChange={(v) => setHoldReason(v as HoldReason | null)} />}
+          {statusTarget === 'Cancelled' && activeReasons.length > 0 && <Select label={t('wo.cancelReason')} required data={activeReasons.map((x) => ({ value: x.id, label: x.name }))}
+            value={cancelReasonId} onChange={setCancelReasonId} />}
+          {(statusTarget === 'OnHold' || statusTarget === 'Cancelled') && <Textarea label={t('wo.note')} required={!!noteRule} autosize minRows={2} value={statusNote} onChange={(e) => setStatusNote(e.currentTarget.value)} />}
           {(statusTarget === 'Closed' || statusTarget === 'Cancelled') && <Text fz="sm" c="orange">{t('list.statusConfirm', { count: selected.length, status: t(`woStatus.${statusTarget}`).toLowerCase() })}</Text>}
           {statusTarget === 'Completed' && <Textarea label={t('list.completionNotesShared')} autosize minRows={3} value={notes} onChange={(e) => setNotes(e.currentTarget.value)} />}
           <Group justify="flex-end">
             <Button variant="default" onClick={() => setStatusTarget(null)}>{t('common.cancel')}</Button>
-            <Button loading={bulk.isPending} disabled={statusTarget === 'OnHold' && !holdReason}
-              onClick={() => statusTarget && bulk.mutate({ status: { status: statusTarget, holdReason, completionNotes: notes.trim() || null } })}>
+            <Button loading={bulk.isPending} disabled={(statusTarget === 'OnHold' && !holdReason) || (statusTarget === 'Cancelled' && activeReasons.length > 0 && !cancelReasonId) || (!!noteRule && !statusNote.trim())}
+              onClick={() => statusTarget && bulk.mutate({ status: { status: statusTarget, holdReason, completionNotes: notes.trim() || null, cancelReasonId: statusTarget === 'Cancelled' ? cancelReasonId : null, note: statusNote.trim() || null } })}>
               {statusTarget ? t(`woStatus.${statusTarget}`) : ''}
             </Button>
           </Group>

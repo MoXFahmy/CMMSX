@@ -17,7 +17,8 @@ public static class PlanningBoardEndpoints
     /// <param name="PlannedHours">Their own planned hours only (Undo puts these back).</param>
     public sealed record BoardAssignee(Guid EmployeeId, decimal? Hours, decimal? PlannedHours);
     public sealed record BoardJob(Guid Id, string Number, string Title, WorkPriority Priority, WorkOrderStatus Status, Guid SiteId, Guid? AssetId, string? AssetNumber,
-        string? AssetName, DateOnly? Day, DateOnly? PlannedStart, DateTimeOffset? DueAt, SlaView Sla, decimal? EstimatedHours, List<BoardAssignee> Assignees);
+        string? AssetName, DateOnly? Day, DateOnly? PlannedStart, DateTimeOffset? DueAt, SlaView Sla, decimal? EstimatedHours, List<BoardAssignee> Assignees,
+        List<AccessWindow>? AccessWindows = null, bool OutsideWindows = false, bool OnlyWhenStopped = false);
     /// <param name="Hours">Working hours on each day of the week (index = day, Sunday first), from their working pattern.</param>
     public sealed record BoardPerson(Guid Id, string Name, List<Guid> TradeIds, decimal[] Hours);
     /// <summary>Day: the new planned start. From → To: move that person's assignment; To alone adds a person; From alone removes one.</summary>
@@ -48,6 +49,8 @@ public static class PlanningBoardEndpoints
         public DateTimeOffset? CompletedAt { get; init; }
         public decimal? EstimatedHours { get; init; }
         public List<AssigneeRow> Assignees { get; init; } = [];
+        public List<AccessWindow> AccessWindows { get; init; } = [];
+        public bool OnlyWhenStopped { get; init; }
     }
     private sealed class AssigneeRow { public Guid EmployeeId { get; init; } public decimal? PlannedHours { get; init; } }
 
@@ -57,18 +60,21 @@ public static class PlanningBoardEndpoints
         AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, Day = w.PlannedStart ?? w.DueDate, PlannedStart = w.PlannedStart, DueAt = w.DueAt,
         DueFromTarget = w.DueFromTarget, StartBy = w.StartBy, RespondedAt = w.RespondedAt, CompletedAt = w.CompletedAt, EstimatedHours = w.EstimatedHours,
         Assignees = w.Assignees.Select(a => new AssigneeRow { EmployeeId = a.EmployeeId, PlannedHours = a.PlannedHours }).ToList(),
+        AccessWindows = w.AccessWindows, OnlyWhenStopped = w.OnlyWhenStopped,
     });
 
     public static void MapPlanningBoardEndpoints(this RouteGroupBuilder api)
     {
         var g = api.MapGroup("/planning").WithTags("Planning board");
 
-        g.MapGet("/board", async (DateOnly from, DateOnly to, Guid? siteId, Guid? tradeId, Guid? teamId, CmmsDbContext db, ITenantContext ctx, PermissionService perms, CancellationToken ct) =>
+        g.MapGet("/board", async (DateOnly from, DateOnly to, Guid? siteId, Guid? tradeId, Guid? teamId, bool? onlyWhenStopped, CmmsDbContext db, ITenantContext ctx,
+            PermissionService perms, CancellationToken ct) =>
         {
             if (to < from || to.DayNumber - from.DayNumber >= MaxDays) throw new DomainException("Choose a range of up to six weeks.");
             var settings = await SlaQueries.SettingsAsync(db, ct);
             var now = DateTimeOffset.UtcNow;
-            var today = Sla.LocalDay(now, Sla.Zone(settings.TimeZone));
+            var zone = Sla.Zone(settings.TimeZone);
+            var today = Sla.LocalDay(now, zone);
 
             var employees = await db.Employees.AsNoTracking().Where(e => e.IsActive).Select(e => new { e.Id, e.FullName, e.TradeIds, e.SiteIds, e.WorkingHours }).ToListAsync(ct);
             var siteHours = (await db.Sites.AllSites().AsNoTracking().Select(s => new { s.Id, s.Settings }).ToListAsync(ct)).ToDictionary(s => s.Id, s => s.Settings.WorkingHours);
@@ -86,6 +92,7 @@ public static class PlanningBoardEndpoints
 
             var q = db.WorkOrders.AsNoTracking().Where(w => w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold);
             if (siteId is { } site) q = q.Where(w => w.SiteId == site);
+            if (onlyWhenStopped == true) q = q.Where(w => w.OnlyWhenStopped);
             if (tradeId is { } trade)
             {
                 var ofTrade = employees.Where(e => e.TradeIds.Contains(trade)).Select(e => e.Id).ToList();
@@ -107,7 +114,8 @@ public static class PlanningBoardEndpoints
                 SlaQueries.Work(settings, w.Priority, w.Status, w.StartBy, w.RespondedAt, w.DueAt, w.DueFromTarget, w.CompletedAt, now), w.EstimatedHours,
                 // Each person's share: their own planned hours, else the estimate split between the people on it.
                 w.Assignees.Select(a => new BoardAssignee(a.EmployeeId, a.PlannedHours
-                    ?? (w.EstimatedHours is { } est && w.Assignees.Count > 0 ? Math.Round(est / w.Assignees.Count, 2) : null), a.PlannedHours)).ToList())).ToList();
+                    ?? (w.EstimatedHours is { } est && w.Assignees.Count > 0 ? Math.Round(est / w.Assignees.Count, 2) : null), a.PlannedHours)).ToList(),
+                w.AccessWindows, w.Day is { } day && !AccessWindows.Covers(w.AccessWindows, day, zone), w.OnlyWhenStopped)).ToList();
 
             var pms = (await perms.GetAsync(ctx.UserId!.Value)).Contains(Permissions.PmView)
                 ? (await PmEndpoints.ForecastAsync(db, from, to, siteId, ct)).Where(x => x.Date >= from && x.Date <= to).ToList()

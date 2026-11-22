@@ -20,7 +20,7 @@ public static class AssetEndpoints
         DateOnly? CommissionedOn, DateOnly? DisposedOn, decimal? PurchasePrice, decimal? CurrentValue, decimal? SalvageValue,
         decimal? ExpectedLifeYears, decimal? DowntimeCostPerHour, WarrantyType WarrantyType, DateOnly? WarrantyExpiresOn, string? WarrantyNotes,
         string? Notes, string? NotesToTechnician, Dictionary<string, string?>? CustomFields, string? RowVersion = null,
-        decimal? RunsHoursPerDay = null, List<DayOfWeek>? RunsOn = null);
+        decimal? RunsHoursPerDay = null, List<DayOfWeek>? RunsOn = null, bool? OnlyWhenStopped = null);
 
     public sealed record TransferInput(Guid SiteId, Guid? LocationId, string? Reason, bool IncludeChildren = true);
     public sealed record BulkInput(Guid[] Ids, AssetStatus? Status, Criticality? Criticality, Guid? CategoryId);
@@ -96,7 +96,7 @@ public static class AssetEndpoints
                 a.ParentAssetId, ParentAsset = a.ParentAsset is null ? null : new { a.ParentAsset.Id, a.ParentAsset.AssetNumber, a.ParentAsset.Name },
                 a.Status, a.Criticality, a.Manufacturer, a.Model, a.SerialNumber, a.Barcode, a.OperationNumber,
                 a.CommissionedOn, a.DisposedOn, a.PurchasePrice, a.CurrentValue, a.SalvageValue, a.ExpectedLifeYears, a.DowntimeCostPerHour,
-                a.WarrantyType, a.WarrantyExpiresOn, a.WarrantyNotes, a.Notes, a.NotesToTechnician, a.CustomFields,
+                a.WarrantyType, a.WarrantyExpiresOn, a.WarrantyNotes, a.Notes, a.NotesToTechnician, a.CustomFields, a.OnlyWhenStopped,
                 a.RunsHoursPerDay, a.RunsOn,
                 DownSince = await db.DowntimeEvents.Where(e => e.AssetId == id && e.EndedAt == null).Select(e => (DateTimeOffset?)e.StartedAt).FirstOrDefaultAsync(ct),
                 ChildCount = await db.Assets.CountAsync(x => x.ParentAssetId == id, ct),
@@ -388,6 +388,7 @@ public static class AssetEndpoints
         // Left out (older screens, the import without these columns): the running time stays as it is.
         if (i.RunsHoursPerDay is { } hours) a.RunsHoursPerDay = Math.Round(hours, 2); // kept to 2 decimals, as stored
         if (i.RunsOn is { Count: > 0 } days) a.RunsOn = days.Distinct().OrderBy(d => d).ToList();
+        if (i.OnlyWhenStopped is { } stopped) a.OnlyWhenStopped = stopped;
         // Preserve values of fields that don't apply to the current category (e.g. imported legacy data).
         foreach (var kv in custom) a.CustomFields[kv.Key] = kv.Value;
         foreach (var k in a.CustomFields.Keys.Where(k => i.CustomFields?.ContainsKey(k) == true && !custom.ContainsKey(k)).ToList())

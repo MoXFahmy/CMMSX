@@ -68,6 +68,10 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<WorkOrderPart> WorkOrderParts => Set<WorkOrderPart>();
     public DbSet<WorkOrderCost> WorkOrderCosts => Set<WorkOrderCost>();
     public DbSet<WorkOrderComment> WorkOrderComments => Set<WorkOrderComment>();
+    public DbSet<RequestType> RequestTypes => Set<RequestType>();
+    public DbSet<CancelReason> CancelReasons => Set<CancelReason>();
+    public DbSet<WorkRequestComment> WorkRequestComments => Set<WorkRequestComment>();
+    public DbSet<RequestFeedback> RequestFeedback => Set<RequestFeedback>();
     public DbSet<WorkOrderStatusChange> WorkOrderStatusChanges => Set<WorkOrderStatusChange>();
     public DbSet<PmTask> PmTasks => Set<PmTask>();
     public DbSet<PmTaskStep> PmTaskSteps => Set<PmTaskStep>();
@@ -327,6 +331,11 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasFilter("[IsDeleted] = 0");
             e.HasIndex(x => new { x.TenantId, x.Status });
             e.HasOne<DowntimeEvent>().WithMany().HasForeignKey(x => x.DowntimeEventId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.RequestType).WithMany().HasForeignKey(x => x.RequestTypeId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.ExtraRecipientIds).HasDefaultValueSql("'[]'");
+            e.Property(x => x.AccessWindows).HasConversion(JsonConverter<List<AccessWindow>>()).HasDefaultValueSql("'[]'").Metadata.SetValueComparer(JsonComparer<List<AccessWindow>>());
+            e.Property(x => x.FeedbackTokenHash).HasMaxLength(64).IsUnicode(false);
+            e.HasIndex(x => x.FeedbackTokenHash).HasFilter("[FeedbackTokenHash] IS NOT NULL");
         });
         b.Entity<WorkOrder>(e =>
         {
@@ -345,6 +354,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasIndex(x => new { x.TenantId, x.Status, x.DueDate });
             e.HasIndex(x => new { x.TenantId, x.AssetId });
             e.HasOne<DowntimeEvent>().WithMany().HasForeignKey(x => x.DowntimeEventId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.CancelReason).WithMany().HasForeignKey(x => x.CancelReasonId).OnDelete(DeleteBehavior.Restrict);
+            e.Property(x => x.AccessWindows).HasConversion(JsonConverter<List<AccessWindow>>()).HasDefaultValueSql("'[]'").Metadata.SetValueComparer(JsonComparer<List<AccessWindow>>());
         });
         b.Entity<WorkOrderAssignee>(e =>
         {
@@ -388,6 +399,36 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasIndex(x => new { x.TenantId, x.WorkOrderId });
         });
         b.Entity<WorkOrderComment>(e => { e.Property(x => x.UserName).HasMaxLength(200); e.HasIndex(x => new { x.TenantId, x.WorkOrderId }); });
+        b.Entity<RequestType>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.RecipientIds).HasDefaultValueSql("'[]'");
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasOne<Trade>().WithMany().HasForeignKey(x => x.DefaultTradeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Team>().WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Restrict);
+        });
+        b.Entity<CancelReason>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<WorkRequestComment>(e =>
+        {
+            e.Property(x => x.Body).HasMaxLength(4000); e.Property(x => x.UserName).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.WorkRequestId });
+            e.HasOne<WorkRequest>().WithMany().HasForeignKey(x => x.WorkRequestId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<RequestFeedback>(e =>
+        {
+            e.ToTable("RequestFeedback");
+            e.Property(x => x.Comment).HasMaxLength(2000); e.Property(x => x.ByName).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.WorkRequestId });
+            e.HasIndex(x => new { x.TenantId, x.AnsweredAt });
+            e.HasOne<WorkRequest>().WithMany().HasForeignKey(x => x.WorkRequestId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne<WorkOrder>().WithMany().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Restrict);
+        });
         b.Entity<WorkOrderStatusChange>(e =>
         {
             e.Property(x => x.Note).HasMaxLength(2000); e.Property(x => x.ChangedByName).HasMaxLength(200); e.Property(x => x.LegacyRef).HasMaxLength(200);
@@ -660,6 +701,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<WorkOrderPart>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
         b.Entity<WorkOrderCost>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
         b.Entity<WorkOrderComment>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
+        b.Entity<WorkRequestComment>().HasQueryFilter(SiteFilter, x => WorkRequests.Any(r => r.Id == x.WorkRequestId));
+        b.Entity<RequestFeedback>().HasQueryFilter(SiteFilter, x => WorkRequests.Any(r => r.Id == x.WorkRequestId));
         b.Entity<WorkOrderStatusChange>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
         b.Entity<WorkOrderTask>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
         b.Entity<WorkOrderAssignee>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));

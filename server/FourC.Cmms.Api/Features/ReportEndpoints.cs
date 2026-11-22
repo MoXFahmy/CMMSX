@@ -38,6 +38,10 @@ public static class ReportEndpoints
         new("wo-throughput", "Work", "Work order throughput", "Work orders raised and completed per month, on-time completion and average turnaround.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("pm-compliance", "Work", "PM compliance", "Preventive work due in the period: completed on time, late, or missed.", Permissions.PmView,
             [Range, SiteP, GroupBy("month", ("month", "Month"), ("schedule", "PM schedule"), ("trade", "Trade"))]),
+        new("requester-satisfaction", "Work", "Requester satisfaction", "Requesters' answers to finished work: accepted or refused, and their ratings.", Permissions.WorkOrdersView,
+            [Range, SiteP, GroupBy("month", ("month", "Month"), ("type", "Request type"), ("trade", "Trade"), ("team", "Team"), ("site", "Site"))]),
+        new("cancelled-work", "Work", "Cancelled work", "Work orders cancelled in the period, by reason.", Permissions.WorkOrdersView,
+            [Range, SiteP, GroupBy("reason", ("reason", "Reason"), ("month", "Month"), ("trade", "Trade"), ("site", "Site"))]),
         new("labor-hours", "Work", "Labour hours", "Hours, overtime and labour cost booked to work orders.", Permissions.WorkOrdersView,
             [Range, SiteP, GroupBy("employee", ("employee", "Employee"), ("trade", "Trade"), ("team", "Team"), ("type", "Work type"))]),
         new("reliability", "Reliability", "Asset reliability (MTBF / MTTR)", "Breakdowns per asset with downtime, mean time between failures and mean time to repair.", Permissions.WorkOrdersView, [Range, SiteP]),
@@ -85,6 +89,8 @@ public static class ReportEndpoints
                 "targets-met" => await TargetsMetAsync(db, a, ct),
                 "pm-compliance" => await PmComplianceAsync(db, a, ct),
                 "labor-hours" => await LaborAsync(db, a, ct),
+                "requester-satisfaction" => await SatisfactionAsync(db, a, ct),
+                "cancelled-work" => await CancelledAsync(db, a, ct),
                 "reliability" => await ReliabilityAsync(db, a, ct),
                 "failure-pareto" => await FailureParetoAsync(db, a, ct),
                 "downtime" => await DowntimeLogAsync(db, a, ct),
@@ -179,7 +185,7 @@ public static class ReportEndpoints
         if (a.SiteId is { } site) requests = requests.Where(r => r.SiteId == site);
         // Finished: decided, or completed/closed. Finished with no recorded time (imported history) can't be judged, so it isn't counted.
         var response = (await requests.Select(r => new { r.Priority, Deadline = r.RespondBy!.Value, Done = r.DecidedAt,
-                    Finished = r.Status == WorkRequestStatus.Approved || r.Status == WorkRequestStatus.Rejected }).ToListAsync(ct))
+                    Finished = r.Status == WorkRequestStatus.Approved || r.Status == WorkRequestStatus.Closed || r.Status == WorkRequestStatus.Rejected }).ToListAsync(ct))
             .Concat(await Wo(db, a).Where(w => w.WorkRequestId == null && w.Status != WorkOrderStatus.Cancelled && w.StartBy >= s && w.StartBy < e)
                 .Select(w => new { w.Priority, Deadline = w.StartBy!.Value, Done = w.RespondedAt,
                     Finished = w.Status == WorkOrderStatus.Completed || w.Status == WorkOrderStatus.Closed }).ToListAsync(ct))
@@ -373,6 +379,63 @@ public static class ReportEndpoints
             [new("asset", "Asset"), new("start", "Start", "datetime"), new("end", "End", "datetime"), new("hours", "Hours", "hours"), new("reason", "Reason"), new("from", "Source")],
             rows, null,
             [new("Stops", rows.Count), new("Assets stopped", stops.Select(x => x.AssetId).Distinct().Count()), new("Total hours", rows.Sum(r => (decimal)r["hours"]!), "hours")]);
+    }
+
+    private static async Task<ReportResult> SatisfactionAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
+    {
+        var (from, to) = (Start(a.From), End(a.To));
+        // Through the requests this person can see (0.9.0 access).
+        var requests = a.SiteId is { } s ? db.WorkRequests.AsNoTracking().Where(r => r.SiteId == s) : db.WorkRequests.AsNoTracking();
+        var answers = await db.RequestFeedback.AsNoTracking().Where(f => f.AnsweredAt >= from && f.AnsweredAt < to)
+            .Join(requests, f => f.WorkRequestId, r => r.Id, (f, r) => new
+            {
+                f.Accepted, f.Rating, f.AnsweredAt, Site = r.Site!.Name, Type = r.RequestType!.Name,
+                Trade = db.WorkOrders.Where(w => w.Id == f.WorkOrderId).Select(w => w.Trade!.Name).FirstOrDefault(),
+                Team = db.WorkOrders.Where(w => w.Id == f.WorkOrderId).Select(w => w.Team!.Name).FirstOrDefault(),
+            }).ToListAsync(ct);
+        string Key(DateTimeOffset at, string? site, string? type, string? trade, string? team) => a.GroupBy switch
+        {
+            "type" => type ?? "No type", "trade" => trade ?? "No trade", "team" => team ?? "No team", "site" => site ?? "",
+            _ => MonthLabel(at.Year, at.Month),
+        };
+        var groups = answers.GroupBy(x => Key(x.AnsweredAt, x.Site, x.Type, x.Trade, x.Team)).ToDictionary(g => g.Key, g => g.ToList());
+        var order = a.GroupBy is null or "month"
+            ? Months(a).Select(m => MonthLabel(m.Y, m.M)).Where(groups.ContainsKey).ToList()
+            : groups.Keys.OrderByDescending(k => groups[k].Count).ThenBy(k => k).ToList();
+        decimal? Avg(IEnumerable<int?> ratings) => ratings.OfType<int>().ToList() is { Count: > 0 } r ? Math.Round((decimal)r.Average(), 1) : null;
+        var rows = order.Select(k => Row(("group", k), ("answers", groups[k].Count), ("accepted", groups[k].Count(x => x.Accepted)), ("refused", groups[k].Count(x => !x.Accepted)),
+            ("rating", Avg(groups[k].Select(x => x.Rating))))).ToList();
+        return new("requester-satisfaction", "Requester satisfaction", Period(a),
+            [new("group", a.GroupBy switch { "type" => "Request type", "trade" => "Trade", "team" => "Team", "site" => "Site", _ => "Month" }), new("answers", "Answers", "number"),
+             new("accepted", "Accepted", "number"), new("refused", "Refused", "number"), new("rating", "Average rating", "number")],
+            rows, new Chart("bar", "group", ["accepted", "refused"], Stacked: true),
+            [new("Answers", answers.Count), new("Average rating", Avg(answers.Select(x => x.Rating))), new("Accepted", Pct(answers.Count(x => x.Accepted), answers.Count), "percent")]);
+    }
+
+    private static async Task<ReportResult> CancelledAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
+    {
+        var (from, to) = (Start(a.From), End(a.To));
+        // Work that is cancelled now, counted on the day of its (last) cancellation.
+        var cancelled = await Wo(db, a).Where(w => w.Status == WorkOrderStatus.Cancelled)
+            .Select(w => new
+            {
+                Reason = w.CancelReason!.Name, Trade = w.Trade!.Name, Site = w.Site!.Name,
+                At = db.WorkOrderStatusChanges.Where(c => c.WorkOrderId == w.Id && c.ToStatus == WorkOrderStatus.Cancelled).Max(c => (DateTimeOffset?)c.ChangedAt),
+            }).Where(x => x.At >= from && x.At < to).ToListAsync(ct);
+        string Key(DateTimeOffset at, string? reason, string? trade, string? site) => a.GroupBy switch
+        {
+            "month" => MonthLabel(at.Year, at.Month), "trade" => trade ?? "No trade", "site" => site ?? "", _ => reason ?? "No reason",
+        };
+        var groups = cancelled.GroupBy(x => Key(x.At!.Value, x.Reason, x.Trade, x.Site)).ToDictionary(g => g.Key, g => g.Count());
+        var order = a.GroupBy == "month"
+            ? Months(a).Select(m => MonthLabel(m.Y, m.M)).Where(groups.ContainsKey).ToList()
+            : groups.Keys.OrderByDescending(k => groups[k]).ThenBy(k => k).ToList();
+        var rows = order.Select(k => Row(("group", k), ("cancelled", groups[k]), ("share", Pct(groups[k], cancelled.Count)))).ToList();
+        return new("cancelled-work", "Cancelled work", Period(a),
+            [new("group", a.GroupBy switch { "month" => "Month", "trade" => "Trade", "site" => "Site", _ => "Reason" }), new("cancelled", "Cancelled", "number"),
+             new("share", "Share", "percent")],
+            rows, new Chart("bar", "group", ["cancelled"]),
+            [new("Cancelled", cancelled.Count), new("Without a reason", cancelled.Count(x => x.Reason is null))]);
     }
 
     private static async Task<ReportResult> FailureParetoAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)

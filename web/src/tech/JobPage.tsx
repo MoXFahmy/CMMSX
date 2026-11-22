@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from 'react';
+import { AccessWindowsList, StoppedBadge } from '@/components/AccessWindowsEditor';
 import { Alert, Anchor, Badge, Button, Card, Checkbox, Divider, Group, Modal, NumberInput, Select, Stack, Switch, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useNavigate, useParams } from 'react-router';
@@ -81,6 +82,9 @@ export function JobPage() {
           {!online && <Text fz="xs" mt={4}>{t('downtime.backRunningOffline')}</Text>}
         </Alert>
       )}
+      {(job.onlyWhenStopped || (job.accessWindows?.length ?? 0) > 0) && (
+        <Card><Stack gap={6}><StoppedBadge show={job.onlyWhenStopped} /><AccessWindowsList windows={job.accessWindows} /></Stack></Card>
+      )}
       {(job.asset?.notesToTechnician || job.location?.notesToTechnician) && (
         <Alert color="yellow" title={t('tech.notesToTech')}>{[job.asset?.notesToTechnician, job.location?.notesToTechnician].filter(Boolean).join('\n\n')}</Alert>
       )}
@@ -149,7 +153,7 @@ export function JobPage() {
       {online && <Anchor fz="xs" ta="center" href="/work-orders/new">{t('tech.newWorkOrder')}</Anchor>}
 
       <HoursModal opened={hoursOpen} onClose={() => setHoursOpen(false)} onSave={(p) => void change('labor.add', p)} />
-      <HoldModal opened={holdOpen} onClose={() => setHoldOpen(false)} onSave={(p) => void change('status.change', { status: 'OnHold', ...p })} />
+      <HoldModal opened={holdOpen} noteRequired={!!bundle?.completionRules.holdNote} onClose={() => setHoldOpen(false)} onSave={(p) => void change('status.change', { status: 'OnHold', ...p })} />
       <CompleteSheet opened={completeOpen} job={job} onClose={() => setCompleteOpen(false)} onDone={() => navigate('/tech')} />
     </Stack>
   );
@@ -197,7 +201,7 @@ function HoursModal({ opened, onClose, onSave }: { opened: boolean; onClose: () 
   );
 }
 
-function HoldModal({ opened, onClose, onSave }: { opened: boolean; onClose: () => void; onSave: (p: { holdReason: HoldReason; note: string | null }) => void }) {
+function HoldModal({ opened, noteRequired, onClose, onSave }: { opened: boolean; noteRequired: boolean; onClose: () => void; onSave: (p: { holdReason: HoldReason; note: string | null }) => void }) {
   const { t } = useTranslation();
   const [reason, setReason] = useState<HoldReason | null>(null);
   const [note, setNote] = useState('');
@@ -205,8 +209,8 @@ function HoldModal({ opened, onClose, onSave }: { opened: boolean; onClose: () =
     <Modal opened={opened} onClose={onClose} title={t('tech.hold')}>
       <Stack>
         <Select data-autofocus label={t('tech.holdReason')} data={HOLD_REASONS.map((r) => ({ value: r, label: t(`holdReason.${r}`) }))} value={reason} onChange={(v) => setReason(v as HoldReason)} />
-        <Textarea label={t('common.notes')} autosize value={note} onChange={(e) => setNote(e.currentTarget.value)} />
-        <Button disabled={!reason} onClick={() => { onSave({ holdReason: reason!, note: note.trim() || null }); setNote(''); onClose(); }}>{t('tech.hold')}</Button>
+        <Textarea label={t('common.notes')} required={noteRequired} autosize value={note} onChange={(e) => setNote(e.currentTarget.value)} />
+        <Button disabled={!reason || (noteRequired && !note.trim())} onClick={() => { onSave({ holdReason: reason!, note: note.trim() || null }); setNote(''); onClose(); }}>{t('tech.hold')}</Button>
       </Stack>
     </Modal>
   );

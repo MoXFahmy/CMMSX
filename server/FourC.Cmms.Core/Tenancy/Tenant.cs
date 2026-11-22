@@ -49,6 +49,10 @@ public class TenantSettings
     public bool EmailEnabled { get; set; }
     /// <summary>E-mail events (keys from <c>EmailEvents</c>) the organization switched off.</summary>
     public List<string> DisabledEmails { get; set; } = [];
+    /// <summary>Who gets each e-mail: event key → recipient kinds (<c>EmailRecipientKinds</c>). An event not listed uses its defaults.</summary>
+    public Dictionary<string, List<string>> EmailRecipients { get; set; } = [];
+    /// <summary>Actions that need a comment (<c>CommentActions</c>); completing follows <see cref="RequireCompletionNotes"/>.</summary>
+    public List<string> CommentRequiredFor { get; set; } = ["reject", "refuse"];
 
     /// <summary>PM generation skips occurrences of single-asset schedules (and drops round assets) whose asset has one of these statuses.</summary>
     public List<AssetStatus> PmSkipAssetStatuses { get; set; } = [];

@@ -106,6 +106,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<string>("NotesToTechnician")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<bool>("OnlyWhenStopped")
+                        .HasColumnType("bit");
+
                     b.Property<string>("OperationNumber")
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
@@ -2028,6 +2031,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasPrecision(18, 3)
                         .HasColumnType("decimal(18,3)");
 
+                    b.Property<bool>("OnlyWhenStopped")
+                        .HasColumnType("bit");
+
                     b.Property<Guid>("PmTaskId")
                         .HasColumnType("uniqueidentifier");
 
@@ -2697,6 +2703,68 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.ToTable("Tenants");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Work.CancelReason", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.ToTable("CancelReasons");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Work.FailureCode", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2759,6 +2827,141 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.ToTable("FailureCodes");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Work.RequestFeedback", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("Accepted")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("AnsweredAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Comment")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<int?>("Rating")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("ViaLink")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("WorkRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkOrderId");
+
+                    b.HasIndex("WorkRequestId");
+
+                    b.HasIndex("TenantId", "AnsweredAt");
+
+                    b.HasIndex("TenantId", "WorkRequestId");
+
+                    b.ToTable("RequestFeedback", (string)null);
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Work.RequestType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<bool>("AutoApprove")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("DefaultPriority")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("DefaultTradeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.PrimitiveCollection<string>("RecipientIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValueSql("'[]'");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid?>("TeamId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("DefaultTradeId");
+
+                    b.HasIndex("TeamId");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.ToTable("RequestTypes");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Work.TechAction", b =>
                 {
                     b.Property<Guid>("Id")
@@ -2812,11 +3015,20 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("AccessWindows")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValueSql("'[]'");
+
                     b.Property<Guid?>("AssetId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<bool>("AssetWasDown")
                         .HasColumnType("bit");
+
+                    b.Property<Guid?>("CancelReasonId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("CauseNotes")
                         .HasColumnType("nvarchar(max)");
@@ -2882,6 +3094,12 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
+
+                    b.Property<bool>("OnlyWhenStopped")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset?>("OverdueNotifiedFor")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateOnly?>("PlannedStart")
                         .HasColumnType("date");
@@ -2955,6 +3173,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssetId");
+
+                    b.HasIndex("CancelReasonId");
 
                     b.HasIndex("DowntimeEventId");
 
@@ -3341,8 +3561,17 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<string>("AccessWindows")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValueSql("'[]'");
+
                     b.Property<Guid?>("AssetId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("AwaitingFeedbackSince")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
@@ -3374,6 +3603,20 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<bool>("DueFromTarget")
                         .HasColumnType("bit");
 
+                    b.PrimitiveCollection<string>("ExtraRecipientIds")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValueSql("'[]'");
+
+                    b.Property<DateTimeOffset?>("FeedbackTokenExpiresAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("FeedbackTokenHash")
+                        .HasMaxLength(64)
+                        .IsUnicode(false)
+                        .HasColumnType("varchar(64)");
+
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
@@ -3389,8 +3632,14 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<bool>("OnlyWhenStopped")
+                        .HasColumnType("bit");
+
                     b.Property<int>("Priority")
                         .HasColumnType("int");
+
+                    b.Property<Guid?>("RequestTypeId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("RequesterEmail")
                         .HasMaxLength(256)
@@ -3448,7 +3697,12 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.HasIndex("DowntimeEventId");
 
+                    b.HasIndex("FeedbackTokenHash")
+                        .HasFilter("[FeedbackTokenHash] IS NOT NULL");
+
                     b.HasIndex("LocationId");
+
+                    b.HasIndex("RequestTypeId");
 
                     b.HasIndex("SiteId");
 
@@ -3462,6 +3716,45 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasIndex("TenantId", "Status");
 
                     b.ToTable("WorkRequests");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Work.WorkRequestComment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Body")
+                        .IsRequired()
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<bool>("ByRequester")
+                        .HasColumnType("bit");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("UserName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid>("WorkRequestId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("WorkRequestId");
+
+                    b.HasIndex("TenantId", "WorkRequestId");
+
+                    b.ToTable("WorkRequestComments");
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.DataProtection.EntityFrameworkCore.DataProtectionKey", b =>
@@ -3856,11 +4149,44 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Navigation("Part");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Work.RequestFeedback", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Work.WorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("WorkOrderId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.Work.WorkRequest", null)
+                        .WithMany()
+                        .HasForeignKey("WorkRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Work.RequestType", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.People.Trade", null)
+                        .WithMany()
+                        .HasForeignKey("DefaultTradeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FourC.Cmms.Core.People.Team", null)
+                        .WithMany()
+                        .HasForeignKey("TeamId")
+                        .OnDelete(DeleteBehavior.Restrict);
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrder", b =>
                 {
                     b.HasOne("FourC.Cmms.Core.Assets.Asset", "Asset")
                         .WithMany()
                         .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FourC.Cmms.Core.Work.CancelReason", "CancelReason")
+                        .WithMany()
+                        .HasForeignKey("CancelReasonId")
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.HasOne("FourC.Cmms.Core.Assets.DowntimeEvent", null)
@@ -3895,6 +4221,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Asset");
+
+                    b.Navigation("CancelReason");
 
                     b.Navigation("FailureCode");
 
@@ -3995,6 +4323,11 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasForeignKey("LocationId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("FourC.Cmms.Core.Work.RequestType", "RequestType")
+                        .WithMany()
+                        .HasForeignKey("RequestTypeId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("FourC.Cmms.Core.Locations.Site", "Site")
                         .WithMany()
                         .HasForeignKey("SiteId")
@@ -4005,7 +4338,18 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.Navigation("Location");
 
+                    b.Navigation("RequestType");
+
                     b.Navigation("Site");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Work.WorkRequestComment", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Work.WorkRequest", null)
+                        .WithMany()
+                        .HasForeignKey("WorkRequestId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("Microsoft.AspNetCore.Identity.IdentityUserClaim<System.Guid>", b =>

@@ -54,6 +54,7 @@ public static partial class TechEndpoints
                     // The job's own stop: completing it ends the stop and fills the downtime from it.
                     Downtime = db.DowntimeEvents.Where(e => e.Id == w.DowntimeEventId).Select(e => new { e.StartedAt, e.EndedAt }).FirstOrDefault(),
                     w.LocationId, LocationPath = w.Location == null ? null : w.Location.Path, LocationNotes = w.Location == null ? null : w.Location.NotesToTechnician,
+                    w.AccessWindows, w.OnlyWhenStopped,
                 }).ToListAsync(ct);
             var ids = jobs.Select(j => j.Id).ToList();
             var names = await LocationNamesAsync(db, jobs.Where(j => j.LocationPath != null).SelectMany(j => LocationEndpoints.PathIds(j.LocationPath!)).Distinct().ToList(), ct);
@@ -80,6 +81,7 @@ public static partial class TechEndpoints
                 Jobs = jobs.Select(j => new
                 {
                     j.Id, j.Number, j.Title, j.Description, j.Type, j.Priority, j.Status, j.HoldReason, j.DueDate, j.DueAt, j.PlannedStart, j.SiteId, j.TeamName, j.Asset, j.Downtime,
+                    j.AccessWindows, j.OnlyWhenStopped,
                     Location = j.LocationId is null ? null : new { Id = j.LocationId, Path = PathText(j.LocationPath, names), NotesToTechnician = j.LocationNotes },
                     RoundAssets = round[j.Id].Select(a => new { a.Id, a.AssetNumber, a.Name }),
                     Tasks = tasks[j.Id].Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName }),
@@ -94,6 +96,7 @@ public static partial class TechEndpoints
                 {
                     Notes = settings.RequireCompletionNotes, Labour = settings.RequireLaborToComplete, AllSteps = settings.RequireAllTasksDone,
                     FailureCodeOnBreakdown = settings.RequireFailureCodeForBreakdowns,
+                    HoldNote = (settings.CommentRequiredFor ?? []).Contains(CommentActions.Hold),
                 },
             };
             return Versioned(http, JsonSerializer.SerializeToUtf8Bytes(body, json.Value.SerializerOptions));

@@ -22,6 +22,8 @@ public static class PeopleEndpoints
             (t, color) => t.Color = color, t => t.Color);
         MapLookup(api, "/failure-codes", "Failure codes", db => db.FailureCodes, () => new FailureCode { Code = "", Name = "" }, Permissions.SettingsManage,
             async (db, id, ct) => await db.WorkOrders.AllSites().AnyAsync(w => w.FailureCodeId == id, ct), null, null);
+        MapLookup(api, "/cancel-reasons", "Cancel reasons", db => db.CancelReasons, () => new CancelReason { Code = "", Name = "" }, Permissions.SettingsManage,
+            async (db, id, ct) => await db.WorkOrders.AllSites().AnyAsync(w => w.CancelReasonId == id, ct), null, null);
 
         var g = api.MapGroup("/employees").WithTags("Employees");
         g.MapGet("/", async (CmmsDbContext db, string? search, Guid? tradeId, bool? activeOnly, CancellationToken ct) =>

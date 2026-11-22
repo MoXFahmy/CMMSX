@@ -49,10 +49,29 @@ public static class EmailTemplates
         $"Your request {r.Number} was not approved", "Your work request was not approved",
         [("Request", $"{r.Number} · {r.Title}"), ("Where", r.Place)], $"Reason: {reason}", link, "View your request");
 
-    public static EmailContent RequestCompleted(string org, RequestFacts r, string workOrderNumber, string? notes, string? link) => Layout(org,
-        $"Done: your request {r.Number}", "The work you asked for has been done",
-        [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place)],
-        notes is { } n ? $"Work done: {n}" : null, link, "View your request");
+    public static EmailContent RequestCompleted(string org, RequestFacts r, string workOrderNumber, string? notes, string? link, bool askAnswer = false) => Layout(org,
+        $"Done: your request {r.Number}", askAnswer ? "The work you asked for has been done. Please accept or refuse it." : "The work you asked for has been done",
+        [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place), ("Work done", notes)],
+        null, link, askAnswer ? "Accept or refuse the work" : "View your request");
+
+    public static EmailContent WorkOrderOverdue(string org, WorkOrderFacts w, string? link) => Layout(org,
+        $"Overdue: work order {w.Number}", "This work is past its due time",
+        [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority), ("Due", w.DueDate is { } d ? Translator.Date(d) : null), ("Where", w.Place)],
+        null, link, "Open the work order");
+
+    public static EmailContent WorkOrderCancelled(string org, WorkOrderFacts w, string? reason, string? note, string? link, bool forRequester = false) => Layout(org,
+        $"Cancelled: work order {w.Number}", forRequester ? "The work you asked for was cancelled" : "This work was cancelled",
+        [("Work order", $"{w.Number} · {w.Title}"), ("Where", w.Place), ("Reason", reason), ("Note", note)], null, link,
+        forRequester ? "View your request" : "Open the work order");
+
+    public static EmailContent RequestRefused(string org, RequestFacts r, string workOrderNumber, string? byName, string? reason, string? link) => Layout(org,
+        $"Refused: work order {workOrderNumber}", "The requester refused the finished work. The work order was reopened.",
+        [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place), ("Refused by", byName), ("Reason", reason)],
+        null, link, "Open the work order");
+
+    public static EmailContent RequestComment(string org, RequestFacts r, string? author, string body, string? link) => Layout(org,
+        $"New comment on request {r.Number}", "A new comment on the request",
+        [("Request", $"{r.Number} · {r.Title}"), ("Where", r.Place), ("From", author), ("Comment", body)], null, link, "View the request");
 
     public static EmailContent PoSubmitted(string org, PoFacts po, string? link) => Layout(org,
         $"Approve purchase order {po.Number} ({po.Total})", "A purchase order is waiting for your approval",

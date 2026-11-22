@@ -55,6 +55,8 @@ public class PmSchedule : TenantEntity
     public Location? Location { get; set; }
     public Guid? AssetId { get; set; }
     public Asset? Asset { get; set; }
+    /// <summary>The work can only be done while the asset is stopped; copied to the work orders it generates.</summary>
+    public bool OnlyWhenStopped { get; set; }
     public Guid? TradeId { get; set; }
     /// <summary>Team the generated work is given to.</summary>
     public Guid? TeamId { get; set; }

@@ -49,11 +49,11 @@ internal static class SlaQueries
     {
         var target = Sla.For(s, priority);
         var response = status == WorkRequestStatus.Cancelled ? SlaState.None : Sla.State(respondBy, decidedAt, now, Window(target?.RespondMinutes));
-        // Approved: its work order's completion. Rejected or cancelled: nothing to complete.
+        // Approved (or accepted and closed): its work order's completion. Rejected or cancelled: nothing to complete.
         var completion = status switch
         {
             WorkRequestStatus.New => Sla.State(dueAt, null, now, dueFromTarget ? Window(target?.CompleteMinutes) : null),
-            WorkRequestStatus.Approved => workCompletion ?? SlaState.None,
+            WorkRequestStatus.Approved or WorkRequestStatus.Closed => workCompletion ?? SlaState.None,
             _ => SlaState.None,
         };
         return new SlaView(response, completion, respondBy, dueAt, decidedAt);

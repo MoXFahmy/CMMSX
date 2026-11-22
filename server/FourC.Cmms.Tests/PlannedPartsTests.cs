@@ -67,7 +67,8 @@ public class PlannedPartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
         (await DetailAsync(c, wo)).GetProperty("plannedParts").EnumerateArray().Single(l => l.GetProperty("partId").GetGuid() == part);
 
     private static async Task StatusAsync(HttpClient c, Guid wo, string status) =>
-        await Ok(await c.PostAsJsonAsync($"/api/work-orders/{wo}/status", new { status, completionNotes = "Done" }));
+        await Ok(await c.PostAsJsonAsync($"/api/work-orders/{wo}/status",
+            new { status, completionNotes = "Done", cancelReasonId = status == "Cancelled" ? await Loop.AnyCancelReasonAsync(c) : (Guid?)null }));
 
     private static decimal Dec(JsonElement e, string name) => e.GetProperty(name).GetDecimal();
 
@@ -548,7 +549,7 @@ public class PlannedPartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(6m, Dec(await Ok(await o.C.GetAsync($"/api/parts/{part}")), "reserved"));
 
         await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{done}/status", new { status = "Completed", completionNotes = "Done" }));
-        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{cancelled}/status", new { status = "Cancelled" }));
+        await Ok(await o.C.PostAsJsonAsync($"/api/work-orders/{cancelled}/status", new { status = "Cancelled", cancelReasonId = await Loop.AnyCancelReasonAsync(o.C) }));
         (await o.C.DeleteAsync($"/api/work-orders/{deleted}")).EnsureSuccessStatusCode();
         var p = await Ok(await o.C.GetAsync($"/api/parts/{part}"));
         Assert.Equal((0m, 10m), (Dec(p, "reserved"), Dec(p, "available")));

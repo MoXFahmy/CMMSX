@@ -21,6 +21,10 @@ export type TenantSettings = {
   purchaseOrderNumberPrefix: string; defaultTaxPercent: number; currency: string; dateFormat: string; timeZone: string;
   requireLaborToComplete: boolean; requireAllTasksDone: boolean; requireFailureCodeForBreakdowns: boolean; autoStartWork: boolean;
   emailEnabled: boolean; disabledEmails: string[];
+  /** Who gets each work and request e-mail (0.10.0): event key → recipient kinds; an event not listed uses its defaults. */
+  emailRecipients?: Record<string, string[]>;
+  /** Actions that need a comment (0.10.0): reject, refuse, hold, reopen, cancel; completing follows requireCompletionNotes. */
+  commentRequiredFor?: string[];
   pmSkipAssetStatuses: AssetStatus[]; pmNonWorkingDays: DayName[]; pmNoStacking: boolean;
   /** Response and completion targets per priority, in minutes (0.5.0). */
   slaTargets: SlaTarget[]; dailyCapacityHours: number;
@@ -30,7 +34,21 @@ export type TenantSettings = {
 export type SlaTarget = { priority: WorkPriority; respondMinutes?: number | null; completeMinutes?: number | null };
 /** Deadlines of one record and where it stands against them. */
 export type SlaView = { response: SlaState; completion: SlaState; respondBy?: string | null; dueAt?: string | null; respondedAt?: string | null };
-export type EmailStatusInfo = { available: boolean; allowed: boolean; slug: string; from?: string; enabled: boolean; events: string[] };
+export type EmailStatusInfo = {
+  available: boolean; allowed: boolean; slug: string; from?: string; enabled: boolean; events: string[];
+  grid: { key: string; applicable: string[]; defaults: string[] }[];
+};
+/** A request type (0.10.0): default trade and priority, recipients, optional automatic approval. */
+export type RequestType = {
+  id: string; code: string; name: string; isActive: boolean; defaultTradeId?: string | null; defaultPriority?: WorkPriority | null;
+  recipientIds: string[]; autoApprove: boolean; teamId?: string | null;
+};
+/** When the work may be done (0.10.0). */
+export type AccessWindow = { start: string; end: string; note?: string | null };
+/** The requester's answer to finished work (0.10.0). */
+export type RequestFeedback = { id?: string; accepted: boolean; rating?: number | null; comment?: string | null; byName?: string | null; answeredAt: string; viaLink?: boolean };
+/** A message on a request's thread (0.10.0). */
+export type RequestComment = { id: string; body: string; userName?: string | null; byRequester: boolean; createdAt: string };
 export type EmailLogItem = {
   id: string; createdAt: string; sentAt?: string; eventKey: string; toAddress: string; subject: string; status: 'Pending' | 'Sent' | 'Failed'; attempts: number; lastError?: string;
 };
@@ -77,6 +95,7 @@ export type AssetListItem = {
   downSince?: string | null;
 };
 export type AssetDetail = {
+  onlyWhenStopped?: boolean;
   id: string; assetNumber: string; name: string; description?: string; categoryId?: string;
   category?: { id: string; code: string; name: string; color?: string }; siteId: string; site: { id: string; code: string; name: string };
   locationId?: string; locationTrail: { id: string; code: string; name: string }[]; parentAssetId?: string;
@@ -138,12 +157,12 @@ export type WorkType = 'Corrective' | 'Preventive' | 'Breakdown' | 'Inspection' 
 export type WorkPriority = 'Low' | 'Medium' | 'High' | 'Urgent';
 export type WorkOrderStatus = 'Open' | 'InProgress' | 'OnHold' | 'Completed' | 'Closed' | 'Cancelled';
 export type HoldReason = 'WaitingForParts' | 'WaitingForApproval' | 'WaitingForAccess' | 'WaitingForContractor' | 'Other';
-export type WorkRequestStatus = 'New' | 'Approved' | 'Rejected' | 'Cancelled';
+export type WorkRequestStatus = 'New' | 'Approved' | 'Rejected' | 'Cancelled' | 'Closed';
 export const WORK_TYPES: WorkType[] = ['Corrective', 'Preventive', 'Breakdown', 'Inspection', 'Predictive', 'Project', 'Safety', 'Other'];
 export const WORK_PRIORITIES: WorkPriority[] = ['Low', 'Medium', 'High', 'Urgent'];
 export const WO_STATUSES: WorkOrderStatus[] = ['Open', 'InProgress', 'OnHold', 'Completed', 'Closed', 'Cancelled'];
 export const HOLD_REASONS: HoldReason[] = ['WaitingForParts', 'WaitingForApproval', 'WaitingForAccess', 'WaitingForContractor', 'Other'];
-export const WR_STATUSES: WorkRequestStatus[] = ['New', 'Approved', 'Rejected', 'Cancelled'];
+export const WR_STATUSES: WorkRequestStatus[] = ['New', 'Approved', 'Closed', 'Rejected', 'Cancelled'];
 
 export type Lookup = { id: string; code: string; name: string; color?: string; isActive: boolean };
 export type Employee = {
@@ -157,7 +176,7 @@ export type EmployeeLookup = { id: string; code: string; fullName: string; trade
 export type WorkOrderListItem = {
   id: string; number: string; title: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
   siteId: string; siteName: string; locationId?: string; locationPath?: string; assetId?: string; assetNumber?: string; assetName?: string;
-  tradeName?: string; teamName?: string | null; assignees: string[]; dueDate?: string; createdAt: string; completedAt?: string; isOverdue: boolean;
+  tradeName?: string; teamName?: string | null; cancelReasonName?: string | null; onlyWhenStopped?: boolean; assignees: string[]; dueDate?: string; createdAt: string; completedAt?: string; isOverdue: boolean;
   dueAt?: string | null; startBy?: string | null; respondedAt?: string | null; responseState: SlaState; completionState: SlaState;
 };
 export type WorkOrderDetail = {
@@ -171,7 +190,10 @@ export type WorkOrderDetail = {
   startedAt?: string; completedAt?: string; closedAt?: string; completionNotes?: string; causeNotes?: string; assetWasDown: boolean; downtimeHours?: number;
   /** The asset stop this work order is about (completing it ends the stop), and whether the asset is down now. */
   downtime?: { id: string; startedAt: string; endedAt?: string | null; source: DowntimeSource; sourceNumber?: string | null } | null; assetDownSince?: string | null;
-  locationNotesToTechnician?: string; request?: { id: string; number: string; requesterName?: string };
+  locationNotesToTechnician?: string;
+  request?: { id: string; number: string; requesterName?: string; status?: WorkRequestStatus; awaitingFeedback?: boolean; feedback?: RequestFeedback | null; comments?: RequestComment[] };
+  /** 0.10.0 */
+  accessWindows?: AccessWindow[]; onlyWhenStopped?: boolean; outsideWindows?: boolean; cancelReason?: { id: string; code: string; name: string } | null;
   pm?: { id: string; code: string; name: string }; pmDueDate?: string;
   /** Assets a PM round work order covers, in order (empty otherwise). */
   assets: { id: string; assetNumber: string; name: string }[];
@@ -200,6 +222,7 @@ export type WorkRequestListItem = {
   locationName?: string; assetId?: string; assetNumber?: string; assetName?: string; requesterName?: string; requiredBy?: string; createdAt: string;
   workOrderId?: string; workOrderNumber?: string;
   respondBy?: string | null; dueAt?: string | null; responseState: SlaState; completionState: SlaState;
+  requestTypeName?: string | null;
 };
 export type WorkRequestDetail = {
   id: string; number: string; title: string; description?: string; status: WorkRequestStatus; priority: WorkPriority; type: WorkType;
@@ -207,6 +230,9 @@ export type WorkRequestDetail = {
   requesterName?: string; requesterEmail?: string; requesterPhone?: string; requiredBy?: string; decisionNote?: string; decidedAt?: string; decidedBy?: string;
   workOrder?: { id: string; number: string; status: WorkOrderStatus }; createdAt: string; createdBy?: string; canCancel: boolean; downtimeEventId?: string | null;
   respondBy?: string | null; dueAt?: string | null; dueFromTarget: boolean; sla: SlaView;
+  /** 0.10.0 */
+  requestTypeId?: string | null; requestType?: { id: string; name: string; defaultTradeId?: string | null } | null; extraRecipients: { id: string; name: string }[];
+  accessWindows: AccessWindow[]; onlyWhenStopped: boolean; awaitingFeedback: boolean; canAnswer: boolean; feedback: RequestFeedback[];
 };
 export type WorkDashboard = {
   open: number; overdue: number; completedLast30: number; requestsAwaiting: number; late: number; dueSoon: number; responseLate: number;
@@ -241,8 +267,10 @@ export type PmScheduleListItem = {
   meterReading?: number; lastGeneratedAt?: string; lastWorkOrderId?: string; lastWorkOrderNumber?: string; openWorkOrders: number; isOverdue: boolean; multipleTasks: number;
   /** Number of assets a round covers; 0 for single-asset/location schedules. */
   assetCount: number;
+  onlyWhenStopped?: boolean;
 };
 export type PmScheduleDetail = {
+  onlyWhenStopped?: boolean;
   id: string; code: string; name: string; description?: string; siteId: string; locationId?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
   /** A round's assets in order (empty for single-asset/location schedules). */
   assets: { id: string; assetNumber: string; name: string }[];

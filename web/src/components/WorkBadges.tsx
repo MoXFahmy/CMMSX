@@ -6,7 +6,7 @@ import type { WorkOrderStatus, WorkPriority, WorkRequestStatus } from '@/api/typ
 const woColor: Record<WorkOrderStatus, string> = { Open: 'blue', InProgress: 'cyan', OnHold: 'yellow', Completed: 'teal', Closed: 'gray', Cancelled: 'dark' };
 const prColor: Record<WorkPriority, string> = { Low: 'gray', Medium: 'blue', High: 'orange', Urgent: 'red' };
 const prIcon = { Low: IconArrowDown, Medium: IconEqual, High: IconArrowUp, Urgent: IconFlame };
-const wrColor: Record<WorkRequestStatus, string> = { New: 'blue', Approved: 'teal', Rejected: 'red', Cancelled: 'gray' };
+const wrColor: Record<WorkRequestStatus, string> = { New: 'blue', Approved: 'teal', Rejected: 'red', Cancelled: 'gray', Closed: 'dark' };
 const fixed = { style: { maxWidth: 'none', flexShrink: 0 }, styles: { label: { overflow: 'visible' } } } as const;
 
 export const woStatusColors = woColor;

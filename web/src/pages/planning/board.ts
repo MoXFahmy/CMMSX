@@ -1,4 +1,4 @@
-import type { PmScheduleType, SlaView, WorkOrderStatus, WorkPriority } from '@/api/types';
+import type { AccessWindow, PmScheduleType, SlaView, WorkOrderStatus, WorkPriority } from '@/api/types';
 
 /** hours: the person's planned hours, else their share of the estimate; plannedHours: their own planned hours only. */
 export type BoardAssignee = { employeeId: string; hours?: number | null; plannedHours?: number | null };
@@ -7,6 +7,8 @@ export type BoardJob = {
   assetId?: string | null; assetNumber?: string | null; assetName?: string | null;
   /** The planned start, else the due day (null: no date yet). */
   day?: string | null; plannedStart?: string | null; dueAt?: string | null; sla: SlaView; estimatedHours?: number | null; assignees: BoardAssignee[];
+  /** 0.10.0: when the work may be done, whether its day misses every window, and "only while stopped". */
+  accessWindows?: AccessWindow[] | null; outsideWindows?: boolean; onlyWhenStopped?: boolean;
 };
 /** hours: working hours on each weekday, Sunday first (0.9.0; older servers send none). */
 export type BoardPerson = { id: string; name: string; tradeIds?: string[]; hours?: number[] };
