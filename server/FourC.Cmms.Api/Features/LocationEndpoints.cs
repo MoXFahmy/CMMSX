@@ -3,6 +3,7 @@ using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Locations;
+using FourC.Cmms.Core.People;
 using FourC.Cmms.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,7 +12,7 @@ namespace FourC.Cmms.Api.Features;
 public static class SiteEndpoints
 {
     public sealed record SiteInput(string Code, string Name, string? Address, string? City, string? Country, string? TimeZone,
-        double? Latitude, double? Longitude, string? Notes, bool IsActive = true, string? RowVersion = null);
+        double? Latitude, double? Longitude, string? Notes, bool IsActive = true, string? RowVersion = null, SiteSettings? Settings = null);
 
     public static void MapSiteEndpoints(this RouteGroupBuilder api)
     {
@@ -73,6 +74,7 @@ public static class SiteEndpoints
     {
         var site = new Site { Code = i.Code.Trim(), Name = i.Name.Trim() };
         Apply(site, i);
+        if (i.Settings is not null) site.Settings = Clean(i.Settings);
         db.Sites.Add(site);
         return site;
     }
@@ -81,7 +83,16 @@ public static class SiteEndpoints
     {
         site.Code = i.Code.Trim(); site.Name = i.Name.Trim();
         Apply(site, i);
+        if (i.Settings is not null) site.Settings = Clean(i.Settings); // null (older apps, the import) keeps them
     }
+
+    private static SiteSettings Clean(SiteSettings s) => new()
+    {
+        AssetNumberPrefix = s.AssetNumberPrefix.Clean(), WorkOrderNumberPrefix = s.WorkOrderNumberPrefix.Clean(),
+        WorkRequestNumberPrefix = s.WorkRequestNumberPrefix.Clean(), PurchaseOrderNumberPrefix = s.PurchaseOrderNumberPrefix.Clean(),
+        WorkingHours = s.WorkingHours is { Count: > 0 } h ? h.OrderBy(d => d.Day).ToList() : null, DefaultStoreId = s.DefaultStoreId,
+        RequestRecipientIds = (s.RequestRecipientIds ?? []).Distinct().ToList(), EmailSenderName = s.EmailSenderName.Clean(),
+    };
 
     private static async Task<Validator> ValidateAsync(SiteInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
@@ -89,6 +100,19 @@ public static class SiteEndpoints
         if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.Sites, s => s.Code == i.Code.Trim() && s.Id != id,
                 "Another site already uses this code.", "This code is already used by a site you can't see.", ct) is { } siteClash)
             v.Add("code", siteClash);
+        if (i.Settings is { } st)
+        {
+            v.MaxLength("settings.assetNumberPrefix", st.AssetNumberPrefix, "Prefix", 20).MaxLength("settings.workOrderNumberPrefix", st.WorkOrderNumberPrefix, "Prefix", 20)
+                .MaxLength("settings.workRequestNumberPrefix", st.WorkRequestNumberPrefix, "Prefix", 20)
+                .MaxLength("settings.purchaseOrderNumberPrefix", st.PurchaseOrderNumberPrefix, "Prefix", 20)
+                .MaxLength("settings.emailSenderName", st.EmailSenderName, "Sender name", 100);
+            if (WorkingHours.Problem(st.WorkingHours) is { } hours) v.Add("settings.workingHours", hours);
+            if (st.DefaultStoreId is { } store && (id is null || !await db.Stores.AnyAsync(s => s.Id == store && s.SiteId == id && s.IsActive, ct)))
+                v.Add("settings.defaultStoreId", "Choose one of this site's stores.");
+            var who = (st.RequestRecipientIds ?? []).Distinct().ToList();
+            if (who.Count > 0 && await db.Users.CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != who.Count)
+                v.Add("settings.requestRecipientIds", "Choose active users.");
+        }
         return v;
     }
 
@@ -100,7 +124,7 @@ public static class SiteEndpoints
 
     private static object ToDto(Site s, int locations, int assets) => new
     {
-        s.Id, s.Code, s.Name, s.Address, s.City, s.Country, s.TimeZone, s.Latitude, s.Longitude, s.Notes, s.IsActive,
+        s.Id, s.Code, s.Name, s.Address, s.City, s.Country, s.TimeZone, s.Latitude, s.Longitude, s.Notes, s.IsActive, s.Settings,
         LocationCount = locations, AssetCount = assets, RowVersion = Convert.ToBase64String(s.RowVersion),
     };
 }

@@ -600,7 +600,8 @@ public static class WorkOrderEndpoints
         Action<WorkOrder>? configure = null, string? note = null, EmailOutbox? mail = null, bool applyTargets = true, DateTimeOffset? raisedAt = null)
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
-        var number = await Numbering.NextAsync(db, "WorkOrder", settings.WorkOrderNumberPrefix, 5,
+        var (sequence, prefix) = Numbering.For(settings, await db.Sites.AllSites().AsNoTracking().FirstOrDefaultAsync(s => s.Id == input.SiteId, ct), NumberKind.WorkOrder);
+        var number = await Numbering.NextAsync(db, sequence, prefix, 5,
             n => db.WorkOrders.AllSites().AnyAsync(w => w.Number == n, ct), p => db.WorkOrders.AllSites().Where(w => w.Number.StartsWith(p)).Select(w => w.Number).ToListAsync(ct), ct);
         var w = new WorkOrder { Number = number, Title = input.Title.Trim(), SiteId = input.SiteId, WorkRequestId = requestId };
         // Default the location from the asset when only the asset was chosen.

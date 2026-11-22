@@ -5,6 +5,7 @@ using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Assets;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
+using FourC.Cmms.Core.Services;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Locations;
 using Microsoft.EntityFrameworkCore;
@@ -202,7 +203,7 @@ public static class AssetEndpoints
             var tenant = await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct);
             var copy = new Asset
             {
-                AssetNumber = await NextAssetNumberAsync(db, tenant.Settings, ct), Name = src.Name, Description = src.Description, CategoryId = src.CategoryId,
+                AssetNumber = await NextAssetNumberAsync(db, tenant.Settings, ct, src.SiteId), Name = src.Name, Description = src.Description, CategoryId = src.CategoryId,
                 SiteId = src.SiteId, LocationId = src.LocationId, ParentAssetId = src.ParentAssetId, Status = src.Status, Criticality = src.Criticality,
                 Manufacturer = src.Manufacturer, Model = src.Model, OperationNumber = src.OperationNumber, PurchasePrice = src.PurchasePrice,
                 ExpectedLifeYears = src.ExpectedLifeYears, DowntimeCostPerHour = src.DowntimeCostPerHour, WarrantyType = src.WarrantyType,
@@ -330,7 +331,7 @@ public static class AssetEndpoints
     internal static async Task<Asset> CreateAssetAsync(CmmsDbContext db, AssetInput i, Dictionary<string, string?> custom, FourC.Cmms.Core.Tenancy.TenantSettings settings, CancellationToken ct)
     {
         var auto = string.IsNullOrWhiteSpace(i.AssetNumber) && settings.AutoNumberAssets;
-        var number = auto ? await NextAssetNumberAsync(db, settings, ct) : i.AssetNumber!.Trim();
+        var number = auto ? await NextAssetNumberAsync(db, settings, ct, i.SiteId) : i.AssetNumber!.Trim();
         var asset = new Asset { AssetNumber = number, Name = i.Name.Trim(), SiteId = i.SiteId };
         Apply(asset, i, custom);
         db.Assets.Add(asset);
@@ -401,20 +402,22 @@ public static class AssetEndpoints
     };
 
     /// <summary>An asset number as the organization writes them: its prefix and the number padded ("AST-" + 42 → "AST-00042").</summary>
-    internal static string FormatAssetNumber(FourC.Cmms.Core.Tenancy.TenantSettings settings, long n) =>
-        (settings.AssetNumberPrefix ?? "") + n.ToString(new string('0', Math.Clamp(settings.AssetNumberPadding, 1, 12)));
+    internal static string FormatAssetNumber(FourC.Cmms.Core.Tenancy.TenantSettings settings, long n, string? prefix = null) =>
+        (prefix ?? settings.AssetNumberPrefix ?? "") + n.ToString(new string('0', Math.Clamp(settings.AssetNumberPadding, 1, 12)));
 
-    public static async Task<string> NextAssetNumberAsync(CmmsDbContext db, FourC.Cmms.Core.Tenancy.TenantSettings settings, CancellationToken ct)
+    /// <summary>The next asset number; at a site with its own prefix, from that site's own sequence.</summary>
+    public static async Task<string> NextAssetNumberAsync(CmmsDbContext db, FourC.Cmms.Core.Tenancy.TenantSettings settings, CancellationToken ct, Guid? siteId = null)
     {
-        var prefix = settings.AssetNumberPrefix ?? "";
+        var site = siteId is { } sid ? await db.Sites.AllSites().AsNoTracking().FirstOrDefaultAsync(s => s.Id == sid, ct) : null;
+        var (sequence, prefix) = Numbering.For(settings, site, NumberKind.Asset);
         for (var attempt = 0; attempt < 5; attempt++)
         {
-            var number = FormatAssetNumber(settings, await db.NextNumberAsync("Asset", ct));
+            var number = FormatAssetNumber(settings, await db.NextNumberAsync(sequence, ct), prefix);
             if (!await db.Assets.AllSites().AnyAsync(a => a.AssetNumber == number, ct)) return number;
             // Collision (e.g. numbers entered manually or imported): jump past the highest existing number with this prefix.
             var existing = await db.Assets.AllSites().Where(a => a.AssetNumber.StartsWith(prefix)).Select(a => a.AssetNumber).ToListAsync(ct);
             var max = existing.Select(n => long.TryParse(n[prefix.Length..], out var v) ? v : 0).DefaultIfEmpty(0).Max();
-            await db.SetSequenceAtLeastAsync("Asset", max + 1, ct);
+            await db.SetSequenceAtLeastAsync(sequence, max + 1, ct);
         }
         throw new DomainException("Could not generate a unique asset number. Check the numbering settings.");
     }

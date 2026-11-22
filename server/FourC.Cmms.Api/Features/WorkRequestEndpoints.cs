@@ -191,7 +191,8 @@ public static class WorkRequestEndpoints
         if (!v.IsValid) return (v, null);
 
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
-        var number = await Numbering.NextAsync(db, "WorkRequest", settings.WorkRequestNumberPrefix, 5,
+        var (sequence, prefix) = Numbering.For(settings, await db.Sites.AllSites().AsNoTracking().FirstOrDefaultAsync(s => s.Id == input.SiteId, ct), NumberKind.WorkRequest);
+        var number = await Numbering.NextAsync(db, sequence, prefix, 5,
             n => db.WorkRequests.AllSites().AnyAsync(r => r.Number == n, ct), p => db.WorkRequests.AllSites().Where(r => r.Number.StartsWith(p)).Select(r => r.Number).ToListAsync(ct), ct);
         var me = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == ctx.UserId, ct);
         var r = new WorkRequest

@@ -23,6 +23,9 @@ public static class Planning
     /// </summary>
     public static async Task<Guid?> DefaultStoreAsync(CmmsDbContext db, Guid partId, Guid siteId, CancellationToken ct)
     {
+        // The site's own default store comes first (0.9.0).
+        var siteDefault = await db.Sites.AllSites().Where(s => s.Id == siteId).Select(s => s.Settings).FirstOrDefaultAsync(ct);
+        if (siteDefault?.DefaultStoreId is { } preferred && await db.Stores.AnyAsync(s => s.Id == preferred && s.IsActive, ct)) return preferred;
         var rows = await db.StockLevels.AsNoTracking().Where(l => l.PartId == partId && l.Store!.IsActive)
             .Select(l => new
             {

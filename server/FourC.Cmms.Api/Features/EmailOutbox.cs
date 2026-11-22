@@ -18,7 +18,7 @@ public sealed record EmailRecipient(string? Email, string? Name, Guid? UserId);
 /// them. Applies every rule in one place: e-mail set up on the server and switched on by the organization, the
 /// organization's switch for the event, each user's opt-outs, never the person who acted, one e-mail per address.
 /// </summary>
-public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration config)
+public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration config, AccessService access)
 {
     public bool Available => options.Value.Available;
 
@@ -40,7 +40,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         var facts = await FactsAsync(db, w, ct);
         var pm = w.PmScheduleId is not null;
         await QueueAsync(db, ctx, pm ? EmailEvents.PmAssigned : EmailEvents.WorkOrderAssigned, to,
-            org => EmailTemplates.Assigned(org, facts, Link($"/work-orders/{w.Id}"), pm), "WorkOrder", w.Id, ct);
+            org => EmailTemplates.Assigned(org, facts, Link($"/work-orders/{w.Id}"), pm), "WorkOrder", w.Id, ct, siteId: w.SiteId, locationId: w.LocationId);
     }
 
     /// <summary>Completed: whoever created the work hears, and so does the requester when it came from a request.</summary>
@@ -50,24 +50,29 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         var facts = await FactsAsync(db, w, ct);
         if (w.CreatedById is { } creator)
             await QueueAsync(db, ctx, EmailEvents.WorkOrderCompleted, await UsersAsync(db, [creator], ct),
-                org => EmailTemplates.WorkOrderCompleted(org, facts, Link($"/work-orders/{w.Id}")), "WorkOrder", w.Id, ct);
+                org => EmailTemplates.WorkOrderCompleted(org, facts, Link($"/work-orders/{w.Id}")), "WorkOrder", w.Id, ct, siteId: w.SiteId, locationId: w.LocationId);
         if (w.WorkRequestId is { } rid && await db.WorkRequests.FirstOrDefaultAsync(r => r.Id == rid, ct) is { } r)
         {
             var rf = await FactsAsync(db, r, ct);
             await QueueAsync(db, ctx, EmailEvents.RequestCompleted, [await RequesterAsync(db, r, ct)],
-                org => EmailTemplates.RequestCompleted(org, rf, w.Number, w.CompletionNotes, Link($"/work-requests?open={r.Id}")), "WorkRequest", r.Id, ct);
+                org => EmailTemplates.RequestCompleted(org, rf, w.Number, w.CompletionNotes, Link($"/work-requests?open={r.Id}")), "WorkRequest", r.Id, ct,
+                siteId: r.SiteId, locationId: r.LocationId);
         }
     }
 
     // ---------------- Work requests ----------------
 
-    /// <summary>A new request: the people who triage requests hear.</summary>
+    /// <summary>A new request: the site's request recipients hear, else the people who triage requests (only those who can see the site).</summary>
     public async Task RequestSubmittedAsync(CmmsDbContext db, ITenantContext ctx, WorkRequest r, CancellationToken ct)
     {
         if (!Available) return;
         var facts = await FactsAsync(db, r, ct);
-        await QueueAsync(db, ctx, EmailEvents.RequestSubmitted, await UsersWithPermissionAsync(db, Permissions.RequestsManage, ct),
-            org => EmailTemplates.RequestSubmitted(org, facts, r.RequesterName, Link($"/work-requests?open={r.Id}")), "WorkRequest", r.Id, ct);
+        var recipients = await db.Sites.AllSites().Where(s => s.Id == r.SiteId).Select(s => s.Settings).FirstOrDefaultAsync(ct) is { RequestRecipientIds.Count: > 0 } site
+            ? await UsersAsync(db, site.RequestRecipientIds, ct)
+            : await UsersWithPermissionAsync(db, Permissions.RequestsManage, ct);
+        await QueueAsync(db, ctx, EmailEvents.RequestSubmitted, recipients,
+            org => EmailTemplates.RequestSubmitted(org, facts, r.RequesterName, Link($"/work-requests?open={r.Id}")), "WorkRequest", r.Id, ct,
+            siteId: r.SiteId, locationId: r.LocationId);
     }
 
     /// <summary>Approved or rejected (by the request's status): the requester hears.</summary>
@@ -78,10 +83,10 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         var link = Link($"/work-requests?open={r.Id}");
         if (r.Status == WorkRequestStatus.Approved)
             await QueueAsync(db, ctx, EmailEvents.RequestApproved, [await RequesterAsync(db, r, ct)],
-                org => EmailTemplates.RequestApproved(org, facts, workOrderNumber ?? "", link), "WorkRequest", r.Id, ct);
+                org => EmailTemplates.RequestApproved(org, facts, workOrderNumber ?? "", link), "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
         else if (r.Status == WorkRequestStatus.Rejected)
             await QueueAsync(db, ctx, EmailEvents.RequestRejected, [await RequesterAsync(db, r, ct)],
-                org => EmailTemplates.RequestRejected(org, facts, r.DecisionNote ?? "", link), "WorkRequest", r.Id, ct);
+                org => EmailTemplates.RequestRejected(org, facts, r.DecisionNote ?? "", link), "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
     }
 
     // ---------------- Purchasing ----------------
@@ -97,7 +102,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             .Select(u => new EmailRecipient(u.Email, u.FullName, u.Id)).ToListAsync(ct);
         var facts = await FactsAsync(db, po, ct);
         await QueueAsync(db, ctx, EmailEvents.PoSubmitted, approvers, org => EmailTemplates.PoSubmitted(org, facts, Link($"/purchasing/orders/{po.Id}")),
-            "PurchaseOrder", po.Id, ct);
+            "PurchaseOrder", po.Id, ct, siteId: po.SiteId);
     }
 
     /// <summary>Approved or returned: whoever created the order hears.</summary>
@@ -107,7 +112,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         var facts = await FactsAsync(db, po, ct);
         var link = Link($"/purchasing/orders/{po.Id}");
         await QueueAsync(db, ctx, approved ? EmailEvents.PoApproved : EmailEvents.PoRejected, await UsersAsync(db, [creator], ct),
-            org => approved ? EmailTemplates.PoApproved(org, facts, link) : EmailTemplates.PoRejected(org, facts, reason ?? "", link), "PurchaseOrder", po.Id, ct);
+            org => approved ? EmailTemplates.PoApproved(org, facts, link) : EmailTemplates.PoRejected(org, facts, reason ?? "", link), "PurchaseOrder", po.Id, ct, siteId: po.SiteId);
     }
 
     /// <summary>Lines charged to work orders were received: each work order's assignees hear about their lines.</summary>
@@ -122,7 +127,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             var facts = await FactsAsync(db, w, ct);
             var lines = group.Select(g => g.Line).ToList();
             await QueueAsync(db, ctx, EmailEvents.PartsReceived, await EmployeesAsync(db, w.Assignees.Select(a => a.EmployeeId).ToList(), ct),
-                org => EmailTemplates.PartsReceived(org, facts, po.Number, lines, Link($"/work-orders/{w.Id}")), "WorkOrder", w.Id, ct);
+                org => EmailTemplates.PartsReceived(org, facts, po.Number, lines, Link($"/work-orders/{w.Id}")), "WorkOrder", w.Id, ct, siteId: w.SiteId, locationId: w.LocationId);
         }
     }
 
@@ -145,7 +150,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             [(Translator.T("Subtotal"), Money(PurchaseOrderMath.Subtotal(po))), (Translator.T($"Tax ({po.TaxPercent:0.##}%)"), Money(PurchaseOrderMath.Tax(po))),
              (Translator.T("Shipping"), Money(po.ShippingCost)), (Translator.T("Total"), Money(PurchaseOrderMath.Total(po)))]);
         await QueueAsync(db, ctx, EmailEvents.PoSent, [new EmailRecipient(supplier.Email, supplier.ContactName ?? supplier.Name, null)],
-            org => EmailTemplates.PurchaseOrder(org, Doc()), "PurchaseOrder", po.Id, ct, ignoreToggles: true);
+            org => EmailTemplates.PurchaseOrder(org, Doc()), "PurchaseOrder", po.Id, ct, ignoreToggles: true, siteId: po.SiteId);
         return null;
     }
 
@@ -174,8 +179,11 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
 
     /// <summary>Adds one row per remaining recipient to <paramref name="db"/> (the caller saves). <paramref name="ignoreToggles"/>
     /// is for e-mails a user asks for explicitly (send a PO, a test): they skip the event switch and opt-outs.</summary>
+    /// <param name="siteId">The record's site: people who can't see it (or its location, <paramref name="locationId"/>) are left out, and
+    /// the site's sender name is used.</param>
     internal async Task QueueAsync(CmmsDbContext db, ITenantContext ctx, string eventKey, IEnumerable<EmailRecipient> to, Func<string, EmailContent> build,
-        string? entityType, Guid? entityId, CancellationToken ct, bool ignoreToggles = false, bool ignoreEnabled = false, bool keepActor = false)
+        string? entityType, Guid? entityId, CancellationToken ct, bool ignoreToggles = false, bool ignoreEnabled = false, bool keepActor = false,
+        Guid? siteId = null, Guid? locationId = null)
     {
         if (!Available) return;
         var tenantId = db.CurrentTenantId ?? ctx.TenantId;
@@ -196,6 +204,16 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
                 .Where(u => u.EmailOptOuts.Contains(eventKey)).Select(u => u.Id).ToHashSet();
             list = list.Where(r => r.UserId is null || !optedOut.Contains(r.UserId.Value)).ToList();
         }
+        string? fromName = null;
+        if (siteId is { } site)
+        {
+            fromName = (await db.Sites.AllSites().Where(s => s.Id == site).Select(s => s.Settings).FirstOrDefaultAsync(ct))?.EmailSenderName;
+            var path = locationId is { } lid ? await db.Locations.AllSites().Where(l => l.Id == lid).Select(l => l.Path).FirstOrDefaultAsync(ct) : null;
+            var kept = new List<EmailRecipient>();
+            foreach (var r in list)
+                if (r.UserId is not { } recipientId || Access.Covers(await access.GetAsync(recipientId, ct), site, path)) kept.Add(r);
+            list = kept;
+        }
         if (list.Count == 0) return;
 
         // Each person in their own language (their choice, else the organization's); people without an account (suppliers,
@@ -209,7 +227,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             foreach (var r in group)
                 db.OutboundEmails.Add(new OutboundEmail
                 {
-                    TenantId = tenant.Id, EventKey = eventKey, ToAddress = r.Email!,
+                    TenantId = tenant.Id, EventKey = eventKey, ToAddress = r.Email!, FromName = fromName,
                     ToName = r.Name is null ? null : EmailText.OneLine(r.Name), ReplyTo = EmailText.IsAddress(actorEmail) ? actorEmail : null,
                     Subject = EmailText.OneLine(content.Subject),
                     HtmlBody = content.Html, TextBody = content.Text, EntityType = entityType, EntityId = entityId,

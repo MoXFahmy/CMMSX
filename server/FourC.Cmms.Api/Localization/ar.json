@@ -683,5 +683,11 @@
  "This code is already used by a store in a site you can't see.": "هذا الرمز مستخدم بالفعل لمخزن في موقع لا يمكنك رؤيته.",
  "This number is already used by a schedule in a site you can't see.": "هذا الرقم مستخدم بالفعل لجدول في موقع لا يمكنك رؤيته.",
  "This number is already used by a meter in a site you can't see.": "هذا الرقم مستخدم بالفعل لعدّاد في موقع لا يمكنك رؤيته.",
- "Choose a location in your part of the site.": "اختر مكانًا ضمن الجزء الخاص بك من الموقع."
+ "Choose a location in your part of the site.": "اختر مكانًا ضمن الجزء الخاص بك من الموقع.",
+ "Choose one of this site's stores.": "اختر أحد مخازن هذا الموقع.",
+ "Choose active users.": "اختر مستخدمين نشطين.",
+ "Each day can appear once.": "يمكن أن يظهر كل يوم مرة واحدة فقط.",
+ "Use times like 08:00.": "استخدم أوقاتًا مثل 08:00.",
+ "Prefix": "البادئة",
+ "Sender name": "اسم المرسل"
 }

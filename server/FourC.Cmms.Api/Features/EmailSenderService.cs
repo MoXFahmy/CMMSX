@@ -78,7 +78,7 @@ public sealed class EmailSenderService(IServiceScopeFactory scopes, IOptions<Ema
                 row.LockedUntil = null;
                 try
                 {
-                    var fromName = EmailText.SenderName(orgNames.GetValueOrDefault(row.TenantId), o.FromName);
+                    var fromName = EmailText.SenderName(row.FromName ?? orgNames.GetValueOrDefault(row.TenantId), o.FromName);
                     using var timeout = CancellationTokenSource.CreateLinkedTokenSource(ct);
                     timeout.CancelAfter(TimeSpan.FromSeconds(Math.Max(1, o.SendTimeoutSeconds)));
                     await sender.SendAsync(new EmailMessage(row.ToAddress, row.ToName, o.From!, fromName, row.ReplyTo, row.Subject, row.HtmlBody, row.TextBody), timeout.Token);
