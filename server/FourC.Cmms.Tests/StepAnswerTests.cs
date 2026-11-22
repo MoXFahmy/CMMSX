@@ -159,6 +159,25 @@ public class StepAnswerTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task A_step_ticked_before_the_upgrade_stays_ticked()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync();
+        // Ticked by 0.12 or earlier: done, no answer stored.
+        await DbAsync(fx, async db =>
+        {
+            var t = await db.WorkOrderTasks.IgnoreQueryFilters().SingleAsync(x => x.Id == s.Steps[0].Id);
+            t.IsDone = true; t.Answer = null;
+            return await db.SaveChangesAsync();
+        });
+        var shown = (await Ok(await s.Org.Admin.GetAsync($"/api/work-orders/{s.Wo}"))).GetProperty("tasks").EnumerateArray().First();
+        Assert.Equal("Ok", shown.GetProperty("answer").GetString());
+        await Ok(await AnswerAsync(s, 0, new { remarks = "Checked again" }));
+        var step = (await StepsAsync(s.Wo))[0];
+        Assert.Equal((true, StepAnswer.Ok, "Checked again"), (step.IsDone, step.Answer!.Value, step.Remarks));
+    }
+
+    [SkippableFact]
     public async Task Phone_answers_typed_steps()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

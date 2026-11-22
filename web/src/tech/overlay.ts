@@ -1,11 +1,12 @@
 import type { QueuedChange } from './outbox';
-import type { TechJob } from './types';
+import type { TechJob, TechPoint } from './types';
+import { answered, levelOf } from '@/components/measure';
 
 /**
  * A job as the technician sees it right now: the phone's copy from the server, with the changes still waiting in the
  * queue applied on top (so a tick or a photo shows at once, with or without signal).
  */
-export function withQueued(job: TechJob, queue: QueuedChange[], opts: { canIssue?: boolean } = {}): TechJob & { pendingPhotos: number; pendingSignatures: number } {
+export function withQueued(job: TechJob, queue: QueuedChange[], opts: { canIssue?: boolean; points?: TechPoint[] } = {}): TechJob & { pendingPhotos: number; pendingSignatures: number; stepPhotos: Record<string, number> } {
   const canIssue = opts.canIssue ?? true;
   const mine = queue.filter((c) => c.workOrderId === job.id && c.state !== 'failed').sort((a, b) => a.seq - b.seq);
   let j: TechJob = { ...job, tasks: job.tasks.map((t) => ({ ...t })), myLabor: [...job.myLabor], comments: [...job.comments],
@@ -13,6 +14,7 @@ export function withQueued(job: TechJob, queue: QueuedChange[], opts: { canIssue
   const lineFor = (p: Record<string, unknown>) =>
     j.plannedLines?.find((l) => l.id === p.lineId) ?? j.plannedLines?.find((l) => l.partId === p.partId && (l.storeId ?? null) === (p.storeId ?? null));
   let pendingPhotos = 0;
+  const stepPhotos: Record<string, number> = {};
   let pendingSignatures = 0;
   for (const c of mine) {
     const p = c.payload as Record<string, unknown>;
@@ -20,9 +22,22 @@ export function withQueued(job: TechJob, queue: QueuedChange[], opts: { canIssue
       case 'task.update': {
         const t = j.tasks.find((x) => x.id === p.taskId);
         if (!t) break;
-        if (typeof p.isDone === 'boolean') t.isDone = p.isDone;
         if (typeof p.reading === 'string') t.reading = p.reading;
         if (typeof p.remarks === 'string') t.remarks = p.remarks;
+        // Typed answers (0.13.0), with the level as the server will judge it.
+        const kind = t.type ?? 'Check';
+        if (typeof p.answer === 'string') t.answer = p.answer as typeof t.answer;
+        if (typeof p.value === 'number') {
+          t.value = p.value;
+          const point = opts.points?.find((x) => x.id === t.measurementPointId);
+          t.level = kind === 'Number' && point ? levelOf(point, p.value) : t.level ?? null;
+        }
+        if (typeof p.meterId === 'string') t.meterId = p.meterId;
+        if (typeof p.text === 'string') t.textValue = p.text;
+        if (p.isDone === false) { t.answer = null; if (kind !== 'Meter') t.level = null; if (kind === 'Number' || kind === 'Meter') t.value = null; if (kind === 'Text') t.textValue = null; }
+        if (p.isDone === true && kind === 'Check' && !t.answer) t.answer = 'Ok';
+        t.isDone = kind === 'Check' && t.answer === undefined ? (typeof p.isDone === 'boolean' ? p.isDone : t.isDone)
+          : answered({ type: kind, answer: t.answer, value: t.value, textValue: t.textValue });
         break;
       }
       case 'labor.add':
@@ -36,6 +51,7 @@ export function withQueued(job: TechJob, queue: QueuedChange[], opts: { canIssue
         break;
       case 'photo.add':
         if ((p as { kind?: string }).kind === 'signature') pendingSignatures++; else pendingPhotos++;
+        if (typeof p.taskId === 'string') stepPhotos[p.taskId] = (stepPhotos[p.taskId] ?? 0) + 1;
         break;
       // Parts (0.11.0): until the next copy the line shows them used (or, for people who may not issue stock, asked for).
       case 'part.use':
@@ -64,7 +80,7 @@ export function withQueued(job: TechJob, queue: QueuedChange[], opts: { canIssue
       }
     }
   }
-  return { ...j, pendingPhotos, pendingSignatures };
+  return { ...j, pendingPhotos, pendingSignatures, stepPhotos };
 }
 
 /** A change the server took, with when: the view keeps showing it until a copy of the jobs fetched after that arrives. */

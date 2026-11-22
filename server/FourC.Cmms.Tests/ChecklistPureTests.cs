@@ -73,6 +73,7 @@ public class ChecklistPureTests
     public void Answered_per_type()
     {
         Assert.False(StepRules.Answered(Step(1, "a")));
+        Assert.True(StepRules.Answered(new WorkOrderTask { Description = "ticked before 0.13.0", IsDone = true }));
         Assert.True(StepRules.Answered(Step(1, "a", answer: StepAnswer.NotApplicable)));
         Assert.False(StepRules.Answered(Step(1, "a", StepType.Number)));
         Assert.True(StepRules.Answered(Step(1, "a", StepType.Number, value: 0)));

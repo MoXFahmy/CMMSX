@@ -1,6 +1,13 @@
 import type { HoldReason, WorkOrderStatus, WorkPriority, WorkType } from '@/api/types';
 
 /** A job as the phone keeps it (GET /api/tech/bundle). */
+/** A job's checklist step; 0.13.0 adds its type, answer, level and follow-up (optional: a copy from an older server has none). */
+export type TechStep = { id: string; sequence: number; description: string; isDone: boolean; reading?: string | null; remarks?: string | null; assetId?: string | null;
+  updatedAt?: string | null; updatedByName?: string | null; type?: import('@/components/measure').StepType; unit?: string | null; decimals?: number | null;
+  measurementPointId?: string | null; meterId?: string | null; photoRequired?: boolean; beforeStart?: boolean; answer?: import('@/components/measure').StepAnswer | null;
+  value?: number | null; textValue?: string | null; level?: import('@/components/measure').MeasureLevel | null; followUpNumber?: string | null };
+export type TechPoint = import('@/components/measure').PointLimits & { id: string; code?: string; name?: string };
+
 export type TechJob = {
   id: string; number: string; title: string; description?: string | null; type: WorkType; priority: WorkPriority; status: WorkOrderStatus;
   holdReason?: HoldReason | null; dueDate?: string | null; dueAt?: string | null; plannedStart?: string | null; siteId: string;
@@ -14,9 +21,9 @@ export type TechJob = {
   downtime?: { startedAt: string; endedAt?: string | null } | null;
   location?: { id: string; path?: string | null; notesToTechnician?: string | null } | null;
   roundAssets: { id: string; assetNumber: string; name: string }[];
-  tasks: { id: string; sequence: number; description: string; isDone: boolean; reading?: string | null; remarks?: string | null; assetId?: string | null; updatedAt?: string | null; updatedByName?: string | null }[];
+  tasks: TechStep[];
   plannedParts: { partNumber: string; partName: string; unitOfMeasure: string; quantity: number; storeCode?: string | null }[];
-  files: { id: string; fileName: string; contentType: string; isSignature: boolean; signedBy?: string | null }[];
+  files: { id: string; fileName: string; contentType: string; isSignature: boolean; signedBy?: string | null; workOrderTaskId?: string | null }[];
   /** 0.12.0: the work template's documents, opened online (not kept on the phone). */
   templateDocuments?: { id: string; fileName: string; contentType: string }[];
   comments: { body: string; userName?: string | null; createdAt: string }[];
@@ -55,7 +62,9 @@ export type TechStock = {
 export type TechBundle = {
   employeeId: string; userId: string; jobs: TechJob[];
   failureCodes: { id: string; code: string; name: string }[];
-  completionRules: { notes: boolean; labour: boolean; allSteps: boolean; failureCodeOnBreakdown: boolean; holdNote?: boolean };
+  completionRules: { notes: boolean; labour: boolean; allSteps: boolean; failureCodeOnBreakdown: boolean; holdNote?: boolean; readings?: boolean };
+  /** The measurement points the jobs' steps use (0.13.0): the phone judges a reading as it is typed. */
+  points?: TechPoint[];
   /** What this person may do on the phone (0.11.0). */
   can?: { logForOthers: boolean; cancel: boolean; createWorkOrders: boolean; issueStock?: boolean };
 };

@@ -5,6 +5,7 @@ using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Assets;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
+using FourC.Cmms.Core.Pm;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Work;
 using Microsoft.AspNetCore.Http.Json;
@@ -120,7 +121,8 @@ public static partial class TechEndpoints
                     Location = j.LocationId is null ? null : new { Id = j.LocationId, Path = PathText(j.LocationPath, names), NotesToTechnician = j.LocationNotes },
                     RoundAssets = round[j.Id].Select(a => new { a.Id, a.AssetNumber, a.Name }),
                     Tasks = tasks[j.Id].Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName,
-                        t.Type, t.Unit, t.Decimals, t.MeasurementPointId, t.MeterId, t.PhotoRequired, t.BeforeStart, t.Answer, t.Value, t.TextValue, t.Level, t.FollowUpNumber }),
+                        t.Type, t.Unit, t.Decimals, t.MeasurementPointId, t.MeterId, t.PhotoRequired, t.BeforeStart,
+                        Answer = t.Answer ?? (t.Type == StepType.Check && t.IsDone ? StepAnswer.Ok : null), t.Value, t.TextValue, t.Level, t.FollowUpNumber }),
                     PlannedParts = parts[j.Id].Select(p => new { p.PartNumber, p.PartName, p.UnitOfMeasure, p.Quantity, p.StoreCode }),
                     Files = files[j.Id].Select(f => new { f.Id, f.FileName, f.ContentType, f.IsSignature, f.SignedBy, f.WorkOrderTaskId }),
                     TemplateDocuments = j.PmTaskId is { } tid ? templateDocs[tid].Select(d => new { d.Id, d.FileName, d.ContentType }) : [],

@@ -92,6 +92,7 @@ export async function sendChange(c: QueuedChange, file?: Blob): Promise<SendResu
       const p = c.payload as { kind: 'photo' | 'signature' | 'file'; signedBy?: string; fileName?: string };
       form.set('kind', p.kind);
       if (p.signedBy) form.set('signedBy', p.signedBy);
+      if ((p as { taskId?: string }).taskId) form.set('taskId', (p as { taskId?: string }).taskId!);
       if (!file) return { kind: 'rejected', message: 'The photo is no longer on this phone.' };
       form.set('file', file, p.fileName ?? `${p.kind}.jpg`);
       res = await call('/tech/files', { method: 'POST', body: form }, uploadTimeoutMs(file.size));

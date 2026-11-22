@@ -356,6 +356,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                 principalTable: "MeasurementPoints",
                 principalColumn: "Id",
                 onDelete: ReferentialAction.Restrict);
+            // Steps ticked before 0.13.0 are OK answers (the tick stays as it is).
+            migrationBuilder.Sql("UPDATE [WorkOrderTasks] SET [Answer] = 1 WHERE [IsDone] = 1 AND [Answer] IS NULL AND [Type] = 0;");
         }
 
         /// <inheritdoc />

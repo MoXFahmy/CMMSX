@@ -209,7 +209,7 @@ public static class WorkOrderEndpoints
                     t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName,
                     t.Type, Unit = t.Unit ?? stepPoints.FirstOrDefault(p => p.Id == t.MeasurementPointId)?.Unit, Decimals = t.Decimals ?? stepPoints.FirstOrDefault(p => p.Id == t.MeasurementPointId)?.Decimals,
                     t.MeasurementPointId, t.MeterId, MeterName = t.MeterId is { } mid ? meterNames.GetValueOrDefault(mid) : null, t.PhotoRequired, t.BeforeStart,
-                    FollowUpKind = t.FollowUp, t.Answer, t.Value, t.TextValue, t.Level, Photos = stepPhotos[t.Id],
+                    FollowUpKind = t.FollowUp, Answer = StepRules.ShownAnswer(t), t.Value, t.TextValue, t.Level, Photos = stepPhotos[t.Id],
                     FollowUp = t.FollowUpWorkOrderId is { } fw ? new { Kind = "workOrder", Id = fw, Number = followUpNumbers.GetValueOrDefault(fw) }
                         : t.FollowUpRequestId is { } fr ? new { Kind = "request", Id = fr, Number = followUpNumbers.GetValueOrDefault(fr) } : null,
                 }),

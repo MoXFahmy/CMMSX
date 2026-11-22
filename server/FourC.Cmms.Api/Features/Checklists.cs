@@ -49,7 +49,8 @@ public static class Checklists
         {
             case StepType.Check:
             {
-                var answer = c.Answer ?? (c.IsDone is true ? t.Answer ?? StepAnswer.Ok : c.IsDone is false ? null : t.Answer);
+                // A step ticked before 0.13.0 (done, no answer) is OK until someone changes its answer.
+                var answer = c.Answer ?? (c.IsDone is true ? t.Answer ?? StepAnswer.Ok : c.IsDone is false ? null : StepRules.ShownAnswer(t));
                 if (answer != t.Answer) { t.Answer = answer; changed = true; }
                 break;
             }
@@ -97,7 +98,7 @@ public static class Checklists
         }
         if (c.Reading is not null && c.Reading.Clean() != t.Reading) { t.Reading = c.Reading.Clean(); changed = true; } // an empty string clears it
         if (c.Remarks is not null && c.Remarks.Clean() != t.Remarks) { t.Remarks = c.Remarks.Clean(); changed = true; }
-        var done = StepRules.Answered(t);
+        var done = t.Type == StepType.Check ? t.Answer is not null : StepRules.Answered(t);
         if (done != t.IsDone)
         {
             t.IsDone = done; t.DoneAt = done ? at : null; t.DoneBy = done ? ctx.UserName : null; changed = true;

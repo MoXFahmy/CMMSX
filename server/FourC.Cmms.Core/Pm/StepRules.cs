@@ -10,13 +10,16 @@ public static class StepRules
     public const string TakePhoto = "Take a photo for: {0}.";
     public const string AnswerSteps = "Answer these steps first: {0}.";
 
-    /// <summary>Check: an answer; Number and Meter: a value; Text: some text.</summary>
+    /// <summary>Check: an answer (a step ticked before 0.13.0 counts as OK); Number and Meter: a value; Text: some text.</summary>
     public static bool Answered(WorkOrderTask t) => t.Type switch
     {
         StepType.Number or StepType.Meter => t.Value is not null,
         StepType.Text => !string.IsNullOrWhiteSpace(t.TextValue),
-        _ => t.Answer is not null,
+        _ => t.Answer is not null || t.IsDone,
     };
+
+    /// <summary>A Check step's answer as shown: one ticked before 0.13.0 (done, no answer stored) is OK.</summary>
+    public static StepAnswer? ShownAnswer(WorkOrderTask t) => t.Answer ?? (t.Type == StepType.Check && t.IsDone ? StepAnswer.Ok : null);
 
     /// <summary>Not OK, or a reading at an alert or alarm level.</summary>
     public static bool Failed(WorkOrderTask t) => t.Answer == StepAnswer.NotOk || t.Level is { } l && l != MeasureLevel.Normal;
