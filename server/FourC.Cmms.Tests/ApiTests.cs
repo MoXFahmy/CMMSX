@@ -36,6 +36,7 @@ public sealed class ApiFixture : IAsyncLifetime
             b.UseSetting("Email:AutoSend", "false");
             b.UseSetting("Email:AllowedOrganizations", "*"); // sign-up is open in tests; the operator allows every organization
             b.UseSetting("App:PublicUrl", "https://cmms.test");
+            b.UseSetting("Email:OverdueAutoRun", "false"); // tests run the overdue pass themselves
             b.ConfigureTestServices(s => { s.RemoveAll<FourC.Cmms.Api.Infrastructure.IEmailSender>(); s.AddSingleton<FourC.Cmms.Api.Infrastructure.IEmailSender>(Emails); });
         });
         return Task.CompletedTask;

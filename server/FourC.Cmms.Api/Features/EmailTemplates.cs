@@ -54,6 +54,11 @@ public static class EmailTemplates
         [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place), ("Work done", notes)],
         null, link, askAnswer ? "Accept or refuse the work" : "View your request");
 
+    public static EmailContent WorkOrderOverdue(string org, WorkOrderFacts w, string? link) => Layout(org,
+        $"Overdue: work order {w.Number}", "This work is past its due time",
+        [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority), ("Due", w.DueDate is { } d ? Translator.Date(d) : null), ("Where", w.Place)],
+        null, link, "Open the work order");
+
     public static EmailContent WorkOrderCancelled(string org, WorkOrderFacts w, string? reason, string? note, string? link, bool forRequester = false) => Layout(org,
         $"Cancelled: work order {w.Number}", forRequester ? "The work you asked for was cancelled" : "This work was cancelled",
         [("Work order", $"{w.Number} · {w.Title}"), ("Where", w.Place), ("Reason", reason), ("Note", note)], null, link,

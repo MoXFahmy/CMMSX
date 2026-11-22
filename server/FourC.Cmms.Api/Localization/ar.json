@@ -739,5 +739,7 @@
  "Unknown cancel reason.": "سبب إلغاء غير معروف.",
  "Cancelled: work order {0}": "ملغى: أمر العمل {0}",
  "This work was cancelled": "أُلغي هذا العمل",
- "The work you asked for was cancelled": "أُلغي العمل الذي طلبته"
+ "The work you asked for was cancelled": "أُلغي العمل الذي طلبته",
+ "Overdue: work order {0}": "متأخر: أمر العمل {0}",
+ "This work is past its due time": "تجاوز هذا العمل موعد استحقاقه"
 }

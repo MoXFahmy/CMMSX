@@ -108,6 +108,17 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
     }
 
+    /// <summary>Past its due time and still not done: the grid's recipients hear (by default the people on it and whoever created it).</summary>
+    public async Task WorkOrderOverdueAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, CancellationToken ct)
+    {
+        if (!Available) return;
+        var to = Union(await GroupsAsync(db, EmailEvents.WorkOrderOverdue, w, null, null, ct));
+        if (to.Count == 0) return;
+        var facts = await FactsAsync(db, w, ct);
+        await QueueAsync(db, ctx, EmailEvents.WorkOrderOverdue, to, org => EmailTemplates.WorkOrderOverdue(org, facts, Link($"/work-orders/{w.Id}")), "WorkOrder", w.Id, ct,
+            siteId: w.SiteId, locationId: w.LocationId);
+    }
+
     /// <summary>Cancelled: the grid's recipients hear why (by default the requester and the people on the work).</summary>
     public async Task WorkOrderCancelledAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, string? reason, string? note, CancellationToken ct)
     {

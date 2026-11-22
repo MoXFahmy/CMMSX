@@ -91,6 +91,8 @@ services.AddSingleton<EmailOutbox>();
 services.AddScoped<DbContextOptionsFactory>();
 services.AddSingleton<EmailSenderService>();
 services.AddHostedService(sp => sp.GetRequiredService<EmailSenderService>());
+services.AddSingleton<OverdueNotifier>();
+services.AddHostedService(sp => sp.GetRequiredService<OverdueNotifier>());
 services.AddExceptionHandler<ApiExceptionHandler>();
 services.AddProblemDetails();
 services.ConfigureHttpJsonOptions(o =>
