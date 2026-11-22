@@ -11,9 +11,11 @@ internal static class Codes
     public const string UnknownRemedy = "Unknown remedy.";
 
     /// <summary>
-    /// Null when the code can be set: none chosen, the one the record already has (even if made inactive since, so a record
-    /// and an offline phone keep it), or an active code; otherwise <paramref name="message"/>.
+    /// Null when the code can be set: none chosen, the one the record already has (even if made inactive since), or an active code —
+    /// any code of the organization when <paramref name="anyState"/> (a phone's list can be older than a code's deactivation);
+    /// otherwise <paramref name="message"/>.
     /// </summary>
-    public static async Task<string?> CheckAsync<T>(DbSet<T> set, Guid? newId, Guid? currentId, string message, CancellationToken ct) where T : TenantEntity, ICodeLookup =>
-        newId is not { } id || id == currentId || await set.AnyAsync(x => x.Id == id && x.IsActive, ct) ? null : message;
+    public static async Task<string?> CheckAsync<T>(DbSet<T> set, Guid? newId, Guid? currentId, string message, CancellationToken ct, bool anyState = false)
+        where T : TenantEntity, ICodeLookup =>
+        newId is not { } id || id == currentId || await set.AnyAsync(x => x.Id == id && (anyState || x.IsActive), ct) ? null : message;
 }

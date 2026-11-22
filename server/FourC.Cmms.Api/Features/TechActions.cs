@@ -443,7 +443,7 @@ public static partial class TechEndpoints
             // When the technician started (offline) or, on completion, never later than when they finished.
             ActualStart: p.Status == WorkOrderStatus.InProgress || (completed && w.StartedAt > at) ? at : null, ActualEnd: completed ? at : null, At: at,
             CancelReasonId: p.CancelReasonId);
-        Ensure(await WorkOrderEndpoints.ChangeStatusAsync(db, ctx, mail, settings, w, input, ct));
+        Ensure(await WorkOrderEndpoints.ChangeStatusAsync(db, ctx, mail, settings, w, input, ct, fromPhone: true));
         await db.SaveChangesAsync(ct);
         return new Answer("done");
     }
