@@ -600,7 +600,7 @@ public static class WorkOrderEndpoints
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var number = await Numbering.NextAsync(db, "WorkOrder", settings.WorkOrderNumberPrefix, 5,
-            n => db.WorkOrders.AnyAsync(w => w.Number == n, ct), p => db.WorkOrders.Where(w => w.Number.StartsWith(p)).Select(w => w.Number).ToListAsync(ct), ct);
+            n => db.WorkOrders.AllSites().AnyAsync(w => w.Number == n, ct), p => db.WorkOrders.AllSites().Where(w => w.Number.StartsWith(p)).Select(w => w.Number).ToListAsync(ct), ct);
         var w = new WorkOrder { Number = number, Title = input.Title.Trim(), SiteId = input.SiteId, WorkRequestId = requestId };
         // Default the location from the asset when only the asset was chosen.
         if (input.AssetId is not null && input.LocationId is null)

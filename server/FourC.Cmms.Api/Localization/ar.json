@@ -671,5 +671,16 @@
  "Choose when the asset stopped.": "اختر وقت توقف الأصل.",
  "A quantity can be at most 1,000,000,000.": "لا يمكن أن تزيد الكمية على 1,000,000,000.",
  "At most 500 parts.": "500 قطعة على الأكثر.",
- "{0} · hours count each asset's running time only · the first 5,000 stops": "{0} · تُحسب الساعات خلال وقت تشغيل كل أصل فقط · أول 5,000 توقف"
+ "{0} · hours count each asset's running time only · the first 5,000 stops": "{0} · تُحسب الساعات خلال وقت تشغيل كل أصل فقط · أول 5,000 توقف",
+ "Unknown site.": "موقع غير معروف.",
+ "Unknown location.": "مكان غير معروف.",
+ "Choose at least one of your sites.": "اختر موقعًا واحدًا على الأقل من مواقعك.",
+ "You can only give access to your own sites.": "يمكنك منح الوصول إلى مواقعك فقط.",
+ "You can only give access to places you can see.": "يمكنك منح الوصول إلى الأماكن التي تراها فقط.",
+ "This asset number is already used in a site you can't see.": "رقم الأصل هذا مستخدم بالفعل في موقع لا يمكنك رؤيته.",
+ "This code is already used by a site you can't see.": "هذا الرمز مستخدم بالفعل لموقع لا يمكنك رؤيته.",
+ "This code is already used in a part of the site you can't see.": "هذا الرمز مستخدم بالفعل في جزء من الموقع لا يمكنك رؤيته.",
+ "This code is already used by a store in a site you can't see.": "هذا الرمز مستخدم بالفعل لمخزن في موقع لا يمكنك رؤيته.",
+ "This number is already used by a schedule in a site you can't see.": "هذا الرقم مستخدم بالفعل لجدول في موقع لا يمكنك رؤيته.",
+ "This number is already used by a meter in a site you can't see.": "هذا الرقم مستخدم بالفعل لعدّاد في موقع لا يمكنك رؤيته."
 }

@@ -86,8 +86,9 @@ public static class SiteEndpoints
     private static async Task<Validator> ValidateAsync(SiteInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
         var v = SiteRules(i);
-        if (!string.IsNullOrWhiteSpace(i.Code) && await db.Sites.AnyAsync(s => s.Code == i.Code.Trim() && s.Id != id, ct))
-            v.Add("code", "Another site already uses this code.");
+        if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.Sites, s => s.Code == i.Code.Trim() && s.Id != id,
+                "Another site already uses this code.", "This code is already used by a site you can't see.", ct) is { } siteClash)
+            v.Add("code", siteClash);
         return v;
     }
 
@@ -249,8 +250,9 @@ public static class LocationEndpoints
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         if (i.ParentId is not null && !await db.Locations.AnyAsync(l => l.Id == i.ParentId && l.SiteId == i.SiteId, ct))
             v.Add("parentId", "Parent location must belong to the selected site.");
-        if (!string.IsNullOrWhiteSpace(i.Code) && await db.Locations.AnyAsync(l => l.SiteId == i.SiteId && l.Code == i.Code.Trim() && l.Id != id, ct))
-            v.Add("code", "Another location in this site already uses this code.");
+        if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.Locations, l => l.SiteId == i.SiteId && l.Code == i.Code.Trim() && l.Id != id,
+                "Another location in this site already uses this code.", "This code is already used in a part of the site you can't see.", ct) is { } locationClash)
+            v.Add("code", locationClash);
         return v;
     }
 

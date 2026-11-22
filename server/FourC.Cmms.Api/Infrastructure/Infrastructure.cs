@@ -34,6 +34,9 @@ public sealed class HttpTenantContext(IHttpContextAccessor accessor) : ITenantCo
     public Guid? TenantId => Guid.TryParse(User?.FindFirstValue(ClaimNames.TenantId), out var t) ? t : null;
     public Guid? UserId => Guid.TryParse(User?.FindFirstValue(ClaimTypes.NameIdentifier), out var u) ? u : null;
     public string? UserName => User?.FindFirstValue(ClaimNames.FullName) ?? User?.Identity?.Name;
+    private AccessScope? Scope => accessor.HttpContext?.Items[Access.ScopeKey] as AccessScope;
+    public IReadOnlyList<Guid>? SiteIds => Scope?.SiteIds;
+    public IReadOnlyList<string>? BranchPaths => Scope?.BranchPaths;
 }
 
 public sealed class AppClaimsFactory(UserManager<AppUser> users, IOptions<IdentityOptions> options)

@@ -39,6 +39,8 @@ public class OutboundEmail : Entity, ITenantOwned
     public required string EventKey { get; set; }
     public required string ToAddress { get; set; }
     public string? ToName { get; set; }
+    /// <summary>Who it is from (a site's sender name); null = the organization's name.</summary>
+    public string? FromName { get; set; }
     public string? ReplyTo { get; set; }
     public required string Subject { get; set; }
     public required string HtmlBody { get; set; }

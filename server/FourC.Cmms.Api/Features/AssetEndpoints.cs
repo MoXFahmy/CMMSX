@@ -348,8 +348,9 @@ public static class AssetEndpoints
     private static async Task<(Validator, Dictionary<string, string?>)> ValidateAsync(AssetInput i, Guid? id, CmmsDbContext db, bool requireNumber, CancellationToken ct)
     {
         var v = AssetRules(i, id, requireNumber);
-        if (!string.IsNullOrWhiteSpace(i.AssetNumber) && await db.Assets.AnyAsync(a => a.AssetNumber == i.AssetNumber.Trim() && a.Id != id, ct))
-            v.Add("assetNumber", "Another asset already uses this number.");
+        if (!string.IsNullOrWhiteSpace(i.AssetNumber) && await Unique.ClashAsync(db.Assets, a => a.AssetNumber == i.AssetNumber.Trim() && a.Id != id,
+                "Another asset already uses this number.", "This asset number is already used in a site you can't see.", ct) is { } numberClash)
+            v.Add("assetNumber", numberClash);
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct))
             v.Add("locationId", "Location must belong to the selected site.");
@@ -407,9 +408,9 @@ public static class AssetEndpoints
         for (var attempt = 0; attempt < 5; attempt++)
         {
             var number = FormatAssetNumber(settings, await db.NextNumberAsync("Asset", ct));
-            if (!await db.Assets.AnyAsync(a => a.AssetNumber == number, ct)) return number;
+            if (!await db.Assets.AllSites().AnyAsync(a => a.AssetNumber == number, ct)) return number;
             // Collision (e.g. numbers entered manually or imported): jump past the highest existing number with this prefix.
-            var existing = await db.Assets.Where(a => a.AssetNumber.StartsWith(prefix)).Select(a => a.AssetNumber).ToListAsync(ct);
+            var existing = await db.Assets.AllSites().Where(a => a.AssetNumber.StartsWith(prefix)).Select(a => a.AssetNumber).ToListAsync(ct);
             var max = existing.Select(n => long.TryParse(n[prefix.Length..], out var v) ? v : 0).DefaultIfEmpty(0).Max();
             await db.SetSequenceAtLeastAsync("Asset", max + 1, ct);
         }

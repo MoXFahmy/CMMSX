@@ -465,7 +465,9 @@ public static class InventoryEndpoints
     {
         var v = StoreRules(i);
         if (i.SiteId is null || !await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
-        if (!string.IsNullOrWhiteSpace(i.Code) && await db.Stores.AnyAsync(s => s.Code == i.Code.Trim() && s.Id != id, ct)) v.Add("code", "Another store uses this code.");
+        if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.Stores, s => s.Code == i.Code.Trim() && s.Id != id,
+                "Another store uses this code.", "This code is already used by a store in a site you can't see.", ct) is { } storeClash)
+            v.Add("code", storeClash);
         return v;
     }
 

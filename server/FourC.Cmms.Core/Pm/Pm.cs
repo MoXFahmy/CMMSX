@@ -56,6 +56,8 @@ public class PmSchedule : TenantEntity
     public Guid? AssetId { get; set; }
     public Asset? Asset { get; set; }
     public Guid? TradeId { get; set; }
+    /// <summary>Team the generated work is given to.</summary>
+    public Guid? TeamId { get; set; }
     public WorkPriority Priority { get; set; } = WorkPriority.Medium;
     public List<Guid> AssigneeIds { get; set; } = [];
     public Guid PmTaskId { get; set; }

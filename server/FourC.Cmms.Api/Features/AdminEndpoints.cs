@@ -13,7 +13,8 @@ namespace FourC.Cmms.Api.Features;
 
 public static class AdminEndpoints
 {
-    public sealed record UserInput(string FullName, string Email, string? JobTitle, string? Phone, bool IsActive, List<Guid> RoleIds, string? Password, decimal? PurchaseApprovalLimit = null);
+    public sealed record UserInput(string FullName, string Email, string? JobTitle, string? Phone, bool IsActive, List<Guid> RoleIds, string? Password, decimal? PurchaseApprovalLimit = null,
+        List<Guid>? SiteIds = null, List<Guid>? LocationIds = null);
     public sealed record RoleInput(string Name, string? Description, List<string> Permissions);
     public sealed record SettingsInput(string Name, TenantSettings Settings);
     public sealed record PasswordInput(string Password);
@@ -26,17 +27,19 @@ public static class AdminEndpoints
             await db.Users.AsNoTracking().Where(u => u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
                 .Select(u => new
                 {
-                    u.Id, u.FullName, u.Email, u.JobTitle, u.Phone, u.IsActive, u.LastLoginAt, u.CreatedAt, u.PurchaseApprovalLimit,
+                    u.Id, u.FullName, u.Email, u.JobTitle, u.Phone, u.IsActive, u.LastLoginAt, u.CreatedAt, u.PurchaseApprovalLimit, u.SiteIds, u.LocationIds,
                     Roles = db.UserRoles.Where(r => r.UserId == u.Id).Select(r => new { r.RoleId, r.Role!.Name }).ToList(),
                 }).ToListAsync(ct));
 
-        users.MapPost("/", async (UserInput input, CmmsDbContext db, UserManager<AppUser> um, IPasswordHasher<AppUser> hasher, CancellationToken ct) =>
+        users.MapPost("/", async (UserInput input, CmmsDbContext db, UserManager<AppUser> um, IPasswordHasher<AppUser> hasher, HttpContext http, CancellationToken ct) =>
         {
             var v = await ValidateUserAsync(input, null, db, um, ct);
             if (string.IsNullOrWhiteSpace(input.Password)) v.Add("password", "Set an initial password.");
+            var access = await CheckAccessAsync(input, null, db, Access.Of(http) ?? UserAccess.Everything, v, ct);
             if (!v.IsValid) return v.Problem();
             var user = TenantProvisioning.NewUser(db.CurrentTenantId!.Value, input.FullName, input.Email);
             user.JobTitle = input.JobTitle.Clean(); user.Phone = input.Phone.Clean(); user.IsActive = input.IsActive; user.PurchaseApprovalLimit = input.PurchaseApprovalLimit;
+            (user.SiteIds, user.LocationIds) = access;
             user.PasswordHash = hasher.HashPassword(user, input.Password!);
             db.Users.Add(user);
             db.UserRoles.AddRange(input.RoleIds.Distinct().Select(r => new UserRole { UserId = user.Id, RoleId = r }));
@@ -44,11 +47,12 @@ public static class AdminEndpoints
             return Results.Created($"/api/users/{user.Id}", new { user.Id });
         });
 
-        users.MapPut("/{id:guid}", async (Guid id, UserInput input, CmmsDbContext db, UserManager<AppUser> um, ITenantContext ctx, CancellationToken ct) =>
+        users.MapPut("/{id:guid}", async (Guid id, UserInput input, CmmsDbContext db, UserManager<AppUser> um, ITenantContext ctx, HttpContext http, CancellationToken ct) =>
         {
             var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id && u.TenantId == db.CurrentTenantId, ct);
             if (user is null) return Results.NotFound();
             var v = await ValidateUserAsync(input, id, db, um, ct);
+            var access = await CheckAccessAsync(input, user, db, Access.Of(http) ?? UserAccess.Everything, v, ct);
             if (id == ctx.UserId && !input.IsActive) v.Add("isActive", "You cannot deactivate your own account.");
             var adminRole = await db.Roles.Where(r => r.IsSystem).Select(r => r.Id).FirstOrDefaultAsync(ct);
             if (id == ctx.UserId && !input.RoleIds.Contains(adminRole) && await db.UserRoles.AnyAsync(r => r.UserId == id && r.RoleId == adminRole, ct))
@@ -62,11 +66,13 @@ public static class AdminEndpoints
                 user.NormalizedEmail = user.NormalizedUserName = input.Email.Trim().ToUpperInvariant();
             }
             if (emailChanged || !input.IsActive) user.SecurityStamp = Guid.NewGuid().ToString("N");
+            (user.SiteIds, user.LocationIds) = access;
             var existing = await db.UserRoles.Where(r => r.UserId == id).ToListAsync(ct);
             db.UserRoles.RemoveRange(existing.Where(r => !input.RoleIds.Contains(r.RoleId)));
             db.UserRoles.AddRange(input.RoleIds.Distinct().Where(r => existing.All(e => e.RoleId != r)).Select(r => new UserRole { UserId = id, RoleId = r }));
             await db.SaveChangesAsync(ct);
             PermissionService.Invalidate(user.TenantId);
+            AccessService.Invalidate(user.Id);
             return Results.Ok(new { user.Id });
         });
 
@@ -172,6 +178,31 @@ public static class AdminEndpoints
     private static bool OutOfRange(int? minutes) => minutes is < 1 or > 365 * 24 * 60;
 
     private static List<string> CleanPermissions(List<string>? p) => (p ?? []).Intersect(Permissions.All.Select(x => x.Code)).Distinct().ToList();
+
+    /// <summary>
+    /// The person's new site and branch lists (null input keeps what they have). Branches decide the sites (theirs), so the
+    /// two never disagree. Someone whose own access is limited can only give access inside it; unchanged lists always pass.
+    /// </summary>
+    private static async Task<(List<Guid> Sites, List<Guid> Locations)> CheckAccessAsync(UserInput i, AppUser? current, CmmsDbContext db, UserAccess editor,
+        Validator v, CancellationToken ct)
+    {
+        var sites = (i.SiteIds ?? current?.SiteIds ?? []).Distinct().ToList();
+        var locationIds = (i.LocationIds ?? current?.LocationIds ?? []).Distinct().ToList();
+        var places = await db.Locations.AllSites().AsNoTracking().Where(l => locationIds.Contains(l.Id)).Select(l => new { l.Id, l.SiteId, l.Path }).ToListAsync(ct);
+        if (places.Count != locationIds.Count) v.Add("locationIds", "Unknown location.");
+        if (places.Count > 0) sites = places.Select(p => p.SiteId).Distinct().ToList();
+        else if (sites.Count > 0 && await db.Sites.AllSites().CountAsync(s => sites.Contains(s.Id), ct) != sites.Count) v.Add("siteIds", "Unknown site.");
+
+        var changed = current is null || !sites.ToHashSet().SetEquals(current.SiteIds) || !locationIds.ToHashSet().SetEquals(current.LocationIds);
+        if (changed && editor.Limited)
+        {
+            if (sites.Count == 0) v.Add("siteIds", "Choose at least one of your sites.");
+            else if (sites.Any(s => !editor.SiteIds!.Contains(s))) v.Add("siteIds", "You can only give access to your own sites.");
+            else if (editor.Branches is not null && (places.Count == 0 || places.Any(p => !Access.Covers(editor, p.SiteId, p.Path))))
+                v.Add("locationIds", "You can only give access to places you can see.");
+        }
+        return (sites, locationIds);
+    }
 
     private static async Task<Validator> ValidateUserAsync(UserInput i, Guid? id, CmmsDbContext db, UserManager<AppUser> um, CancellationToken ct)
     {

@@ -188,8 +188,8 @@ public static class PmEndpoints
         {
             var v = await ValidateScheduleAsync(input, null, db, ct);
             if (!v.IsValid) return v.Problem();
-            var code = input.Code.Clean() ?? await Numbering.NextAsync(db, "PmSchedule", "PM-", 5, n => db.PmSchedules.AnyAsync(x => x.Code == n, ct),
-                p => db.PmSchedules.Where(x => x.Code.StartsWith(p)).Select(x => x.Code).ToListAsync(ct), ct);
+            var code = input.Code.Clean() ?? await Numbering.NextAsync(db, "PmSchedule", "PM-", 5, n => db.PmSchedules.AllSites().AnyAsync(x => x.Code == n, ct),
+                p => db.PmSchedules.AllSites().Where(x => x.Code.StartsWith(p)).Select(x => x.Code).ToListAsync(ct), ct);
             var s = CreateSchedule(db, input, code);
             if (s.Type == PmScheduleType.Meter && s.MeterTrigger == MeterTrigger.Incremental && s.NextDueReading is null)
                 s.NextDueReading = (await db.Meters.Where(m => m.Id == s.MeterId).Select(m => m.CurrentReading).FirstOrDefaultAsync(ct) ?? 0) + (s.MeterInterval ?? 0);
@@ -456,7 +456,9 @@ public static class PmEndpoints
     private static async Task<Validator> ValidateScheduleAsync(ScheduleInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
         var v = PmScheduleRules(i, id);
-        if (!string.IsNullOrWhiteSpace(i.Code) && await db.PmSchedules.AnyAsync(x => x.Code == i.Code.Trim() && x.Id != id, ct)) v.Add("code", "Another schedule uses this number.");
+        if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.PmSchedules, x => x.Code == i.Code.Trim() && x.Id != id,
+                "Another schedule uses this number.", "This number is already used by a schedule in a site you can't see.", ct) is { } scheduleClash)
+            v.Add("code", scheduleClash);
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         var round = i.AssetIds ?? [];
         if (round.Count > 100) v.Add("assetIds", "List at most 100 assets.");
@@ -522,7 +524,9 @@ public static class PmEndpoints
     {
         var v = new Validator().Required("code", i.Code, "Meter no.", 50).Required("name", i.Name, "Name", 200).Required("unit", i.Unit, "Unit", 30)
             .When(i.MaxDailyIncrement <= 0, "maxDailyIncrement", "Must be positive.");
-        if (!string.IsNullOrWhiteSpace(i.Code) && await db.Meters.AnyAsync(x => x.Code == i.Code.Trim() && x.Id != id, ct)) v.Add("code", "Another meter uses this number.");
+        if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.Meters, x => x.Code == i.Code.Trim() && x.Id != id,
+                "Another meter uses this number.", "This number is already used by a meter in a site you can't see.", ct) is { } meterClash)
+            v.Add("code", meterClash);
         if (!await db.Assets.AnyAsync(a => a.Id == i.AssetId, ct)) v.Add("assetId", "Choose the asset this meter is on.");
         return v;
     }

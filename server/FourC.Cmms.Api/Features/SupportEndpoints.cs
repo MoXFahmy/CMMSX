@@ -222,6 +222,7 @@ public static class AttachmentEndpoints
         g.MapGet("/", async (string entityType, Guid entityId, CmmsDbContext db, HttpContext http, PermissionService perms, CancellationToken ct) =>
         {
             if (!await AllowedAsync(http, perms, entityType, edit: false)) return Results.Forbid();
+            if (!await SiteAccess.VisibleAsync(db, entityType, entityId, ct)) return Results.NotFound();
             var rows = await db.Attachments.AsNoTracking().Where(a => a.EntityType == entityType && a.EntityId == entityId).OrderByDescending(a => a.CreatedAt).ToListAsync(ct);
             var userIds = rows.Select(r => r.CreatedById).OfType<Guid>().Distinct().ToList();
             var users = await db.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
@@ -261,7 +262,7 @@ public static class AttachmentEndpoints
         g.MapGet("/{id:guid}/content", async (Guid id, bool? download, CmmsDbContext db, IFileStorage storage, HttpContext http, PermissionService perms, CancellationToken ct) =>
         {
             var a = await db.Attachments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (a is null) return Results.NotFound();
+            if (a is null || !await SiteAccess.VisibleAsync(db, a.EntityType, a.EntityId, ct)) return Results.NotFound();
             if (!await AllowedAsync(http, perms, a.EntityType, edit: false)) return Results.Forbid();
             var stream = await storage.OpenReadAsync(a.StorageKey, ct);
             if (stream is null) return Results.NotFound();
@@ -284,7 +285,7 @@ public static class AttachmentEndpoints
         g.MapPut("/{id:guid}/primary", async (Guid id, CmmsDbContext db, HttpContext http, PermissionService perms, CancellationToken ct) =>
         {
             var a = await db.Attachments.FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (a is null) return Results.NotFound();
+            if (a is null || !await SiteAccess.VisibleAsync(db, a.EntityType, a.EntityId, ct)) return Results.NotFound();
             if (!await AllowedAsync(http, perms, a.EntityType, edit: true)) return Results.Forbid();
             if (!a.ContentType.StartsWith("image/")) throw new DomainException("Only images can be the primary photo.");
             await db.Attachments.Where(x => x.EntityType == a.EntityType && x.EntityId == a.EntityId && x.Id != id).ExecuteUpdateAsync(s => s.SetProperty(x => x.IsPrimaryImage, false), ct);
@@ -296,7 +297,7 @@ public static class AttachmentEndpoints
         g.MapDelete("/{id:guid}", async (Guid id, CmmsDbContext db, IFileStorage storage, HttpContext http, PermissionService perms, CancellationToken ct) =>
         {
             var a = await db.Attachments.FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (a is null) return Results.NotFound();
+            if (a is null || !await SiteAccess.VisibleAsync(db, a.EntityType, a.EntityId, ct)) return Results.NotFound();
             if (!await AllowedAsync(http, perms, a.EntityType, edit: true)) return Results.Forbid();
             db.Attachments.Remove(a);
             await db.SaveChangesAsync(ct);
@@ -318,9 +319,34 @@ public static class AuditEndpoints
     public static void MapAuditEndpoints(this RouteGroupBuilder api)
     {
         api.MapGet("/audit", async (string entityType, Guid entityId, CmmsDbContext db, CancellationToken ct) =>
-            await db.AuditEntries.AsNoTracking().Where(a => a.EntityType == entityType && a.EntityId == entityId)
+            !await SiteAccess.VisibleAsync(db, entityType, entityId, ct) ? Results.NotFound()
+            : Results.Ok(await db.AuditEntries.AsNoTracking().Where(a => a.EntityType == entityType && a.EntityId == entityId)
                 .OrderByDescending(a => a.Timestamp).Take(200)
-                .Select(a => new { a.Id, a.Action, a.Changes, a.UserName, a.Timestamp }).ToListAsync(ct))
+                .Select(a => new { a.Id, a.Action, a.Changes, a.UserName, a.Timestamp }).ToListAsync(ct)))
             .WithTags("Audit").RequireAuthorization();
+    }
+}
+
+/// <summary>Records reached by type and id (attachments, the audit trail) answer "not found" outside the person's sites.</summary>
+public static class SiteAccess
+{
+    public static async Task<bool> VisibleAsync(CmmsDbContext db, string entityType, Guid id, CancellationToken ct)
+    {
+        if (db.CurrentSiteIds is null) return true; // no limit: as before (the audit trail of a deleted record stays readable)
+        return entityType switch
+        {
+            "Site" => await db.Sites.AnyAsync(x => x.Id == id, ct),
+            "Location" => await db.Locations.AnyAsync(x => x.Id == id, ct),
+            "Asset" => await db.Assets.AnyAsync(x => x.Id == id, ct),
+            "WorkRequest" => await db.WorkRequests.AnyAsync(x => x.Id == id, ct),
+            "WorkOrder" => await db.WorkOrders.AnyAsync(x => x.Id == id, ct),
+            "PmSchedule" => await db.PmSchedules.AnyAsync(x => x.Id == id, ct),
+            "Store" => await db.Stores.AnyAsync(x => x.Id == id, ct),
+            "PurchaseOrder" => await db.PurchaseOrders.AnyAsync(x => x.Id == id, ct),
+            "Team" => await db.Teams.AnyAsync(x => x.Id == id, ct),
+            "Meter" => await db.Meters.AnyAsync(x => x.Id == id, ct),
+            "DowntimeEvent" => await db.DowntimeEvents.AnyAsync(x => x.Id == id, ct),
+            _ => true, // shared by every site: parts, suppliers, PM tasks, people…
+        };
     }
 }

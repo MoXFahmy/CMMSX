@@ -61,6 +61,8 @@ public class TenantSettings
     public List<Work.SlaTarget> SlaTargets { get; set; } = [];
     /// <summary>Hours a technician can work in a day, for the planning board's load per person.</summary>
     public decimal DailyCapacityHours { get; set; } = 8;
+    /// <summary>The organization's weekly working hours; empty = every day from 08:00 for <see cref="DailyCapacityHours"/> (before 0.9.0).</summary>
+    public List<People.WorkingDay> WorkingHours { get; set; } = [];
 }
 
 /// <summary>Customers rename hierarchy levels (e.g. legacy "Department" shown as "Site").</summary>
