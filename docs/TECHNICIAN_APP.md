@@ -54,7 +54,7 @@ The phone keeps a copy of the parts and stock of the stores at your sites, refre
   cover is added to the job's planned parts: it shows as short on the store keeper's list (*Inventory › Short for
   work*) and the answer says "Only … in the store; the rest is on the store keeper's list." Stock never goes below
   zero unless the part allows it, as in the office. *Give back* returns parts to the store (never more than were
-  issued to the job). Shelf-life parts are issued with their batch in the office.
+  issued to the job). A shelf-life part is added to the job's parts instead: the store keeper issues it with its batch.
 - **Without permission to issue stock** (*Inventory: transact*), *Used* asks for the parts instead: they are added to
   the job's planned parts and the store keeper issues them.
 - **A part's page:** stock per store and bin, what is reserved, and *Issue to a job* (store keepers).
@@ -62,7 +62,9 @@ The phone keeps a copy of the parts and stock of the stores at your sites, refre
   the phone under *Open stock counts*; scan or search each part and enter the quantity counted, offline too. Several
   people can count the same store; the latest count of a part wins. Back in the office, the count shows what is in
   stock, what was counted and the difference; *Post* turns the differences into stock adjustments, *Cancel count*
-  drops it with nothing changed.
+  drops it with nothing changed. Stock received or issued after a part was counted is kept: posting sets the part to
+  what was counted plus what moved since (the drawer shows that figure under the count). Shelf-life parts are counted
+  per batch in the office, not on the phone.
 - **Receive a delivery** (people who may receive purchase orders): pick the order and the line, enter the quantity,
   never more than is still to come.
 
@@ -72,7 +74,8 @@ The phone keeps a copy of the parts and stock of the stores at your sites, refre
   asset is already down from another job, yours joins that stop with a note.
 - **Add a checklist:** copies a PM checklist's steps into the job.
 - **Video or document:** MP4, MOV, WebM, PDF, Word, Excel or text, up to 50 MB each. They wait on the phone like
-  photos and are sent when there is a signal.
+  photos and are sent when there is a signal. One that doesn't get through on a slow connection after 3 tries is set
+  aside on the Sync page (*Retry* on Wi-Fi, or *Discard*), so the changes after it still go.
 - **Hours for the crew:** with *Log hours for others* (Maintenance Managers have it), *Log hours* asks whose hours;
   pick anyone on the job's crew.
 - **Cancel the job:** with permission to close work orders; pick the reason when the organization uses cancel reasons.

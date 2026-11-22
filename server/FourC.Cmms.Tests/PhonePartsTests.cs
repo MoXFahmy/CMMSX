@@ -42,6 +42,37 @@ public class PhonePartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task A_shelf_life_part_used_on_the_phone_goes_on_the_store_keepers_list()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync(0);
+        var oil = await PartAsync(s.Org.Admin, s.Store, "OIL-1", shelf: true);
+        var answer = await ActAsync(s.Org.Admin, "part.use", new { partId = oil, storeId = s.Store, quantity = 2 }, s.Wo);
+        Assert.Equal("done", Status(answer));
+        Assert.Equal("OIL-1 is a shelf-life part: added to the job's parts; the store keeper issues it with its batch.", Message(answer));
+        var line = (await Ok(await s.Org.Admin.GetAsync("/api/tech/bundle"))).GetProperty("jobs").EnumerateArray().Single(j => Id(j) == s.Wo)
+            .GetProperty("plannedLines").EnumerateArray().Single(l => l.GetProperty("partId").GetGuid() == oil);
+        Assert.Equal(2m, line.GetProperty("quantity").GetDecimal());
+        Assert.Equal(0m, line.GetProperty("issued").GetDecimal());
+    }
+
+    [SkippableFact]
+    public async Task Parts_used_without_a_plan_show_on_the_job()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync(5);
+        Assert.Equal("done", Status(await ActAsync(s.Org.Admin, "part.use", new { partId = s.Part, storeId = s.Store, quantity = 2 }, s.Wo)));
+        var bundle = await Ok(await s.Org.Admin.GetAsync("/api/tech/bundle"));
+        Assert.True(bundle.GetProperty("can").GetProperty("issueStock").GetBoolean());
+        var job = bundle.GetProperty("jobs").EnumerateArray().Single(j => Id(j) == s.Wo);
+        Assert.Empty(job.GetProperty("plannedLines").EnumerateArray());
+        var used = Assert.Single(job.GetProperty("usedParts").EnumerateArray());
+        Assert.Equal(s.Part, used.GetProperty("partId").GetGuid());
+        Assert.Equal(s.Store, used.GetProperty("storeId").GetGuid());
+        Assert.Equal(2m, used.GetProperty("issued").GetDecimal());
+    }
+
+    [SkippableFact]
     public async Task Part_use_is_applied_once()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

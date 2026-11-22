@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { ActionIcon, Alert, Anchor, Badge, Box, Button, Card, Center, Group, Indicator, Loader, Stack, Switch, Text, TextInput, Title, UnstyledButton } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { Link, Route, Routes, useLocation, useNavigate } from 'react-router';
+import { changeLabelKey } from './changeLabel';
 import { CountPage, PartPage, ReceivePage, StockSearchPage } from './StockPages';
 import { NewWorkOrderPage } from './JobExtras';
 import { useTranslation } from 'react-i18next';
@@ -18,7 +19,7 @@ import { JobPage } from './JobPage';
 import { PlacePage } from './PlacePage';
 import { ScanPage } from './ScanPage';
 import { MODE_KEY, TechProvider, useTech, type Phase } from './useTech';
-import type { QueuedChange } from './outbox';
+import { FILE_TRIES, type QueuedChange } from './outbox';
 import type { TechJob } from './types';
 
 /** Fingerprint/face lock (0.11.0): locked when the app opens or comes back after 5 minutes, if switched on and the phone can. */
@@ -281,9 +282,9 @@ function SyncPage() {
         <Card key={c.clientId} withBorder p="sm">
           <Group justify="space-between" wrap="nowrap" align="flex-start">
             <div style={{ minWidth: 0 }}>
-              <Text fz="sm" fw={600}>{t(`tech.change.${c.type}`, { defaultValue: c.type })} {jobNo(c.workOrderId)}</Text>
+              <Text fz="sm" fw={600}>{t(changeLabelKey(c), { defaultValue: c.type })} {jobNo(c.workOrderId)}</Text>
               <Text fz="xs" c="dimmed">{fmtDateTime(c.at)}</Text>
-              {c.state === 'failed' && <Text fz="xs" c="red">{c.message}</Text>}
+              {c.state === 'failed' && <Text fz="xs" c="red">{c.code === 'tooSlow' ? t('tech.tooSlow', { tries: FILE_TRIES }) : c.message}</Text>}
             </div>
             <Badge color={c.state === 'failed' ? 'red' : c.state === 'sending' ? 'blue' : 'orange'} variant="light">{t(`tech.state.${c.state}`)}</Badge>
           </Group>

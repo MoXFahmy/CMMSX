@@ -1340,7 +1340,17 @@
       "photo.add": "صورة",
       "reading.add": "قراءة عداد",
       "status.change": "الحالة",
-      "request.create": "طلب"
+      "request.create": "طلب",
+      "part.use": "قطعة مستخدمة",
+      "part.return": "قطعة مُرجعة",
+      "stock.issue": "صرف قطع",
+      "po.receive": "استلام توريد",
+      "count.line": "جرد مخزون",
+      "downtime.start": "توقف الأصل",
+      "downtime.end": "عاد للعمل",
+      "tasks.fromPm": "إضافة قائمة خطوات",
+      "workorder.create": "أمر عمل جديد",
+      "file": "فيديو أو مستند"
     },
     "state": {
       "waiting": "بالانتظار",
@@ -1430,7 +1440,9 @@
     "refreshServerProblem": "تعذر على الخادم إرسال أعمالك الآن. يواصل هاتفك العمل من نسخته؛ حاول مرة أخرى بعد دقائق.",
     "assetIsDownHint": "يبدأ توقفًا في سجل توقفات الأصل وقت إرسال هذا الطلب، حتى بدون شبكة.",
     "stopFromLog": "من سجل توقفات الأصل: متوقف منذ {{start}}. إكمال المهمة ينهي التوقف.",
-    "team": "الفريق: {{team}}"
+    "team": "الفريق: {{team}}",
+    "plannedParts": "القطع المخطط لها",
+    "tooSlow": "لم يصل هذا الملف عبر هذا الاتصال ({{tries}} محاولات). أعد المحاولة على شبكة Wi-Fi أو تجاهله."
   },
   "labels": {
     "title": "ملصقات QR",
@@ -1770,7 +1782,9 @@
     "order": "أمر الشراء",
     "line": "البند",
     "outstanding": "متبقٍ {{qty}}",
-    "receiveButton": "استلام"
+    "receiveButton": "استلام",
+    "shelfCount": "تُجرد الأصناف ذات مدة الصلاحية حسب الدفعة من المكتب.",
+    "used": "استُخدم {{qty}} {{unit}}"
   },
   "techJob": {
     "downSince": "الأصل متوقف منذ {{when}}",
@@ -1818,7 +1832,8 @@
     "counted": "المجرود",
     "difference": "الفرق",
     "countedBy": "جرده",
-    "nothingCounted": "لم يُجرد شيء بعد."
+    "nothingCounted": "لم يُجرد شيء بعد.",
+    "movedSince": "تغيّر {{qty}} منذ عدّه"
   },
   "techLock": {
     "reason": "فتح CMX",

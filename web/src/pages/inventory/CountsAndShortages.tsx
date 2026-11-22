@@ -15,7 +15,7 @@ type Shortage = { workOrderId: string; workOrderNumber: string; dueDate?: string
 type CountRow = { id: string; name: string; storeId: string; storeCode: string; status: 'Open' | 'Posted' | 'Cancelled'; lines: number; createdAt: string; postedAt?: string | null };
 type CountDetail = {
   id: string; name: string; status: CountRow['status']; store: { id: string; code: string; name: string };
-  lines: { partId: string; partNumber: string; partName: string; unitOfMeasure: string; bin?: string | null; expected: number; counted: number; difference: number; countedByName?: string | null; countedAt: string }[];
+  lines: { partId: string; partNumber: string; partName: string; unitOfMeasure: string; bin?: string | null; expected: number; counted: number; movedSince: number; difference: number; countedByName?: string | null; countedAt: string }[];
 };
 
 const useStores = () => useQuery({ queryKey: ['stores'], queryFn: () => get<Store[]>('/stores') });
@@ -121,7 +121,7 @@ function CountDrawer({ id, onClose }: { id: string | null; onClose: () => void }
                 {c.lines.map((l) => (
                   <Table.Tr key={l.partId}>
                     <Table.Td><Text fz="sm">{l.partNumber} · {l.partName}</Text></Table.Td><Table.Td>{l.bin ?? '—'}</Table.Td>
-                    <Table.Td ta="right">{fmtQty(l.expected)}</Table.Td><Table.Td ta="right">{fmtQty(l.counted)}</Table.Td>
+                    <Table.Td ta="right">{fmtQty(l.expected)}</Table.Td><Table.Td ta="right">{fmtQty(l.counted)}{l.movedSince !== 0 && <Text fz="xs" c="dimmed">{t('invPhone.movedSince', { qty: `${l.movedSince > 0 ? '+' : ''}${fmtQty(l.movedSince)}` })}</Text>}</Table.Td>
                     <Table.Td ta="right"><Text fz="sm" c={l.difference < 0 ? 'red' : l.difference > 0 ? 'teal' : undefined}>{l.difference > 0 ? '+' : ''}{fmtQty(l.difference)}</Text></Table.Td>
                     <Table.Td><Text fz="xs" c="dimmed">{l.countedByName} · {fmtDateTime(l.countedAt)}</Text></Table.Td>
                   </Table.Tr>

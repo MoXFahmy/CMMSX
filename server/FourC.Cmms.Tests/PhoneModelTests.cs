@@ -60,6 +60,8 @@ public class PhoneModelTests(ApiFixture fx) : IClassFixture<ApiFixture>
     [InlineData("Request approved: WR-00001")]
     [InlineData("The phone can start, hold, complete or cancel work only.")]
     [InlineData("You can't cancel work orders.")]
+    [InlineData("{0} is a shelf-life part: added to the job's parts; the store keeper issues it with its batch.")]
+    [InlineData("Count shelf-life parts by batch in the office.")]
     public void New_phone_messages_have_Arabic(string english) =>
         Assert.NotEqual(english, FourC.Cmms.Api.Infrastructure.Translator.T(english, "ar"));
 }

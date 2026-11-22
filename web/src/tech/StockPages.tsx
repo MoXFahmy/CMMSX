@@ -59,7 +59,8 @@ function QuantityForm({ part, storeId, ownReserved = 0, initial, label, onSave, 
 /** A job's parts (0.11.0): planned lines to mark used (or give back), and unplanned parts added from any store. */
 export function JobParts({ job }: { job: TechJob }) {
   const { t } = useTranslation();
-  const { stock, add } = useTech();
+  const { stock, bundle, add } = useTech();
+  const canIssue = bundle?.can?.issueStock ?? true;
   const [using, setUsing] = useState<PlannedLine | null>(null);
   const [returning, setReturning] = useState<PlannedLine | null>(null);
   const [adding, setAdding] = useState(false);
@@ -88,12 +89,24 @@ export function JobParts({ job }: { job: TechJob }) {
             </div>
             <Group gap={4} wrap="nowrap">
               {left > 0 && p && <Button size="xs" onClick={() => setUsing(l)}>{t('techStock.markUsed')}</Button>}
-              {l.issued > 0 && p && <Button size="xs" variant="subtle" onClick={() => setReturning(l)}>{t('techStock.giveBack')}</Button>}
+              {l.issued > 0 && p && canIssue && <Button size="xs" variant="subtle" onClick={() => setReturning(l)}>{t('techStock.giveBack')}</Button>}
             </Group>
           </Group>
         );
       })}
-      {lines.length === 0 && <Text fz="sm" c="dimmed">{t('techStock.noParts')}</Text>}
+      {(job.usedParts ?? []).map((u) => {
+        const p = partOf(u.partId);
+        return (
+          <Group key={`used-${u.partId}-${u.storeId}`} justify="space-between" wrap="nowrap">
+            <div style={{ minWidth: 0 }}>
+              <Text fz="sm" fw={500} truncate>{p ? `${p.partNumber} · ${p.name}` : u.partId}</Text>
+              <Text fz="xs" c="dimmed">{t('techStock.used', { qty: fmtQty(u.issued), unit: p?.unitOfMeasure ?? '' })}</Text>
+            </div>
+            {p && canIssue && <Button size="xs" variant="subtle" onClick={() => setReturning({ id: `used-${u.partId}-${u.storeId}`, partId: u.partId, storeId: u.storeId, quantity: 0, issued: u.issued })}>{t('techStock.giveBack')}</Button>}
+          </Group>
+        );
+      })}
+      {lines.length === 0 && (job.usedParts ?? []).length === 0 && <Text fz="sm" c="dimmed">{t('techStock.noParts')}</Text>}
       <Modal opened={!!using} onClose={() => setUsing(null)} title={t('techStock.markUsed')}>
         {using && partOf(using.partId) && (
           <QuantityForm part={partOf(using.partId)!} storeId={using.storeId ?? job.defaultStoreId} ownReserved={stillReserved(using)} initial={stillReserved(using)} label={t('techStock.markUsed')}
@@ -201,8 +214,10 @@ export function CountPage() {
         <Card><Stack>
           <Text fw={600}>{part.partNumber} · {part.name}</Text>
           {part.levels.find((l) => l.storeId === count.storeId)?.bin && <Text fz="sm">{t('techStock.bin')} {part.levels.find((l) => l.storeId === count.storeId)?.bin}</Text>}
-          <NumberInput label={`${t('techStock.countedQty')} (${part.unitOfMeasure})`} min={0} decimalScale={3} value={qty} onChange={(v) => setQty(v === '' ? '' : Number(v))} data-autofocus />
-          <Group><Button onClick={save} disabled={qty === '' || Number(qty) < 0}>{t('techStock.saveCount')}</Button><Button variant="subtle" onClick={() => setPart(null)}>{t('common.cancel')}</Button></Group>
+          {part.isShelfItem
+            ? <Text fz="sm" c="orange">{t('techStock.shelfCount')}</Text>
+            : <NumberInput label={`${t('techStock.countedQty')} (${part.unitOfMeasure})`} min={0} decimalScale={3} value={qty} onChange={(v) => setQty(v === '' ? '' : Number(v))} data-autofocus />}
+          <Group>{!part.isShelfItem && <Button onClick={save} disabled={qty === '' || Number(qty) < 0}>{t('techStock.saveCount')}</Button>}<Button variant="subtle" onClick={() => setPart(null)}>{t('common.cancel')}</Button></Group>
         </Stack></Card>
       )}
       {counted.length > 0 && (

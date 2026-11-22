@@ -113,6 +113,9 @@ public static partial class TechEndpoints
                     HasLabor = withLabor.Contains(j.Id),
                     PlannedLines = planned[j.Id].Select(p => new { p.Id, p.PartId, p.StoreId, p.Quantity,
                         Issued = p.StoreId is { } st ? issued.GetValueOrDefault((j.Id, p.PartId, st)) : 0m }),
+                    // Parts issued to the job with no planned line for that part and store, so the phone shows them and can give them back.
+                    UsedParts = issued.Where(x => x.Key.Item1 == j.Id && x.Value > 0 && !planned[j.Id].Any(p => p.PartId == x.Key.PartId && p.StoreId == x.Key.StoreId))
+                        .Select(x => new { x.Key.PartId, x.Key.StoreId, Issued = x.Value }),
                     DefaultStoreId = defaultStores.GetValueOrDefault(j.SiteId),
                     Crew = crew[j.Id],
                 }),
@@ -120,7 +123,7 @@ public static partial class TechEndpoints
                 Can = new
                 {
                     LogForOthers = allowed.Contains(Permissions.WorkOrdersLogForOthers), Cancel = allowed.Contains(Permissions.WorkOrdersClose),
-                    CreateWorkOrders = allowed.Contains(Permissions.WorkOrdersCreate),
+                    CreateWorkOrders = allowed.Contains(Permissions.WorkOrdersCreate), IssueStock = allowed.Contains(Permissions.InventoryTransact),
                 },
                 FailureCodes = await db.FailureCodes.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
                 CompletionRules = new

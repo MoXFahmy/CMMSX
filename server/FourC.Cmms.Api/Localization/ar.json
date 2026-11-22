@@ -775,5 +775,7 @@
  "New job: {0}": "عمل جديد: {0}",
  "Request approved: {0}": "اعتُمد الطلب: {0}",
  "A push token is needed.": "مطلوب رمز الإشعارات.",
- "This device isn't signed in.": "هذا الجهاز غير مسجّل الدخول."
+ "This device isn't signed in.": "هذا الجهاز غير مسجّل الدخول.",
+ "{0} is a shelf-life part: added to the job's parts; the store keeper issues it with its batch.": "{0} صنف له مدة صلاحية: أُضيف إلى قطع أمر العمل، ويصرفه أمين المخزن مع دفعته.",
+ "Count shelf-life parts by batch in the office.": "اجرد الأصناف ذات مدة الصلاحية حسب الدفعة من المكتب."
 }

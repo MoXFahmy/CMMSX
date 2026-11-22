@@ -10,10 +10,10 @@ public static class Phone
     public static async Task<Guid> StoreAsync(HttpClient c, Guid site, string code = "ST1") =>
         Id(await Ok(await c.PostAsJsonAsync("/api/stores", new { code, name = $"Store {code}", siteId = site })));
 
-    public static async Task<Guid> PartAsync(HttpClient c, Guid store, string number = "P1", bool negative = false, string bin = "A1") =>
+    public static async Task<Guid> PartAsync(HttpClient c, Guid store, string number = "P1", bool negative = false, string bin = "A1", bool shelf = false) =>
         Id(await Ok(await c.PostAsJsonAsync("/api/parts", new
         {
-            partNumber = number, name = $"Part {number}", unitOfMeasure = "EA", standardPrice = 10, isCritical = false, isShelfItem = false, allowNegativeStock = negative,
+            partNumber = number, name = $"Part {number}", unitOfMeasure = "EA", standardPrice = 10, isCritical = false, isShelfItem = shelf, allowNegativeStock = negative,
             levels = new[] { new { storeId = store, bin, minLevel = 0, reorderLevel = 0, maxLevel = 0, reorderQuantity = 0 } },
         })));
 

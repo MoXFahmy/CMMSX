@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { backoffMs, drain, retryNow, type OutboxStore, type QueuedChange, type SendResult } from './outbox';
+import { backoffMs, drain, FILE_TRIES, retryNow, type OutboxStore, type QueuedChange, type SendResult } from './outbox';
 
 /** An in-memory queue, as IndexedDB would keep it. */
 function memoryStore(items: QueuedChange[], files: Record<string, Blob> = {}): OutboxStore & { items: Map<string, QueuedChange>; files: Record<string, Blob> } {
@@ -148,6 +148,25 @@ describe('drain: who is signed in, and server errors', () => {
     expect(sent).toEqual(['a']);
     expect(r.stoppedBy).toBe('serverError');
     expect(store.items.get('a')).toMatchObject({ state: 'waiting', tries: 1, nextTryAt: 1000 + backoffMs(0) });
+  });
+
+  it('sets a video aside after it times out 3 times, so the changes behind it go', async () => {
+    const video = { type: 'photo.add', payload: { kind: 'file', fileName: 'v.mp4' }, fileKey: 'f', tries: FILE_TRIES - 1 };
+    const store = memoryStore([change('a', 1, 'u1', video), change('b', 2)], { f: new Blob(['x']) });
+    const { sent, send } = answers({ a: { kind: 'retry', timedOut: true } });
+    const r = await drain(store, 'u1', send, () => 0);
+    expect(FILE_TRIES).toBe(3);
+    expect(sent).toEqual(['a', 'b']);
+    expect(r).toEqual({ sent: 1, failed: 1 });
+    expect(store.items.get('a')).toMatchObject({ state: 'failed', code: 'tooSlow' });
+  });
+
+  it('keeps waiting for a video while there is simply no signal', async () => {
+    const store = memoryStore([change('a', 1, 'u1', { type: 'photo.add', payload: { kind: 'file' }, fileKey: 'f', tries: 6 }), change('b', 2)], { f: new Blob(['x']) });
+    const { sent, send } = answers({ a: { kind: 'retry' } });
+    const r = await drain(store, 'u1', send, () => 0);
+    expect(sent).toEqual(['a']);
+    expect(r.stoppedBy).toBe('retry');
   });
 
   it('sets a change aside after the server fails on it 5 times, and sends the rest', async () => {

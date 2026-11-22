@@ -41,6 +41,33 @@ public class StockCountTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Stock_moved_after_a_part_was_counted_is_kept_when_posting()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (org, store, p1, _, count) = await CountAsync();
+        // Counted 4 on the shelf (5 on record), then 5 more were received before the office posted.
+        await ActAsync(org.Admin, "count.line", new { countId = count, partId = p1, quantity = 4 }, at: DateTimeOffset.UtcNow);
+        await Task.Delay(50);
+        await ReceiveAsync(org.Admin, p1, store, 5);
+        var line = Line(await Ok(await org.Admin.GetAsync($"/api/stock-counts/{count}")), p1);
+        Assert.Equal(5m, line.GetProperty("movedSince").GetDecimal());
+        Assert.Equal(-1m, line.GetProperty("difference").GetDecimal());
+        await Ok(await org.Admin.PostAsync($"/api/stock-counts/{count}/post", null));
+        Assert.Equal(9m, await OnHandAsync(org.Admin, p1, store));
+    }
+
+    [SkippableFact]
+    public async Task Shelf_life_parts_are_counted_by_batch_in_the_office()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (org, store, _, _, count) = await CountAsync();
+        var oil = await PartAsync(org.Admin, store, "OIL-1", shelf: true);
+        var answer = await ActAsync(org.Admin, "count.line", new { countId = count, partId = oil, quantity = 3 });
+        Assert.Equal("rejected", Status(answer));
+        Assert.Equal("Count shelf-life parts by batch in the office.", Message(answer));
+    }
+
+    [SkippableFact]
     public async Task The_latest_count_of_a_part_wins()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

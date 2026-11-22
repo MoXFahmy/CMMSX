@@ -28,7 +28,8 @@ export function JobPage() {
   const { bundle, queue, sent, add } = useTech();
   const base = bundle?.jobs.find((j) => j.id === id);
   // Sent changes first (they are older), then those still waiting.
-  const job = useMemo(() => (base ? withQueued(base, [...sent, ...queue]) : undefined), [base, sent, queue]);
+  const canIssue = bundle?.can?.issueStock ?? true;
+  const job = useMemo(() => (base ? withQueued(base, [...sent, ...queue], { canIssue }) : undefined), [base, sent, queue, canIssue]);
   const [hoursOpen, setHoursOpen] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);

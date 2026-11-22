@@ -6,6 +6,8 @@ import type { TechBundle, TechPlaces, TechStock } from './types';
 export class Offline extends Error {}
 /** A 5xx answer: there is signal, the server failed. */
 export class ServerError extends Offline {}
+/** The request got no answer in time (a slow connection rather than none). */
+export class TimedOut extends Offline {}
 /** Thrown on 401: the sign-in ended, or (revoked) this device was signed out. */
 export class SignedOut extends Error { constructor(public revoked: boolean) { super('Signed out'); } }
 
@@ -25,14 +27,18 @@ const SEND_MS = 20_000;
 const LOAD_MS = 30_000;
 const UPLOAD_MS = 60_000;
 
+/** A file upload's time limit: a minute, plus time for the file at about 50 kB/s (a 50 MB video gets about 18 minutes). */
+export const uploadTimeoutMs = (bytes: number) => UPLOAD_MS + Math.ceil(bytes / 50);
+
 async function call(path: string, init: RequestInit | undefined, timeoutMs: number): Promise<Response> {
   // The phone says there is no network (airplane mode): don't wait for a request that can't go anywhere.
   if (typeof navigator !== 'undefined' && navigator.onLine === false) throw new Offline();
   let res: Response;
   const abort = new AbortController();
-  const timer = setTimeout(() => abort.abort(), timeoutMs);
+  let timedOut = false;
+  const timer = setTimeout(() => { timedOut = true; abort.abort(); }, timeoutMs);
   try { res = await fetch(`/api${path}`, { credentials: 'same-origin', ...init, signal: abort.signal, headers: { Accept: 'application/json', 'Accept-Language': i18n.language || 'en', ...(init?.headers ?? {}) } }); }
-  catch { throw new Offline(); }
+  catch { throw timedOut ? new TimedOut() : new Offline(); }
   finally { clearTimeout(timer); }
   if (res.status === 401) throw new SignedOut(res.headers.get('X-Session-Revoked') === '1');
   if (res.status >= 500) throw new ServerError();
@@ -88,7 +94,7 @@ export async function sendChange(c: QueuedChange, file?: Blob): Promise<SendResu
       if (p.signedBy) form.set('signedBy', p.signedBy);
       if (!file) return { kind: 'rejected', message: 'The photo is no longer on this phone.' };
       form.set('file', file, p.fileName ?? `${p.kind}.jpg`);
-      res = await call('/tech/files', { method: 'POST', body: form }, UPLOAD_MS);
+      res = await call('/tech/files', { method: 'POST', body: form }, uploadTimeoutMs(file.size));
     } else {
       res = await call('/tech/actions', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
@@ -104,7 +110,8 @@ export async function sendChange(c: QueuedChange, file?: Blob): Promise<SendResu
     return a.status === 'done' ? { kind: 'done', message: a.message } : { kind: 'rejected', message: a.message ?? 'Not accepted.', code: a.code };
   } catch (e) {
     if (e instanceof SignedOut) return { kind: 'signedOut', revoked: e.revoked };
-    return e instanceof ServerError ? { kind: 'retry', serverError: true } : { kind: 'retry' };
+    if (e instanceof ServerError) return { kind: 'retry', serverError: true };
+    return e instanceof TimedOut && c.fileKey ? { kind: 'retry', timedOut: true } : { kind: 'retry' };
   }
 }
 

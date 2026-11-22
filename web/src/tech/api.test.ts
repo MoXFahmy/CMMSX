@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchBundle, fetchMe, Offline, refreshProblem, sendChange, ServerError, SignedOut } from './api';
+import { fetchBundle, fetchMe, Offline, refreshProblem, sendChange, ServerError, SignedOut, uploadTimeoutMs } from './api';
 import type { QueuedChange } from './outbox';
 
 const change = (extra: Partial<QueuedChange> = {}): QueuedChange => ({
@@ -9,6 +9,26 @@ const change = (extra: Partial<QueuedChange> = {}): QueuedChange => ({
 afterEach(() => { vi.unstubAllGlobals(); vi.useRealTimers(); });
 
 describe('api', () => {
+  it('gives a big video time to go up on a slow connection', () => {
+    expect(uploadTimeoutMs(0)).toBe(60_000);
+    expect(uploadTimeoutMs(50 * 1024 * 1024)).toBeGreaterThan(15 * 60_000);
+  });
+
+  it('tells a file upload that timed out apart from no signal', async () => {
+    vi.useFakeTimers();
+    vi.stubGlobal('fetch', (_url: string, init: RequestInit) => new Promise((_, reject) => {
+      init.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')));
+    }));
+    const c: QueuedChange = { clientId: 'c1', userId: 'u', seq: 1, at: '2026-11-20T08:00:00Z', type: 'photo.add', workOrderId: 'w1',
+      payload: { kind: 'file', fileName: 'v.mp4' }, state: 'waiting', tries: 0, fileKey: 'f' };
+    const r = sendChange(c, new Blob(['x']));
+    await vi.advanceTimersByTimeAsync(61_000);
+    expect(await r).toEqual({ kind: 'retry', timedOut: true });
+    vi.stubGlobal('fetch', async () => { throw new TypeError('Failed to fetch'); });
+    expect(await sendChange(c, new Blob(['x']))).toEqual({ kind: 'retry' });
+    vi.useRealTimers();
+  });
+
   it('gives up on "who is signed in" after a few seconds without an answer (weak signal)', async () => {
     vi.useFakeTimers();
     vi.stubGlobal('fetch', (_url: string, init: RequestInit) => new Promise((_, reject) => {

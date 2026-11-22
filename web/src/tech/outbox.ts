@@ -40,7 +40,8 @@ export interface OutboxStore {
 export type SendResult =
   | { kind: 'done'; message?: string }
   | { kind: 'rejected'; message: string; code?: string }
-  | { kind: 'retry'; serverError?: boolean }
+  /** timedOut: a file upload got no answer in time (there is some signal, too slow for the file). */
+  | { kind: 'retry'; serverError?: boolean; timedOut?: boolean }
   | { kind: 'signedOut'; revoked: boolean }
   /** The change was made by someone other than who is signed in now: keep it for its owner. */
   | { kind: 'otherUser' };
@@ -53,6 +54,12 @@ export type DrainResult = { sent: number; failed: number; stoppedBy?: 'retry' | 
 
 /** A change the server fails on this many times in a row is set aside as failed (Retry or Discard on the Sync page). */
 export const SERVER_TRIES = 5;
+
+/**
+ * A video or document whose upload times out this many times is set aside (Retry or Discard on the Sync page), so the
+ * changes queued after it aren't held up until there is Wi-Fi.
+ */
+export const FILE_TRIES = 3;
 
 /** Wait before the next try: 5 s, 10 s, 20 s … at most 5 minutes. */
 export const backoffMs = (tries: number) => Math.min(5_000 * 2 ** tries, 300_000);
@@ -91,6 +98,12 @@ export async function drain(
         if (r.serverError && c.tries + 1 >= SERVER_TRIES) {
           await store.put({ ...c, state: 'failed', tries: c.tries + 1, nextTryAt: undefined, code: 'serverError',
             message: `The server couldn't save this change (it failed ${SERVER_TRIES} times). Retry later, or discard it.` });
+          failed++;
+          break;
+        }
+        if (r.timedOut && (c.payload as { kind?: string } | null)?.kind === 'file' && c.tries + 1 >= FILE_TRIES) {
+          await store.put({ ...c, state: 'failed', tries: c.tries + 1, nextTryAt: undefined, code: 'tooSlow',
+            message: `This file didn't get through on this connection (${FILE_TRIES} tries). Retry on Wi-Fi, or discard it.` });
           failed++;
           break;
         }

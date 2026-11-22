@@ -23,11 +23,14 @@ export type TechJob = {
   hasLabor?: boolean;
   /** 0.11.0: planned lines (to mark used) and the job site's default store. */
   plannedLines?: PlannedLine[]; defaultStoreId?: string | null;
+  /** Parts issued to the job with no planned line for that part and store (to give back). */
+  usedParts?: UsedPart[];
   /** The people on the job and its team's members (a crew leader logs their hours). */
   crew?: { employeeId: string; name: string }[];
 };
 
 export type PlannedLine = { id: string; partId: string; storeId?: string | null; quantity: number; issued: number };
+export type UsedPart = { partId: string; storeId: string; issued: number };
 
 /** A part as the phone keeps it (GET /api/tech/stock, 0.11.0): stock and bin in each store of my sites. */
 export type StockPart = {
@@ -50,7 +53,7 @@ export type TechBundle = {
   failureCodes: { id: string; code: string; name: string }[];
   completionRules: { notes: boolean; labour: boolean; allSteps: boolean; failureCodeOnBreakdown: boolean; holdNote?: boolean };
   /** What this person may do on the phone (0.11.0). */
-  can?: { logForOthers: boolean; cancel: boolean; createWorkOrders: boolean };
+  can?: { logForOthers: boolean; cancel: boolean; createWorkOrders: boolean; issueStock?: boolean };
 };
 
 /** The assets, locations and meters of my sites (GET /api/tech/places), for scanning offline. */

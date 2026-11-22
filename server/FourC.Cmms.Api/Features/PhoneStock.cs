@@ -18,12 +18,19 @@ public static class PhoneStock
     public const string ShortMessage = "Only {0} in the store; the rest is on the store keeper's list.";
     public const string ReservedMessage = "This took parts reserved for {0}.";
     public const string AskedMessage = "Added to the job's parts; the store keeper issues them.";
+    public const string ShelfMessage = "{0} is a shelf-life part: added to the job's parts; the store keeper issues it with its batch.";
 
     /// <summary>Issues <paramref name="quantity"/> to the job. Returns the note for the technician, or null. The caller saves.</summary>
     public static async Task<string?> UseAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, Guid partId, Guid storeId, decimal quantity, DateTimeOffset at,
         CancellationToken ct)
     {
-        var (part, store) = await CheckAsync(db, partId, storeId, quantity, ct);
+        var (part, _) = await CheckAsync(db, partId, storeId, quantity, ct, allowShelf: true);
+        if (part.IsShelfItem)
+        {
+            // Issued by batch, which the office chooses: the part taken is recorded on the job for the store keeper.
+            await PlanAsync(db, w.Id, partId, storeId, quantity, ct);
+            return string.Format(ShelfMessage, part.PartNumber);
+        }
         var onHand = await Planning.OnHandAsync(db, partId, storeId, ct);
         var toIssue = part.AllowNegativeStock ? quantity : Math.Min(quantity, Math.Max(onHand, 0));
         var notes = new List<string>();
@@ -48,7 +55,7 @@ public static class PhoneStock
     /// <summary>Someone who can't take parts from the store asks for them: the quantity is added to the job's planned parts.</summary>
     public static async Task<string> AskAsync(CmmsDbContext db, WorkOrder w, Guid partId, Guid storeId, decimal quantity, CancellationToken ct)
     {
-        await CheckAsync(db, partId, storeId, quantity, ct);
+        await CheckAsync(db, partId, storeId, quantity, ct, allowShelf: true);
         await PlanAsync(db, w.Id, partId, storeId, quantity, ct);
         return AskedMessage;
     }
@@ -68,14 +75,15 @@ public static class PhoneStock
     }
 
     /// <summary>The part and store (only a store of the person's sites), and a quantity that makes sense.</summary>
-    private static async Task<(Part Part, Store Store)> CheckAsync(CmmsDbContext db, Guid partId, Guid storeId, decimal quantity, CancellationToken ct)
+    private static async Task<(Part Part, Store Store)> CheckAsync(CmmsDbContext db, Guid partId, Guid storeId, decimal quantity, CancellationToken ct,
+        bool allowShelf = false)
     {
         if (quantity <= 0) throw new DomainException("Quantity must be positive.");
         var store = await db.Stores.AsNoTracking().FirstOrDefaultAsync(s => s.Id == storeId, ct) ?? throw new DomainException("Store not found.");
         if (!store.IsActive) throw new DomainException($"Store {store.Code} is inactive.");
         var part = await db.Parts.AsNoTracking().FirstOrDefaultAsync(p => p.Id == partId, ct) ?? throw new DomainException("Part not found.");
         // Shelf-life parts are issued by batch, which the office chooses.
-        if (part.IsShelfItem) throw new DomainException($"{part.PartNumber} is a shelf-life item: issue it with its batch in the office.");
+        if (part.IsShelfItem && !allowShelf) throw new DomainException($"{part.PartNumber} is a shelf-life item: issue it with its batch in the office.");
         return (part, store);
     }
 

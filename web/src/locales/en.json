@@ -1309,7 +1309,17 @@
       "photo.add": "Photo",
       "reading.add": "Meter reading",
       "status.change": "Status",
-      "request.create": "Request"
+      "request.create": "Request",
+      "part.use": "Part used",
+      "part.return": "Part given back",
+      "stock.issue": "Parts issued",
+      "po.receive": "Delivery received",
+      "count.line": "Stock count",
+      "downtime.start": "Asset stopped",
+      "downtime.end": "Back running",
+      "tasks.fromPm": "Checklist added",
+      "workorder.create": "New work order",
+      "file": "Video or document"
     },
     "state": {
       "waiting": "Waiting",
@@ -1393,7 +1403,9 @@
     "refreshServerProblem": "The server couldn't send your jobs just now. Your phone keeps working from its copy; try again in a few minutes.",
     "assetIsDownHint": "Starts a stop on the asset's downtime log at the time you send this, even without signal.",
     "stopFromLog": "From the asset's downtime log: down since {{start}}. Completing the job ends the stop.",
-    "team": "Team: {{team}}"
+    "team": "Team: {{team}}",
+    "plannedParts": "Planned parts",
+    "tooSlow": "This file didn't get through on this connection ({{tries}} tries). Retry on Wi-Fi, or discard it."
   },
   "labels": {
     "title": "QR labels",
@@ -1726,7 +1738,9 @@
     "order": "Order",
     "line": "Line",
     "outstanding": "{{qty}} to come",
-    "receiveButton": "Receive"
+    "receiveButton": "Receive",
+    "shelfCount": "Shelf-life parts are counted by batch in the office.",
+    "used": "{{qty}} {{unit}} used"
   },
   "techJob": {
     "downSince": "The asset is down since {{when}}",
@@ -1774,7 +1788,8 @@
     "counted": "Counted",
     "difference": "Difference",
     "countedBy": "Counted by",
-    "nothingCounted": "Nothing counted yet."
+    "nothingCounted": "Nothing counted yet.",
+    "movedSince": "{{qty}} moved since it was counted"
   },
   "techLock": {
     "reason": "Unlock CMX",
