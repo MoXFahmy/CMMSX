@@ -22,6 +22,8 @@ export type TenantSettings = {
   requireLaborToComplete: boolean; requireAllTasksDone: boolean; requireFailureCodeForBreakdowns: boolean; autoStartWork: boolean;
   /** Smart checklists (0.13.0): what a failed step raises by default, its template, and readings needed to complete. */
   followUpDefault?: FollowUpKind; followUpTemplateId?: string | null; requireReadingSteps?: boolean;
+  /** The organization's logo (0.14.0): when it was uploaded, or null when there is none. */
+  logoVersion?: number | null;
   emailEnabled: boolean; disabledEmails: string[];
   /** Who gets each work and request e-mail (0.10.0): event key → recipient kinds; an event not listed uses its defaults. */
   emailRecipients?: Record<string, string[]>;

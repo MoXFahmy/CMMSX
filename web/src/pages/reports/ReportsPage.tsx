@@ -15,6 +15,8 @@ import { useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { useHierarchy } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
+import { PrintHeader } from '@/components/PrintHeader';
+import { printFilters } from './printFilters';
 import { isTree, PLAN_PARTS, planText, rowLink, treeRows, type PlanCell } from './reportCells';
 import { fmtDate, fmtDateTime, fmtNumber, fmtPrice } from '@/components/utils';
 import { downloadCsv } from '../inventory/InventoryPage';
@@ -135,7 +137,7 @@ export function ReportViewPage() {
   return (
     <>
       <PageHeader crumbs={[{ label: t('rep.title'), to: '/reports' }, { label: def?.title ?? '…' }]} title={def?.title ?? '…'} subtitle={data?.subtitle ?? def?.description}
-        actions={<><Button variant="default" leftSection={<IconPrinter size={16} />} onClick={() => window.print()} disabled={!data}>{t('rep.print')}</Button>
+        actions={<><Button variant="default" leftSection={<IconPrinter size={16} />} onClick={() => window.print()} disabled={!data}>{t('rep.printPdf')}</Button>
           <Button variant="default" leftSection={<IconDownload size={16} />} onClick={exportCsv} disabled={!data?.rows.length}>{t('common.export')}</Button></>} />
       {def && (def.params.length > 0) && (
         <Card p="sm" mb="md" className="no-print">
@@ -161,7 +163,11 @@ export function ReportViewPage() {
       {!data && isFetching && <Center h={240}><Loader /></Center>}
       {data && !needsAsset && (
         <Stack style={{ opacity: isFetching ? 0.6 : 1, transition: 'opacity 120ms' }}>
-          <div className="print-only"><Title order={3}>{me?.tenant.name} — {data.title}</Title><Text c="dimmed" fz="sm">{data.subtitle}</Text></div>
+          {/* Printing (0.14.0): A4 landscape, with the logo, the filters chosen and who printed it; "Save as PDF" in the print dialog makes the PDF. */}
+          <style media="print">{'@page { size: A4 landscape; margin: 12mm; }'}</style>
+          <div className="print-only"><PrintHeader title={data.title}
+            lines={[...(data.subtitle ? [data.subtitle] : []), ...printFilters(def!, q, { site: h?.sites.find((s) => s.id === q.siteId)?.name,
+              asset: chosenAsset ? `${chosenAsset.assetNumber} · ${chosenAsset.name}` : undefined }, t)]} /></div>
           {data.summary.length > 0 && (
             <SimpleGrid cols={{ base: 2, md: data.summary.length }}>
               {data.summary.map((s) => <Card key={s.label} p="md"><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{s.label}</Text><Text fz={26} fw={700} lh={1.3}>{fmt(s.value, s.type)}</Text></Card>)}

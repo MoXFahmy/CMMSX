@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { ActionIcon, Badge, Button, Card, Checkbox, ColorInput, Group, Modal, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Table, Tabs, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { ActionIcon, Badge, Button, Card, Checkbox, ColorInput, FileButton, Group, Modal, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Table, Tabs, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useForm, type UseFormReturnType } from '@mantine/form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -12,7 +12,7 @@ import { DevicesModal } from '@/components/DevicesModal';
 import { TargetsEditor, timeZones } from './TargetsEditor';
 import { WorkingHoursEditor, organizationHours } from '@/components/WorkingHoursEditor';
 import { LANGUAGES } from '@/language';
-import { del, get, getAllSites, post, put } from '@/api/client';
+import { api, del, get, getAllSites, post, put } from '@/api/client';
 import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type FollowUpKind, type Hierarchy, type PermissionInfo, type PmTaskListItem, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { NotificationSettings } from './NotificationSettings';
@@ -104,6 +104,7 @@ function OrganizationSettings() {
         <Card><Stack>
           <Title order={5}>{t('settings.organization')}</Title>
           <TextInput label={t('auth.organizationName')} disabled={!editable} {...form.getInputProps('name')} />
+          <LogoSetting editable={editable} version={data.settings.logoVersion ?? null} onChange={async () => { await refresh(); await qc.invalidateQueries({ queryKey: ['settings'] }); }} />
           <SimpleGrid cols={2}>
             <TextInput label={t('settings.currency')} description={t('settings.currencyHint')} maxLength={3} disabled={!editable} {...form.getInputProps('settings.currency')} />
             <Select label={t('locations.timeZone')} disabled={!editable} searchable data={timeZones(form.values.settings.timeZone)} {...form.getInputProps('settings.timeZone')} />
@@ -446,3 +447,30 @@ function RoleSettings() {
     </Card>
   );
 }
+
+/** The organization's logo (0.14.0), shown on printed reports and job cards: PNG, JPEG or WebP up to 1 MB. */
+function LogoSetting({ editable, version, onChange }: { editable: boolean; version: number | null; onChange: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const upload = async (file: File | null) => {
+    if (!file) return;
+    if (file.size > 1024 * 1024) { notifyError(new Error(t('settings.logoTooBig'))); return; }
+    const fd = new FormData(); fd.append('file', file);
+    try { await api('/settings/logo', { method: 'POST', body: fd }); notifySuccess(t('common.saved')); await onChange(); } catch (e) { notifyError(e); }
+  };
+  const remove = async () => { try { await del('/settings/logo'); await onChange(); } catch (e) { notifyError(e); } };
+  return (
+    <Stack gap={4}>
+      <Text fz="sm" fw={500}>{t('settings.logo')}</Text>
+      <Group gap="sm">
+        {version ? <img src={`/api/settings/logo?v=${version}`} alt={t('settings.logo')} style={{ height: 48, maxWidth: 192, objectFit: 'contain' }} />
+          : <Text fz="sm" c="dimmed">{t('settings.noLogo')}</Text>}
+        {editable && <FileButton onChange={(f) => void upload(f)} accept="image/png,image/jpeg,image/webp">
+          {(props) => <Button {...props} size="xs" variant="light">{version ? t('settings.replaceLogo') : t('settings.uploadLogo')}</Button>}
+        </FileButton>}
+        {editable && version && <Button size="xs" variant="subtle" color="red" onClick={() => void remove()}>{t('settings.removeLogo')}</Button>}
+      </Group>
+      <Text fz="xs" c="dimmed">{t('settings.logoHint')}</Text>
+    </Stack>
+  );
+}
+

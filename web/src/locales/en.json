@@ -396,7 +396,14 @@
     "remedies": "Remedies",
     "newRemedy": "New remedy",
     "downtimeCostPerHour": "Downtime cost per hour",
-    "downtimeCostHint": "Used for assets of this category that have no cost of their own."
+    "downtimeCostHint": "Used for assets of this category that have no cost of their own.",
+    "logo": "Logo",
+    "noLogo": "No logo yet.",
+    "uploadLogo": "Upload logo",
+    "replaceLogo": "Replace",
+    "removeLogo": "Remove",
+    "logoHint": "PNG, JPEG or WebP, up to 1 MB. Shown on printed reports and job cards.",
+    "logoTooBig": "The logo can be at most 1 MB."
   },
   "audit": {
     "Created": "created this record",
@@ -1090,7 +1097,11 @@
     },
     "year": "Year",
     "withComponents": "With its components",
-    "chooseAsset": "Choose an asset to see its work history."
+    "chooseAsset": "Choose an asset to see its work history.",
+    "printPdf": "Print or save as PDF",
+    "printPeriod": "Period: {{from}} – {{to}}",
+    "printSite": "Site",
+    "printed": "Printed {{date}} by {{name}}"
   },
   "alerts": {
     "title": "Needs attention",

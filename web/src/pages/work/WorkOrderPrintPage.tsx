@@ -9,6 +9,7 @@ import { get } from '@/api/client';
 import type { WorkOrderDetail } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { printedStep } from '@/components/measure';
+import { OrgLogo } from '@/components/PrintHeader';
 import { fmtDate, fmtDateTime, fmtQty } from '@/components/utils';
 
 /** Blank rows for the technician to fill in by hand. */
@@ -53,7 +54,7 @@ export function WorkOrderPrintPage() {
   return (
     <div className="print-doc">
       <Group justify="space-between" align="flex-start" mb="lg">
-        <Stack gap={2}><Title order={2}>{me?.tenant.name}</Title><Text c="dimmed">{w.site.name}</Text></Stack>
+        <Group gap="md" wrap="nowrap" align="flex-start"><OrgLogo height={56} /><Stack gap={2}><Title order={2}>{me?.tenant.name}</Title><Text c="dimmed">{w.site.name}</Text></Stack></Group>
         <Stack gap={2} align="flex-end">
           <Title order={3}>{t('jobCard.title')}</Title><Text fw={700} fz="lg">{w.number}</Text>
           <Text fz="xs" c="dimmed">{t('jobCard.printed', { date: fmtDate(new Date().toISOString()) })}</Text>

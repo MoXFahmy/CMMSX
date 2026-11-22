@@ -2,6 +2,7 @@ using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Assets;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
+using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Locations;
 using FourC.Cmms.Core.Services;
@@ -185,10 +186,44 @@ public static class AdminEndpoints
             if (!v.IsValid) return v.Problem();
             var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
             t.Name = input.Name.Trim();
+            // The logo (0.14.0) changes only through its own upload, whatever a page sends.
+            input.Settings.LogoVersion = t.Settings.LogoVersion;
+            input.Settings.LogoContentType = t.Settings.LogoContentType;
             t.Settings = input.Settings;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { t.Name, t.Settings });
         }).RequirePermission(Permissions.SettingsManage);
+
+        // The organization's logo (0.14.0), on printed reports and job cards: PNG, JPEG or WebP up to 1 MB, one per organization.
+        settings.MapPost("/logo", async (HttpRequest req, CmmsDbContext db, IFileStorage storage, CancellationToken ct) =>
+        {
+            if (!req.HasFormContentType) throw new DomainException("Upload must be multipart/form-data.");
+            var file = (await req.ReadFormAsync(ct)).Files.FirstOrDefault() ?? throw new DomainException(Logos.ChooseImage);
+            if (file.Length > Logos.MaxBytes) throw new DomainException(Logos.TooBig);
+            byte[] bytes;
+            await using (var s = file.OpenReadStream()) { using var m = new MemoryStream(); await s.CopyToAsync(m, ct); bytes = m.ToArray(); }
+            var type = Logos.TypeOf(bytes) ?? throw new DomainException(Logos.ChooseImage);
+            await using (var m = new MemoryStream(bytes)) await storage.SaveAsync(Logos.Key(db.CurrentTenantId), m, ct);
+            var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
+            t.Settings = Logos.With(t.Settings, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), type);
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { t.Settings.LogoVersion });
+        }).RequirePermission(Permissions.SettingsManage).DisableAntiforgery();
+        settings.MapDelete("/logo", async (CmmsDbContext db, IFileStorage storage, CancellationToken ct) =>
+        {
+            var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
+            if (t.Settings.LogoVersion is not null) await storage.DeleteAsync(Logos.Key(db.CurrentTenantId), ct);
+            t.Settings = Logos.With(t.Settings, null, null);
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
+        }).RequirePermission(Permissions.SettingsManage);
+        settings.MapGet("/logo", async (HttpContext http, CmmsDbContext db, IFileStorage storage, CancellationToken ct) =>
+        {
+            var s = (await db.Tenants.AsNoTracking().FirstAsync(x => x.Id == db.CurrentTenantId, ct)).Settings;
+            if (s.LogoVersion is null || await storage.OpenReadAsync(Logos.Key(db.CurrentTenantId), ct) is not { } stream) return Results.NotFound();
+            http.Response.Headers.CacheControl = "private, max-age=86400"; // pages ask with ?v={version}, so a new logo is a new address
+            return Results.Stream(stream, s.LogoContentType ?? "image/png");
+        }).RequireAuthorization();
 
         settings.MapPost("/sample-data", async (CmmsDbContext db) =>
         {
@@ -331,3 +366,29 @@ public static class DashboardEndpoints
         }).WithTags("Dashboard").RequirePermission(Permissions.DashboardView);
     }
 }
+
+/// <summary>The organization's logo (0.14.0).</summary>
+internal static class Logos
+{
+    public const long MaxBytes = 1024 * 1024;
+    public const string ChooseImage = "Choose a PNG, JPEG or WebP image.";
+    public const string TooBig = "The logo can be at most 1 MB.";
+
+    public static string Key(Guid? tenantId) => $"{tenantId:N}/tenant/logo";
+
+    /// <summary>The image type from the file's first bytes (not its name): PNG, JPEG or WebP; null for anything else.</summary>
+    public static string? TypeOf(byte[] b) =>
+        b.Length >= 8 && b[0] == 0x89 && b[1] == 0x50 && b[2] == 0x4E && b[3] == 0x47 ? "image/png"
+        : b.Length >= 3 && b[0] == 0xFF && b[1] == 0xD8 && b[2] == 0xFF ? "image/jpeg"
+        : b.Length >= 12 && b[0] == 'R' && b[1] == 'I' && b[2] == 'F' && b[3] == 'F' && b[8] == 'W' && b[9] == 'E' && b[10] == 'B' && b[11] == 'P' ? "image/webp"
+        : null;
+
+    /// <summary>A copy of the settings with the logo set (a new object, so the JSON column is saved).</summary>
+    public static TenantSettings With(TenantSettings s, long? version, string? type)
+    {
+        var copy = System.Text.Json.JsonSerializer.Deserialize<TenantSettings>(System.Text.Json.JsonSerializer.Serialize(s))!;
+        copy.LogoVersion = version; copy.LogoContentType = type;
+        return copy;
+    }
+}
+

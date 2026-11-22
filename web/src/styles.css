@@ -22,7 +22,7 @@ a.kpi-card:hover { box-shadow: var(--mantine-shadow-sm); transform: translateY(-
 .hover-card { text-decoration: none; color: inherit; transition: box-shadow 120ms ease, transform 120ms ease, border-color 120ms ease; border: 1px solid var(--mantine-color-default-border); }
 .hover-card:hover { box-shadow: var(--mantine-shadow-md); transform: translateY(-1px); border-color: var(--mantine-color-brand-4, var(--mantine-color-blue-4)); }
 .print-only { display: none; }
-@media print { .print-only { display: block; } }
+@media print { .print-only { display: block; } thead { display: table-header-group; } tr { break-inside: avoid; } }
 
 /* Arrows that mean "back" / "next" point the other way when the page reads right to left. */
 [dir='rtl'] .mirror-rtl { transform: scaleX(-1); }
