@@ -764,5 +764,10 @@
  "Count not found.": "الجرد غير موجود.",
  "The time can't be in the future.": "لا يمكن أن يكون الوقت في المستقبل.",
  "Choose the asset.": "اختر الأصل.",
- "Asset not found.": "الأصل غير موجود."
+ "Asset not found.": "الأصل غير موجود.",
+ "The phone can start, hold, complete or cancel work only.": "يمكن للهاتف بدء العمل أو إيقافه مؤقتًا أو إكماله أو إلغاؤه فقط.",
+ "You can't cancel work orders.": "لا يمكنك إلغاء أوامر العمل.",
+ "This checklist no longer exists.": "قائمة الخطوات هذه لم تعد موجودة.",
+ "Choose where the work is.": "اختر مكان العمل.",
+ "Created on the phone": "أُنشئ من الهاتف"
 }

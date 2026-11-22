@@ -23,11 +23,12 @@ public static partial class TechEndpoints
     public sealed record Answer(string Status, string? Message = null, string? Code = null);
 
     private sealed record TaskPayload(Guid TaskId, bool? IsDone, string? Reading, string? Remarks, bool Force = false);
-    private sealed record LaborPayload(DateOnly? WorkDate, decimal Hours, decimal OvertimeHours, string? Notes);
+    /// <summary>EmployeeId (0.11.0): a crew leader logging another technician's hours (needs "Log hours for others").</summary>
+    private sealed record LaborPayload(DateOnly? WorkDate, decimal Hours, decimal OvertimeHours, string? Notes, Guid? EmployeeId = null);
     private sealed record CommentPayload(string? Body);
     private sealed record ReadingPayload(Guid MeterId, decimal Value, string? Note, bool Confirm = false);
     private sealed record StatusPayload(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes, Guid? FailureCodeId,
-        bool? AssetWasDown, decimal? DowntimeHours);
+        bool? AssetWasDown, decimal? DowntimeHours, Guid? CancelReasonId = null);
     /// <summary>AssetIsDown: "The asset is down" (0.8.1); older app versions don't send it.</summary>
     private sealed record RequestPayload(string? Title, string? Description, WorkPriority? Priority, Guid? AssetId, Guid? LocationId, Guid? SiteId, bool? AssetIsDown = null,
         Guid? RequestTypeId = null);
@@ -40,6 +41,11 @@ public static partial class TechEndpoints
     private sealed record CountPayload(Guid CountId, Guid PartId, decimal Quantity);
     /// <summary>The asset's stop started or ended from a job (0.11.0); At = the time the technician chose, else when the change was made.</summary>
     private sealed record StopPayload(Guid? AssetId, DateTimeOffset? At, string? Reason);
+    /// <summary>A PM task's steps added to a job's checklist (0.11.0).</summary>
+    private sealed record PmTasksPayload(Guid PmTaskId);
+    /// <summary>A work order raised on the phone (0.11.0), by someone who may create work orders; assigned to them unless AssignToMe is false.</summary>
+    private sealed record WorkOrderPayload(string? Title, string? Description, WorkPriority? Priority, WorkType? Type, Guid? SiteId, Guid? LocationId, Guid? AssetId,
+        bool? AssignToMe = null);
     /// <summary>A change that can't be applied; rolls back anything it did and is answered "rejected".</summary>
     private sealed class Rejected(string message, string? code = null) : Exception(message) { public string? Code { get; } = code; }
 
@@ -214,13 +220,21 @@ public static partial class TechEndpoints
                 RequireNotClosed(w);
                 var p = Read<LaborPayload>(input.Payload, options);
                 var me = await EmployeeAsync(db, ctx, ct) ?? throw new Rejected("Your account isn't linked to an employee.");
+                var who = me.EmployeeId;
+                if (p.EmployeeId is { } other && other != me.EmployeeId)
+                {
+                    // A crew leader logs another technician's hours (0.11.0).
+                    Require(allowed, Permissions.WorkOrdersLogForOthers);
+                    if (!await db.Employees.AnyAsync(e => e.Id == other && e.IsActive, ct)) throw new Rejected("Choose an active person.");
+                    who = other;
+                }
                 // Like the changes themselves: hours for the last 30 days (a day of slack for time zones), never for days to come.
                 var day = DateOnly.FromDateTime(at.UtcDateTime);
                 var workDate = p.WorkDate ?? day;
                 if (workDate < day.AddDays(-OldestChange.Days) || workDate > day.AddDays(1))
                     throw new Rejected("The work date must be within the last 30 days.");
                 var (v, _) = await WorkOrderEndpoints.AddLaborAsync(db, ctx, w.Id,
-                    new WorkOrderEndpoints.LaborInput(me.EmployeeId, workDate, p.Hours, p.OvertimeHours, p.Notes), ct, at);
+                    new WorkOrderEndpoints.LaborInput(who, workDate, p.Hours, p.OvertimeHours, p.Notes), ct, at);
                 Ensure(v);
                 await db.SaveChangesAsync(ct);
                 return new Answer("done");
@@ -314,6 +328,34 @@ public static partial class TechEndpoints
                 await db.SaveChangesAsync(ct);
                 return new Answer("done", already ? "The asset is already down." : null);
             }
+            case "tasks.fromPm":
+            {
+                Require(allowed, Permissions.WorkOrdersExecute);
+                var w = await WorkOrderAsync(db, input.WorkOrderId, ct);
+                RequireNotClosed(w);
+                var p = Read<PmTasksPayload>(input.Payload, options);
+                var steps = await db.PmTaskSteps.AsNoTracking().Where(s => s.PmTaskId == p.PmTaskId).OrderBy(s => s.Sequence).Select(s => s.Description).ToListAsync(ct);
+                if (steps.Count == 0 && !await db.PmTasks.AnyAsync(t => t.Id == p.PmTaskId, ct)) throw new Rejected("This checklist no longer exists.");
+                var next = (await db.WorkOrderTasks.Where(t => t.WorkOrderId == w.Id).MaxAsync(t => (int?)t.Sequence, ct) ?? 0) + 1;
+                foreach (var step in steps)
+                    db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = next++, Description = step.Length > 1000 ? step[..1000] : step });
+                await db.SaveChangesAsync(ct);
+                return new Answer("done");
+            }
+            case "workorder.create":
+            {
+                Require(allowed, Permissions.WorkOrdersCreate);
+                var p = Read<WorkOrderPayload>(input.Payload, options);
+                var site = p.SiteId ?? (p.AssetId is { } aid ? await db.Assets.Where(x => x.Id == aid).Select(x => (Guid?)x.SiteId).FirstOrDefaultAsync(ct) : null)
+                           ?? (p.LocationId is { } lid ? await db.Locations.Where(x => x.Id == lid).Select(x => (Guid?)x.SiteId).FirstOrDefaultAsync(ct) : null)
+                           ?? throw new Rejected("Choose where the work is.");
+                var me = await EmployeeAsync(db, ctx, ct);
+                var woInput = new WorkOrderEndpoints.WorkOrderInput(p.Title ?? "", p.Description, p.Type ?? WorkType.Corrective, p.Priority ?? WorkPriority.Medium, site, p.LocationId,
+                    p.AssetId, null, p.AssignToMe != false && me is not null ? [me.EmployeeId] : null, null, null, null, null);
+                Ensure(await WorkOrderEndpoints.ValidateAsync(woInput, db, ct));
+                await WorkOrderEndpoints.CreateAsync(db, ctx, woInput, null, ct, mail: mail, raisedAt: at, note: "Created on the phone");
+                return new Answer("done");
+            }
             case "request.create":
             {
                 Require(allowed, Permissions.RequestsCreate);
@@ -341,7 +383,10 @@ public static partial class TechEndpoints
         DateTimeOffset at, CancellationToken ct)
     {
         Require(allowed, Permissions.WorkOrdersExecute);
-        if (p.Status is not (WorkOrderStatus.InProgress or WorkOrderStatus.OnHold or WorkOrderStatus.Completed)) throw new Rejected("The phone can start, hold or complete work only.");
+        if (p.Status is not (WorkOrderStatus.InProgress or WorkOrderStatus.OnHold or WorkOrderStatus.Completed or WorkOrderStatus.Cancelled))
+            throw new Rejected("The phone can start, hold, complete or cancel work only.");
+        // Cancelling (0.11.0): as on the web — the close permission, and the reason the organization asks for.
+        if (p.Status == WorkOrderStatus.Cancelled && !allowed.Contains(Permissions.WorkOrdersClose)) throw new Rejected("You can't cancel work orders.");
         var w = await WorkOrderAsync(db, workOrderId, ct);
         if (p.Status == WorkOrderStatus.Completed && w.Status is WorkOrderStatus.Completed or WorkOrderStatus.Closed)
         {
@@ -372,7 +417,8 @@ public static partial class TechEndpoints
         var completed = p.Status == WorkOrderStatus.Completed;
         var input = new WorkOrderEndpoints.StatusInput(p.Status, p.HoldReason, p.Note, p.CompletionNotes, p.CauseNotes, p.FailureCodeId, p.AssetWasDown, p.DowntimeHours,
             // When the technician started (offline) or, on completion, never later than when they finished.
-            ActualStart: p.Status == WorkOrderStatus.InProgress || (completed && w.StartedAt > at) ? at : null, ActualEnd: completed ? at : null, At: at);
+            ActualStart: p.Status == WorkOrderStatus.InProgress || (completed && w.StartedAt > at) ? at : null, ActualEnd: completed ? at : null, At: at,
+            CancelReasonId: p.CancelReasonId);
         Ensure(await WorkOrderEndpoints.ChangeStatusAsync(db, ctx, mail, settings, w, input, ct));
         await db.SaveChangesAsync(ct);
         return new Answer("done");
