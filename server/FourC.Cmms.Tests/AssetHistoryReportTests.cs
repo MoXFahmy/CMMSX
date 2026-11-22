@@ -28,7 +28,7 @@ public class AssetHistoryReportTests(ApiFixture fx) : IClassFixture<ApiFixture>
         if (otherCost > 0) db.WorkOrderCosts.Add(new WorkOrderCost { TenantId = org.Tenant, WorkOrderId = w.Id, Description = "Parts bought", Quantity = 1, UnitCost = otherCost });
         await db.SaveChangesAsync();
         // Created time as the test wants it (saving stamps now).
-        await db.WorkOrders.Where(x => x.Id == w.Id).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedAt, created));
+        await db.WorkOrders.IgnoreQueryFilters().Where(x => x.Id == w.Id).ExecuteUpdateAsync(s => s.SetProperty(x => x.CreatedAt, created));
         return w.Id;
     });
 

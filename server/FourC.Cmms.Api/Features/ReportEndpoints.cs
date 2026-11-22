@@ -361,7 +361,8 @@ public static class ReportEndpoints
         var clocks = await assets
             .Where(x => db.DowntimeEvents.Any(d => d.AssetId == x.Id && d.StartedAt < e && (d.EndedAt == null || d.EndedAt > s))
                      || db.WorkOrders.Any(w => w.AssetId == x.Id && w.AssetWasDown && w.DowntimeEventId == null && w.CompletedAt >= s && w.CompletedAt < e))
-            .Select(x => new AssetClock(x.Id, x.AssetNumber, x.Name, x.RunsHoursPerDay, x.RunsOn, x.DowntimeCostPerHour)).ToListAsync(ct);
+            // The asset's cost per hour, else its category's (0.14.0).
+            .Select(x => new AssetClock(x.Id, x.AssetNumber, x.Name, x.RunsHoursPerDay, x.RunsOn, x.DowntimeCostPerHour ?? (x.Category == null ? null : x.Category.DowntimeCostPerHour))).ToListAsync(ct);
         var history = await Downtime.LoadAsync(db, clocks.Select(x => x.Id).ToList(), a.From, a.To, tz, ct);
         var now = DateTimeOffset.UtcNow;
         var measured = clocks.Select(x =>

@@ -28,6 +28,7 @@ import { AssetDowntimeTab } from './AssetDowntime';
 import { AssetPartsTab } from './AssetParts';
 import { ChecklistsCard } from './AssetChecklists';
 import { AssetMeasurements } from './AssetMeasurements';
+import { AssetCosts } from './AssetCosts';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -106,6 +107,7 @@ export function AssetDetailPage() {
           <Tabs.Tab value="parts">{t('assetParts.tab')}</Tabs.Tab>
           {can(P.pmView) && <Tabs.Tab value="pm">{t('pm.maintenancePlan')}</Tabs.Tab>}
           <Tabs.Tab value="measurements">{t('measurements.tab')}</Tabs.Tab>
+          {can(P.woView) && <Tabs.Tab value="costs">{t('costs.tab')}</Tabs.Tab>}
           <Tabs.Tab value="files">{t('assets.files')}</Tabs.Tab>
           <Tabs.Tab value="transfers">{t('assets.transfers')}</Tabs.Tab>
           <Tabs.Tab value="history">{t('assets.history')}</Tabs.Tab>
@@ -167,7 +169,9 @@ export function AssetDetailPage() {
                     <Field label={t('assets.purchasePrice')}>{fmtMoney(a.purchasePrice, currency)}</Field>
                     <Field label={t('assets.currentValue')}>{fmtMoney(a.currentValue, currency)}</Field>
                     <Field label={t('assets.expectedLife')}>{a.expectedLifeYears}</Field>
-                    <Field label={t('assets.downtimeCost')}>{fmtMoney(a.downtimeCostPerHour, currency)}</Field>
+                    <Field label={t('assets.downtimeCost')}>{a.downtimeCostPerHour == null && a.category?.downtimeCostPerHour != null
+                      ? <>{fmtMoney(a.category.downtimeCostPerHour, currency)} <Text span fz="xs" c="dimmed">· {t('costs.fromCategory')}</Text></>
+                      : fmtMoney(a.downtimeCostPerHour, currency)}</Field>
                     {a.disposedOn && <Field label={t('assets.disposedOn')}>{fmtDate(a.disposedOn)}</Field>}
                   </SimpleGrid>
                 </Card>
@@ -206,6 +210,7 @@ export function AssetDetailPage() {
           </Card>
         </Tabs.Panel>
         <Tabs.Panel value="measurements"><AssetMeasurements assetId={a.id} /></Tabs.Panel>
+        {can(P.woView) && <Tabs.Panel value="costs"><AssetCosts assetId={a.id} hasComponents={!!a.childCount} /></Tabs.Panel>}
         <Tabs.Panel value="pm">
           <Stack>
             <ChecklistsCard assetId={a.id} categoryId={a.categoryId} canEdit={can(P.assetsEdit)} />

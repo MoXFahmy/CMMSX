@@ -2069,5 +2069,17 @@
     "symptomHint": "What did you see?",
     "notRecorded": "Not recorded",
     "inFailureTree": "In the failure tree"
+  },
+  "costs": {
+    "tab": "Costs",
+    "fromCategory": "from its category",
+    "noRate": "No downtime cost per hour on the asset or its category.",
+    "rate": "An hour of downtime costs {{cost}}",
+    "labour": "Labour",
+    "parts": "Parts",
+    "other": "Other",
+    "downtime": "Downtime cost",
+    "downtimeHours": "Downtime (h)",
+    "total": "Total"
   }
 }

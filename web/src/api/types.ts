@@ -99,7 +99,7 @@ export type AssetListItem = {
 export type AssetDetail = {
   onlyWhenStopped?: boolean;
   id: string; assetNumber: string; name: string; description?: string; categoryId?: string;
-  category?: { id: string; code: string; name: string; color?: string }; siteId: string; site: { id: string; code: string; name: string };
+  category?: { id: string; code: string; name: string; color?: string; downtimeCostPerHour?: number | null }; siteId: string; site: { id: string; code: string; name: string };
   locationId?: string; locationTrail: { id: string; code: string; name: string }[]; parentAssetId?: string;
   parentAsset?: { id: string; assetNumber: string; name: string }; status: AssetStatus; criticality: Criticality;
   manufacturer?: string; model?: string; serialNumber?: string; barcode?: string; operationNumber?: string;
