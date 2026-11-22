@@ -179,3 +179,19 @@
 
 - [ ] Failing Arabic theory; add translations; PASS.
 - [ ] Docs; full `wt-test`, `wt-vitest`, `wt-web`, debug APK; commit.
+
+---
+
+## Deferred minors (final review)
+
+Found by the final review and left for a later release:
+
+- M5 a follow-up on an asset with no location gets none even when the work order has one (checked: a work order with no asset already passes its location on; re-grade to Important withdrawn).
+- M6 phone photo taken on a step removed meanwhile is stored then rejected (orphan file, photo lost).
+- M8 answer accepts undefined enum integers; Number/Meter values without a range can overflow decimal(18,4) (web 500, phone change set aside after retries).
+- M9 All OK runs ~5 queries per step (slow on 50-asset rounds).
+- M10 template ids nothing uses (org default switched away from WorkOrder, step kind Default/Request) still block deleting the template.
+- M11 before-starting and photo-required steps can be deleted by anyone who executes work, bypassing the gate.
+- M12 Not OK then OK queued offline sends both, so the first raises a follow-up.
+- M13 values round half-to-even (27.85 → 27.8).
+- M14 the phone shows a reading's level on blur, not while typing.
