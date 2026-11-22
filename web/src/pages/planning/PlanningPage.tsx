@@ -16,7 +16,8 @@ import { priorityColors } from '@/components/WorkBadges';
 import { SlaText } from '@/components/SlaBadge';
 import { notifyError } from '@/components/utils';
 import { generateNow } from '@/pages/pm/generateNow';
-import { cellsByAsset, cellsByPerson, days as dayList, isPm, load, NO_ASSET, planMove, TRAY, UNASSIGNED, type Board, type BoardJob, type ForecastRow, type Move } from './board';
+import { useTeams, teamOptions } from '@/components/teams';
+import { capacityOn, cellsByAsset, cellsByPerson, days as dayList, isPm, load, NO_ASSET, planMove, TRAY, UNASSIGNED, type Board, type BoardJob, type ForecastRow, type Move } from './board';
 
 /** When the last drag ended: the click that ends a drag must not also open the work order. */
 let lastDragEnd = 0;
@@ -36,6 +37,7 @@ export function PlanningPage() {
   const [fromIso, toIso] = [from.format('YYYY-MM-DD'), to.format('YYYY-MM-DD')];
   const siteId = params.get('siteId');
   const tradeId = params.get('tradeId');
+  const teamId = params.get('teamId');
   const set = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
     for (const [k, v] of Object.entries(patch)) { if (v) next.set(k, v); else next.delete(k); }
@@ -44,9 +46,10 @@ export function PlanningPage() {
 
   const { data: h } = useHierarchy();
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
+  const { data: teams } = useTeams(siteId);
   const { data, refetch, isFetching } = useQuery({
-    queryKey: ['planning-board', fromIso, toIso, siteId, tradeId], placeholderData: (prev) => prev,
-    queryFn: () => get<Board>('/planning/board', { from: fromIso, to: toIso, siteId, tradeId }),
+    queryKey: ['planning-board', fromIso, toIso, siteId, tradeId, teamId], placeholderData: (prev) => prev,
+    queryFn: () => get<Board>('/planning/board', { from: fromIso, to: toIso, siteId, tradeId, teamId }),
   });
   const canEdit = can(P.woEdit);
   const days = useMemo(() => dayList(fromIso, toIso), [fromIso, toIso]);
@@ -107,6 +110,9 @@ export function PlanningPage() {
             value={siteId} onChange={(v) => set({ siteId: v })} />
           <Select size="xs" w={160} placeholder={t('wo.trade')} clearable data={(trades ?? []).filter((x) => x.isActive).map((x) => ({ value: x.id, label: x.name }))}
             value={tradeId} onChange={(v) => set({ tradeId: v })} />
+          {(teams?.length ?? 0) > 0 && (
+            <Select size="xs" w={160} placeholder={t('teams.team')} clearable data={teamOptions(teams, teamId)} value={teamId} onChange={(v) => set({ teamId: v })} />
+          )}
           {isFetching && <Loader size="xs" />}
         </Group>
       </Card>
@@ -121,7 +127,7 @@ export function PlanningPage() {
                     style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>{dayjs(d).format('ddd D MMM')}</Text>
                 ))}
                 {rows.map((r) => (
-                  <Row key={r.key} label={r.label} rowKey={r.key} days={days} cells={cells.get(r.key)} capacity={view === 'person' && r.key !== UNASSIGNED ? data.capacityHours : undefined}
+                  <Row key={r.key} label={r.label} rowKey={r.key} days={days} cells={cells.get(r.key)} capacity={view === 'person' && r.key !== UNASSIGNED ? (d: string) => capacityOn(data, r.key, d) : undefined}
                     hours={hours.get(r.key)} canEdit={canEdit} onGenerated={() => void refetch()} canGenerate={can(P.pmGenerate)} />
                 ))}
               </Box>
@@ -147,14 +153,14 @@ function assetRows(data: Board | undefined, noAsset: string) {
 }
 
 function Row({ label, rowKey, days, cells, capacity, hours, canEdit, canGenerate, onGenerated }: {
-  label: string; rowKey: string; days: string[]; cells?: Map<string, (BoardJob | ForecastRow)[]>; capacity?: number; hours?: Map<string, number>;
+  label: string; rowKey: string; days: string[]; cells?: Map<string, (BoardJob | ForecastRow)[]>; capacity?: (day: string) => number; hours?: Map<string, number>;
   canEdit: boolean; canGenerate: boolean; onGenerated: () => void;
 }) {
   return (
     <>
       <Text fz="sm" fw={500} py={6} pr="xs" lineClamp={2} style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>{label}</Text>
       {days.map((d) => (
-        <Cell key={d} id={`${rowKey}|${d}`} items={cells?.get(d) ?? []} rowKey={rowKey} capacity={capacity} hours={hours?.get(d)}
+        <Cell key={d} id={`${rowKey}|${d}`} items={cells?.get(d) ?? []} rowKey={rowKey} capacity={capacity?.(d)} hours={hours?.get(d)}
           canEdit={canEdit} canGenerate={canGenerate} onGenerated={onGenerated} />
       ))}
     </>

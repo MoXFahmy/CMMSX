@@ -9,6 +9,7 @@ import { DataTable } from 'mantine-datatable';
 import { IconDevices, IconEdit, IconKey, IconPlus, IconTrash } from '@tabler/icons-react';
 import { DevicesModal } from '@/components/DevicesModal';
 import { TargetsEditor, timeZones } from './TargetsEditor';
+import { WorkingHoursEditor, organizationHours } from '@/components/WorkingHoursEditor';
 import { LANGUAGES } from '@/language';
 import { del, get, post, put } from '@/api/client';
 import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
@@ -139,8 +140,9 @@ function OrganizationSettings() {
           <div><Title order={5}>{t('settings.targets')}</Title><Text c="dimmed" fz="sm">{t('settings.targetsHint')}</Text></div>
           <TargetsEditor disabled={!editable} value={form.values.settings.slaTargets ?? []} onChange={(v) => form.setFieldValue('settings.slaTargets', v)} />
           {form.errors['settings.slaTargets'] && <Text c="red" fz="sm">{form.errors['settings.slaTargets']}</Text>}
-          <NumberInput label={t('settings.dailyCapacityHours')} description={t('settings.dailyCapacityHint')} w={260} min={1} max={24} decimalScale={1} disabled={!editable}
-            {...form.getInputProps('settings.dailyCapacityHours')} />
+          <div><Text fw={500} fz="sm">{t('hours.organization')}</Text><Text c="dimmed" fz="xs">{t('hours.organizationHint')}</Text></div>
+          <WorkingHoursEditor disabled={!editable} value={organizationHours(form.values.settings)} error={form.errors['settings.workingHours']}
+            onChange={(v) => form.setFieldValue('settings.workingHours', v ?? [])} />
         </Stack></Card>
         <Card><Stack>
           <Title order={5}>{t('settings.purchasing')}</Title>

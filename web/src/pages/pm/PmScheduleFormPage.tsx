@@ -15,13 +15,14 @@ import { LocationPicker } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
 import { AssetListEditor, type AssetRef } from '@/components/AssetListEditor';
 import { EmployeePicker } from '@/components/EmployeePicker';
+import { teamOptions, useTeams } from '@/components/teams';
 import { WoStatusBadge } from '@/components/WorkBadges';
 import { confirmDelete } from '@/components/confirm';
 import { generateNow } from './generateNow';
 import { fmtDate, fmtDateTime, fmtMoney, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 
 type V = {
-  code: string; name: string; description: string; siteId: string | null; locationId: string | null; assetId: string | null; tradeId: string | null; priority: string;
+  code: string; name: string; description: string; siteId: string | null; locationId: string | null; assetId: string | null; tradeId: string | null; teamId: string | null; priority: string;
   assigneeIds: string[]; pmTaskId: string | null; extraTasks: { pmTaskId: string | null; everyNth: number | '' }[]; type: string; basis: string; frequency: number | '';
   unit: string; weekOfMonth: string | null; dayOfWeek: string | null; dayOfMonth: number | ''; workPeriodDays: number | ''; wholeMonth: boolean; leadDays: number | '';
   startDate: Date | null; nextDueDate: Date | null; meterId: string | null; meterTrigger: string; meterInterval: number | ''; nextDueReading: number | '';
@@ -31,7 +32,7 @@ type V = {
 };
 type Target = 'asset' | 'location' | 'several';
 const blank: V = {
-  code: '', name: '', description: '', siteId: null, locationId: null, assetId: null, tradeId: null, priority: 'Medium', assigneeIds: [], pmTaskId: null, extraTasks: [],
+  code: '', name: '', description: '', siteId: null, locationId: null, assetId: null, tradeId: null, teamId: null, priority: 'Medium', assigneeIds: [], pmTaskId: null, extraTasks: [],
   type: 'FixedInterval', basis: 'Scheduled', frequency: 1, unit: 'Month', weekOfMonth: '1', dayOfWeek: 'Monday', dayOfMonth: 1, workPeriodDays: 1, wholeMonth: false, leadDays: 7,
   startDate: new Date(), nextDueDate: null, meterId: null, meterTrigger: 'Incremental', meterInterval: '', nextDueReading: '', lowerLimit: '', upperLimit: '', lowerTaskId: null,
   upperTaskId: null, timeBased: false, isActive: true, target: 'asset', roundAssets: [],
@@ -65,13 +66,14 @@ export function PmScheduleFormPage() {
   const { data: tasks } = useQuery({ queryKey: ['pm-tasks'], queryFn: () => get<PmTaskListItem[]>('/pm-tasks') });
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
   const form = useForm<V>({ initialValues: blank });
+  const { data: teams } = useTeams(form.values.siteId);
   const { data: meters } = useQuery({ queryKey: ['meters', form.values.assetId ?? 'none'], queryFn: () => get<MeterItem[]>('/meters', { assetId: form.values.assetId ?? undefined }), enabled: !!form.values.assetId });
 
   useEffect(() => {
     if (s) {
       const saved: V = {
         ...blank,
-        code: s.code, name: s.name, description: s.description ?? '', siteId: s.siteId, locationId: s.locationId ?? null, assetId: s.assetId ?? null, tradeId: s.tradeId ?? null,
+        code: s.code, name: s.name, description: s.description ?? '', siteId: s.siteId, locationId: s.locationId ?? null, assetId: s.assetId ?? null, tradeId: s.tradeId ?? null, teamId: s.teamId ?? null,
         priority: s.priority, assigneeIds: s.assigneeIds, pmTaskId: s.pmTaskId, extraTasks: s.extraTasks.map((x) => ({ pmTaskId: x.pmTaskId, everyNth: x.everyNth })), type: s.type,
         basis: s.basis, frequency: s.frequency, unit: s.unit, weekOfMonth: s.weekOfMonth ? String(s.weekOfMonth) : '1', dayOfWeek: s.dayOfWeek ?? 'Monday', dayOfMonth: s.dayOfMonth ?? 1,
         workPeriodDays: s.workPeriodDays, wholeMonth: s.wholeMonth, leadDays: s.leadDays, startDate: d(s.startDate), nextDueDate: d(s.nextDueDate), meterId: s.meterId ?? null,
@@ -133,6 +135,7 @@ export function PmScheduleFormPage() {
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 <Select label={t('pm.task')} required searchable data={taskOpts} {...form.getInputProps('pmTaskId')} />
                 <Select label={t('wo.trade')} clearable data={(trades ?? []).map((x) => ({ value: x.id, label: x.name }))} {...form.getInputProps('tradeId')} />
+                {(teams?.length ?? 0) > 0 && <Select label={t('teams.team')} clearable data={teamOptions(teams, form.values.teamId)} {...form.getInputProps('teamId')} />}
                 <Select label={t('priority.label')} data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))} {...form.getInputProps('priority')} />
               </SimpleGrid>
               <Textarea label={t('common.description')} autosize {...form.getInputProps('description')} />

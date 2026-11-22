@@ -1541,5 +1541,48 @@
     "userBranchesHint": "Only these places and everything under them. Leave empty for whole sites.",
     "placesCount_one": "{{count}} place",
     "placesCount_other": "{{count}} places"
+  },
+  "teams": {
+    "tab": "Teams",
+    "team": "Team",
+    "hint": "Groups of technicians that work orders and PM schedules can be given to. Members see their team's work on their phones.",
+    "new": "New team",
+    "edit": "Edit team",
+    "members": "Members",
+    "color": "Colour",
+    "fieldHint": "Everyone in the team sees this work on their phone."
+  },
+  "hours": {
+    "start": "Start",
+    "end": "End",
+    "hoursShort": "{{hours}} h",
+    "dayOff": "Day off",
+    "weekTotal": "{{hours}} hours a week",
+    "timeFormat": "Use times like 08:00.",
+    "oncePerDay": "Each day can appear once.",
+    "endAfterStart": "The end must be after the start.",
+    "organization": "Working hours",
+    "organizationHint": "The planning board's capacity per person, unless a site or a person has hours of their own.",
+    "site": "Working hours at this {{site}}",
+    "siteHint": "For people who work only here and have no hours of their own.",
+    "useOrganization": "Use the organization's hours",
+    "person": "Working hours",
+    "useDefault": "Use the site's or the organization's hours"
+  },
+  "siteSettings": {
+    "title": "This {{site}}'s own settings",
+    "hint": "Leave anything empty to use the organization's.",
+    "woPrefix": "Work order number prefix",
+    "wrPrefix": "Request number prefix",
+    "poPrefix": "Purchase order number prefix",
+    "assetPrefix": "{{asset}} number prefix",
+    "prefixHint": "A prefix of its own starts its own count (for example A-WO-00001); numbers already given stay as they are.",
+    "defaultStore": "Default store",
+    "defaultStoreHint": "Planned and issued parts on this site's work start from this store.",
+    "saveFirst": "Save the site first, then add its stores.",
+    "recipients": "Told about new requests",
+    "recipientsHint": "Instead of everyone who can manage requests. Empty: everyone who can manage requests and can see this site.",
+    "senderName": "E-mail sender name",
+    "senderNameHint": "E-mails about this site come from \"<name> via CMX\"."
   }
 }

@@ -139,4 +139,15 @@ public class SiteSettingsTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Refused(new { workOrderNumberPrefix = new string('X', 21) }, "settings.workOrderNumberPrefix");
         await Refused(new { workingHours = new[] { new { day = "Monday", start = "17:00", end = "08:00" } } }, "settings.workingHours");
     }
+
+    [SkippableFact]
+    public async Task Site_managers_can_pick_request_recipients()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var w = await WorldAsync(fx, "Lookup Co");
+        var users = await Ok(await w.Admin.GetAsync("/api/users/lookup"));
+        Assert.Contains(users.EnumerateArray(), u => u.GetProperty("fullName").GetString() == "Admin");
+        var (viewer, _) = await UserAsync(fx, w.Admin, "Viewer");
+        Assert.Equal(HttpStatusCode.Forbidden, (await viewer.GetAsync("/api/users/lookup")).StatusCode);
+    }
 }

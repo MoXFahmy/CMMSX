@@ -14,17 +14,18 @@ import { LocationPicker } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
 import { EmployeePicker } from '@/components/EmployeePicker';
 import { AssetCheck } from '@/components/AssetCheck';
+import { teamOptions, useTeams } from '@/components/teams';
 import { dateTimeFormat, handleFormError, notifySuccess, toIsoDate } from '@/components/utils';
 
 type Values = {
   title: string; description: string; type: string; priority: string; siteId: string | null; locationId: string | null; assetId: string | null;
-  tradeId: string | null; assigneeIds: string[]; plannedStart: Date | null;
+  tradeId: string | null; teamId: string | null; assigneeIds: string[]; plannedStart: Date | null;
   /** Due date and time, local ("YYYY-MM-DD HH:mm:ss"); empty = from the priority's target. */
   dueAt: string | null; estimatedHours: number | ''; tasks: string[]; requestedBy: string;
   /** "The asset is down": starts (or joins) the asset's stop; completing the work order ends it. */
   assetIsDown: boolean;
 };
-const empty: Values = { title: '', description: '', type: 'Corrective', priority: 'Medium', siteId: null, locationId: null, assetId: null, tradeId: null,
+const empty: Values = { title: '', description: '', type: 'Corrective', priority: 'Medium', siteId: null, locationId: null, assetId: null, tradeId: null, teamId: null,
   assigneeIds: [], plannedStart: null, dueAt: null, estimatedHours: '', tasks: [], requestedBy: '', assetIsDown: false };
 const local = (v?: string | null) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : null);
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
@@ -43,12 +44,13 @@ export function WorkOrderFormPage() {
   const { data: asset } = useQuery({ queryKey: ['asset', assetParam], queryFn: () => get<AssetDetail>(`/assets/${assetParam}`), enabled: !!assetParam && !editing });
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
   const form = useForm<Values>({ initialValues: empty });
+  const { data: teams } = useTeams(form.values.siteId);
 
   useEffect(() => {
     if (wo) {
       form.setValues({
         title: wo.title, description: wo.description ?? '', type: wo.type, priority: wo.priority, siteId: wo.siteId, locationId: wo.locationId ?? null,
-        assetId: wo.assetId ?? null, tradeId: wo.tradeId ?? null, assigneeIds: wo.assignees.map((a) => a.employeeId), plannedStart: d(wo.plannedStart),
+        assetId: wo.assetId ?? null, tradeId: wo.tradeId ?? null, teamId: wo.teamId ?? null, assigneeIds: wo.assignees.map((a) => a.employeeId), plannedStart: d(wo.plannedStart),
         dueAt: local(wo.dueAt), estimatedHours: wo.estimatedHours ?? '', tasks: [], requestedBy: wo.requestedBy ?? '', assetIsDown: !!wo.downtime,
       });
       form.resetDirty();
@@ -56,7 +58,7 @@ export function WorkOrderFormPage() {
       // Duplicate: what the job is and who does it; not its dates, status, bookings or history.
       form.setValues({
         ...empty, title: source.title, description: source.description ?? '', type: source.type, priority: source.priority, siteId: source.siteId,
-        locationId: source.locationId ?? null, assetId: source.assetId ?? null, tradeId: source.tradeId ?? null,
+        locationId: source.locationId ?? null, assetId: source.assetId ?? null, tradeId: source.tradeId ?? null, teamId: source.teamId ?? null,
         assigneeIds: source.assignees.map((a) => a.employeeId), estimatedHours: source.estimatedHours ?? '',
         tasks: [...source.tasks].sort((a, b) => a.sequence - b.sequence).map((x) => x.description),
       });
@@ -136,6 +138,9 @@ export function WorkOrderFormPage() {
         <Grid.Col span={{ base: 12, lg: 4 }}>
           <Card><Stack gap="sm">
             <Title order={5}>{t('wo.details')}</Title>
+            {(teams?.length ?? 0) > 0 && (
+              <Select label={t('teams.team')} description={t('teams.fieldHint')} clearable data={teamOptions(teams, form.values.teamId)} {...form.getInputProps('teamId')} />
+            )}
             <EmployeePicker label={t('wo.assignees')} value={form.values.assigneeIds} onChange={(v) => form.setFieldValue('assigneeIds', v)}
               siteId={form.values.siteId} tradeId={form.values.tradeId} error={err('assigneeIds')} />
             <SimpleGrid cols={2}>

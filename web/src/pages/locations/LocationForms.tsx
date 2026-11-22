@@ -1,9 +1,11 @@
-import { Button, Checkbox, Group, Modal, NumberInput, Select, SimpleGrid, Stack, TextInput, Textarea } from '@mantine/core';
+import { Accordion, Button, Checkbox, Group, Modal, MultiSelect, NumberInput, Select, SimpleGrid, Stack, Text, TextInput, Textarea } from '@mantine/core';
 import { useForm } from '@mantine/form';
-import { useQueryClient } from '@tanstack/react-query';
+import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo } from 'react';
-import { post, put } from '@/api/client';
+import { get, post, put } from '@/api/client';
+import { WorkingHoursEditor, organizationHours } from '@/components/WorkingHoursEditor';
+import type { WorkingDay } from '@/components/workingHours';
 import { CRITICALITIES, LOCATION_TYPES, type LocationDetail, type Site } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { locationOptions, useHierarchy } from '@/components/LocationPicker';
@@ -13,15 +15,29 @@ export function SiteFormModal({ opened, onClose, site, onSaved }: { opened: bool
   const { t } = useTranslation();
   const { terms } = useAuth();
   const qc = useQueryClient();
+  const { me } = useAuth();
+  const blankSettings = { assetNumberPrefix: '', workOrderNumberPrefix: '', workRequestNumberPrefix: '', purchaseOrderNumberPrefix: '', defaultStoreId: null as string | null,
+    requestRecipientIds: [] as string[], emailSenderName: '', workingHours: null as WorkingDay[] | null };
   const form = useForm({
-    initialValues: { code: '', name: '', address: '', city: '', country: '', timeZone: '', latitude: '' as number | '', longitude: '' as number | '', notes: '', isActive: true },
+    initialValues: { code: '', name: '', address: '', city: '', country: '', timeZone: '', latitude: '' as number | '', longitude: '' as number | '', notes: '', isActive: true,
+      settings: blankSettings },
   });
+  // Pickers for the site's own settings (0.9.0); each list may be closed to this person (no access to stores or users): then it's empty.
+  const { data: stores } = useQuery({ queryKey: ['stores'], queryFn: () => get<{ id: string; code: string; name: string; siteId: string; isActive: boolean }[]>('/stores'),
+    enabled: opened && !!site, retry: false });
+  const { data: people } = useQuery({ queryKey: ['users-lookup'], queryFn: () => get<{ id: string; fullName: string; email: string }[]>('/users/lookup'), enabled: opened, retry: false });
   useEffect(() => {
     if (!opened) return;
     form.setValues(site ? {
       code: site.code, name: site.name, address: site.address ?? '', city: site.city ?? '', country: site.country ?? '', timeZone: site.timeZone ?? '',
       latitude: site.latitude ?? '', longitude: site.longitude ?? '', notes: site.notes ?? '', isActive: site.isActive,
-    } : { code: '', name: '', address: '', city: '', country: '', timeZone: '', latitude: '', longitude: '', notes: '', isActive: true });
+      settings: {
+        assetNumberPrefix: site.settings?.assetNumberPrefix ?? '', workOrderNumberPrefix: site.settings?.workOrderNumberPrefix ?? '',
+        workRequestNumberPrefix: site.settings?.workRequestNumberPrefix ?? '', purchaseOrderNumberPrefix: site.settings?.purchaseOrderNumberPrefix ?? '',
+        defaultStoreId: site.settings?.defaultStoreId ?? null, requestRecipientIds: site.settings?.requestRecipientIds ?? [], emailSenderName: site.settings?.emailSenderName ?? '',
+        workingHours: site.settings?.workingHours ?? null,
+      },
+    } : { code: '', name: '', address: '', city: '', country: '', timeZone: '', latitude: '', longitude: '', notes: '', isActive: true, settings: blankSettings });
     form.resetDirty();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened, site]);
@@ -56,6 +72,34 @@ export function SiteFormModal({ opened, onClose, site, onSaved }: { opened: bool
           </SimpleGrid>
           <Textarea label={t('common.notes')} autosize minRows={2} {...form.getInputProps('notes')} />
           <Checkbox label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
+          <Accordion variant="contained" chevronPosition="left">
+            <Accordion.Item value="settings">
+              <Accordion.Control><Text fw={500} fz="sm">{t('siteSettings.title', { site: terms.site.toLowerCase() })}</Text>
+                <Text c="dimmed" fz="xs">{t('siteSettings.hint')}</Text></Accordion.Control>
+              <Accordion.Panel>
+                <Stack>
+                  <SimpleGrid cols={{ base: 1, sm: 2 }}>
+                    <TextInput label={t('siteSettings.woPrefix')} placeholder={me?.tenant.settings.workOrderNumberPrefix} maxLength={20} {...form.getInputProps('settings.workOrderNumberPrefix')} />
+                    <TextInput label={t('siteSettings.wrPrefix')} placeholder={me?.tenant.settings.workRequestNumberPrefix} maxLength={20} {...form.getInputProps('settings.workRequestNumberPrefix')} />
+                    <TextInput label={t('siteSettings.poPrefix')} placeholder={me?.tenant.settings.purchaseOrderNumberPrefix} maxLength={20} {...form.getInputProps('settings.purchaseOrderNumberPrefix')} />
+                    <TextInput label={t('siteSettings.assetPrefix', { asset: terms.asset.toLowerCase() })} placeholder={me?.tenant.settings.assetNumberPrefix} maxLength={20}
+                      {...form.getInputProps('settings.assetNumberPrefix')} />
+                  </SimpleGrid>
+                  <Text c="dimmed" fz="xs">{t('siteSettings.prefixHint')}</Text>
+                  <Select label={t('siteSettings.defaultStore')} description={site ? t('siteSettings.defaultStoreHint') : t('siteSettings.saveFirst')} clearable disabled={!site}
+                    data={(stores ?? []).filter((x) => x.siteId === site?.id && (x.isActive || x.id === form.values.settings.defaultStoreId)).map((x) => ({ value: x.id, label: `${x.code} · ${x.name}` }))}
+                    {...form.getInputProps('settings.defaultStoreId')} />
+                  <MultiSelect label={t('siteSettings.recipients')} description={t('siteSettings.recipientsHint')} searchable clearable
+                    data={(people ?? []).map((u) => ({ value: u.id, label: u.fullName }))} {...form.getInputProps('settings.requestRecipientIds')} />
+                  <TextInput label={t('siteSettings.senderName')} description={t('siteSettings.senderNameHint')} placeholder={me?.tenant.name} maxLength={100}
+                    {...form.getInputProps('settings.emailSenderName')} />
+                  <div><Text fw={500} fz="sm">{t('hours.site', { site: terms.site.toLowerCase() })}</Text><Text c="dimmed" fz="xs">{t('hours.siteHint')}</Text></div>
+                  <WorkingHoursEditor value={form.values.settings.workingHours} onChange={(v) => form.setFieldValue('settings.workingHours', v)}
+                    inheritLabel={t('hours.useOrganization')} inherited={me ? organizationHours(me.tenant.settings) : []} error={form.errors['settings.workingHours']} />
+                </Stack>
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
           <Group justify="flex-end"><Button variant="default" onClick={onClose}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>
         </Stack>
       </form>

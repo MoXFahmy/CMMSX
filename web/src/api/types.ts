@@ -1,4 +1,5 @@
 import type { SlaState } from '@/components/sla';
+import type { WorkingDay } from '@/components/workingHours';
 
 export type Paged<T> = { items: T[]; total: number; page: number; pageSize: number };
 export type AssetStatus = 'Active' | 'Inactive' | 'InStorage' | 'UnderRepair' | 'Disposed';
@@ -23,6 +24,8 @@ export type TenantSettings = {
   pmSkipAssetStatuses: AssetStatus[]; pmNonWorkingDays: DayName[]; pmNoStacking: boolean;
   /** Response and completion targets per priority, in minutes (0.5.0). */
   slaTargets: SlaTarget[]; dailyCapacityHours: number;
+  /** The organization's weekly working hours (0.9.0); empty = every day from 08:00 for dailyCapacityHours. */
+  workingHours?: WorkingDay[];
 };
 export type SlaTarget = { priority: WorkPriority; respondMinutes?: number | null; completeMinutes?: number | null };
 /** Deadlines of one record and where it stands against them. */
@@ -44,6 +47,12 @@ export type Me = {
 export type Site = {
   id: string; code: string; name: string; address?: string; city?: string; country?: string; timeZone?: string;
   latitude?: number; longitude?: number; notes?: string; isActive: boolean; locationCount: number; assetCount: number; rowVersion: string;
+  /** The site's own settings (0.9.0); empty values use the organization's. */
+  settings?: SiteSettings;
+};
+export type SiteSettings = {
+  assetNumberPrefix?: string | null; workOrderNumberPrefix?: string | null; workRequestNumberPrefix?: string | null; purchaseOrderNumberPrefix?: string | null;
+  workingHours?: WorkingDay[] | null; defaultStoreId?: string | null; requestRecipientIds?: string[]; emailSenderName?: string | null;
 };
 export type HierarchySite = { id: string; code: string; name: string; isActive: boolean; assetCount: number };
 export type HierarchyLocation = {
@@ -105,6 +114,10 @@ export type User = {
   /** Sites this person may see (empty = every site) and branches of the location tree they are limited to (0.9.0). */
   siteIds?: string[]; locationIds?: string[];
 };
+/** A named group of technicians that work can be given to (0.9.0). */
+export type Team = {
+  id: string; code: string; name: string; siteId?: string | null; siteName?: string | null; color?: string | null; memberIds: string[]; isActive: boolean; rowVersion: string;
+};
 export type Role = { id: string; name: string; description?: string; isSystem: boolean; permissions: string[]; userCount: number };
 export type PermissionInfo = { code: string; group: string; name: string };
 export type Dashboard = {
@@ -137,12 +150,14 @@ export type Employee = {
   id: string; code: string; fullName: string; jobTitle?: string; email?: string; phone?: string; tradeIds: string[]; siteIds: string[];
   hourlyRate?: number; overtimeRate?: number; isContractor: boolean; company?: string; userId?: string; notes?: string; isActive: boolean;
   openWorkOrders: number; rowVersion: string;
+  /** Their own weekly working hours (0.9.0); none = their site's or the organization's. */
+  workingHours?: WorkingDay[] | null;
 };
 export type EmployeeLookup = { id: string; code: string; fullName: string; tradeIds: string[]; isContractor: boolean; company?: string };
 export type WorkOrderListItem = {
   id: string; number: string; title: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
   siteId: string; siteName: string; locationId?: string; locationPath?: string; assetId?: string; assetNumber?: string; assetName?: string;
-  tradeName?: string; assignees: string[]; dueDate?: string; createdAt: string; completedAt?: string; isOverdue: boolean;
+  tradeName?: string; teamName?: string | null; assignees: string[]; dueDate?: string; createdAt: string; completedAt?: string; isOverdue: boolean;
   dueAt?: string | null; startBy?: string | null; respondedAt?: string | null; responseState: SlaState; completionState: SlaState;
 };
 export type WorkOrderDetail = {
@@ -151,6 +166,7 @@ export type WorkOrderDetail = {
   assetId?: string; asset?: { id: string; assetNumber: string; name: string; serialNumber?: string; status: AssetStatus; criticality: Criticality; notesToTechnician?: string; warrantyType: WarrantyType; warrantyExpiresOn?: string; underWarranty: boolean };
   requestedBy?: string; preventionNotes?: string;
   tradeId?: string; tradeName?: string; failureCodeId?: string; failureCode?: { code: string; name: string };
+  teamId?: string | null; team?: { id: string; code: string; name: string; color?: string | null } | null;
   assignees: { employeeId: string; fullName: string; code: string; plannedHours?: number | null; hourlyRate?: number | null }[]; plannedStart?: string; dueDate?: string; estimatedHours?: number;
   startedAt?: string; completedAt?: string; closedAt?: string; completionNotes?: string; causeNotes?: string; assetWasDown: boolean; downtimeHours?: number;
   /** The asset stop this work order is about (completing it ends the stop), and whether the asset is down now. */
@@ -230,7 +246,7 @@ export type PmScheduleDetail = {
   id: string; code: string; name: string; description?: string; siteId: string; locationId?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
   /** A round's assets in order (empty for single-asset/location schedules). */
   assets: { id: string; assetNumber: string; name: string }[];
-  tradeId?: string; priority: WorkPriority; assigneeIds: string[]; pmTaskId: string; task: { id: string; code: string; name: string };
+  tradeId?: string; teamId?: string | null; priority: WorkPriority; assigneeIds: string[]; pmTaskId: string; task: { id: string; code: string; name: string };
   extraTasks: { pmTaskId: string; everyNth: number }[]; type: PmScheduleType; basis: PmBasis; frequency: number; unit: FrequencyUnit;
   weekOfMonth?: number; dayOfWeek?: DayName; dayOfMonth?: number; workPeriodDays: number; wholeMonth: boolean; leadDays: number; startDate: string;
   nextDueDate?: string; lastDueDate?: string; lastGeneratedAt?: string; generationCount: number; meterId?: string;

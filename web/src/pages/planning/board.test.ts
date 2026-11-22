@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cellsByAsset, cellsByPerson, days, load, NO_ASSET, planMove, TRAY, UNASSIGNED, type Board, type BoardJob } from './board';
+import { capacityOn, cellsByAsset, cellsByPerson, days, load, NO_ASSET, planMove, TRAY, UNASSIGNED, type Board, type BoardJob } from './board';
 
 const sla = { response: 'None', completion: 'OnTrack' } as const;
 const job = (id: string, day: string | null, assignees: { employeeId: string; hours?: number | null }[], assetId?: string): BoardJob => ({
@@ -103,3 +103,12 @@ describe('undo puts back what was there', () => {
   });
 });
 
+describe('each person\'s capacity (0.9.0)', () => {
+  it('comes from their working hours for that weekday', () => {
+    const hours = [8, 8, 8, 8, 8, 0, 0]; // Sunday to Thursday
+    const b = board({ people: [{ id: 'ann', name: 'Ann', hours }, { id: 'old', name: 'Old app' }] });
+    expect(capacityOn(b, 'ann', '2026-11-27')).toBe(0); // a Friday: any planned hours are over
+    expect(capacityOn(b, 'ann', '2026-11-22')).toBe(8); // a Sunday
+    expect(capacityOn(b, 'old', '2026-11-27')).toBe(8); // no hours from the server: the organization's hours per day
+  });
+});
