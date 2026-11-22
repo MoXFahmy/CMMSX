@@ -7,6 +7,8 @@ using FourC.Cmms.Core.Locations;
 using FourC.Cmms.Core.Services;
 using FourC.Cmms.Core.Tenancy;
 using Microsoft.AspNetCore.Identity;
+using FourC.Cmms.Core.Work;
+using FourC.Cmms.Core.Notifications;
 using Microsoft.EntityFrameworkCore;
 
 namespace FourC.Cmms.Api.Features;
@@ -152,6 +154,8 @@ public static class AdminEndpoints
             input.Settings.PmSkipAssetStatuses ??= [];
             input.Settings.TerminologyArabic ??= Terminology.Arabic();
             input.Settings.SlaTargets ??= [];
+            input.Settings.CommentRequiredFor = (input.Settings.CommentRequiredFor ?? []).Distinct().ToList();
+            input.Settings.EmailRecipients = (input.Settings.EmailRecipients ?? []).ToDictionary(x => x.Key, x => (x.Value ?? []).Distinct().ToList());
             var v = new Validator().Required("name", input.Name, "Organization name", 200)
                 .MaxLength("settings.assetNumberPrefix", input.Settings.AssetNumberPrefix, "Asset number prefix", 20)
                 .When(input.Settings.AssetNumberPadding is < 1 or > 12, "settings.assetNumberPadding", "Padding must be between 1 and 12.")
@@ -164,6 +168,13 @@ public static class AdminEndpoints
                 .When(input.Settings.SlaTargets.GroupBy(x => x.Priority).Any(g => g.Count() > 1), "settings.slaTargets", "Set each priority's targets once.")
                 .When(input.Settings.SlaTargets.Any(x => !Enum.IsDefined(x.Priority) || OutOfRange(x.RespondMinutes) || OutOfRange(x.CompleteMinutes)),
                     "settings.slaTargets", "Targets must be between 1 minute and 365 days.");
+            foreach (var action in input.Settings.CommentRequiredFor.Where(a => !CommentActions.All.Contains(a)))
+                v.Add("settings.commentRequiredFor", $"Unknown action: {action}.");
+            foreach (var (key, kinds) in input.Settings.EmailRecipients)
+            {
+                if (!EmailEvents.Grid.TryGetValue(key, out var row)) { v.Add("settings.emailRecipients", $"Unknown e-mail: {key}."); continue; }
+                foreach (var kind in kinds.Where(k => !row.Applicable.Contains(k))) v.Add("settings.emailRecipients", $"Unknown recipient: {kind}.");
+            }
             foreach (var (k, val) in new[] { ("site", input.Settings.Terminology.Site), ("location", input.Settings.Terminology.Location), ("asset", input.Settings.Terminology.Asset) })
                 v.Required($"settings.terminology.{k}", val, "Label", 40);
             if (!v.IsValid) return v.Problem();

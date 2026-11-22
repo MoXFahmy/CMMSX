@@ -36,6 +36,12 @@ public static partial class TenantProvisioning
         ("LEAK", "Leak"), ("BLOCK", "Blockage / jam"), ("CTRL", "Control / sensor fault"), ("UNK", "Unknown"),
     ];
 
+    /// <summary>Why work is cancelled (0.10.0); the migration gives existing organizations the same list.</summary>
+    public static readonly (string Code, string Name)[] DefaultCancelReasons =
+    [
+        ("DUP", "Duplicate"), ("NOTNEEDED", "No longer needed"), ("ERROR", "Raised in error"), ("OTHER", "Other"),
+    ];
+
     public static readonly (string Code, string Name)[] DefaultPartGroups =
     [
         ("BEAR", "Bearings & seals"), ("ELEC", "Electrical"), ("MECH", "Mechanical"), ("FILT", "Filters"), ("LUBE", "Lubricants"),
@@ -79,6 +85,8 @@ public static partial class TenantProvisioning
             db.FailureCodes.AddRange(DefaultFailureCodes.Select(f => new FourC.Cmms.Core.Work.FailureCode { TenantId = tenantId, Code = f.Code, Name = f.Name }));
             db.PartGroups.AddRange(DefaultPartGroups.Select(g => new FourC.Cmms.Core.Inventory.PartGroup { TenantId = tenantId, Code = g.Code, Name = g.Name }));
         }
+        // Cancel reasons are part of how work is cancelled, so every organization gets them (not only those seeding sample lists).
+        db.CancelReasons.AddRange(DefaultCancelReasons.Select(r => new FourC.Cmms.Core.Work.CancelReason { TenantId = tenantId, Code = r.Code, Name = r.Name }));
         var admin = NewUser(tenantId, adminName, adminEmail);
         admin.PasswordHash = hasher.HashPassword(admin, adminPassword);
         db.Users.Add(admin);

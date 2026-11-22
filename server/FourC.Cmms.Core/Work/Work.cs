@@ -9,7 +9,8 @@ public enum WorkType { Corrective = 1, Preventive = 2, Breakdown = 3, Inspection
 public enum WorkPriority { Low = 1, Medium = 2, High = 3, Urgent = 4 }
 public enum WorkOrderStatus { Open = 1, InProgress = 2, OnHold = 3, Completed = 4, Closed = 5, Cancelled = 6 }
 public enum HoldReason { WaitingForParts = 1, WaitingForApproval = 2, WaitingForAccess = 3, WaitingForContractor = 4, Other = 99 }
-public enum WorkRequestStatus { New = 1, Approved = 2, Rejected = 3, Cancelled = 4 }
+/// <summary>Closed = the requester accepted the finished work (0.10.0).</summary>
+public enum WorkRequestStatus { New = 1, Approved = 2, Rejected = 3, Cancelled = 4, Closed = 5 }
 
 /// <summary>Failure / cause code used for reliability reporting (legacy failurecause).</summary>
 public class FailureCode : TenantEntity, ICodeLookup
@@ -49,6 +50,19 @@ public class WorkRequest : TenantEntity
     public Guid? WorkOrderId { get; set; }
     /// <summary>The asset stop this request reported ("The asset is down").</summary>
     public Guid? DowntimeEventId { get; set; }
+    public Guid? RequestTypeId { get; set; }
+    public RequestType? RequestType { get; set; }
+    /// <summary>Users the requester asked to keep informed, on top of the site's and the type's request recipients.</summary>
+    public List<Guid> ExtraRecipientIds { get; set; } = [];
+    /// <summary>When the work may be done; copied to the work order on approval.</summary>
+    public List<AccessWindow> AccessWindows { get; set; } = [];
+    /// <summary>Copied from the asset: the work can only be done while it is stopped.</summary>
+    public bool OnlyWhenStopped { get; set; }
+    /// <summary>The work order was completed and the requester has not yet accepted or refused it.</summary>
+    public DateTimeOffset? AwaitingFeedbackSince { get; set; }
+    /// <summary>SHA-256 (hex) of the single-use link's token, for a requester without a login; null when no link is open.</summary>
+    public string? FeedbackTokenHash { get; set; }
+    public DateTimeOffset? FeedbackTokenExpiresAt { get; set; }
 }
 
 public class WorkOrder : TenantEntity
@@ -106,6 +120,15 @@ public class WorkOrder : TenantEntity
     public decimal? DowntimeHours { get; set; }
     /// <summary>The asset stop this work order is about; completing it ends the stop.</summary>
     public Guid? DowntimeEventId { get; set; }
+    /// <summary>Why it was cancelled (cleared when it is reopened).</summary>
+    public Guid? CancelReasonId { get; set; }
+    public CancelReason? CancelReason { get; set; }
+    /// <summary>When the work may be done.</summary>
+    public List<AccessWindow> AccessWindows { get; set; } = [];
+    /// <summary>The work can only be done while the asset is stopped (planners book a shutdown).</summary>
+    public bool OnlyWhenStopped { get; set; }
+    /// <summary>The due time an overdue e-mail was already sent (or skipped) for; a new due time can be notified again.</summary>
+    public DateTimeOffset? OverdueNotifiedFor { get; set; }
 
     public List<WorkOrderAssignee> Assignees { get; set; } = [];
     /// <summary>Assets a PM round work order covers, in round order. Empty for all other work orders (they use <see cref="AssetId"/>).</summary>

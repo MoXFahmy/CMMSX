@@ -54,6 +54,8 @@ public class Asset : TenantEntity
 
     public string? Notes { get; set; }
     public string? NotesToTechnician { get; set; }
+    /// <summary>Maintenance only while the asset is stopped; copied to its requests, work orders and PMs.</summary>
+    public bool OnlyWhenStopped { get; set; }
     public Dictionary<string, string?> CustomFields { get; set; } = [];
 
     /// <summary>How many hours a day the asset is meant to run (0.5–24), for availability.</summary>
