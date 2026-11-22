@@ -11,7 +11,7 @@ namespace FourC.Cmms.Api.Features;
 public static class PmGenerator
 {
     public sealed record Result(Guid ScheduleId, string Code, string Name, DateOnly? DueDate, string? TaskName, string? AssetNumber,
-        Guid? WorkOrderId, string? WorkOrderNumber, string? Skipped);
+        Guid? WorkOrderId, string? WorkOrderNumber, string? Skipped, Guid? GroupId = null, string? GroupNumber = null);
 
     private static readonly WorkOrderStatus[] Active = [WorkOrderStatus.Open, WorkOrderStatus.InProgress, WorkOrderStatus.OnHold];
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
@@ -84,7 +84,8 @@ public static class PmGenerator
             var count = s.GenerationCount + 1;
             var task = tasks.GetValueOrDefault(PmCalendar.TaskFor(s, count)) ?? tasks.GetValueOrDefault(s.PmTaskId);
             WorkOrder? wo = null;
-            var exists = await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && w.PmDueDate == due, ct);
+            var exists = await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && w.PmDueDate == due, ct)
+                || await db.WorkOrderGroups.AnyAsync(g => g.PmScheduleId == s.Id && g.PmDueDate == due, ct);
             var skip = exists || task is null ? null : roundSkip ?? await SkipReasonAsync(db, s, settings, ct);
             if (skip is not null && due > Today)
             {
@@ -102,9 +103,15 @@ public static class PmGenerator
                 if (s.Basis == PmBasis.Actual) break;
                 continue;
             }
-            if (!exists && !dryRun && task is not null) wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct, round, rules.NonWorking, mail);
+            WorkOrderGroup? group = null;
+            if (!exists && !dryRun && task is not null)
+            {
+                // A group PM (0.12.0): a group with a work order per asset, instead of one round work order.
+                if (s.MultiAssetMode == MultiAssetMode.Group && round is { Count: > 0 }) group = await WorkGroups.CreateGroupAsync(db, ctx, s, task, due, round, rules.NonWorking, ct, mail);
+                else wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct, round, rules.NonWorking, mail);
+            }
             results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, wo?.Id, wo?.Number,
-                task is null ? "PM task not found" : exists ? "Already generated" : null));
+                task is null ? "PM task not found" : exists ? "Already generated" : null, group?.Id, group?.Number));
             s.GenerationCount = count; s.LastDueDate = due; s.LastGeneratedAt = DateTimeOffset.UtcNow; s.LastWorkOrderId = wo?.Id ?? s.LastWorkOrderId;
             s.NextDueDate = s.Basis == PmBasis.Scheduled ? PmTriggers.Next(s, due, calendars) : null;
             if (s.Basis == PmBasis.Scheduled && !dryRun) await RestartMetersAsync(db, s, null, 0, ct); // whichever comes first: every meter starts again
@@ -145,6 +152,11 @@ public static class PmGenerator
         var task = await db.PmTasks.AsNoTracking().Include(t => t.Steps).FirstAsync(t => t.Id == taskId, ct);
         IReadOnlyList<RoundAsset>? round = null;
         if (s.Assets.Count > 0 && (round = await RoundAssetsAsync(db, s, ct, rules.Skip)).Count == 0) throw new DomainException(NoActiveAssets);
+        if (s.MultiAssetMode == MultiAssetMode.Group && round is { Count: > 0 })
+        {
+            var group = await WorkGroups.CreateGroupAsync(db, ctx, s, task, date, round, rules.NonWorking, ct, mail);
+            return new Result(s.Id, s.Code, s.Name, date, task.Name, null, null, null, null, group.Id, group.Number);
+        }
         var wo = await CreateWorkOrderAsync(db, ctx, s, task, date, null, ct, round, rules.NonWorking, mail);
         return new Result(s.Id, s.Code, s.Name, date, task.Name, s.Asset?.AssetNumber, wo.Id, wo.Number, null);
     }

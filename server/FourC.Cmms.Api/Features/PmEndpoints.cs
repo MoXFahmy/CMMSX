@@ -27,7 +27,8 @@ public static class PmEndpoints
         Guid? LowerTaskId, Guid? UpperTaskId, bool TimeBased, bool IsActive = true, string? RowVersion = null, List<Guid>? AssetIds = null, Guid? TeamId = null,
         bool? ManagesTeam = null, bool? OnlyWhenStopped = null, List<Guid>? RecipientIds = null,
         bool? ManagesRules = null, List<Core.Assets.AssetStatus>? SkipStatusesOverride = null, List<DayOfWeek>? NonWorkingDaysOverride = null, bool? NoStackingOverride = null,
-        List<AssetTemplateInput>? AssetTemplates = null, List<Guid>? CalendarIds = null, List<ExtraMeterInput>? ExtraMeters = null);
+        List<AssetTemplateInput>? AssetTemplates = null, List<Guid>? CalendarIds = null, List<ExtraMeterInput>? ExtraMeters = null,
+        MultiAssetMode? MultiAssetMode = null, GroupPlan? GroupPlan = null);
     /// <summary>A meter trigger on top of the PM's own (0.12.0), whichever comes first.</summary>
     public sealed record ExtraMeterInput(Guid MeterId, decimal Interval, decimal? NextDueReading = null);
     /// <summary>A multi-asset PM's asset with its own template (empty = the PM's).</summary>
@@ -181,7 +182,7 @@ public static class PmEndpoints
             {
                 s.Id, s.Code, s.Name, s.Description, s.SiteId, s.LocationId, s.AssetId, Asset = s.Asset is null ? null : new { s.Asset.Id, s.Asset.AssetNumber, s.Asset.Name },
                 Assets = s.Assets.Where(a => a.Asset is not null).OrderBy(a => a.Sequence).Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name, a.PmTaskId }),
-                s.SkipStatusesOverride, s.NonWorkingDaysOverride, s.NoStackingOverride,
+                s.SkipStatusesOverride, s.NonWorkingDaysOverride, s.NoStackingOverride, s.MultiAssetMode, s.GroupPlan,
                 s.TradeId, s.TeamId, s.Priority, s.AssigneeIds, s.RecipientIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, s.PmTask.Name }, s.OnlyWhenStopped,
                 ExtraTasks = s.ExtraTasks.Select(e => new { e.PmTaskId, e.EveryNth }), s.Type, s.Basis, s.Frequency, s.Unit, s.WeekOfMonth, s.DayOfWeek, s.DayOfMonth,
                 s.WorkPeriodDays, s.WholeMonth, s.LeadDays, s.StartDate, s.NextDueDate, s.LastDueDate, s.LastGeneratedAt, s.GenerationCount,
@@ -257,6 +258,10 @@ public static class PmEndpoints
             var v = await ValidateScheduleAsync(input, id, db, ct, hidden);
             if (coversHidden is not null) v.Add("assetIds", coversHidden);
             v.Merge(ScheduleChangeRules(s, input));
+            // Work generated out of order (0.12.0) doesn't count as a generation, but it fixes the mode too.
+            if (input.MultiAssetMode is { } mode && mode != s.MultiAssetMode && s.GenerationCount == 0
+                && (await db.WorkOrders.AnyAsync(w => w.PmScheduleId == id, ct) || await db.WorkOrderGroups.AnyAsync(g => g.PmScheduleId == id, ct)))
+                v.Add("multiAssetMode", ModeLocked);
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(s).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
             UpdateSchedule(s, input, await CalendarsAsync(db, input.CalendarIds ?? s.Calendars.Select(c => c.ScheduleCalendarId), ct));
@@ -609,6 +614,8 @@ public static class PmEndpoints
         else if (extra.GroupBy(m => m.MeterId).Any(g => g.Count() > 1) || extra.Any(m => i.Type == PmScheduleType.Meter && m.MeterId == i.MeterId))
             v.Add("extraMeters", "List each meter once.");
         else if (extra.Count > 0 && round.Count > 0) v.Add("extraMeters", "Extra meters need a single asset.");
+        if (i.MultiAssetMode == MultiAssetMode.Group && round.Count < 2) v.Add("multiAssetMode", "Choose several assets for a group.");
+        else if (i.MultiAssetMode == MultiAssetMode.Group && i.Basis == PmBasis.Actual) v.Add("multiAssetMode", "Groups need the Scheduled basis.");
         if ((i.ExtraTasks ?? []).Any(e => e.EveryNth is < 2 or > 1000)) v.Add("extraTasks", "\"Every Nth\" must be between 2 and 1000.");
         if (i.Type == PmScheduleType.Meter)
         {
@@ -622,7 +629,10 @@ public static class PmEndpoints
 
     /// <summary>What can't change on a schedule that has run: its generation basis (as in 4CSQL).</summary>
     internal static Validator ScheduleChangeRules(PmSchedule s, ScheduleInput i) => new Validator()
-        .When(i.Basis != s.Basis && s.GenerationCount > 0, "basis", "The generation basis cannot change after work orders were generated (as in 4CSQL). Create a new schedule instead.");
+        .When(i.Basis != s.Basis && s.GenerationCount > 0, "basis", "The generation basis cannot change after work orders were generated (as in 4CSQL). Create a new schedule instead.")
+        .When(i.MultiAssetMode is { } mode && mode != s.MultiAssetMode && s.GenerationCount > 0, "multiAssetMode", ModeLocked);
+
+    public const string ModeLocked = "The multi-asset mode can't change after the PM has generated work.";
 
     /// <summary>A new schedule with its first due date (meter schedules: see the POST for their first reading).</summary>
     /// <param name="calendars">The shared calendars the input names (0.12.0); none when left out.</param>
@@ -757,6 +767,8 @@ public static class PmEndpoints
         s.Description = i.Description.Clean(); s.SiteId = i.SiteId; s.LocationId = i.LocationId; s.AssetId = i.AssetId; s.TradeId = i.TradeId; s.TeamId = i.TeamId; s.Priority = i.Priority;
         if (i.OnlyWhenStopped is { } stopped) s.OnlyWhenStopped = stopped; // left out (older pages, the import): unchanged
         if (i.RecipientIds is not null) s.RecipientIds = i.RecipientIds.Distinct().ToList(); // left out: unchanged
+        if (i.MultiAssetMode is { } multi) s.MultiAssetMode = multi;
+        if (i.GroupPlan is { } plan) s.GroupPlan = plan;
         if (i.ManagesRules == true)
         {
             // Null = the organization's rule (0.12.0); pages and the import that don't manage rules leave them as they are.
