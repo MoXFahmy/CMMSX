@@ -451,8 +451,9 @@ public static class PmEndpoints
     }
 
     /// <summary>Records a meter reading (with the spike guard unless confirmed) and runs the meter's PM schedules.</summary>
+    /// <param name="workOrderId">The work order the reading was taken on (a checklist's Meter step, 0.13.0).</param>
     internal static async Task<(Validator V, List<PmGenerator.Result> Generated)> RecordReadingAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, Meter meter,
-        ReadingInput input, CancellationToken ct)
+        ReadingInput input, CancellationToken ct, Guid? workOrderId = null)
     {
         {
             var id = meter.Id;
@@ -469,7 +470,7 @@ public static class PmEndpoints
             if (!v.IsValid) return (v, []);
             var previous = meter.CurrentReading;
             var latest = meter.LastReadAt is null || at >= meter.LastReadAt;
-            db.MeterReadings.Add(new MeterReading { MeterId = id, Value = input.Value, ReadAt = at, Note = input.Note.Clean(), ByName = ctx.UserName });
+            db.MeterReadings.Add(new MeterReading { MeterId = id, Value = input.Value, ReadAt = at, Note = input.Note.Clean(), ByName = ctx.UserName, WorkOrderId = workOrderId });
             if (latest) { meter.CurrentReading = input.Value; meter.LastReadAt = at; }
             await db.SaveChangesAsync(ct);
             var generated = meter.IsActive ? await PmGenerator.OnReadingAsync(db, ctx, meter, input.Value, ct, mail) : [];

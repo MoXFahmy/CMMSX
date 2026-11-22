@@ -23,7 +23,8 @@ public static partial class TechEndpoints
     public sealed record ActionInput(Guid ClientId, DateTimeOffset? At, string? Type, Guid? WorkOrderId, JsonElement Payload, Guid? UserId = null);
     public sealed record Answer(string Status, string? Message = null, string? Code = null);
 
-    private sealed record TaskPayload(Guid TaskId, bool? IsDone, string? Reading, string? Remarks, bool Force = false);
+    private sealed record TaskPayload(Guid TaskId, bool? IsDone, string? Reading, string? Remarks, bool Force = false, StepAnswer? Answer = null, decimal? Value = null,
+        string? Text = null, Guid? MeterId = null);
     /// <summary>EmployeeId (0.11.0): a crew leader logging another technician's hours (needs "Log hours for others").</summary>
     private sealed record LaborPayload(DateOnly? WorkDate, decimal Hours, decimal OvertimeHours, string? Notes, Guid? EmployeeId = null);
     private sealed record CommentPayload(string? Body);
@@ -227,7 +228,9 @@ public static partial class TechEndpoints
                     throw new Rejected($"Changed by {t.UpdatedByName ?? "someone else"} at {await LocalTimeAsync(db, changed, ct)}.", "conflict");
                 if (p.Reading is { Length: > 100 }) throw new Rejected("Reading can be at most 100 characters.");
                 if (p.Remarks is { Length: > 2000 }) throw new Rejected("Remarks can be at most 2000 characters.");
-                await WorkOrderEndpoints.ApplyTaskChangeAsync(db, ctx, w.Id, t, p.IsDone, p.Reading, p.Remarks, at, ct);
+                var settings = (await db.Tenants.AsNoTracking().FirstAsync(x => x.Id == db.CurrentTenantId, ct)).Settings;
+                Ensure(await Checklists.AnswerAsync(db, ctx, mail, settings, w, t,
+                    new Checklists.StepChange(p.IsDone, p.Answer, p.Value, p.Text, p.MeterId, p.Reading, p.Remarks, Confirm: true), at, ct));
                 await db.SaveChangesAsync(ct);
                 return new Answer("done");
             }

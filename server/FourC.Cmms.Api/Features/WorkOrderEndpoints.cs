@@ -22,7 +22,8 @@ public static class WorkOrderEndpoints
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
         DateTimeOffset? At = null, Guid? CancelReasonId = null);
     public sealed record BulkInput(Guid[]? Ids, StatusInput? Status, WorkPriority? Priority, Guid[]? AddAssigneeIds);
-    public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null);
+    public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null, StepAnswer? Answer = null, decimal? Value = null,
+        string? Text = null, Guid? MeterId = null, bool Confirm = false);
     public sealed record LaborInput(Guid EmployeeId, DateOnly WorkDate, decimal Hours, decimal OvertimeHours, string? Notes);
     public sealed record CostInput(string Description, decimal Quantity, decimal UnitCost, string? Vendor, string? Reference = null);
     public sealed record CommentInput(string Body);
@@ -376,18 +377,22 @@ public static class WorkOrderEndpoints
             return Results.Ok(new { task.Id });
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
-        g.MapPut("/{id:guid}/tasks/{taskId:guid}", async (Guid id, Guid taskId, TaskInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        g.MapPut("/{id:guid}/tasks/{taskId:guid}", async (Guid id, Guid taskId, TaskInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             await RequireOpenAsync(db, id, ct);
+            var w = await db.WorkOrders.FirstAsync(x => x.Id == id, ct);
             var t = await db.WorkOrderTasks.FirstOrDefaultAsync(x => x.Id == taskId && x.WorkOrderId == id, ct);
             if (t is null) return Results.NotFound();
             var v = new Validator().When(input.Reading is { Length: > 100 }, "reading", "Reading can be at most 100 characters.")
                 .When(input.Remarks is { Length: > 2000 }, "remarks", "Remarks can be at most 2000 characters.");
             if (!v.IsValid) return v.Problem();
             if (input.Description.Clean() is { } d) t.Description = d.Length > 1000 ? d[..1000] : d;
-            await ApplyTaskChangeAsync(db, ctx, id, t, input.IsDone, input.Reading, input.Remarks, DateTimeOffset.UtcNow, ct);
+            var settings = (await db.Tenants.AsNoTracking().FirstAsync(x => x.Id == db.CurrentTenantId, ct)).Settings;
+            var answered = await Checklists.AnswerAsync(db, ctx, mail, settings, w, t,
+                new Checklists.StepChange(input.IsDone, input.Answer, input.Value, input.Text, input.MeterId, input.Reading, input.Remarks, input.Confirm), DateTimeOffset.UtcNow, ct);
+            if (!answered.IsValid) return answered.Problem();
             await db.SaveChangesAsync(ct);
-            return Results.Ok(new { t.Id, t.IsDone });
+            return Results.Ok(new { t.Id, t.IsDone, t.Level });
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
         g.MapDelete("/{id:guid}/tasks/{taskId:guid}", async (Guid id, Guid taskId, CmmsDbContext db, CancellationToken ct) =>
@@ -780,22 +785,11 @@ public static class WorkOrderEndpoints
     /// Applies a tick, reading or remarks to a checklist step (the office page and the technician app's queued changes),
     /// recording who changed it and when; ticking a step starts open work.
     /// </summary>
-    internal static async Task ApplyTaskChangeAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, WorkOrderTask t, bool? isDone, string? reading, string? remarks,
-        DateTimeOffset at, CancellationToken ct)
+    /// <summary>A checklist step was answered: the work may start automatically, and it counts as the response.</summary>
+    internal static async Task StepDoneAsync(CmmsDbContext db, ITenantContext ctx, Guid workOrderId, DateTimeOffset at, CancellationToken ct)
     {
-        var changed = false;
-        if (reading is not null && reading.Clean() != t.Reading) { t.Reading = reading.Clean(); changed = true; } // an empty string clears it
-        if (remarks is not null && remarks.Clean() != t.Remarks) { t.Remarks = remarks.Clean(); changed = true; }
-        if (isDone is { } done && done != t.IsDone)
-        {
-            t.IsDone = done; t.DoneAt = done ? at : null; t.DoneBy = done ? ctx.UserName : null; changed = true;
-            if (done)
-            {
-                await AutoStartAsync(db, ctx, workOrderId, "Started automatically: checklist step done", ct, at);
-                await MarkRespondedAsync(db, workOrderId, at, ct);
-            }
-        }
-        if (changed) { t.UpdatedAt = at; t.UpdatedById = ctx.UserId; t.UpdatedByName = ctx.UserName; }
+        await AutoStartAsync(db, ctx, workOrderId, "Started automatically: checklist step done", ct, at);
+        await MarkRespondedAsync(db, workOrderId, at, ct);
     }
 
     private static async Task RequireOpenAsync(CmmsDbContext db, Guid id, CancellationToken ct)
