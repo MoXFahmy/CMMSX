@@ -169,6 +169,7 @@ public static class AssetEndpoints
             if (asset is null) return Results.NotFound();
             var v = new Validator().MaxLength("reason", input.Reason, "Reason", 1000);
             if (!await db.Sites.AnyAsync(s => s.Id == input.SiteId, ct)) v.Add("siteId", "Choose a site.");
+            Access.RequireLocation(db, v, input.LocationId);
             if (input.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == input.LocationId && l.SiteId == input.SiteId, ct))
                 v.Add("locationId", "Location must belong to the selected site.");
             if (asset.SiteId == input.SiteId && asset.LocationId == input.LocationId) v.Add("locationId", "The asset is already at this location.");
@@ -352,6 +353,7 @@ public static class AssetEndpoints
                 "Another asset already uses this number.", "This asset number is already used in a site you can't see.", ct) is { } numberClash)
             v.Add("assetNumber", numberClash);
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
+        Access.RequireLocation(db, v, i.LocationId);
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct))
             v.Add("locationId", "Location must belong to the selected site.");
         if (i.CategoryId is not null && !await db.AssetCategories.AnyAsync(c => c.Id == i.CategoryId, ct)) v.Add("categoryId", "Category not found.");

@@ -42,6 +42,15 @@ public static class Access
         return locationPath is not null && access.Branches.Any(b => b.SiteId == siteId && locationPath.StartsWith(b.Path, StringComparison.Ordinal));
     }
 
+    /// <summary>
+    /// People limited to branches must say where: a record without a location belongs to no branch, so they couldn't see what they
+    /// made. Work orders and requests take the asset's location when only the asset is given.
+    /// </summary>
+    public static void RequireLocation(CmmsDbContext db, Validator v, Guid? locationId, Guid? assetId = null)
+    {
+        if (db.CurrentBranchPaths is not null && locationId is null && assetId is null) v.Add("locationId", "Choose a location in your part of the site.");
+    }
+
     /// <summary>The signed-in person's whole access (before the header switch), or null outside a signed-in request.</summary>
     public static UserAccess? Of(HttpContext http) => http.Items[AccessKey] as UserAccess;
 

@@ -218,6 +218,7 @@ public static class WorkRequestEndpoints
             .MaxLength("requesterName", i.RequesterName, "Name", 200).MaxLength("requesterPhone", i.RequesterPhone, "Phone", 50)
             .When(!Enum.IsDefined(i.Priority), "priority", "Choose a priority.").When(!Enum.IsDefined(i.Type), "type", "Choose a type.");
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
+        Access.RequireLocation(db, v, i.LocationId, i.AssetId);
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct)) v.Add("locationId", "Location must belong to the selected site.");
         if (i.AssetId is not null && !await db.Assets.AnyAsync(a => a.Id == i.AssetId && a.SiteId == i.SiteId, ct)) v.Add("assetId", "Asset must belong to the selected site.");
         return v;

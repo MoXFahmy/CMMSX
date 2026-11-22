@@ -587,6 +587,7 @@ public static class WorkOrderEndpoints
             .When(i.EstimatedHours < 0, "estimatedHours", "Estimate cannot be negative.")
             .When(i.PlannedStart is { } ps && dueDay is { } dd && dd < ps, "dueDate", "Due date cannot be before the planned start.");
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
+        Access.RequireLocation(db, v, i.LocationId, i.AssetId);
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct)) v.Add("locationId", "Location must belong to the selected site.");
         if (i.AssetId is not null && !await db.Assets.AnyAsync(a => a.Id == i.AssetId && a.SiteId == i.SiteId, ct)) v.Add("assetId", "Asset must belong to the selected site.");
         if (i.TradeId is not null && !await db.Trades.AnyAsync(t => t.Id == i.TradeId, ct)) v.Add("tradeId", "Unknown trade.");

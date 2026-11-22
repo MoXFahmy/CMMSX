@@ -460,6 +460,7 @@ public static class PmEndpoints
                 "Another schedule uses this number.", "This number is already used by a schedule in a site you can't see.", ct) is { } scheduleClash)
             v.Add("code", scheduleClash);
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
+        Access.RequireLocation(db, v, i.LocationId);
         var round = i.AssetIds ?? [];
         if (round.Count > 100) v.Add("assetIds", "List at most 100 assets.");
         else if (round.Count > 0)

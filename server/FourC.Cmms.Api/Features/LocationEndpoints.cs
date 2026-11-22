@@ -192,6 +192,7 @@ public static class LocationEndpoints
                 await db.SaveChangesAsync(token);
                 return true;
             }, ct);
+            AccessService.LocationsChanged(); // a move changes the paths of everything under it
             return Results.Ok(new { loc.Id });
         }).RequirePermission(Permissions.LocationsManage);
 
@@ -203,6 +204,7 @@ public static class LocationEndpoints
             if (await db.Assets.AnyAsync(a => a.LocationId == id, ct)) throw new DomainException("This location has assets. Transfer them to another location first.");
             db.Locations.Remove(loc);
             await db.SaveChangesAsync(ct);
+            AccessService.LocationsChanged(); // people limited to it now see nothing there
             return Results.NoContent();
         }).RequirePermission(Permissions.LocationsManage);
     }

@@ -682,5 +682,6 @@
  "This code is already used in a part of the site you can't see.": "هذا الرمز مستخدم بالفعل في جزء من الموقع لا يمكنك رؤيته.",
  "This code is already used by a store in a site you can't see.": "هذا الرمز مستخدم بالفعل لمخزن في موقع لا يمكنك رؤيته.",
  "This number is already used by a schedule in a site you can't see.": "هذا الرقم مستخدم بالفعل لجدول في موقع لا يمكنك رؤيته.",
- "This number is already used by a meter in a site you can't see.": "هذا الرقم مستخدم بالفعل لعدّاد في موقع لا يمكنك رؤيته."
+ "This number is already used by a meter in a site you can't see.": "هذا الرقم مستخدم بالفعل لعدّاد في موقع لا يمكنك رؤيته.",
+ "Choose a location in your part of the site.": "اختر مكانًا ضمن الجزء الخاص بك من الموقع."
 }
