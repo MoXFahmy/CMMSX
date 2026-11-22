@@ -14,7 +14,7 @@ public static class WorkRequestEndpoints
 {
     public sealed record RequestInput(string Title, string? Description, Guid SiteId, Guid? LocationId, Guid? AssetId, WorkPriority Priority, WorkType Type,
         string? RequesterName, string? RequesterEmail, string? RequesterPhone, DateOnly? RequiredBy, bool AssetIsDown = false,
-        Guid? RequestTypeId = null, List<Guid>? ExtraRecipientIds = null, List<AccessWindow>? AccessWindows = null);
+        Guid? RequestTypeId = null, List<Guid>? ExtraRecipientIds = null, List<AccessWindow>? AccessWindows = null, Guid? SymptomId = null);
     public sealed record ApproveInput(WorkType? Type, WorkPriority? Priority, Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? DueDate, string? Note, DateTimeOffset? DueAt = null,
         Guid? TeamId = null);
 
@@ -48,7 +48,7 @@ public static class WorkRequestEndpoints
     public sealed record WorkRequestListItem(Guid Id, string Number, string Title, WorkRequestStatus Status, WorkPriority Priority, WorkType Type, Guid SiteId,
         string SiteName, string? LocationName, Guid? AssetId, string? AssetNumber, string? AssetName, string? RequesterName, DateOnly? RequiredBy,
         DateTimeOffset CreatedAt, Guid? WorkOrderId, string? WorkOrderNumber,
-        DateTimeOffset? RespondBy, DateTimeOffset? DueAt, SlaState ResponseState, SlaState CompletionState, string? RequestTypeName = null);
+        DateTimeOffset? RespondBy, DateTimeOffset? DueAt, SlaState ResponseState, SlaState CompletionState, string? RequestTypeName = null, string? SymptomName = null);
 
     /// <summary>One page of the requests this user may see (the list screen and its export share it).</summary>
     internal static async Task<PagedResult<WorkRequestListItem>> ListAsync(CmmsDbContext db, HttpContext http, PermissionService perms, ITenantContext ctx,
@@ -69,7 +69,7 @@ public static class WorkRequestEndpoints
         {
             r.Id, r.Number, r.Title, r.Status, r.Priority, r.Type, r.SiteId, SiteName = r.Site!.Name, LocationName = r.Location!.Name,
             r.AssetId, AssetNumber = r.Asset!.AssetNumber, AssetName = r.Asset.Name, r.RequesterName, r.RequiredBy, r.CreatedAt, r.WorkOrderId,
-            r.RespondBy, r.DueAt, r.DueFromTarget, r.DecidedAt, RequestTypeName = r.RequestType!.Name,
+            r.RespondBy, r.DueAt, r.DueFromTarget, r.DecidedAt, RequestTypeName = r.RequestType!.Name, SymptomName = r.Symptom!.Name,
             Work = db.WorkOrders.Where(w => w.Id == r.WorkOrderId)
                 .Select(w => new { w.Number, w.Priority, w.Status, w.StartBy, w.RespondedAt, w.DueAt, w.DueFromTarget, w.CompletedAt }).FirstOrDefault(),
         }).ToPagedAsync(page, pageSize, ct, maxPageSize);
@@ -80,7 +80,7 @@ public static class WorkRequestEndpoints
             return new WorkRequestListItem(r.Id, r.Number, r.Title, r.Status, r.Priority, r.Type, r.SiteId, r.SiteName, r.LocationName, r.AssetId, r.AssetNumber, r.AssetName,
                 r.RequesterName, r.RequiredBy, r.CreatedAt, r.WorkOrderId, r.Work?.Number, r.RespondBy,
                 // Approved: the work order's deadline, the one its state is about.
-                r.Status is WorkRequestStatus.Approved or WorkRequestStatus.Closed && r.Work is { } wo ? wo.DueAt : r.DueAt, sla.Response, sla.Completion, r.RequestTypeName);
+                r.Status is WorkRequestStatus.Approved or WorkRequestStatus.Closed && r.Work is { } wo ? wo.DueAt : r.DueAt, sla.Response, sla.Completion, r.RequestTypeName, r.SymptomName);
         }).ToList(), paged.Total, paged.Page, paged.PageSize);
     }
 
@@ -101,7 +101,7 @@ public static class WorkRequestEndpoints
 
         g.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, HttpContext http, PermissionService perms, ITenantContext ctx, CancellationToken ct) =>
         {
-            var r = await (await VisibleAsync(db, http, perms, ctx)).Include(x => x.Site).Include(x => x.Location).Include(x => x.Asset).Include(x => x.RequestType)
+            var r = await (await VisibleAsync(db, http, perms, ctx)).Include(x => x.Site).Include(x => x.Location).Include(x => x.Asset).Include(x => x.RequestType).Include(x => x.Symptom)
                 .FirstOrDefaultAsync(x => x.Id == id, ct);
             if (r is null) return Results.NotFound();
             var users = await db.Users.Where(u => u.Id == r.CreatedById || u.Id == r.DecidedById).ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
@@ -126,6 +126,7 @@ public static class WorkRequestEndpoints
                 r.CreatedAt, CreatedBy = r.CreatedById is { } c ? users.GetValueOrDefault(c) : null, CanCancel = r.Status == WorkRequestStatus.New && r.CreatedById == ctx.UserId,
                 r.RequestTypeId, RequestType = r.RequestType is null ? null : new { r.RequestType.Id, r.RequestType.Name, r.RequestType.DefaultTradeId },
                 ExtraRecipients = extra, r.AccessWindows, r.OnlyWhenStopped,
+                r.SymptomId, Symptom = r.Symptom is null ? null : new { r.Symptom.Id, r.Symptom.Code, r.Symptom.Name },
                 AwaitingFeedback = r.AwaitingFeedbackSince != null, r.AwaitingFeedbackSince, CanAnswer = canAnswer,
                 Feedback = feedback, Source = await Checklists.SourceAsync(db, r.SourceWorkOrderId, r.SourceTaskId, ct),
             });
@@ -245,7 +246,7 @@ public static class WorkRequestEndpoints
         // The request's stop (if it said the asset is down) carries over: completing the work order ends it.
         var created = await WorkOrderEndpoints.CreateAsync(db, ctx, woInput, r.Id, ct, w =>
         {
-            w.DueFromTarget = fromTarget; w.DowntimeEventId = r.DowntimeEventId;
+            w.DueFromTarget = fromTarget; w.DowntimeEventId = r.DowntimeEventId; w.SymptomId = r.SymptomId;
             w.AccessWindows = [.. r.AccessWindows]; w.OnlyWhenStopped = r.OnlyWhenStopped;
         }, mail: mail, raisedAt: r.CreatedAt);
         r.Status = WorkRequestStatus.Approved; r.WorkOrderId = created.Id; r.DecidedAt = DateTimeOffset.UtcNow;
@@ -293,6 +294,7 @@ public static class WorkRequestEndpoints
             Priority = input.Priority, Type = input.Type, RequiredBy = input.RequiredBy,
             RequesterName = input.RequesterName.Clean() ?? me?.FullName, RequesterEmail = input.RequesterEmail.Clean() ?? me?.Email, RequesterPhone = input.RequesterPhone.Clean() ?? me?.Phone,
             RequestTypeId = input.RequestTypeId, ExtraRecipientIds = (input.ExtraRecipientIds ?? []).Distinct().ToList(), AccessWindows = AccessWindows.Clean(input.AccessWindows),
+            SymptomId = input.SymptomId,
         };
         if (r.AssetId is { } assetId)
         {
@@ -339,6 +341,7 @@ public static class WorkRequestEndpoints
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct)) v.Add("locationId", "Location must belong to the selected site.");
         if (i.AssetId is not null && !await db.Assets.AnyAsync(a => a.Id == i.AssetId && a.SiteId == i.SiteId, ct)) v.Add("assetId", "Asset must belong to the selected site.");
         if (i.RequestTypeId is { } typeId && !await db.RequestTypes.AnyAsync(t => t.Id == typeId && t.IsActive, ct)) v.Add("requestTypeId", "Choose a request type.");
+        if (await Codes.CheckAsync(db.Symptoms, i.SymptomId, null, Codes.UnknownSymptom, ct) is { } symptom) v.Add("symptomId", symptom);
         if (AccessWindows.Problem(i.AccessWindows) is { } windows) v.Add("accessWindows", windows);
         var extra = (i.ExtraRecipientIds ?? []).Distinct().ToList();
         if (extra.Count > MaxExtraRecipients) v.Add("extraRecipientIds", $"Choose at most {MaxExtraRecipients} people.");
