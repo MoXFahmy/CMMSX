@@ -75,4 +75,29 @@ public class LoopModelTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(new HashSet<string> { EmailRecipientKinds.Technicians, EmailRecipientKinds.Contractors }, EmailEvents.KindsOn(new TenantSettings(), EmailEvents.WorkOrderAssigned));
         foreach (var (key, row) in EmailEvents.Grid) Assert.All(row.Defaults, d => Assert.Contains(d, row.Applicable));
     }
+
+    [Theory]
+    [InlineData("Say why the work is on hold.")]
+    [InlineData("Say why the work is reopened.")]
+    [InlineData("Say why the work is cancelled.")]
+    [InlineData("Choose why it is cancelled.")]
+    [InlineData("Choose the trade or team the work goes to.")]
+    [InlineData("Choose people who can see this place.")]
+    [InlineData("This link was already used or has expired.")]
+    [InlineData("This item is in use. Mark it inactive instead.")]
+    [InlineData("Nothing is waiting for your answer.")]
+    [InlineData("Give a rating from 1 to 5.")]
+    [InlineData("Say why the work isn't done.")]
+    [InlineData("Choose a request type.")]
+    [InlineData("New comment on request WR-00001")]
+    [InlineData("Refused: work order WO-00001")]
+    [InlineData("Cancelled: work order WO-00001")]
+    [InlineData("Overdue: work order WO-00001")]
+    [InlineData("The work you asked for has been done. Please accept or refuse it.")]
+    [InlineData("Accept or refuse the work")]
+    [InlineData("An access window must end after it starts.")]
+    [InlineData("Requester satisfaction")]
+    [InlineData("Cancelled work")]
+    public void New_messages_have_Arabic(string english) =>
+        Assert.NotEqual(english, FourC.Cmms.Api.Infrastructure.Translator.T(english, "ar"));
 }
