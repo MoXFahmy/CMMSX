@@ -34,6 +34,14 @@ public static class Checklists
             return v;
         }
         if (c.Text?.Trim() is { Length: > 1000 }) { v.Add("text", "Text can be at most 1000 characters."); return v; }
+        // Safety steps first (0.13.0): answering another step needs them (its asset's on a round); clearing an answer is always allowed.
+        var answering = c.Answer is not null || c.Value is not null || c.Text is not null || c.IsDone is true;
+        if (answering && !t.BeforeStart
+            && StepRules.SafetyBlock(await db.WorkOrderTasks.Where(x => x.WorkOrderId == w.Id).ToListAsync(ct), t.AssetId, forStart: false) is { } safety)
+        {
+            v.Add("tasks", safety);
+            return v;
+        }
         var changed = false;
         var point = t.Type == StepType.Number && t.MeasurementPointId is { } pointId
             ? await db.MeasurementPoints.IgnoreQueryFilters().AsNoTracking().FirstOrDefaultAsync(p => p.Id == pointId && p.TenantId == db.CurrentTenantId, ct) : null;

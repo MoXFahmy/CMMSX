@@ -513,6 +513,10 @@ public static class WorkOrderEndpoints
             }
             else if (await db.CancelReasons.AnyAsync(x => x.IsActive, ct)) v.Add("cancelReasonId", "Choose why it is cancelled.");
         }
+        // Safety steps before starting (0.13.0): starting or completing needs them answered (a tracking query keeps answers made in this request).
+        if (input.Status is WorkOrderStatus.InProgress or WorkOrderStatus.Completed && input.Status != w.Status
+            && StepRules.SafetyBlock(await db.WorkOrderTasks.Where(t => t.WorkOrderId == w.Id).ToListAsync(ct), null, forStart: true) is { } safety)
+            v.Add("tasks", safety);
         if (input.Status == WorkOrderStatus.Completed)
         {
             var notes = input.CompletionNotes.Clean() ?? w.CompletionNotes;
@@ -662,6 +666,8 @@ public static class WorkOrderEndpoints
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         if (!settings.AutoStartWork) return;
+        // Not before the safety steps are answered (0.13.0); the work just stays open.
+        if (StepRules.SafetyBlock(await db.WorkOrderTasks.Where(t => t.WorkOrderId == workOrderId).ToListAsync(ct), null, forStart: true) is not null) return;
         var now = DateTimeOffset.UtcNow;
         var started = at ?? now; // work recorded offline started when it was done
         // One guarded update, so two steps ticked at the same moment start the work once instead of clashing on the row version.
