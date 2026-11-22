@@ -9,14 +9,16 @@ import { DataTable } from 'mantine-datatable';
 import { IconDevices, IconEdit, IconKey, IconPlus, IconTrash } from '@tabler/icons-react';
 import { DevicesModal } from '@/components/DevicesModal';
 import { TargetsEditor, timeZones } from './TargetsEditor';
+import { WorkingHoursEditor, organizationHours } from '@/components/WorkingHoursEditor';
 import { LANGUAGES } from '@/language';
-import { del, get, post, put } from '@/api/client';
-import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
+import { del, get, getAllSites, post, put } from '@/api/client';
+import { ASSET_STATUSES, DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type Hierarchy, type PermissionInfo, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { NotificationSettings } from './NotificationSettings';
 import { ImportSettings } from './ImportSettings';
 import { PageHeader } from '@/components/PageHeader';
 import { LookupTable } from '@/components/LookupTable';
+import { locationOptions } from '@/components/LocationPicker';
 import { confirmDelete } from '@/components/confirm';
 import { fromNow, handleFormError, notifyError, notifySuccess } from '@/components/utils';
 
@@ -138,8 +140,9 @@ function OrganizationSettings() {
           <div><Title order={5}>{t('settings.targets')}</Title><Text c="dimmed" fz="sm">{t('settings.targetsHint')}</Text></div>
           <TargetsEditor disabled={!editable} value={form.values.settings.slaTargets ?? []} onChange={(v) => form.setFieldValue('settings.slaTargets', v)} />
           {form.errors['settings.slaTargets'] && <Text c="red" fz="sm">{form.errors['settings.slaTargets']}</Text>}
-          <NumberInput label={t('settings.dailyCapacityHours')} description={t('settings.dailyCapacityHint')} w={260} min={1} max={24} decimalScale={1} disabled={!editable}
-            {...form.getInputProps('settings.dailyCapacityHours')} />
+          <div><Text fw={500} fz="sm">{t('hours.organization')}</Text><Text c="dimmed" fz="xs">{t('hours.organizationHint')}</Text></div>
+          <WorkingHoursEditor disabled={!editable} value={organizationHours(form.values.settings)} error={form.errors['settings.workingHours']}
+            onChange={(v) => form.setFieldValue('settings.workingHours', v ?? [])} />
         </Stack></Card>
         <Card><Stack>
           <Title order={5}>{t('settings.purchasing')}</Title>
@@ -263,16 +266,24 @@ function UserSettings() {
   const qc = useQueryClient();
   const { data, isFetching } = useQuery({ queryKey: ['users'], queryFn: () => get<User[]>('/users') });
   const { data: roles } = useQuery({ queryKey: ['roles'], queryFn: () => get<Role[]>('/roles') });
+  // Every site and place the editor may see, whatever site the header switch is on.
+  const { data: h } = useQuery({ queryKey: ['hierarchy', 'all-sites'], queryFn: () => getAllSites<Hierarchy>('/locations/hierarchy'), staleTime: 60_000 });
+  const { terms } = useAuth();
+  const siteName = (id: string) => h?.sites.find((s) => s.id === id)?.name;
+  // Every place the editor can see, labelled with its site and path.
+  const placeOptions = (h?.sites ?? []).flatMap((s) => locationOptions(h!.locations, s.id).map((o) => ({ value: o.value, label: `${s.name} › ${o.label}` })));
   const [opened, m] = useDisclosure();
   const [pwUser, setPwUser] = useState<User | null>(null);
   const [editing, setEditing] = useState<User | null>(null);
   const [devicesUser, setDevicesUser] = useState<User | null>(null);
-  const blank = { fullName: '', email: '', jobTitle: '', phone: '', isActive: true, roleIds: [] as string[], password: '', purchaseApprovalLimit: '' as number | '' };
+  const blank = { fullName: '', email: '', jobTitle: '', phone: '', isActive: true, roleIds: [] as string[], password: '', purchaseApprovalLimit: '' as number | '',
+    siteIds: [] as string[], locationIds: [] as string[] };
   const form = useForm({ initialValues: blank });
   const pwForm = useForm({ initialValues: { password: '' } });
   const open = (u: User | null) => {
     setEditing(u);
-    form.setValues(u ? { fullName: u.fullName, email: u.email, jobTitle: u.jobTitle ?? '', phone: u.phone ?? '', isActive: u.isActive, roleIds: u.roles.map((r) => r.roleId), password: '', purchaseApprovalLimit: u.purchaseApprovalLimit ?? '' } : blank);
+    form.setValues(u ? { fullName: u.fullName, email: u.email, jobTitle: u.jobTitle ?? '', phone: u.phone ?? '', isActive: u.isActive, roleIds: u.roles.map((r) => r.roleId), password: '',
+      purchaseApprovalLimit: u.purchaseApprovalLimit ?? '', siteIds: u.siteIds ?? [], locationIds: u.locationIds ?? [] } : blank);
     form.clearErrors(); m.open();
   };
   const submit = form.onSubmit(async (v) => {
@@ -290,6 +301,10 @@ function UserSettings() {
         { accessor: 'fullName', title: t('common.name'), render: (u) => <Stack gap={0}><Text fz="sm" fw={500}>{u.fullName}</Text><Text fz="xs" c="dimmed">{u.email}</Text></Stack> },
         { accessor: 'jobTitle', title: t('settings.jobTitle') },
         { accessor: 'roles', title: t('settings.rolesLabel'), render: (u) => <Group gap={4}>{u.roles.map((r) => <Badge key={r.roleId} variant="default">{r.name}</Badge>)}</Group> },
+        { accessor: 'siteIds', title: terms.sites, render: (u) => (u.locationIds?.length
+          ? <Text fz="sm">{t('access.placesCount', { count: u.locationIds.length })}</Text>
+          : u.siteIds?.length ? <Text fz="sm" lineClamp={1}>{u.siteIds.map((id) => siteName(id) ?? '…').join(', ')}</Text>
+          : <Text fz="sm" c="dimmed">{t('access.allSites', { sites: terms.sites.toLowerCase() })}</Text>) },
         { accessor: 'lastLoginAt', title: t('settings.lastLogin'), render: (u) => (u.lastLoginAt ? fromNow(u.lastLoginAt) : t('settings.never')) },
         { accessor: 'isActive', title: t('common.status'), render: (u) => <Badge color={u.isActive ? 'teal' : 'gray'}>{u.isActive ? t('common.active') : t('common.inactive')}</Badge> },
         { accessor: 'actions', title: '', width: 120, render: (u) => (
@@ -309,6 +324,9 @@ function UserSettings() {
           </SimpleGrid>
           <MultiSelect label={t('settings.rolesLabel')} required data={(roles ?? []).map((r) => ({ value: r.id, label: r.name }))} {...form.getInputProps('roleIds')} />
           <NumberInput label={t('settings.approvalLimit')} description={t('settings.approvalLimitHint')} min={0} thousandSeparator {...form.getInputProps('purchaseApprovalLimit')} />
+          <MultiSelect label={terms.sites} description={t('access.userSitesHint', { sites: terms.sites.toLowerCase() })} searchable clearable disabled={form.values.locationIds.length > 0}
+            data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} {...form.getInputProps('siteIds')} />
+          <MultiSelect label={t('access.userBranches')} description={t('access.userBranchesHint')} searchable clearable data={placeOptions} {...form.getInputProps('locationIds')} />
           {!editing && <PasswordInput label={t('settings.initialPassword')} required {...form.getInputProps('password')} />}
           <Switch label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
           <Group justify="flex-end"><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>

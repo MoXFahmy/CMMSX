@@ -184,7 +184,8 @@ public static class ImportRun
                 var result = await RunSheetsAsync(db, ctx, plan, clock, budget, token);
                 // The last word on time: nothing is committed once the page may have given up waiting.
                 if (clock() > budget) throw new Stopped();
-                if (save) await tx.CommitAsync(CancellationToken.None); else await tx.RollbackAsync(CancellationToken.None);
+                if (save) { await tx.CommitAsync(CancellationToken.None); Infrastructure.AccessService.LocationsChanged(); } // locations may have moved
+                else await tx.RollbackAsync(CancellationToken.None);
                 db.ChangeTracker.Clear();
                 return result with { Saved = save };
             }

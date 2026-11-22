@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { exportUrl } from './ListTools';
 import type { ListColumn } from './types';
 
@@ -14,4 +14,12 @@ describe('exportUrl', () => {
     expect(sp.getAll('c')).toEqual(['supplierName', 'siteName']);
     expect(sp.getAll('t')).toEqual(['Supplier', 'Site']);
   });
+
+  it('carries the site switch, which a download link cannot send as a header (0.9.0)', () => {
+    vi.stubGlobal('localStorage', { getItem: (k: string) => (k === 'cmx.site' ? 'cairo' : null), setItem: () => {}, removeItem: () => {} });
+    const url = exportUrl('/work-orders/export', {}, [{ accessor: 'title', title: 'Title' }] as ListColumn<{ title: string }>[], 'csv');
+    expect(new URLSearchParams(url.split('?')[1]).get('cmxSite')).toBe('cairo');
+  });
 });
+
+afterEach(() => { vi.unstubAllGlobals(); });

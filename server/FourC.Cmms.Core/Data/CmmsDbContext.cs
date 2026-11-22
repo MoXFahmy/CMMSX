@@ -29,6 +29,15 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
 
     /// <summary>Evaluated per query; EF parameterizes it so each context instance sees its own tenant.</summary>
     public Guid? CurrentTenantId => tenant.TenantId;
+    /// <summary>Sites the current request may see; null = every site.</summary>
+    public IReadOnlyList<Guid>? CurrentSiteIds => tenant.SiteIds;
+    /// <summary>Location paths the current request is limited to; null = no branch limit.</summary>
+    public IReadOnlyList<string>? CurrentBranchPaths => tenant.BranchPaths;
+
+    /// <summary>The organization (+ soft delete) filter on every tenant-owned entity.</summary>
+    public const string TenantFilter = "Tenant";
+    /// <summary>The site and branch limits of the signed-in person (0.9.0); see <see cref="QueryScope.AllSites{T}"/>.</summary>
+    public const string SiteFilter = "Site";
 
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<OutboundEmail> OutboundEmails => Set<OutboundEmail>();
@@ -49,6 +58,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<NumberSequence> NumberSequences => Set<NumberSequence>();
     public DbSet<Trade> Trades => Set<Trade>();
     public DbSet<Employee> Employees => Set<Employee>();
+    public DbSet<Team> Teams => Set<Team>();
     public DbSet<FailureCode> FailureCodes => Set<FailureCode>();
     public DbSet<WorkRequest> WorkRequests => Set<WorkRequest>();
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
@@ -106,6 +116,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasIndex(x => x.TenantId);
             e.HasMany(x => x.Roles).WithOne().HasForeignKey(x => x.UserId);
             e.Property(x => x.EmailOptOuts).HasDefaultValueSql("'[]'");
+            e.Property(x => x.SiteIds).HasDefaultValueSql("'[]'");
+            e.Property(x => x.LocationIds).HasDefaultValueSql("'[]'");
         });
 
         b.Entity<SavedView>(e =>
@@ -131,6 +143,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.EventKey).HasMaxLength(40);
             e.Property(x => x.ToAddress).HasMaxLength(320);
             e.Property(x => x.ToName).HasMaxLength(200);
+            e.Property(x => x.FromName).HasMaxLength(200);
             e.Property(x => x.ReplyTo).HasMaxLength(320);
             e.Property(x => x.Subject).HasMaxLength(300);
             e.Property(x => x.EntityType).HasMaxLength(40);
@@ -161,6 +174,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Country).HasMaxLength(100);
             e.Property(x => x.TimeZone).HasMaxLength(100);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.Property(x => x.Settings).HasConversion(JsonConverter<SiteSettings>()).HasDefaultValueSql("'{}'").Metadata.SetValueComparer(JsonComparer<SiteSettings>());
         });
 
         b.Entity<Location>(e =>
@@ -293,6 +307,14 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.HourlyRate).HasPrecision(18, 2); e.Property(x => x.OvertimeRate).HasPrecision(18, 2);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
             e.HasIndex(x => new { x.TenantId, x.UserId });
+            e.Property(x => x.WorkingHours).HasConversion(NullableJsonConverter<List<WorkingDay>>()).Metadata.SetValueComparer(NullableJsonComparer<List<WorkingDay>>());
+        });
+        b.Entity<Team>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.Color).HasMaxLength(20);
+            e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
         b.Entity<WorkRequest>(e =>
         {
@@ -315,6 +337,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Trade).WithMany().HasForeignKey(x => x.TradeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Team).WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.FailureCode).WithMany().HasForeignKey(x => x.FailureCodeId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.Assignees).WithOne().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Assets).WithOne().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Cascade);
@@ -397,6 +420,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.PmTask).WithMany().HasForeignKey(x => x.PmTaskId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Meter).WithMany().HasForeignKey(x => x.MeterId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Team>().WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.ExtraTasks).WithOne().HasForeignKey(x => x.PmScheduleId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Assets).WithOne().HasForeignKey(x => x.PmScheduleId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
@@ -519,14 +543,138 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         foreach (var type in b.Model.GetEntityTypes().Select(t => t.ClrType).Where(t => typeof(ITenantOwned).IsAssignableFrom(t)).ToList())
             GetType().GetMethod(nameof(ApplyTenantFilter), System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance)!
                 .MakeGenericMethod(type).Invoke(this, [b]);
+        ApplySiteFilters(b);
     }
 
     private void ApplyTenantFilter<T>(ModelBuilder b) where T : class, ITenantOwned
     {
         if (typeof(ISoftDeletable).IsAssignableFrom(typeof(T)))
-            b.Entity<T>().HasQueryFilter(e => e.TenantId == CurrentTenantId && !((ISoftDeletable)e).IsDeleted);
+            b.Entity<T>().HasQueryFilter(TenantFilter, e => e.TenantId == CurrentTenantId && !((ISoftDeletable)e).IsDeleted);
         else
-            b.Entity<T>().HasQueryFilter(e => e.TenantId == CurrentTenantId);
+            b.Entity<T>().HasQueryFilter(TenantFilter, e => e.TenantId == CurrentTenantId);
+    }
+
+    /// <summary>What kind of site limit this context has; each kind gets its own model, so requests without a limit carry no
+    /// site filter at all (not even a parameter check or a join).</summary>
+    public enum SiteScopeKind { None, Sites, Branches }
+
+    public SiteScopeKind ScopeKind => CurrentSiteIds is null ? SiteScopeKind.None : CurrentBranchPaths is null ? SiteScopeKind.Sites : SiteScopeKind.Branches;
+
+    /// <summary>The kind of model this instance got (fixed when it first needed one).</summary>
+    private SiteScopeKind? _modelKind;
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder) =>
+        optionsBuilder.ReplaceService<Microsoft.EntityFrameworkCore.Infrastructure.IModelCacheKeyFactory, ScopedModelCacheKeyFactory>()
+            .AddInterceptors(ScopeGuard.Instance);
+
+    /// <summary>One cached model per <see cref="SiteScopeKind"/>.</summary>
+    private sealed class ScopedModelCacheKeyFactory : Microsoft.EntityFrameworkCore.Infrastructure.IModelCacheKeyFactory
+    {
+        public object Create(DbContext context, bool designTime)
+        {
+            if (context is not CmmsDbContext c) return (context.GetType(), designTime);
+            var kind = c.ScopeKind;
+            c._modelKind = kind;
+            return (context.GetType(), kind, designTime);
+        }
+    }
+
+    /// <summary>
+    /// Fails closed: a context whose model was built before the request's limits were known (so without them) refuses to run any
+    /// command once the limits are there, instead of reading every site.
+    /// </summary>
+    private sealed class ScopeGuard : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+    {
+        public static readonly ScopeGuard Instance = new();
+
+        private static void Check(Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData e)
+        {
+            if (e.Context is CmmsDbContext c && c._modelKind is { } built && built != c.ScopeKind)
+                throw new InvalidOperationException($"This database context was set up for site scope {built} but the request has {c.ScopeKind}.");
+        }
+
+        public override Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> ReaderExecuting(System.Data.Common.DbCommand command,
+            Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result)
+        { Check(eventData); return result; }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(System.Data.Common.DbCommand command,
+            Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result,
+            CancellationToken cancellationToken = default)
+        { Check(eventData); return ValueTask.FromResult(result); }
+
+        public override Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<object> ScalarExecuting(System.Data.Common.DbCommand command,
+            Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<object> result)
+        { Check(eventData); return result; }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<object>> ScalarExecutingAsync(System.Data.Common.DbCommand command,
+            Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<object> result,
+            CancellationToken cancellationToken = default)
+        { Check(eventData); return ValueTask.FromResult(result); }
+
+        public override Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> NonQueryExecuting(System.Data.Common.DbCommand command,
+            Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result)
+        { Check(eventData); return result; }
+
+        public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> NonQueryExecutingAsync(System.Data.Common.DbCommand command,
+            Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result,
+            CancellationToken cancellationToken = default)
+        { Check(eventData); return ValueTask.FromResult(result); }
+    }
+
+    /// <summary>
+    /// The signed-in person's site and branch limits (0.9.0), on the models of limited requests only. Records that belong to a site
+    /// are limited by it (and, for people limited to branches of the location tree, by their location's path); child rows read
+    /// on their own follow their parent.
+    /// </summary>
+    private void ApplySiteFilters(ModelBuilder b)
+    {
+        var kind = ScopeKind;
+        if (kind == SiteScopeKind.None) return;
+        b.Entity<Site>().HasQueryFilter(SiteFilter, s => CurrentSiteIds!.Contains(s.Id));
+        if (kind == SiteScopeKind.Sites)
+        {
+            b.Entity<Location>().HasQueryFilter(SiteFilter, l => CurrentSiteIds!.Contains(l.SiteId));
+            b.Entity<Asset>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
+            b.Entity<WorkRequest>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
+            b.Entity<WorkOrder>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
+            b.Entity<PmSchedule>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
+        }
+        else
+        {
+            b.Entity<Location>().HasQueryFilter(SiteFilter, l => CurrentSiteIds!.Contains(l.SiteId) && CurrentBranchPaths!.Any(p => l.Path.StartsWith(p)));
+            b.Entity<Asset>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId)
+                && e.LocationId != null && CurrentBranchPaths!.Any(p => e.Location!.Path.StartsWith(p)));
+            b.Entity<WorkRequest>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId)
+                && e.LocationId != null && CurrentBranchPaths!.Any(p => e.Location!.Path.StartsWith(p)));
+            b.Entity<WorkOrder>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId)
+                && e.LocationId != null && CurrentBranchPaths!.Any(p => e.Location!.Path.StartsWith(p)));
+            b.Entity<PmSchedule>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId)
+                && e.LocationId != null && CurrentBranchPaths!.Any(p => e.Location!.Path.StartsWith(p)));
+        }
+        b.Entity<Store>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
+        b.Entity<PurchaseOrder>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
+        b.Entity<Team>().HasQueryFilter(SiteFilter, e => e.SiteId == null || CurrentSiteIds!.Contains(e.SiteId.Value));
+
+        // Child rows: visible when their parent is.
+        b.Entity<WorkOrderLabor>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
+        b.Entity<WorkOrderPart>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
+        b.Entity<WorkOrderCost>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
+        b.Entity<WorkOrderComment>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
+        b.Entity<WorkOrderStatusChange>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
+        b.Entity<WorkOrderTask>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
+        b.Entity<WorkOrderAssignee>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
+        b.Entity<WorkOrderAsset>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
+        b.Entity<StockLevel>().HasQueryFilter(SiteFilter, x => Stores.Any(s => s.Id == x.StoreId));
+        b.Entity<StockTransaction>().HasQueryFilter(SiteFilter, x => Stores.Any(s => s.Id == x.StoreId));
+        b.Entity<Meter>().HasQueryFilter(SiteFilter, x => Assets.Any(a => a.Id == x.AssetId));
+        b.Entity<MeterReading>().HasQueryFilter(SiteFilter, x => Meters.Any(m => m.Id == x.MeterId));
+        b.Entity<DowntimeEvent>().HasQueryFilter(SiteFilter, x => Assets.Any(a => a.Id == x.AssetId));
+        b.Entity<AssetPart>().HasQueryFilter(SiteFilter, x => Assets.Any(a => a.Id == x.AssetId));
+        b.Entity<AssetTransfer>().HasQueryFilter(SiteFilter, x => Assets.Any(a => a.Id == x.AssetId));
+        b.Entity<PmScheduleTask>().HasQueryFilter(SiteFilter, x => PmSchedules.Any(p => p.Id == x.PmScheduleId));
+        b.Entity<PmScheduleAsset>().HasQueryFilter(SiteFilter, x => PmSchedules.Any(p => p.Id == x.PmScheduleId));
+        b.Entity<PurchaseOrderLine>().HasQueryFilter(SiteFilter, x => PurchaseOrders.Any(p => p.Id == x.PurchaseOrderId));
+        b.Entity<StockReservation>().HasQueryFilter(SiteFilter, x => Stores.Any(s => s.Id == x.StoreId));
     }
 
     private static void ConfigureTenantEntity<T>(EntityTypeBuilder<T> e) where T : TenantEntity
@@ -538,6 +686,14 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
 
     private static Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<T, string> JsonConverter<T>() where T : new() =>
         new(v => JsonSerializer.Serialize(v, Json), v => string.IsNullOrEmpty(v) ? new T() : JsonSerializer.Deserialize<T>(v, Json) ?? new T());
+
+    private static Microsoft.EntityFrameworkCore.Storage.ValueConversion.ValueConverter<T, string> NullableJsonConverter<T>() where T : class =>
+        new(v => JsonSerializer.Serialize(v, Json), v => JsonSerializer.Deserialize<T>(v, Json)!);
+
+    private static ValueComparer<T?> NullableJsonComparer<T>() where T : class => new(
+        (a, c) => JsonSerializer.Serialize(a, Json) == JsonSerializer.Serialize(c, Json),
+        v => v == null ? 0 : JsonSerializer.Serialize(v, Json).GetHashCode(),
+        v => v == null ? null : JsonSerializer.Deserialize<T>(JsonSerializer.Serialize(v, Json), Json));
 
     private static ValueComparer<T> JsonComparer<T>() => new(
         (a, c) => JsonSerializer.Serialize(a, Json) == JsonSerializer.Serialize(c, Json),

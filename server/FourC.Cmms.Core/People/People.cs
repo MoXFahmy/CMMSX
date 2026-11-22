@@ -32,4 +32,20 @@ public class Employee : TenantEntity
     public Guid? UserId { get; set; }
     public string? Notes { get; set; }
     public bool IsActive { get; set; } = true;
+    /// <summary>This person's weekly working hours; null = their site's (when they work at one site that has its own), else the organization's.</summary>
+    public List<WorkingDay>? WorkingHours { get; set; }
+}
+
+/// <summary>A named group of technicians that work orders and PM schedules can be given to.</summary>
+public class Team : TenantEntity
+{
+    public required string Code { get; set; }
+    public required string Name { get; set; }
+    /// <summary>The site the team works at; null = every site.</summary>
+    public Guid? SiteId { get; set; }
+    public Locations.Site? Site { get; set; }
+    public string? Color { get; set; }
+    /// <summary>Employees in the team.</summary>
+    public List<Guid> MemberIds { get; set; } = [];
+    public bool IsActive { get; set; } = true;
 }

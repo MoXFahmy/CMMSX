@@ -21,6 +21,10 @@ public class AppUser : IdentityUser<Guid>
     public decimal? PurchaseApprovalLimit { get; set; }
     /// <summary>E-mail events (keys from <c>EmailEvents</c>) this user doesn't want.</summary>
     public List<string> EmailOptOuts { get; set; } = [];
+    /// <summary>Sites this person may see; empty = every site.</summary>
+    public List<Guid> SiteIds { get; set; } = [];
+    /// <summary>Branches of the location tree this person is limited to (they see these places and everything under them); empty = no branch limit.</summary>
+    public List<Guid> LocationIds { get; set; } = [];
     public List<UserRole> Roles { get; set; } = [];
 }
 

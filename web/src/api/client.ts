@@ -1,4 +1,5 @@
 import i18n from '@/i18n';
+import { SITE_HEADER, siteHeader } from '@/components/siteSwitch';
 export class ApiError extends Error {
   status: number;
   fieldErrors: Record<string, string>;
@@ -43,6 +44,8 @@ async function request(path: string, init?: RequestInit & { json?: unknown }): P
   if (init?.json !== undefined) { headers.set('Content-Type', 'application/json'); body = JSON.stringify(init.json); }
   headers.set('Accept', 'application/json');
   headers.set('Accept-Language', i18n.language || 'en'); // the server answers messages in it
+  // The site switch: work in one site at a time (unless the call asked for every site, see getAllSites).
+  for (const [k, v] of Object.entries(siteHeader())) if (!headers.has(k)) headers.set(k, v);
   let res: Response;
   // No answer at all (no signal, or the connection dropped): say so, not the browser's "Failed to fetch".
   try { res = await fetch(`/api${path}`, { ...init, headers, body, credentials: 'same-origin' }); }
@@ -65,6 +68,8 @@ export async function api<T>(path: string, init?: RequestInit & { json?: unknown
 }
 
 export const get = <T>(path: string, q?: Query) => api<T>(path + toQuery(q));
+/** Like {@link get}, ignoring the site switch: everything the person may see (giving people access, for example). */
+export const getAllSites = <T>(path: string, q?: Query) => api<T>(path + toQuery(q), { headers: { [SITE_HEADER]: 'all' } });
 export const post = <T>(path: string, json?: unknown) => api<T>(path, { method: 'POST', json: json ?? {} });
 export const put = <T>(path: string, json: unknown) => api<T>(path, { method: 'PUT', json });
 export const del = (path: string) => api<void>(path, { method: 'DELETE' });

@@ -173,6 +173,7 @@ export function WorkOrderDetailPage() {
                 <Card><SimpleGrid cols={2} spacing="sm">
                   <Field label={t('wo.assignees')}>{w.assignees.map((a) => a.fullName).join(', ') || t('wo.noAssignees')}</Field>
                   <Field label={t('wo.trade')}>{w.tradeName}</Field>
+                  {w.team && <Field label={t('teams.team')}>{w.team.name}</Field>}
                   <Field label={t('wo.requestedBy')}>{w.requestedBy ?? w.request?.requesterName}</Field>
                   <Field label={t('wo.plannedStart')}>{fmtDate(w.plannedStart)}</Field>
                   <Field label={t('wo.due')}>

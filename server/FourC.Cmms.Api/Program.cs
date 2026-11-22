@@ -51,6 +51,8 @@ services.ConfigureApplicationCookie(o =>
     // The security-stamp check (Identity's default), then the device session (signed-out devices stop working).
     o.Events.OnValidatePrincipal = async ctx =>
     {
+        // The person's site limits first: the checks below open the request's database context, which takes its filters from them.
+        await Access.EstablishAsync(ctx.HttpContext, ctx.Principal);
         await SecurityStampValidator.ValidatePrincipalAsync(ctx);
         if (ctx.Principal is not null) await Sessions.ValidateAsync(ctx);
     };
@@ -60,6 +62,7 @@ services.Configure<SecurityStampValidatorOptions>(o => o.ValidationInterval = Ti
 services.AddSingleton<IAuthorizationPolicyProvider, PermissionPolicyProvider>();
 services.AddScoped<IAuthorizationHandler, PermissionHandler>();
 services.AddSingleton<PermissionService>();
+services.AddSingleton<AccessService>();
 services.AddAuthorization();
 
 switch (builder.Configuration["Storage:Provider"]?.ToLowerInvariant())
@@ -121,6 +124,7 @@ app.UseExceptionHandler();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthentication();
+app.UseSiteAccess();
 app.UseAuthorization();
 
 app.MapOpenApi();
@@ -143,6 +147,7 @@ api.MapAttachmentEndpoints();
 api.MapAuditEndpoints();
 api.MapAdminEndpoints();
 api.MapPeopleEndpoints();
+api.MapTeamEndpoints();
 api.MapImportEndpoints();
 api.MapWorkRequestEndpoints();
 api.MapWorkOrderEndpoints();

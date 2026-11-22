@@ -15,6 +15,25 @@ public class Site : TenantEntity
     public double? Longitude { get; set; }
     public string? Notes { get; set; }
     public bool IsActive { get; set; } = true;
+    /// <summary>This site's own settings; anything left empty uses the organization's.</summary>
+    public SiteSettings Settings { get; set; } = new();
+}
+
+/// <summary>Per-site overrides of the organization's settings (stored as JSON on the site). Null or empty = the organization's.</summary>
+public class SiteSettings
+{
+    public string? AssetNumberPrefix { get; set; }
+    public string? WorkOrderNumberPrefix { get; set; }
+    public string? WorkRequestNumberPrefix { get; set; }
+    public string? PurchaseOrderNumberPrefix { get; set; }
+    /// <summary>The site's weekly working hours, the default for people who work only here.</summary>
+    public List<People.WorkingDay>? WorkingHours { get; set; }
+    /// <summary>Store that planned and issued parts on this site's work start from.</summary>
+    public Guid? DefaultStoreId { get; set; }
+    /// <summary>Users told about new requests at this site (instead of everyone who can manage requests).</summary>
+    public List<Guid> RequestRecipientIds { get; set; } = [];
+    /// <summary>Shown as "&lt;name&gt; via CMX" on e-mails about this site's records.</summary>
+    public string? EmailSenderName { get; set; }
 }
 
 public enum LocationType { Area = 1, Building = 2, Floor = 3, Room = 4, Zone = 5, ProductionLine = 6, Space = 7, Other = 99 }

@@ -8,7 +8,8 @@ export type BoardJob = {
   /** The planned start, else the due day (null: no date yet). */
   day?: string | null; plannedStart?: string | null; dueAt?: string | null; sla: SlaView; estimatedHours?: number | null; assignees: BoardAssignee[];
 };
-export type BoardPerson = { id: string; name: string; tradeIds?: string[] };
+/** hours: working hours on each weekday, Sunday first (0.9.0; older servers send none). */
+export type BoardPerson = { id: string; name: string; tradeIds?: string[]; hours?: number[] };
 /** An upcoming PM occurrence (not generated yet). */
 export type ForecastRow = {
   date: string; id: string; code: string; name: string; assetId?: string | null; assetNumber?: string | null; siteId: string; siteName: string;
@@ -97,6 +98,12 @@ export function cellsByAsset(data: Board): Map<string, Map<string, (BoardJob | F
   for (const j of data.jobs) if (j.day) add<BoardJob | ForecastRow>(cells, j.assetId ?? NO_ASSET, j.day, j);
   for (const p of data.pms) add<BoardJob | ForecastRow>(cells, p.assetId ?? NO_ASSET, p.date, p);
   return cells;
+}
+
+/** A person's working hours on a day (yyyy-MM-dd): from their weekly pattern, else the organization's hours per day. */
+export function capacityOn(data: Board, personId: string, day: string): number {
+  const week = data.people.find((p) => p.id === personId)?.hours;
+  return week?.length === 7 ? week[new Date(`${day}T00:00:00Z`).getUTCDay()] : data.capacityHours;
 }
 
 /** person → day → planned hours (jobs on the board only; the trays count in nobody's day). */

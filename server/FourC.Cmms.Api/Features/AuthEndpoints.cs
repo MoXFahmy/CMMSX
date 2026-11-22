@@ -90,7 +90,7 @@ public static class AuthEndpoints
             return Results.Ok(new { ok = true });
         }).AllowAnonymous();
 
-        g.MapGet("/me", async (ITenantContext ctx, CmmsDbContext db, PermissionService perms) =>
+        g.MapGet("/me", async (ITenantContext ctx, CmmsDbContext db, PermissionService perms, HttpContext http) =>
         {
             var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == ctx.UserId);
             var tenant = await db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == ctx.TenantId);
@@ -107,6 +107,7 @@ public static class AuthEndpoints
                 employeeId = await db.Employees.AsNoTracking().Where(e => e.UserId == user.Id && e.IsActive).Select(e => (Guid?)e.Id).FirstOrDefaultAsync(),
                 tenant = new { tenant.Id, tenant.Name, tenant.Slug, tenant.Settings },
                 permissions = permissions.Order(),
+                access = await AccessViewAsync(db, http),
             });
         }).RequireAuthorization();
 
@@ -133,5 +134,15 @@ public static class AuthEndpoints
             await signIn.RefreshSignInAsync(user);
             return Results.Ok(new { ok = true });
         }).RequireAuthorization();
+    }
+
+    /// <summary>For the site switch: every site the person may see (ignoring the switch), and the site this request was narrowed to.</summary>
+    private static async Task<object> AccessViewAsync(CmmsDbContext db, HttpContext http)
+    {
+        var access = Access.Of(http) ?? UserAccess.Everything;
+        var ids = access.SiteIds;
+        var sites = await db.Sites.AllSites().AsNoTracking().Where(s => ids == null || ids.Contains(s.Id)).OrderBy(s => s.Name)
+            .Select(s => new { s.Id, s.Code, s.Name, s.IsActive }).ToListAsync();
+        return new { limited = access.Limited, branches = access.Branches is not null, sites, siteId = (http.Items[Access.ScopeKey] as AccessScope)?.NarrowedTo };
     }
 }

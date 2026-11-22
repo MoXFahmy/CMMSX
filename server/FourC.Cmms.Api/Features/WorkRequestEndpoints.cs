@@ -191,8 +191,9 @@ public static class WorkRequestEndpoints
         if (!v.IsValid) return (v, null);
 
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
-        var number = await Numbering.NextAsync(db, "WorkRequest", settings.WorkRequestNumberPrefix, 5,
-            n => db.WorkRequests.AnyAsync(r => r.Number == n, ct), p => db.WorkRequests.Where(r => r.Number.StartsWith(p)).Select(r => r.Number).ToListAsync(ct), ct);
+        var (sequence, prefix) = Numbering.For(settings, await db.Sites.AllSites().AsNoTracking().FirstOrDefaultAsync(s => s.Id == input.SiteId, ct), NumberKind.WorkRequest);
+        var number = await Numbering.NextAsync(db, sequence, prefix, 5,
+            n => db.WorkRequests.AllSites().AnyAsync(r => r.Number == n, ct), p => db.WorkRequests.AllSites().Where(r => r.Number.StartsWith(p)).Select(r => r.Number).ToListAsync(ct), ct);
         var me = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == ctx.UserId, ct);
         var r = new WorkRequest
         {
@@ -218,6 +219,7 @@ public static class WorkRequestEndpoints
             .MaxLength("requesterName", i.RequesterName, "Name", 200).MaxLength("requesterPhone", i.RequesterPhone, "Phone", 50)
             .When(!Enum.IsDefined(i.Priority), "priority", "Choose a priority.").When(!Enum.IsDefined(i.Type), "type", "Choose a type.");
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
+        Access.RequireLocation(db, v, i.LocationId, i.AssetId);
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct)) v.Add("locationId", "Location must belong to the selected site.");
         if (i.AssetId is not null && !await db.Assets.AnyAsync(a => a.Id == i.AssetId && a.SiteId == i.SiteId, ct)) v.Add("assetId", "Asset must belong to the selected site.");
         return v;

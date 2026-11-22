@@ -47,6 +47,11 @@ public interface ITenantContext
     Guid? TenantId { get; }
     Guid? UserId { get; }
     string? UserName { get; }
+    /// <summary>Sites this request may see; null = every site (no limit, and every background job).</summary>
+    IReadOnlyList<Guid>? SiteIds => null;
+    /// <summary>Location paths (Location.Path) this request may see under; null = no branch limit, empty = nothing.
+    /// Never set without <see cref="SiteIds"/>.</summary>
+    IReadOnlyList<string>? BranchPaths => null;
 }
 
 public sealed class FixedTenantContext(Guid? tenantId, Guid? userId = null, string? userName = null) : ITenantContext

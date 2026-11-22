@@ -244,15 +244,16 @@ public static class InventoryEndpoints
         {
             var p = await db.Parts.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (p is null) return Results.NotFound();
-            if (await db.StockTransactions.AnyAsync(t => t.PartId == id, ct) || await db.PurchaseOrderLines.AnyAsync(l => l.PartId == id, ct))
+            // A part is shared by every site: whether it's in use counts in all of them, not only the ones this person sees.
+            if (await db.StockTransactions.AllSites().AnyAsync(t => t.PartId == id, ct) || await db.PurchaseOrderLines.AllSites().AnyAsync(l => l.PartId == id, ct))
                 throw new DomainException("This part has stock or purchasing history. Mark it inactive instead.");
             // Only work orders and PM tasks still in use count (deleted ones keep their rows but are filtered out of WorkOrders/PmTasks).
-            if (await db.WorkOrderParts.AnyAsync(l => l.PartId == id && db.WorkOrders.Any(w => w.Id == l.WorkOrderId), ct)
+            if (await db.WorkOrderParts.AllSites().AnyAsync(l => l.PartId == id && db.WorkOrders.Any(w => w.Id == l.WorkOrderId), ct)
                 || await db.PmTaskParts.AnyAsync(l => l.PartId == id && db.PmTasks.Any(x => x.Id == l.PmTaskId), ct))
                 throw new DomainException("This part is planned on work orders or PM tasks. Remove it from them, or mark it inactive instead.");
-            if (await db.AssetParts.AnyAsync(x => x.PartId == id, ct))
+            if (await db.AssetParts.AllSites().AnyAsync(x => x.PartId == id, ct))
                 throw new DomainException("This part is on assets' spare-parts lists. Remove it from them, or mark it inactive instead.");
-            await db.StockLevels.Where(l => l.PartId == id).ExecuteDeleteAsync(ct);
+            await db.StockLevels.AllSites().Where(l => l.PartId == id).ExecuteDeleteAsync(ct);
             db.Parts.Remove(p);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
@@ -465,7 +466,9 @@ public static class InventoryEndpoints
     {
         var v = StoreRules(i);
         if (i.SiteId is null || !await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
-        if (!string.IsNullOrWhiteSpace(i.Code) && await db.Stores.AnyAsync(s => s.Code == i.Code.Trim() && s.Id != id, ct)) v.Add("code", "Another store uses this code.");
+        if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.Stores, s => s.Code == i.Code.Trim() && s.Id != id,
+                "Another store uses this code.", "This code is already used by a store in a site you can't see.", ct) is { } storeClash)
+            v.Add("code", storeClash);
         return v;
     }
 

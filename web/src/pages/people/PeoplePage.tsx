@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react';
-import { Badge, Button, Card, Checkbox, Group, Modal, MultiSelect, NumberInput, Select, SimpleGrid, Stack, Switch, Tabs, Text, TextInput, Textarea } from '@mantine/core';
+import { Accordion, Badge, Button, Card, Checkbox, ColorInput, Group, Modal, MultiSelect, NumberInput, Select, SimpleGrid, Stack, Switch, Tabs, Text, TextInput, Textarea } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -7,7 +7,10 @@ import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
 import { IconPlus, IconSearch } from '@tabler/icons-react';
 import { del, get, post, put } from '@/api/client';
-import type { Employee, Lookup, User } from '@/api/types';
+import type { Employee, Lookup, Team, User } from '@/api/types';
+import { WorkingHoursEditor, organizationHours } from '@/components/WorkingHoursEditor';
+import type { WorkingDay } from '@/components/workingHours';
+import { useTeams } from '@/components/teams';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { LookupTable } from '@/components/LookupTable';
@@ -23,8 +26,9 @@ export function PeoplePage() {
     <>
       <PageHeader title={t('people.title')} subtitle={t('people.subtitle')} />
       <Tabs value={tab} onChange={setTab} keepMounted={false}>
-        <Tabs.List mb="lg"><Tabs.Tab value="people">{t('people.peopleTab')}</Tabs.Tab><Tabs.Tab value="trades">{t('people.tradesTab')}</Tabs.Tab></Tabs.List>
+        <Tabs.List mb="lg"><Tabs.Tab value="people">{t('people.peopleTab')}</Tabs.Tab><Tabs.Tab value="teams">{t('teams.tab')}</Tabs.Tab><Tabs.Tab value="trades">{t('people.tradesTab')}</Tabs.Tab></Tabs.List>
         <Tabs.Panel value="people"><EmployeesTable /></Tabs.Panel>
+        <Tabs.Panel value="teams"><TeamsTable /></Tabs.Panel>
         <Tabs.Panel value="trades"><LookupTable path="/trades" title={t('people.trades')} newLabel={t('people.newTrade')} editable={can(P.peopleManage)} withColor /></Tabs.Panel>
       </Tabs>
     </>
@@ -45,16 +49,19 @@ function EmployeesTable() {
   const [editing, setEditing] = useState<Employee | null>(null);
   const currency = me?.tenant.settings.currency ?? 'USD';
   const blank = { code: '', fullName: '', jobTitle: '', email: '', phone: '', tradeIds: [] as string[], siteIds: [] as string[], hourlyRate: '' as number | '', overtimeRate: '' as number | '',
-    isContractor: false, company: '', userId: null as string | null, notes: '', isActive: true };
+    isContractor: false, company: '', userId: null as string | null, notes: '', isActive: true, workingHours: null as WorkingDay[] | null };
   const form = useForm({ initialValues: blank });
   const open = (e: Employee | null) => {
     setEditing(e);
     form.setValues(e ? { code: e.code, fullName: e.fullName, jobTitle: e.jobTitle ?? '', email: e.email ?? '', phone: e.phone ?? '', tradeIds: e.tradeIds, siteIds: e.siteIds,
-      hourlyRate: e.hourlyRate ?? '', overtimeRate: e.overtimeRate ?? '', isContractor: e.isContractor, company: e.company ?? '', userId: e.userId ?? null, notes: e.notes ?? '', isActive: e.isActive } : blank);
+      hourlyRate: e.hourlyRate ?? '', overtimeRate: e.overtimeRate ?? '', isContractor: e.isContractor, company: e.company ?? '', userId: e.userId ?? null, notes: e.notes ?? '', isActive: e.isActive,
+      workingHours: e.workingHours?.length ? e.workingHours : null } : blank);
     form.clearErrors(); m.open();
   };
   const submit = form.onSubmit(async (v) => {
-    const body = { ...v, hourlyRate: v.hourlyRate === '' ? null : v.hourlyRate, overtimeRate: v.overtimeRate === '' ? null : v.overtimeRate, rowVersion: editing?.rowVersion };
+    // No hours of their own = an empty list (back to the site's or the organization's).
+    const body = { ...v, hourlyRate: v.hourlyRate === '' ? null : v.hourlyRate, overtimeRate: v.overtimeRate === '' ? null : v.overtimeRate, rowVersion: editing?.rowVersion,
+      workingHours: v.workingHours ?? [] };
     try { if (editing) await put(`/employees/${editing.id}`, body); else await post('/employees', body); notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['employees'] }); m.close(); }
     catch (e) { handleFormError(form, e); }
   });
@@ -99,9 +106,82 @@ function EmployeesTable() {
           </Group>
           {users && <Select label={t('people.login')} description={t('people.loginHint')} clearable searchable data={users.map((u) => ({ value: u.id, label: `${u.fullName} (${u.email})` }))} {...form.getInputProps('userId')} />}
           <Textarea label={t('common.notes')} autosize {...form.getInputProps('notes')} />
+          <Accordion variant="contained" chevronPosition="left">
+            <Accordion.Item value="hours">
+              <Accordion.Control><Text fw={500} fz="sm">{t('hours.person')}</Text></Accordion.Control>
+              <Accordion.Panel>
+                <WorkingHoursEditor value={form.values.workingHours} onChange={(v) => form.setFieldValue('workingHours', v)} error={form.errors.workingHours}
+                  inheritLabel={t('hours.useDefault')} inherited={me ? organizationHours(me.tenant.settings) : []} />
+              </Accordion.Panel>
+            </Accordion.Item>
+          </Accordion>
           <Checkbox label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
           <Group justify="space-between">
             {editing ? <Button variant="subtle" color="red" onClick={() => confirmDelete(editing.fullName, async () => { try { await del(`/employees/${editing.id}`); await qc.invalidateQueries({ queryKey: ['employees'] }); m.close(); } catch (e) { notifyError(e); } })}>{t('common.delete')}</Button> : <span />}
+            <Group><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>
+          </Group>
+        </Stack></form>
+      </Modal>
+    </Card>
+  );
+}
+
+/** Named groups of technicians that work orders and PM schedules can be given to (0.9.0). */
+function TeamsTable() {
+  const { t } = useTranslation();
+  const { can, terms } = useAuth();
+  const qc = useQueryClient();
+  const editable = can(P.peopleManage);
+  const { data, isFetching } = useTeams();
+  const { data: employees } = useQuery({ queryKey: ['employees', 'list'], queryFn: () => get<Employee[]>('/employees') });
+  const { data: h } = useHierarchy();
+  const [opened, m] = useDisclosure();
+  const [editing, setEditing] = useState<Team | null>(null);
+  const blank = { code: '', name: '', siteId: null as string | null, color: '', memberIds: [] as string[], isActive: true };
+  const form = useForm({ initialValues: blank });
+  const open = (x: Team | null) => {
+    setEditing(x);
+    form.setValues(x ? { code: x.code, name: x.name, siteId: x.siteId ?? null, color: x.color ?? '', memberIds: x.memberIds, isActive: x.isActive } : blank);
+    form.clearErrors(); m.open();
+  };
+  const submit = form.onSubmit(async (v) => {
+    const body = { ...v, color: v.color || null, rowVersion: editing?.rowVersion };
+    try { if (editing) await put(`/teams/${editing.id}`, body); else await post('/teams', body); notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['teams'] }); m.close(); }
+    catch (e) { handleFormError(form, e); }
+  });
+  const person = (id: string) => employees?.find((e) => e.id === id)?.fullName ?? '…';
+  // Members: people who work at the team's site (or every site), plus anyone already in it.
+  const memberOptions = (employees ?? []).filter((e) => (e.isActive && (!form.values.siteId || e.siteIds.length === 0 || e.siteIds.includes(form.values.siteId)))
+    || form.values.memberIds.includes(e.id)).map((e) => ({ value: e.id, label: e.fullName }));
+  return (
+    <Card p={0}>
+      <Group justify="space-between" p="md">
+        <Text c="dimmed" fz="sm">{t('teams.hint')}</Text>
+        {editable && <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => open(null)}>{t('teams.new')}</Button>}
+      </Group>
+      <DataTable minHeight={160} fetching={isFetching} records={data ?? []} noRecordsText={t('common.noRecords')} highlightOnHover
+        rowClassName={() => (editable ? 'clickable-row' : '')} onRowClick={({ record }) => editable && open(record)}
+        columns={[
+          { accessor: 'name', title: t('common.name'), render: (x) => <Group gap={6} wrap="nowrap">{x.color && <Badge circle size="xs" color={x.color} />}<Stack gap={0}><Text fz="sm" fw={500}>{x.name}</Text><Text fz="xs" c="dimmed">{x.code}</Text></Stack></Group> },
+          { accessor: 'siteName', title: terms.site, render: (x) => x.siteName ?? <Text fz="sm" c="dimmed">{t('access.allSites', { sites: terms.sites.toLowerCase() })}</Text> },
+          { accessor: 'memberIds', title: t('teams.members'), render: (x) => <Text fz="sm" lineClamp={1}>{x.memberIds.map(person).join(', ') || '—'}</Text> },
+          { accessor: 'isActive', title: t('common.status'), render: (x) => <Badge color={x.isActive ? 'teal' : 'gray'}>{x.isActive ? t('common.active') : t('common.inactive')}</Badge> },
+        ]} />
+      <Modal opened={opened} onClose={m.close} title={editing ? t('teams.edit') : t('teams.new')} size="lg">
+        <form onSubmit={submit}><Stack>
+          <SimpleGrid cols={{ base: 1, sm: 3 }}>
+            <TextInput label={t('common.code')} required maxLength={50} {...form.getInputProps('code')} />
+            <TextInput label={t('common.name')} required style={{ gridColumn: 'span 2' }} {...form.getInputProps('name')} />
+          </SimpleGrid>
+          <SimpleGrid cols={{ base: 1, sm: 2 }}>
+            <Select label={terms.site} placeholder={t('access.allSites', { sites: terms.sites.toLowerCase() })} clearable data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))}
+              {...form.getInputProps('siteId')} />
+            <ColorInput label={t('teams.color')} {...form.getInputProps('color')} />
+          </SimpleGrid>
+          <MultiSelect label={t('teams.members')} searchable clearable data={memberOptions} {...form.getInputProps('memberIds')} />
+          <Checkbox label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
+          <Group justify="space-between">
+            {editing ? <Button variant="subtle" color="red" onClick={() => confirmDelete(editing.name, async () => { try { await del(`/teams/${editing.id}`); await qc.invalidateQueries({ queryKey: ['teams'] }); m.close(); } catch (e) { notifyError(e); } })}>{t('common.delete')}</Button> : <span />}
             <Group><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>
           </Group>
         </Stack></form>

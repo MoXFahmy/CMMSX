@@ -13,6 +13,7 @@ import { get, post } from '@/api/client';
 import { HOLD_REASONS, WORK_PRIORITIES, WORK_TYPES, type HoldReason, type Lookup, type Paged, type WorkOrderListItem, type WorkOrderStatus, type WorkPriority } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
+import { teamOptions, useTeams } from '@/components/teams';
 import { locationOptions, useHierarchy } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
 import { EmployeePicker, useEmployees } from '@/components/EmployeePicker';
@@ -21,7 +22,7 @@ import { fmtDate, notifyError } from '@/components/utils';
 import { BulkBar, FilterChips, ListTools, listText, rangeText, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
 /** Filters behind "More filters"; they live in the address like the others. */
-const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source'] as const;
+const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source'] as const;
 const isoDay = (d: string | Date | null) => (d ? dayjs(d).format('YYYY-MM-DD') : null);
 
 const TABS: { key: string; statuses: WorkOrderStatus[] | null }[] = [
@@ -48,7 +49,7 @@ export function WorkOrdersPage() {
     search: p('search'), siteId: p('siteId'), priority: p('priority'), type: p('type'), tradeId: p('tradeId'), assetId: p('assetId'),
     mine: view === 'mine' ? 'true' : '', overdue: view === 'overdue' ? 'true' : '',
     dueSoon: view === 'dueSoon' ? 'true' : '', responseLate: view === 'responseLate' ? 'true' : '',
-    locationId: p('locationId'), assigneeId: p('assigneeId'), createdFrom: p('createdFrom'), createdTo: p('createdTo'),
+    locationId: p('locationId'), assigneeId: p('assigneeId'), teamId: p('teamId'), createdFrom: p('createdFrom'), createdTo: p('createdTo'),
     dueFrom: p('dueFrom'), dueTo: p('dueTo'), source: p('source'),
   };
   const listQuery = { ...base, status: statuses ?? undefined, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
@@ -64,6 +65,7 @@ export function WorkOrdersPage() {
   const count = (s: WorkOrderStatus[] | null) => (summary?.byStatus ?? []).filter((x) => !s || s.includes(x.status)).reduce((a, b) => a + b.count, 0);
   const filtersActive = ['search', 'siteId', 'priority', 'type', 'tradeId', ...EXTRA_FILTERS].some((k) => p(k));
   const tradeOpts = useMemo(() => (trades ?? []).map((x) => ({ value: x.id, label: x.name })), [trades]);
+  const { data: teams } = useTeams(p('siteId') || null);
   const extraCount = [p('locationId'), p('assetId'), p('assigneeId'), p('createdFrom') || p('createdTo'), p('dueFrom') || p('dueTo'), p('source')].filter(Boolean).length;
   const [moreOpen, more] = useDisclosure(extraCount > 0);
   const locOpts = useMemo(() => locationOptions(h?.locations ?? [], p('siteId') || null), [h, lp.params]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -82,6 +84,7 @@ export function WorkOrdersPage() {
     { accessor: 'priority', title: t('priority.label'), sortable: true, noWrap: true, render: (w) => <PriorityBadge value={w.priority} /> },
     { accessor: 'type', title: t('workType.label'), sortable: true, noWrap: true, render: (w) => t(`workType.${w.type}`) },
     { accessor: 'trade', title: t('wo.trade'), noWrap: true, export: [{ key: 'tradeName' }], render: (w) => w.tradeName ?? '—' },
+    { accessor: 'team', title: t('teams.team'), noWrap: true, export: [{ key: 'teamName' }], render: (w) => w.teamName ?? '—' },
     { accessor: 'asset', title: terms.asset, sortable: true, width: 220,
       export: [{ key: 'assetNumber' }, { key: 'assetName', title: `${terms.asset} · ${t('common.name')}` }],
       render: (w) => w.assetId ? <Stack gap={0}><Text fz="sm" lineClamp={1}>{w.assetNumber}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{w.assetName}</Text></Stack> : <Text fz="sm" c="dimmed" lineClamp={1}>{w.locationPath ?? w.siteName}</Text> },
@@ -98,7 +101,7 @@ export function WorkOrdersPage() {
     { accessor: 'createdAt', title: t('wo.createdOn'), sortable: true, noWrap: true, render: (w) => fmtDate(w.createdAt) },
     { accessor: 'completedAt', title: t('wo.completedOn'), sortable: true, noWrap: true, render: (w) => fmtDate(w.completedAt) },
   ];
-  const cols = useListColumns('work-orders', allColumns, { defaultHidden: ['type', 'trade', 'site', 'location', 'completedAt'] });
+  const cols = useListColumns('work-orders', allColumns, { defaultHidden: ['type', 'trade', 'team', 'site', 'location', 'completedAt'] });
 
   const chips: FilterDef[] = [
     { keys: ['search'], label: t('common.search') },
@@ -106,6 +109,7 @@ export function WorkOrdersPage() {
     { keys: ['priority'], label: t('priority.label'), format: listText((v) => t(`priority.${v}`)) },
     { keys: ['type'], label: t('workType.label'), format: listText((v) => t(`workType.${v}`)) },
     { keys: ['tradeId'], label: t('wo.trade'), format: ([v]) => tradeOpts.find((o) => o.value === v)?.label ?? '…' },
+    { keys: ['teamId'], label: t('teams.team'), format: ([v]) => teams?.find((x) => x.id === v)?.name ?? '…' },
     { keys: ['locationId'], label: terms.location, format: ([v]) => h?.locations.find((l) => l.id === v)?.name ?? '…' },
     { keys: ['assetId'], label: terms.asset, format: () => (filterAsset ? `${filterAsset.assetNumber} ${filterAsset.name}` : '…') },
     { keys: ['assigneeId'], label: t('wo.filterAssignee'), format: ([v]) => empOpts.find((o) => o.value === v)?.label ?? '…' },
@@ -173,6 +177,7 @@ export function WorkOrdersPage() {
             <AssetPicker label={terms.asset} siteId={p('siteId') || null} value={p('assetId') || null} onChange={(v) => set({ assetId: v })}
               initial={filterAsset && p('assetId') ? { id: p('assetId'), assetNumber: filterAsset.assetNumber, name: filterAsset.name } : null} />
             <Select label={t('wo.filterAssignee')} placeholder={t('common.all')} data={empOpts} value={p('assigneeId') || null} onChange={(v) => set({ assigneeId: v })} clearable searchable />
+            <Select label={t('teams.team')} placeholder={t('common.all')} data={teamOptions(teams, p('teamId'))} value={p('teamId') || null} onChange={(v) => set({ teamId: v })} clearable searchable />
             <Select label={t('wo.source')} placeholder={t('common.all')} value={p('source') || null} onChange={(v) => set({ source: v })} clearable
               data={[{ value: 'pm', label: t('wo.sourcePm') }, { value: 'request', label: t('wo.sourceRequest') }, { value: 'direct', label: t('wo.sourceDirect') }]} />
             <DatePickerInput type="range" label={t('wo.createdBetween')} placeholder={t('common.all')} clearable valueFormat="DD MMM YYYY" allowSingleDateInRange

@@ -40,11 +40,15 @@ public static partial class TechEndpoints
         {
             var me = await EmployeeAsync(db, ctx, ct);
             if (me is null) return NotLinked();
-            var jobs = await db.WorkOrders.AsNoTracking().Where(w => Open.Contains(w.Status) && w.Assignees.Any(a => a.EmployeeId == me.EmployeeId))
+            // Mine: assigned to me, or given to a team I'm in (0.9.0).
+            var myTeams = await TeamEndpoints.TeamsOfAsync(db, me.EmployeeId, ct);
+            var jobs = await db.WorkOrders.AsNoTracking().Where(w => Open.Contains(w.Status)
+                    && (w.Assignees.Any(a => a.EmployeeId == me.EmployeeId) || (w.TeamId != null && myTeams.Contains(w.TeamId.Value))))
                 .OrderBy(w => w.DueDate == null).ThenBy(w => w.DueDate).ThenBy(w => w.Number).Take(MaxJobs)
                 .Select(w => new
                 {
                     w.Id, w.Number, w.Title, w.Description, w.Type, w.Priority, w.Status, w.HoldReason, w.DueDate, w.DueAt, w.PlannedStart, w.SiteId,
+                    TeamName = w.Team == null ? null : w.Team.Name,
                     Asset = w.Asset == null ? null : new { w.Asset.Id, w.Asset.AssetNumber, w.Asset.Name, w.Asset.NotesToTechnician,
                         DownSince = db.DowntimeEvents.Where(e => e.AssetId == w.AssetId && e.EndedAt == null).Select(e => (DateTimeOffset?)e.StartedAt).FirstOrDefault() },
                     // The job's own stop: completing it ends the stop and fills the downtime from it.
@@ -75,7 +79,7 @@ public static partial class TechEndpoints
                 me.EmployeeId, ctx.UserId,
                 Jobs = jobs.Select(j => new
                 {
-                    j.Id, j.Number, j.Title, j.Description, j.Type, j.Priority, j.Status, j.HoldReason, j.DueDate, j.DueAt, j.PlannedStart, j.SiteId, j.Asset, j.Downtime,
+                    j.Id, j.Number, j.Title, j.Description, j.Type, j.Priority, j.Status, j.HoldReason, j.DueDate, j.DueAt, j.PlannedStart, j.SiteId, j.TeamName, j.Asset, j.Downtime,
                     Location = j.LocationId is null ? null : new { Id = j.LocationId, Path = PathText(j.LocationPath, names), NotesToTechnician = j.LocationNotes },
                     RoundAssets = round[j.Id].Select(a => new { a.Id, a.AssetNumber, a.Name }),
                     Tasks = tasks[j.Id].Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName }),

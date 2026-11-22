@@ -68,6 +68,9 @@ public class WorkOrder : TenantEntity
     public Asset? Asset { get; set; }
     public Guid? TradeId { get; set; }
     public Trade? Trade { get; set; }
+    /// <summary>The team the work is given to (its members see it on their phones).</summary>
+    public Guid? TeamId { get; set; }
+    public Team? Team { get; set; }
     public Guid? WorkRequestId { get; set; }
     public Guid? PmScheduleId { get; set; }
     public Guid? PmTaskId { get; set; }

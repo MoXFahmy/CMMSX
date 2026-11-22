@@ -127,7 +127,7 @@ public static class PurchasingEndpoints
         {
             var x = await db.Suppliers.FirstOrDefaultAsync(y => y.Id == id, ct);
             if (x is null) return Results.NotFound();
-            if (await db.PurchaseOrders.AnyAsync(o => o.SupplierId == id, ct) || await db.StockTransactions.AnyAsync(t => t.SupplierId == id, ct))
+            if (await db.PurchaseOrders.AllSites().AnyAsync(o => o.SupplierId == id, ct) || await db.StockTransactions.AllSites().AnyAsync(t => t.SupplierId == id, ct))
                 throw new DomainException("This supplier has purchasing history. Mark it inactive instead.");
             await db.Parts.Where(p => p.PreferredSupplierId == id).ExecuteUpdateAsync(u => u.SetProperty(p => p.PreferredSupplierId, (Guid?)null), ct);
             db.Suppliers.Remove(x);
@@ -379,8 +379,9 @@ public static class PurchasingEndpoints
     private static async Task<PurchaseOrder> CreateDraftAsync(CmmsDbContext db, ITenantContext ctx, PoInput i, CancellationToken ct)
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
-        var number = await Numbering.NextAsync(db, "PurchaseOrder", settings.PurchaseOrderNumberPrefix, 5,
-            n => db.PurchaseOrders.AnyAsync(o => o.Number == n, ct), p => db.PurchaseOrders.Where(o => o.Number.StartsWith(p)).Select(o => o.Number).ToListAsync(ct), ct);
+        var (sequence, prefix) = Numbering.For(settings, await db.Sites.AllSites().AsNoTracking().FirstOrDefaultAsync(s => s.Id == i.SiteId, ct), NumberKind.PurchaseOrder);
+        var number = await Numbering.NextAsync(db, sequence, prefix, 5,
+            n => db.PurchaseOrders.AllSites().AnyAsync(o => o.Number == n, ct), p => db.PurchaseOrders.AllSites().Where(o => o.Number.StartsWith(p)).Select(o => o.Number).ToListAsync(ct), ct);
         var o = new PurchaseOrder { Number = number, SiteId = i.SiteId!.Value, SupplierId = i.SupplierId!.Value, Currency = settings.Currency, TaxPercent = settings.DefaultTaxPercent, RequestedBy = ctx.UserName };
         await ApplyPoAsync(db, o, i with { TaxPercent = i.TaxPercent ?? settings.DefaultTaxPercent, Currency = i.Currency.Clean() ?? settings.Currency, RequestedBy = i.RequestedBy.Clean() ?? ctx.UserName }, ct);
         db.PurchaseOrders.Add(o);

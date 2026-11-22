@@ -18,7 +18,8 @@ public static class PlanningBoardEndpoints
     public sealed record BoardAssignee(Guid EmployeeId, decimal? Hours, decimal? PlannedHours);
     public sealed record BoardJob(Guid Id, string Number, string Title, WorkPriority Priority, WorkOrderStatus Status, Guid SiteId, Guid? AssetId, string? AssetNumber,
         string? AssetName, DateOnly? Day, DateOnly? PlannedStart, DateTimeOffset? DueAt, SlaView Sla, decimal? EstimatedHours, List<BoardAssignee> Assignees);
-    public sealed record BoardPerson(Guid Id, string Name, List<Guid> TradeIds);
+    /// <param name="Hours">Working hours on each day of the week (index = day, Sunday first), from their working pattern.</param>
+    public sealed record BoardPerson(Guid Id, string Name, List<Guid> TradeIds, decimal[] Hours);
     /// <summary>Day: the new planned start. From → To: move that person's assignment; To alone adds a person; From alone removes one.</summary>
     /// <param name="PlannedHours">With To alone: the person's planned hours on the job (Undo puts back what they had).</param>
     public sealed record MoveInput(Guid WorkOrderId, DateOnly? Day, Guid? FromEmployeeId, Guid? ToEmployeeId, decimal? PlannedHours = null);
@@ -62,16 +63,23 @@ public static class PlanningBoardEndpoints
     {
         var g = api.MapGroup("/planning").WithTags("Planning board");
 
-        g.MapGet("/board", async (DateOnly from, DateOnly to, Guid? siteId, Guid? tradeId, CmmsDbContext db, ITenantContext ctx, PermissionService perms, CancellationToken ct) =>
+        g.MapGet("/board", async (DateOnly from, DateOnly to, Guid? siteId, Guid? tradeId, Guid? teamId, CmmsDbContext db, ITenantContext ctx, PermissionService perms, CancellationToken ct) =>
         {
             if (to < from || to.DayNumber - from.DayNumber >= MaxDays) throw new DomainException("Choose a range of up to six weeks.");
             var settings = await SlaQueries.SettingsAsync(db, ct);
             var now = DateTimeOffset.UtcNow;
             var today = Sla.LocalDay(now, Sla.Zone(settings.TimeZone));
 
-            var employees = await db.Employees.AsNoTracking().Where(e => e.IsActive).Select(e => new { e.Id, e.FullName, e.TradeIds, e.SiteIds }).ToListAsync(ct);
-            var people = employees.Where(e => (siteId is not { } s || e.SiteIds.Count == 0 || e.SiteIds.Contains(s)) && (tradeId is not { } t || e.TradeIds.Contains(t)))
-                .OrderBy(e => e.FullName).Select(e => new BoardPerson(e.Id, e.FullName, e.TradeIds)).ToList();
+            var employees = await db.Employees.AsNoTracking().Where(e => e.IsActive).Select(e => new { e.Id, e.FullName, e.TradeIds, e.SiteIds, e.WorkingHours }).ToListAsync(ct);
+            var siteHours = (await db.Sites.AllSites().AsNoTracking().Select(s => new { s.Id, s.Settings }).ToListAsync(ct)).ToDictionary(s => s.Id, s => s.Settings.WorkingHours);
+            var members = teamId is { } tm ? await db.Teams.AsNoTracking().Where(x => x.Id == tm).Select(x => x.MemberIds).FirstOrDefaultAsync(ct) ?? [] : null;
+            var people = employees.Where(e => (siteId is not { } s || e.SiteIds.Count == 0 || e.SiteIds.Contains(s)) && (tradeId is not { } t || e.TradeIds.Contains(t))
+                    && (members is null || members.Contains(e.Id)))
+                .OrderBy(e => e.FullName).Select(e =>
+                {
+                    var week = FourC.Cmms.Core.People.WorkingHours.ForEmployee(e.WorkingHours, e.SiteIds, siteHours, settings);
+                    return new BoardPerson(e.Id, e.FullName, e.TradeIds, Enum.GetValues<DayOfWeek>().Select(d => FourC.Cmms.Core.People.WorkingHours.HoursOn(week, d)).ToArray());
+                }).ToList();
 
             var q = db.WorkOrders.AsNoTracking().Where(w => w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold);
             if (siteId is { } site) q = q.Where(w => w.SiteId == site);
@@ -79,6 +87,12 @@ public static class PlanningBoardEndpoints
             {
                 var ofTrade = employees.Where(e => e.TradeIds.Contains(trade)).Select(e => e.Id).ToList();
                 q = q.Where(w => w.TradeId == trade || w.Assignees.Any(a => ofTrade.Contains(a.EmployeeId)));
+            }
+            if (teamId is { } team)
+            {
+                // The team's work, and work its members are on.
+                var crew = members ?? [];
+                q = q.Where(w => w.TeamId == team || w.Assignees.Any(a => crew.Contains(a.EmployeeId)));
             }
             // Three bounded reads: the range, the newest leftovers before it, and work without a date (not every open job there is).
             var leftoverBefore = from < today ? from : today;

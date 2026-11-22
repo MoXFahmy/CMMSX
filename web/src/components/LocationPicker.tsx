@@ -14,9 +14,11 @@ export function useHierarchy() {
 export function locationOptions(locations: HierarchyLocation[], siteId: string | null, excludeSubtreeOf?: string) {
   if (!siteId) return [];
   const bySite = locations.filter((l) => l.siteId === siteId);
+  const ids = new Set(bySite.map((l) => l.id));
   const children = new Map<string | null, HierarchyLocation[]>();
   for (const l of bySite) {
-    const k = l.parentId ?? null;
+    // A place whose parent isn't listed (someone limited to a branch can't see above it) is a top place.
+    const k = l.parentId && ids.has(l.parentId) ? l.parentId : null;
     children.set(k, [...(children.get(k) ?? []), l]);
   }
   const out: { value: string; label: string }[] = [];

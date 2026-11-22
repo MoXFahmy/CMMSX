@@ -31,10 +31,21 @@ public static class EmailEndpoints
             return Results.Ok(new { queued = true });
         }).RequirePermission(Permissions.SettingsManage);
 
-        g.MapGet("/log", async (CmmsDbContext db, int? take, CancellationToken ct) =>
-            await db.OutboundEmails.AsNoTracking().OrderByDescending(e => e.CreatedAt).Take(Math.Clamp(take ?? 100, 1, 500))
-                .Select(e => new { e.Id, e.CreatedAt, e.SentAt, e.EventKey, e.ToAddress, e.Subject, e.Status, e.Attempts, e.LastError }).ToListAsync(ct))
-            .RequirePermission(Permissions.SettingsManage);
+        g.MapGet("/log", async (CmmsDbContext db, ITenantContext ctx, int? take, CancellationToken ct) =>
+        {
+            var q = db.OutboundEmails.AsNoTracking();
+            if (db.CurrentSiteIds is not null)
+            {
+                // People limited to some sites see e-mails about records they can see, and their own test e-mails.
+                var mine = await db.Users.Where(u => u.Id == ctx.UserId).Select(u => u.Email).FirstOrDefaultAsync(ct);
+                q = q.Where(e => (e.EntityType == "WorkOrder" && db.WorkOrders.Any(w => w.Id == e.EntityId))
+                    || (e.EntityType == "WorkRequest" && db.WorkRequests.Any(r => r.Id == e.EntityId))
+                    || (e.EntityType == "PurchaseOrder" && db.PurchaseOrders.Any(p => p.Id == e.EntityId))
+                    || (e.EntityType == null && e.ToAddress == mine));
+            }
+            return await q.OrderByDescending(e => e.CreatedAt).Take(Math.Clamp(take ?? 100, 1, 500))
+                .Select(e => new { e.Id, e.CreatedAt, e.SentAt, e.EventKey, e.ToAddress, e.Subject, e.Status, e.Attempts, e.LastError }).ToListAsync(ct);
+        }).RequirePermission(Permissions.SettingsManage);
 
         var me = api.MapGroup("/auth/me/email-opt-outs").WithTags("E-mail").RequireAuthorization();
         me.MapGet("/", async (CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>

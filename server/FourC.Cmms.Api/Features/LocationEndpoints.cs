@@ -3,6 +3,7 @@ using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Locations;
+using FourC.Cmms.Core.People;
 using FourC.Cmms.Core.Services;
 using Microsoft.EntityFrameworkCore;
 
@@ -11,7 +12,7 @@ namespace FourC.Cmms.Api.Features;
 public static class SiteEndpoints
 {
     public sealed record SiteInput(string Code, string Name, string? Address, string? City, string? Country, string? TimeZone,
-        double? Latitude, double? Longitude, string? Notes, bool IsActive = true, string? RowVersion = null);
+        double? Latitude, double? Longitude, string? Notes, bool IsActive = true, string? RowVersion = null, SiteSettings? Settings = null);
 
     public static void MapSiteEndpoints(this RouteGroupBuilder api)
     {
@@ -33,6 +34,7 @@ public static class SiteEndpoints
         g.MapPost("/", async (SiteInput input, CmmsDbContext db, CancellationToken ct) =>
         {
             var v = await ValidateAsync(input, null, db, ct);
+            if (db.CurrentSiteIds is not null) v.Add("code", OnlyEveryoneAddsSites); // they couldn't see the new site
             if (!v.IsValid) return v.Problem();
             var site = CreateSite(db, input);
             await db.SaveChangesAsync(ct);
@@ -43,6 +45,7 @@ public static class SiteEndpoints
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
+            if (db.CurrentBranchPaths is not null) throw new DomainException(OnlyWholeSiteChangesIt);
             var v = await ValidateAsync(input, id, db, ct);
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(site).Property(s => s.RowVersion).OriginalValue = input.RowVersion.ToVersion();
@@ -55,6 +58,7 @@ public static class SiteEndpoints
         {
             var site = await db.Sites.FirstOrDefaultAsync(s => s.Id == id, ct);
             if (site is null) return Results.NotFound();
+            if (db.CurrentBranchPaths is not null) throw new DomainException(OnlyWholeSiteChangesIt);
             if (await db.Locations.AnyAsync(l => l.SiteId == id, ct) || await db.Assets.AnyAsync(a => a.SiteId == id, ct))
                 throw new DomainException("This site still has locations or assets. Move or delete them first, or mark the site inactive.");
             db.Sites.Remove(site);
@@ -64,6 +68,10 @@ public static class SiteEndpoints
     }
 
     /// <summary>The checks that need no database (shared with the import).</summary>
+    internal const string OnlyEveryoneAddsSites = "Only people who see every site can add sites.";
+    /// <summary>People limited to a branch see only part of the site: its record and settings are for those who see all of it.</summary>
+    internal const string OnlyWholeSiteChangesIt = "Only people who see the whole site can change it.";
+
     internal static Validator SiteRules(SiteInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200)
         .MaxLength("address", i.Address, "Address", 500).MaxLength("city", i.City, "City", 100).MaxLength("country", i.Country, "Country", 100)
         .When(i.Latitude is < -90 or > 90, "latitude", "Latitude must be between -90 and 90.")
@@ -73,6 +81,7 @@ public static class SiteEndpoints
     {
         var site = new Site { Code = i.Code.Trim(), Name = i.Name.Trim() };
         Apply(site, i);
+        if (i.Settings is not null) site.Settings = Clean(i.Settings);
         db.Sites.Add(site);
         return site;
     }
@@ -81,13 +90,36 @@ public static class SiteEndpoints
     {
         site.Code = i.Code.Trim(); site.Name = i.Name.Trim();
         Apply(site, i);
+        if (i.Settings is not null) site.Settings = Clean(i.Settings); // null (older apps, the import) keeps them
     }
+
+    private static SiteSettings Clean(SiteSettings s) => new()
+    {
+        AssetNumberPrefix = s.AssetNumberPrefix.Clean(), WorkOrderNumberPrefix = s.WorkOrderNumberPrefix.Clean(),
+        WorkRequestNumberPrefix = s.WorkRequestNumberPrefix.Clean(), PurchaseOrderNumberPrefix = s.PurchaseOrderNumberPrefix.Clean(),
+        WorkingHours = s.WorkingHours is { Count: > 0 } h ? h.OrderBy(d => d.Day).ToList() : null, DefaultStoreId = s.DefaultStoreId,
+        RequestRecipientIds = (s.RequestRecipientIds ?? []).Distinct().ToList(), EmailSenderName = s.EmailSenderName.Clean(),
+    };
 
     private static async Task<Validator> ValidateAsync(SiteInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
         var v = SiteRules(i);
-        if (!string.IsNullOrWhiteSpace(i.Code) && await db.Sites.AnyAsync(s => s.Code == i.Code.Trim() && s.Id != id, ct))
-            v.Add("code", "Another site already uses this code.");
+        if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.Sites, s => s.Code == i.Code.Trim() && s.Id != id,
+                "Another site already uses this code.", "This code is already used by a site you can't see.", ct) is { } siteClash)
+            v.Add("code", siteClash);
+        if (i.Settings is { } st)
+        {
+            v.MaxLength("settings.assetNumberPrefix", st.AssetNumberPrefix, "Prefix", 20).MaxLength("settings.workOrderNumberPrefix", st.WorkOrderNumberPrefix, "Prefix", 20)
+                .MaxLength("settings.workRequestNumberPrefix", st.WorkRequestNumberPrefix, "Prefix", 20)
+                .MaxLength("settings.purchaseOrderNumberPrefix", st.PurchaseOrderNumberPrefix, "Prefix", 20)
+                .MaxLength("settings.emailSenderName", st.EmailSenderName, "Sender name", 100);
+            if (WorkingHours.Problem(st.WorkingHours) is { } hours) v.Add("settings.workingHours", hours);
+            if (st.DefaultStoreId is { } store && (id is null || !await db.Stores.AnyAsync(s => s.Id == store && s.SiteId == id && s.IsActive, ct)))
+                v.Add("settings.defaultStoreId", "Choose one of this site's stores.");
+            var who = (st.RequestRecipientIds ?? []).Distinct().ToList();
+            if (who.Count > 0 && await db.Users.CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != who.Count)
+                v.Add("settings.requestRecipientIds", "Choose active users.");
+        }
         return v;
     }
 
@@ -99,7 +131,7 @@ public static class SiteEndpoints
 
     private static object ToDto(Site s, int locations, int assets) => new
     {
-        s.Id, s.Code, s.Name, s.Address, s.City, s.Country, s.TimeZone, s.Latitude, s.Longitude, s.Notes, s.IsActive,
+        s.Id, s.Code, s.Name, s.Address, s.City, s.Country, s.TimeZone, s.Latitude, s.Longitude, s.Notes, s.IsActive, s.Settings,
         LocationCount = locations, AssetCount = assets, RowVersion = Convert.ToBase64String(s.RowVersion),
     };
 }
@@ -191,6 +223,7 @@ public static class LocationEndpoints
                 await db.SaveChangesAsync(token);
                 return true;
             }, ct);
+            AccessService.LocationsChanged(); // a move changes the paths of everything under it
             return Results.Ok(new { loc.Id });
         }).RequirePermission(Permissions.LocationsManage);
 
@@ -202,6 +235,7 @@ public static class LocationEndpoints
             if (await db.Assets.AnyAsync(a => a.LocationId == id, ct)) throw new DomainException("This location has assets. Transfer them to another location first.");
             db.Locations.Remove(loc);
             await db.SaveChangesAsync(ct);
+            AccessService.LocationsChanged(); // people limited to it now see nothing there
             return Results.NoContent();
         }).RequirePermission(Permissions.LocationsManage);
     }
@@ -247,10 +281,15 @@ public static class LocationEndpoints
     {
         var v = LocationRules(i, id);
         if (!await db.Sites.AnyAsync(s => s.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
-        if (i.ParentId is not null && !await db.Locations.AnyAsync(l => l.Id == i.ParentId && l.SiteId == i.SiteId, ct))
+        // A place keeping its parent and site isn't moved (for people limited to a branch, its parent may be above what they see).
+        var current = id is { } lid ? await db.Locations.AllSites().AsNoTracking().Where(l => l.Id == lid).Select(l => new { l.ParentId, l.SiteId }).FirstOrDefaultAsync(ct) : null;
+        var unmoved = current is not null && current.ParentId == i.ParentId && current.SiteId == i.SiteId;
+        if (i.ParentId is not null && !unmoved && !await db.Locations.AnyAsync(l => l.Id == i.ParentId && l.SiteId == i.SiteId, ct))
             v.Add("parentId", "Parent location must belong to the selected site.");
-        if (!string.IsNullOrWhiteSpace(i.Code) && await db.Locations.AnyAsync(l => l.SiteId == i.SiteId && l.Code == i.Code.Trim() && l.Id != id, ct))
-            v.Add("code", "Another location in this site already uses this code.");
+        if (db.CurrentBranchPaths is not null && i.ParentId is null && !unmoved) v.Add("parentId", "Choose a parent place in your part of the site.");
+        if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.Locations, l => l.SiteId == i.SiteId && l.Code == i.Code.Trim() && l.Id != id,
+                "Another location in this site already uses this code.", "This code is already used in a part of the site you can't see.", ct) is { } locationClash)
+            v.Add("code", locationClash);
         return v;
     }
 
@@ -267,7 +306,8 @@ public static class LocationEndpoints
     public static async Task<Func<string?, string>> ResolvePathNamesAsync(CmmsDbContext db, IEnumerable<string?> paths, CancellationToken ct)
     {
         var ids = paths.Where(p => p is not null).SelectMany(p => PathIds(p!)).Distinct().ToList();
-        var names = ids.Count == 0 ? [] : await db.Locations.AsNoTracking().Where(l => ids.Contains(l.Id)).ToDictionaryAsync(l => l.Id, l => l.Name, ct);
+        // Names of the places above a visible one (people limited to a branch see where it sits, not what else is there).
+        var names = ids.Count == 0 ? [] : await db.Locations.AllSites().AsNoTracking().Where(l => ids.Contains(l.Id)).ToDictionaryAsync(l => l.Id, l => l.Name, ct);
         return p => p is null ? "" : string.Join(" › ", PathIds(p).Select(id => names.GetValueOrDefault(id, "?")));
     }
 }

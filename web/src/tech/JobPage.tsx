@@ -66,6 +66,7 @@ export function JobPage() {
         </Group>
         {job.asset && <Text fz="sm" mt={6}>{job.asset.assetNumber} · {job.asset.name}</Text>}
         {job.location?.path && <Text fz="xs" c="dimmed">{job.location.path}</Text>}
+        {job.teamName && <Text fz="xs" c="dimmed">{t('tech.team', { team: job.teamName })}</Text>}
         {job.description && <Text fz="sm" mt={6} style={{ whiteSpace: 'pre-wrap' }}>{job.description}</Text>}
       </Card>
       {job.asset?.downSince && (
