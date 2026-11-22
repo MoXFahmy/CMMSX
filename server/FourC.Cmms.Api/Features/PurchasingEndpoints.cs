@@ -81,6 +81,46 @@ public static class PurchasingEndpoints
         }).ToList(), paged.Total, paged.Page, paged.PageSize);
     }
 
+    /// <summary>Receives order lines (the web's Receive and the phone's, 0.11.0); the caller holds the transaction.</summary>
+    internal static async Task<int> ReceiveCoreAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, Guid id, ReceiveInput i, DateOnly date, CancellationToken tk)
+    {
+        var o = await LoadAsync(db, id, tk);
+        Require(o, Receivable);
+        var count = 0;
+        var forWork = new List<(Guid WorkOrderId, string Line)>();
+        foreach (var r in i.Lines.Where(x => x.Quantity != 0))
+        {
+            var line = o.Lines.FirstOrDefault(l => l.Id == r.LineId) ?? throw new DomainException("Unknown order line.");
+            if (r.Quantity < 0) throw new DomainException($"Line {line.LineNumber}: quantity must be positive.");
+            var outstanding = line.Quantity - line.QuantityReceived;
+            if (r.Quantity > outstanding) throw new DomainException($"Line {line.LineNumber}: only {outstanding:0.###} outstanding.");
+            var unitCost = Math.Round(line.NetUnitPrice * o.ExchangeRate, 4);
+            var store = r.StoreId ?? line.StoreId;
+            if (line.PartId is { } partId && store is { } storeId)
+            {
+                var rx = await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, partId, storeId, r.Quantity, date, unitCost,
+                    SupplierId: o.SupplierId, PurchaseOrderId: o.Id, PurchaseOrderLineId: line.Id, Reference: i.Reference.Clean() ?? o.Number,
+                    BatchNumber: r.BatchNumber.Clean(), ExpiryDate: r.ExpiryDate), tk);
+                if (line.WorkOrderId is { } wo) // ordered for a job: receive and issue straight to it
+                    await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, r.Quantity, date, WorkOrderId: wo,
+                        BatchNumber: r.BatchNumber.Clean(), Notes: $"Received on {o.Number}", RelatedTransactionId: rx.Id), tk);
+            }
+            else if (line.PartId is not null)
+                throw new DomainException($"Line {line.LineNumber}: choose the store receiving this part.");
+            else if (line.WorkOrderId is { } wo)
+                db.WorkOrderCosts.Add(new WorkOrderCost { TenantId = o.TenantId, WorkOrderId = wo, Description = line.Description, Quantity = r.Quantity, UnitCost = unitCost,
+                    Vendor = o.Supplier?.Name, Reference = o.Number });
+            line.QuantityReceived += r.Quantity;
+            if (line.WorkOrderId is { } forWo) forWork.Add((forWo, $"{line.Description}: {r.Quantity:0.###} {line.UnitOfMeasure}".Trim()));
+            count++;
+        }
+        if (count == 0) throw new DomainException("Enter the quantity received on at least one line.");
+        o.Status = o.Lines.All(l => l.QuantityReceived >= l.Quantity) ? PurchaseOrderStatus.Received : PurchaseOrderStatus.PartiallyReceived;
+        await mail.PartsReceivedAsync(db, ctx, o, forWork, tk);
+        await db.SaveChangesAsync(tk);
+        return count;
+    }
+
     public static void MapPurchasingEndpoints(this RouteGroupBuilder api)
     {
         // ---------------- Suppliers ----------------
@@ -299,44 +339,7 @@ public static class PurchasingEndpoints
         {
             var date = i.Date ?? Today;
             if (date > Today) throw new DomainException("The receipt date cannot be in the future.");
-            var received = await db.InTransactionAsync(async tk =>
-            {
-                var o = await LoadAsync(db, id, tk);
-                Require(o, Receivable);
-                var count = 0;
-                var forWork = new List<(Guid WorkOrderId, string Line)>();
-                foreach (var r in i.Lines.Where(x => x.Quantity != 0))
-                {
-                    var line = o.Lines.FirstOrDefault(l => l.Id == r.LineId) ?? throw new DomainException("Unknown order line.");
-                    if (r.Quantity < 0) throw new DomainException($"Line {line.LineNumber}: quantity must be positive.");
-                    var outstanding = line.Quantity - line.QuantityReceived;
-                    if (r.Quantity > outstanding) throw new DomainException($"Line {line.LineNumber}: only {outstanding:0.###} outstanding.");
-                    var unitCost = Math.Round(line.NetUnitPrice * o.ExchangeRate, 4);
-                    var store = r.StoreId ?? line.StoreId;
-                    if (line.PartId is { } partId && store is { } storeId)
-                    {
-                        var rx = await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, partId, storeId, r.Quantity, date, unitCost,
-                            SupplierId: o.SupplierId, PurchaseOrderId: o.Id, PurchaseOrderLineId: line.Id, Reference: i.Reference.Clean() ?? o.Number,
-                            BatchNumber: r.BatchNumber.Clean(), ExpiryDate: r.ExpiryDate), tk);
-                        if (line.WorkOrderId is { } wo) // ordered for a job: receive and issue straight to it
-                            await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, r.Quantity, date, WorkOrderId: wo,
-                                BatchNumber: r.BatchNumber.Clean(), Notes: $"Received on {o.Number}", RelatedTransactionId: rx.Id), tk);
-                    }
-                    else if (line.PartId is not null)
-                        throw new DomainException($"Line {line.LineNumber}: choose the store receiving this part.");
-                    else if (line.WorkOrderId is { } wo)
-                        db.WorkOrderCosts.Add(new WorkOrderCost { TenantId = o.TenantId, WorkOrderId = wo, Description = line.Description, Quantity = r.Quantity, UnitCost = unitCost,
-                            Vendor = o.Supplier?.Name, Reference = o.Number });
-                    line.QuantityReceived += r.Quantity;
-                    if (line.WorkOrderId is { } forWo) forWork.Add((forWo, $"{line.Description}: {r.Quantity:0.###} {line.UnitOfMeasure}".Trim()));
-                    count++;
-                }
-                if (count == 0) throw new DomainException("Enter the quantity received on at least one line.");
-                o.Status = o.Lines.All(l => l.QuantityReceived >= l.Quantity) ? PurchaseOrderStatus.Received : PurchaseOrderStatus.PartiallyReceived;
-                await mail.PartsReceivedAsync(db, ctx, o, forWork, tk);
-                await db.SaveChangesAsync(tk);
-                return count;
-            }, ct);
+            var received = await db.InTransactionAsync(tk => ReceiveCoreAsync(db, ctx, mail, id, i, date, tk), ct);
             return Results.Ok(new { received });
         }).RequirePermission(Permissions.PurchasingReceive);
 

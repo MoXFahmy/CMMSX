@@ -34,6 +34,8 @@ public static partial class TechEndpoints
 
     /// <summary>A part used on, returned from or issued to a job (0.11.0); a planned line's store is used when no store is given.</summary>
     private sealed record PartPayload(Guid PartId, Guid? StoreId, decimal Quantity, Guid? LineId = null, Guid? WorkOrderId = null);
+    /// <summary>A delivery received against a purchase order line on the phone (0.11.0).</summary>
+    private sealed record ReceivePayload(Guid PurchaseOrderId, Guid LineId, decimal Quantity, Guid? StoreId = null, string? BatchNumber = null, DateOnly? ExpiryDate = null);
     /// <summary>A change that can't be applied; rolls back anything it did and is answered "rejected".</summary>
     private sealed class Rejected(string message, string? code = null) : Exception(message) { public string? Code { get; } = code; }
 
@@ -266,6 +268,15 @@ public static partial class TechEndpoints
                 RequireNotClosed(w);
                 var store = p.StoreId ?? throw new Rejected("Choose the store.");
                 return new Answer("done", await PhoneStock.UseAsync(db, ctx, w, p.PartId, store, p.Quantity, at, ct));
+            }
+            case "po.receive":
+            {
+                Require(allowed, Permissions.PurchasingReceive);
+                var p = Read<ReceivePayload>(input.Payload, options);
+                var day = Sla.LocalDay(at, Sla.Zone((await SlaQueries.SettingsAsync(db, ct)).TimeZone));
+                await PurchasingEndpoints.ReceiveCoreAsync(db, ctx, mail, p.PurchaseOrderId,
+                    new PurchasingEndpoints.ReceiveInput(day, null, [new PurchasingEndpoints.ReceiveLine(p.LineId, p.Quantity, p.StoreId, p.BatchNumber, p.ExpiryDate)]), day, ct);
+                return new Answer("done");
             }
             case "request.create":
             {

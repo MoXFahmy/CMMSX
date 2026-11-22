@@ -139,3 +139,52 @@ public class PhonePartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(4m, await OnHandAsync(s.Org.Admin, s.Part, s.Store));
     }
 }
+
+public class PhoneReceiveTests(ApiFixture fx) : IClassFixture<ApiFixture>
+{
+    private async Task<(Loop.Org Org, Guid Store, Guid Part, Guid Po, Guid Line)> ApprovedOrderAsync()
+    {
+        var org = await OrgAsync(fx, emailOn: false);
+        var store = await StoreAsync(org.Admin, org.Site);
+        var part = await PartAsync(org.Admin, store);
+        await EmployeeAsync(org.Admin, "ME", userId: org.AdminId);
+        var supplier = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/suppliers", new { code = "SUP", name = "Supplier", isContractor = false })));
+        var po = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/purchase-orders", new
+        {
+            siteId = org.Site, supplierId = supplier, currency = "USD", exchangeRate = 1, taxPercent = 0, shippingCost = 0,
+            lines = new[] { new { partId = part, storeId = store, description = "Bearing", quantity = 10, unitPrice = 4, discountPercent = 0 } },
+        })));
+        await Ok(await org.Admin.PostAsync($"/api/purchase-orders/{po}/submit", null));
+        await Ok(await org.Admin.PostAsync($"/api/purchase-orders/{po}/approve", null));
+        var line = Id((await Ok(await org.Admin.GetAsync($"/api/purchase-orders/{po}"))).GetProperty("lines")[0]);
+        return (org, store, part, po, line);
+    }
+
+    [SkippableFact]
+    public async Task Receiving_on_the_phone_updates_stock_and_the_order()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (org, store, part, po, line) = await ApprovedOrderAsync();
+        var stock = await Ok(await org.Admin.GetAsync("/api/tech/stock"));
+        Assert.Contains(stock.GetProperty("purchaseOrders").EnumerateArray(), o => Id(o) == po);
+        Assert.Equal("done", Status(await ActAsync(org.Admin, "po.receive", new { purchaseOrderId = po, lineId = line, quantity = 4 })));
+        Assert.Equal(4m, await OnHandAsync(org.Admin, part, store));
+        var order = await Ok(await org.Admin.GetAsync($"/api/purchase-orders/{po}"));
+        Assert.Equal("PartiallyReceived", order.GetProperty("status").GetString());
+        Assert.Equal("rejected", Status(await ActAsync(org.Admin, "po.receive", new { purchaseOrderId = po, lineId = line, quantity = 7 })));
+    }
+
+    [SkippableFact]
+    public async Task Receiving_on_the_phone_is_applied_once_and_needs_permission()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (org, store, part, po, line) = await ApprovedOrderAsync();
+        var id = Guid.NewGuid();
+        await ActAsync(org.Admin, "po.receive", new { purchaseOrderId = po, lineId = line, quantity = 2 }, clientId: id);
+        await ActAsync(org.Admin, "po.receive", new { purchaseOrderId = po, lineId = line, quantity = 2 }, clientId: id);
+        Assert.Equal(2m, await OnHandAsync(org.Admin, part, store));
+        var tech = await UserAsync(fx, org.Admin, "Technician");
+        await Ok(await org.Admin.PostAsJsonAsync("/api/employees", new { code = "T9", fullName = "Tech", userId = tech.Id, isContractor = false }));
+        Assert.Equal("rejected", Status(await ActAsync(tech.Client, "po.receive", new { purchaseOrderId = po, lineId = line, quantity = 1 })));
+    }
+}
