@@ -101,6 +101,15 @@ public class GroupActionTests(ApiFixture fx) : IClassFixture<ApiFixture>
         };
         Assert.Contains("The due date comes from group GRP-00001.", await Bad(await s.Org.Admin.PutAsJsonAsync($"/api/work-orders/{s.Children[0]}", edit)));
         Assert.True((await s.Org.Admin.PutAsJsonAsync($"/api/work-orders/{s.Children[0]}", edit with { dueDate = Iso(Today.AddDays(10)) })).IsSuccessStatusCode);
+        // The web form sends the loaded due time and no due date: that is no change.
+        var loaded = await WoAsync(s.Org.Admin, s.Children[0]);
+        var asWeb = new
+        {
+            title = "Renamed", type = "Preventive", priority = "Medium", siteId = s.Org.Site, assetId = loaded.GetProperty("assetId").GetGuid(),
+            locationId = edit.locationId, dueDate = (string?)null, dueAt = loaded.GetProperty("dueAt").GetString(),
+        };
+        var r = await s.Org.Admin.PutAsJsonAsync($"/api/work-orders/{s.Children[0]}", asWeb);
+        Assert.True(r.IsSuccessStatusCode, await r.Content.ReadAsStringAsync());
     }
 
     [SkippableFact]

@@ -241,7 +241,7 @@ public static class WorkOrderEndpoints
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(w).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
             // A group's work order takes its due date from the group (0.12.0).
-            if (w.GroupId is { } inGroup && (input.DueDate != w.DueDate || (input.DueAt is { } dueAt && dueAt != w.DueAt)))
+            if (w.GroupId is { } inGroup && DueChanges(w, input))
                 throw new DomainException(string.Format(WorkGroups.DueFromGroup,
                     await db.WorkOrderGroups.AllSites().Where(g => g.Id == inGroup).Select(g => g.Number).FirstOrDefaultAsync(ct)));
             var priorityBefore = w.Priority;
@@ -724,6 +724,15 @@ public static class WorkOrderEndpoints
         await db.SaveChangesAsync(ct);
         return w;
     }
+
+    /// <summary>
+    /// The edit asks for another deadline: a due time a minute or more away from the current one (the page sends the loaded time,
+    /// to the second), else a different due day, else none at all where there is one (back to the priority's target).
+    /// </summary>
+    private static bool DueChanges(WorkOrder w, WorkOrderInput i) =>
+        i.DueAt is { } at ? w.DueAt is not { } current || Math.Abs((at - current).TotalSeconds) >= 60
+        : i.DueDate is { } day ? day != w.DueDate
+        : w.DueAt is not null || w.DueDate is not null;
 
     private static void Apply(WorkOrder w, WorkOrderInput i)
     {
