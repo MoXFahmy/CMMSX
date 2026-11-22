@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { StoppedBadge } from '@/components/AccessWindowsEditor';
 import { ActionIcon, Alert, Anchor, Badge, Box, Breadcrumbs, Button, Card, Center, Checkbox, Grid, Group, Image, Loader, Menu, Modal, SimpleGrid, Stack, Table, Tabs, Text, Textarea, ThemeIcon, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useForm } from '@mantine/form';
@@ -73,7 +74,7 @@ export function AssetDetailPage() {
     <>
       <PageHeader
         crumbs={[{ label: terms.assets, to: '/assets' }, ...(a.parentAsset ? [{ label: a.parentAsset.assetNumber, to: `/assets/${a.parentAsset.id}` }] : []), { label: a.assetNumber }]}
-        title={<>{a.name}</>} badge={<Group gap={6}><StatusBadge status={a.status} /><CriticalityBadge value={a.criticality} />
+        title={<>{a.name}</>} badge={<Group gap={6}><StatusBadge status={a.status} /><CriticalityBadge value={a.criticality} /><StoppedBadge show={a.onlyWhenStopped} />
           {a.downSince && <Badge color="red" variant="filled" style={{ cursor: 'pointer' }} onClick={() => setTab('downtime')}>{t('downtime.down')}</Badge>}</Group>}
         subtitle={<>{a.assetNumber}{a.category && <> · {a.category.name}</>}{a.legacyRef && <> · <Badge size="xs" variant="outline" color="gray">4CSQL</Badge></>}</>}
         actions={<>

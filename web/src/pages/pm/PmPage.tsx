@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { StoppedBadge } from '@/components/AccessWindowsEditor';
 import { ActionIcon, Alert, Anchor, Badge, Button, Card, Checkbox, Drawer, Group, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Table, Tabs, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useDisclosure } from '@mantine/hooks';
@@ -60,7 +61,7 @@ function SchedulesTab() {
   });
   const allColumns: ListColumn<PmScheduleListItem>[] = [
           { accessor: 'code', title: t('pm.code'), sortable: true, noWrap: true, render: (s) => <Text fw={600} fz="sm" c={s.isActive ? 'brand' : 'dimmed'}>{s.code}</Text> },
-          { accessor: 'name', title: t('common.name'), sortable: true, width: 260, export: [{ key: 'name' }, { key: 'taskCode', title: t('pm.task') }, { key: 'taskName', title: `${t('pm.task')} · ${t('common.name')}` }], render: (s) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{s.name}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{s.taskCode} · {s.taskName}{s.multipleTasks > 0 && ` +${s.multipleTasks}`}</Text></Stack> },
+          { accessor: 'name', title: t('common.name'), sortable: true, width: 260, export: [{ key: 'name' }, { key: 'taskCode', title: t('pm.task') }, { key: 'taskName', title: `${t('pm.task')} · ${t('common.name')}` }], render: (s) => <Stack gap={0}><Group gap={4} wrap="nowrap"><Text fz="sm" lineClamp={1}>{s.name}</Text><StoppedBadge show={s.onlyWhenStopped} size="xs" /></Group><Text fz="xs" c="dimmed" lineClamp={1}>{s.taskCode} · {s.taskName}{s.multipleTasks > 0 && ` +${s.multipleTasks}`}</Text></Stack> },
           { accessor: 'asset', title: t('pm.target'), sortable: true, width: 220, export: [{ key: 'assetNumber' }, { key: 'assetName', title: `${t('pm.target')} · ${t('common.name')}` }, { key: 'locationName', title: terms.location }, { key: 'assetCount', title: t('pm.assetsInRound') }], render: (s) => <Stack gap={0}><Text fz="sm" lineClamp={1}>{s.assetCount > 0 ? t('pm.assetCount', { count: s.assetCount }) : s.assetNumber ?? s.locationName}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{s.assetCount > 0 ? s.locationName ?? s.siteName : s.assetName ?? s.siteName}</Text></Stack> },
           { accessor: 'schedule', title: t('pm.schedule'), export: [{ key: 'schedule' }, { key: 'type', title: t('pm.typeLabel') }], render: (s) => <Stack gap={0}><Text fz="sm">{s.schedule}{s.type === 'Meter' && s.meterUnit ? ` ${s.meterUnit}` : ''}</Text><Text fz="xs" c="dimmed">{t(`pm.types.${s.type}`)}</Text></Stack> },
           { accessor: 'nextDueDate', title: t('pm.nextDue'), sortable: true, noWrap: true, export: [{ key: 'nextDueDate' }, { key: 'nextDueReading', title: t('pm.nextDueReading') }], render: (s) => (

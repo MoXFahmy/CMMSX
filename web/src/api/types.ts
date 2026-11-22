@@ -95,6 +95,7 @@ export type AssetListItem = {
   downSince?: string | null;
 };
 export type AssetDetail = {
+  onlyWhenStopped?: boolean;
   id: string; assetNumber: string; name: string; description?: string; categoryId?: string;
   category?: { id: string; code: string; name: string; color?: string }; siteId: string; site: { id: string; code: string; name: string };
   locationId?: string; locationTrail: { id: string; code: string; name: string }[]; parentAssetId?: string;
@@ -175,7 +176,7 @@ export type EmployeeLookup = { id: string; code: string; fullName: string; trade
 export type WorkOrderListItem = {
   id: string; number: string; title: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
   siteId: string; siteName: string; locationId?: string; locationPath?: string; assetId?: string; assetNumber?: string; assetName?: string;
-  tradeName?: string; teamName?: string | null; assignees: string[]; dueDate?: string; createdAt: string; completedAt?: string; isOverdue: boolean;
+  tradeName?: string; teamName?: string | null; cancelReasonName?: string | null; onlyWhenStopped?: boolean; assignees: string[]; dueDate?: string; createdAt: string; completedAt?: string; isOverdue: boolean;
   dueAt?: string | null; startBy?: string | null; respondedAt?: string | null; responseState: SlaState; completionState: SlaState;
 };
 export type WorkOrderDetail = {
@@ -189,7 +190,10 @@ export type WorkOrderDetail = {
   startedAt?: string; completedAt?: string; closedAt?: string; completionNotes?: string; causeNotes?: string; assetWasDown: boolean; downtimeHours?: number;
   /** The asset stop this work order is about (completing it ends the stop), and whether the asset is down now. */
   downtime?: { id: string; startedAt: string; endedAt?: string | null; source: DowntimeSource; sourceNumber?: string | null } | null; assetDownSince?: string | null;
-  locationNotesToTechnician?: string; request?: { id: string; number: string; requesterName?: string };
+  locationNotesToTechnician?: string;
+  request?: { id: string; number: string; requesterName?: string; status?: WorkRequestStatus; awaitingFeedback?: boolean; feedback?: RequestFeedback | null; comments?: RequestComment[] };
+  /** 0.10.0 */
+  accessWindows?: AccessWindow[]; onlyWhenStopped?: boolean; outsideWindows?: boolean; cancelReason?: { id: string; code: string; name: string } | null;
   pm?: { id: string; code: string; name: string }; pmDueDate?: string;
   /** Assets a PM round work order covers, in order (empty otherwise). */
   assets: { id: string; assetNumber: string; name: string }[];
@@ -263,8 +267,10 @@ export type PmScheduleListItem = {
   meterReading?: number; lastGeneratedAt?: string; lastWorkOrderId?: string; lastWorkOrderNumber?: string; openWorkOrders: number; isOverdue: boolean; multipleTasks: number;
   /** Number of assets a round covers; 0 for single-asset/location schedules. */
   assetCount: number;
+  onlyWhenStopped?: boolean;
 };
 export type PmScheduleDetail = {
+  onlyWhenStopped?: boolean;
   id: string; code: string; name: string; description?: string; siteId: string; locationId?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
   /** A round's assets in order (empty for single-asset/location schedules). */
   assets: { id: string; assetNumber: string; name: string }[];

@@ -2,6 +2,7 @@ import { useEffect } from 'react';
 import { ActionIcon, Button, Card, Center, Checkbox, Grid, Group, Loader, NumberInput, Select, SimpleGrid, Stack, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput, DateTimePicker } from '@mantine/dates';
 import dayjs from 'dayjs';
+import { AccessWindowsEditor } from '@/components/AccessWindowsEditor';
 import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
@@ -9,6 +10,7 @@ import { useTranslation } from 'react-i18next';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { get, post, put } from '@/api/client';
 import { WORK_PRIORITIES, WORK_TYPES, type AssetDetail, type Lookup, type WorkOrderDetail } from '@/api/types';
+import type { AccessWindow } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { LocationPicker } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
@@ -24,9 +26,13 @@ type Values = {
   dueAt: string | null; estimatedHours: number | ''; tasks: string[]; requestedBy: string;
   /** "The asset is down": starts (or joins) the asset's stop; completing the work order ends it. */
   assetIsDown: boolean;
+  /** When the work may be done (0.10.0). */
+  accessWindows: AccessWindow[];
+  /** Only while the asset is stopped; null on a new work order = take it from the asset. */
+  onlyWhenStopped: boolean | null;
 };
 const empty: Values = { title: '', description: '', type: 'Corrective', priority: 'Medium', siteId: null, locationId: null, assetId: null, tradeId: null, teamId: null,
-  assigneeIds: [], plannedStart: null, dueAt: null, estimatedHours: '', tasks: [], requestedBy: '', assetIsDown: false };
+  assigneeIds: [], plannedStart: null, dueAt: null, estimatedHours: '', tasks: [], requestedBy: '', assetIsDown: false, accessWindows: [], onlyWhenStopped: null };
 const local = (v?: string | null) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : null);
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 
@@ -52,6 +58,7 @@ export function WorkOrderFormPage() {
         title: wo.title, description: wo.description ?? '', type: wo.type, priority: wo.priority, siteId: wo.siteId, locationId: wo.locationId ?? null,
         assetId: wo.assetId ?? null, tradeId: wo.tradeId ?? null, teamId: wo.teamId ?? null, assigneeIds: wo.assignees.map((a) => a.employeeId), plannedStart: d(wo.plannedStart),
         dueAt: local(wo.dueAt), estimatedHours: wo.estimatedHours ?? '', tasks: [], requestedBy: wo.requestedBy ?? '', assetIsDown: !!wo.downtime,
+        accessWindows: wo.accessWindows ?? [], onlyWhenStopped: wo.onlyWhenStopped ?? false,
       });
       form.resetDirty();
     } else if (source) {
@@ -61,6 +68,7 @@ export function WorkOrderFormPage() {
         locationId: source.locationId ?? null, assetId: source.assetId ?? null, tradeId: source.tradeId ?? null, teamId: source.teamId ?? null,
         assigneeIds: source.assignees.map((a) => a.employeeId), estimatedHours: source.estimatedHours ?? '',
         tasks: [...source.tasks].sort((a, b) => a.sequence - b.sequence).map((x) => x.description),
+        accessWindows: source.accessWindows ?? [], onlyWhenStopped: source.onlyWhenStopped ?? null,
       });
     } else if (asset) {
       form.setValues({ ...empty, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id, priority: asset.criticality === 'Critical' ? 'High' : 'Medium' });
@@ -121,6 +129,9 @@ export function WorkOrderFormPage() {
                   ? (wo.downtime.source === 'WorkOrder' && wo.downtime.sourceNumber === wo.number && !wo.downtime.endedAt ? t('downtime.assetMovesHint') : t('downtime.assetChangedHint'))
                   : t('downtime.assetIsDownHint')}
                 {...form.getInputProps('assetIsDown', { type: 'checkbox' })} />}
+              <Checkbox label={t('accessWindows.onlyWhenStopped')} description={form.values.onlyWhenStopped === null ? t('accessWindows.fromAsset') : undefined}
+                checked={!!form.values.onlyWhenStopped} onChange={(e) => form.setFieldValue('onlyWhenStopped', e.currentTarget.checked)} />
+              <AccessWindowsEditor value={form.values.accessWindows} onChange={(v) => form.setFieldValue('accessWindows', v)} error={err('accessWindows')} />
             </Stack></Card>
             {!editing && (
               <Card><Stack gap="xs">

@@ -1,12 +1,13 @@
 import { useMemo } from 'react';
-import { ActionIcon, Box, Button, Card, Group, Loader, Paper, ScrollArea, SegmentedControl, Select, Stack, Text, Tooltip } from '@mantine/core';
+import { ActionIcon, Box, Button, Card, Chip, Group, Loader, Paper, ScrollArea, SegmentedControl, Select, Stack, Text, Tooltip } from '@mantine/core';
+import { isOutside } from '@/components/accessWindows';
 import { notifications } from '@mantine/notifications';
 import { useQuery } from '@tanstack/react-query';
 import { useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
-import { IconChevronLeft, IconChevronRight, IconPlayerPlay } from '@tabler/icons-react';
+import { IconChevronLeft, IconChevronRight, IconClockExclamation, IconHandStop, IconPlayerPlay } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
 import type { Lookup } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -27,7 +28,7 @@ type Dragged = { job: BoardJob; row: string };
 /** The planning board: open work by day and person (or asset); drag a card to another day or person. */
 export function PlanningPage() {
   const { t } = useTranslation();
-  const { can, terms } = useAuth();
+  const { can, terms, me } = useAuth();
   const [params, setParams] = useSearchParams();
   const view = params.get('view') === 'asset' ? 'asset' : 'person';
   const span = params.get('span') === 'month' ? 'month' : 'week';
@@ -38,6 +39,7 @@ export function PlanningPage() {
   const siteId = params.get('siteId');
   const tradeId = params.get('tradeId');
   const teamId = params.get('teamId');
+  const stoppedOnly = params.get('stopped') === '1';
   const set = (patch: Record<string, string | null>) => {
     const next = new URLSearchParams(params);
     for (const [k, v] of Object.entries(patch)) { if (v) next.set(k, v); else next.delete(k); }
@@ -48,8 +50,8 @@ export function PlanningPage() {
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
   const { data: teams } = useTeams(siteId);
   const { data, refetch, isFetching } = useQuery({
-    queryKey: ['planning-board', fromIso, toIso, siteId, tradeId, teamId], placeholderData: (prev) => prev,
-    queryFn: () => get<Board>('/planning/board', { from: fromIso, to: toIso, siteId, tradeId, teamId }),
+    queryKey: ['planning-board', fromIso, toIso, siteId, tradeId, teamId, stoppedOnly], placeholderData: (prev) => prev,
+    queryFn: () => get<Board>('/planning/board', { from: fromIso, to: toIso, siteId, tradeId, teamId, onlyWhenStopped: stoppedOnly || undefined }),
   });
   const canEdit = can(P.woEdit);
   const days = useMemo(() => dayList(fromIso, toIso), [fromIso, toIso]);
@@ -78,7 +80,11 @@ export function PlanningPage() {
     if (!dragged || !target) return;
     const [row, day] = target;
     const plan = planMove(dragged.job, dragged.row, row, day, view);
-    if (plan) void send(plan.move, plan.undo);
+    if (!plan) return;
+    // Dropped on a day none of its access windows touches: allowed, with a warning (0.10.0).
+    if (day && day !== TRAY && isOutside(dragged.job.accessWindows, day, me?.tenant.settings.timeZone))
+      notifications.show({ color: 'orange', message: t('accessWindows.droppedOutside', { number: dragged.job.number }), autoClose: 8000 });
+    void send(plan.move, plan.undo);
   };
 
   const byPerson = useMemo(() => (data ? cellsByPerson(data) : new Map()), [data]);
@@ -113,6 +119,7 @@ export function PlanningPage() {
           {(teams?.length ?? 0) > 0 && (
             <Select size="xs" w={160} placeholder={t('teams.team')} clearable data={teamOptions(teams, teamId)} value={teamId} onChange={(v) => set({ teamId: v })} />
           )}
+          <Chip size="xs" checked={stoppedOnly} onChange={(v) => set({ stopped: v ? '1' : null })}>{t('accessWindows.onlyWhenStopped')}</Chip>
           {isFetching && <Loader size="xs" />}
         </Group>
       </Card>
@@ -204,6 +211,12 @@ function JobCard({ job, row, canEdit }: { job: BoardJob; row: string; canEdit: b
         <Text fz={9} c="dimmed" tt="uppercase">{t(`woStatus.${job.status}`)}</Text>
       </Group>
       <Text fz={11} lineClamp={2}>{job.title}</Text>
+      {(job.onlyWhenStopped || job.outsideWindows) && (
+        <Group gap={4}>
+          {job.onlyWhenStopped && <Tooltip label={t('accessWindows.onlyWhenStopped')}><IconHandStop size={12} color="var(--mantine-color-red-6)" /></Tooltip>}
+          {job.outsideWindows && <Tooltip label={t('accessWindows.outside')}><IconClockExclamation size={12} color="var(--mantine-color-orange-6)" /></Tooltip>}
+        </Group>
+      )}
       {(job.sla.completion === 'Late' || job.sla.completion === 'DueSoon') && <SlaText fz="10px" deadline={job.dueAt} state={job.sla.completion} />}
     </Paper>
   );

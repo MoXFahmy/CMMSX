@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { Button, Card, Center, Grid, Group, Loader, MultiSelect, NumberInput, Select, SimpleGrid, Stack, TextInput, Textarea, Title } from '@mantine/core';
+import { Button, Card, Center, Checkbox, Grid, Group, Loader, MultiSelect, NumberInput, Select, SimpleGrid, Stack, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,14 +18,14 @@ type Values = {
   status: string; criticality: string; manufacturer: string; model: string; serialNumber: string; barcode: string; operationNumber: string;
   commissionedOn: Date | null; disposedOn: Date | null; purchasePrice: number | ''; currentValue: number | ''; salvageValue: number | '';
   expectedLifeYears: number | ''; downtimeCostPerHour: number | ''; warrantyType: string; warrantyExpiresOn: Date | null; warrantyNotes: string;
-  notes: string; notesToTechnician: string; customFields: Record<string, string>;
+  notes: string; notesToTechnician: string; customFields: Record<string, string>; onlyWhenStopped: boolean;
   runsHoursPerDay: number | ''; runsOn: DayName[];
 };
 
 const empty: Values = {
   assetNumber: '', name: '', description: '', categoryId: null, siteId: null, locationId: null, parentAssetId: null, status: 'Active', criticality: 'Medium',
   manufacturer: '', model: '', serialNumber: '', barcode: '', operationNumber: '', commissionedOn: null, disposedOn: null, purchasePrice: '', currentValue: '',
-  salvageValue: '', expectedLifeYears: '', downtimeCostPerHour: '', warrantyType: 'None', warrantyExpiresOn: null, warrantyNotes: '', notes: '', notesToTechnician: '', customFields: {},
+  salvageValue: '', expectedLifeYears: '', downtimeCostPerHour: '', warrantyType: 'None', warrantyExpiresOn: null, warrantyNotes: '', notes: '', notesToTechnician: '', customFields: {}, onlyWhenStopped: false,
   runsHoursPerDay: 24, runsOn: [...DAY_NAMES],
 };
 
@@ -63,7 +63,7 @@ export function AssetFormPage() {
         commissionedOn: d(asset.commissionedOn), disposedOn: d(asset.disposedOn), purchasePrice: n(asset.purchasePrice), currentValue: n(asset.currentValue),
         salvageValue: n(asset.salvageValue), expectedLifeYears: n(asset.expectedLifeYears), downtimeCostPerHour: n(asset.downtimeCostPerHour),
         warrantyType: asset.warrantyType, warrantyExpiresOn: d(asset.warrantyExpiresOn), warrantyNotes: asset.warrantyNotes ?? '', notes: asset.notes ?? '',
-        notesToTechnician: asset.notesToTechnician ?? '', customFields: Object.fromEntries(Object.entries(asset.customFields ?? {}).map(([k, v]) => [k, v ?? ''])),
+        notesToTechnician: asset.notesToTechnician ?? '', onlyWhenStopped: asset.onlyWhenStopped ?? false, customFields: Object.fromEntries(Object.entries(asset.customFields ?? {}).map(([k, v]) => [k, v ?? ''])),
         runsHoursPerDay: asset.runsHoursPerDay ?? 24, runsOn: asset.runsOn ?? [...DAY_NAMES],
       });
       form.resetDirty();
@@ -187,6 +187,7 @@ export function AssetFormPage() {
             </Section>
             <Section title={t('common.notes')}>
               <Textarea label={t('assets.notesToTechnician')} autosize minRows={2} {...form.getInputProps('notesToTechnician')} />
+              <Checkbox label={t('accessWindows.maintainOnlyWhenStopped')} description={t('accessWindows.maintainOnlyWhenStoppedHint')} {...form.getInputProps('onlyWhenStopped', { type: 'checkbox' })} />
               <Textarea label={t('common.notes')} autosize minRows={3} {...form.getInputProps('notes')} />
             </Section>
           </Stack>

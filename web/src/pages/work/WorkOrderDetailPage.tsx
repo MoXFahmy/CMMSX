@@ -19,6 +19,9 @@ import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { CriticalityBadge } from '@/components/Badges';
 import { confirmDelete } from '@/components/confirm';
 import { StockTxModal } from '@/components/StockTxModal';
+import { AccessWindowsList, StoppedBadge } from '@/components/AccessWindowsEditor';
+import { FeedbackLine, RequestComments } from './RequestLoop';
+import { noteRequired } from './statusRules';
 import { TxTypeBadge } from '@/components/InventoryBadges';
 import { fmtDate, fmtDateTime, fmtMoney, fmtPrice, fmtQty, fromNow, handleFormError, hoursText, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { PlannedHoursCard, PlannedPartsCard, PlanVsActualCard } from './WorkOrderPlanning';
@@ -40,6 +43,7 @@ export function WorkOrderDetailPage() {
   const [tab, setTab] = useState<string | null>('details');
   const [completeOpen, complete] = useDisclosure();
   const [holdOpen, hold] = useDisclosure();
+  const [noteFor, setNoteFor] = useState<WorkOrderStatus | null>(null);
   const { data: w, isLoading, error } = useQuery({ queryKey: ['work-order', id], queryFn: () => get<WorkOrderDetail>(`/work-orders/${id}`) });
   const currency = me?.tenant.settings.currency ?? 'USD';
   if (isLoading) return <Center h={300}><Loader /></Center>;
@@ -61,6 +65,8 @@ export function WorkOrderDetailPage() {
   const move = async (to: WorkOrderStatus) => {
     if (to === 'Completed') return complete.open();
     if (to === 'OnHold') return hold.open();
+    // Cancelling asks for a reason; the organization may want a comment to reopen (0.10.0).
+    if (to === 'Cancelled' || noteRequired(me?.tenant.settings.commentRequiredFor, w.status, to)) return setNoteFor(to);
     try { await post(`/work-orders/${w.id}/status`, { status: to }); notifySuccess(t(`woStatus.${to}`)); await refresh(); } catch (e) { notifyError(e); }
   };
   const label = (to: WorkOrderStatus) =>
@@ -74,7 +80,7 @@ export function WorkOrderDetailPage() {
     <>
       <PageHeader crumbs={[{ label: t('wo.title'), to: '/work-orders' }, { label: w.number }]} title={w.title}
         badge={<Group gap={6}><WoStatusBadge status={w.status} /><PriorityBadge value={w.priority} />{w.isOverdue && <Badge color="red" variant="filled">{t('wo.overdueBadge')}</Badge>}</Group>}
-        subtitle={<>{w.number} · {t(`workType.${w.type}`)}{w.tradeName && ` · ${w.tradeName}`}{w.status === 'OnHold' && w.holdReason && ` · ${t(`holdReason.${w.holdReason}`)}`}
+        subtitle={<>{w.onlyWhenStopped && <><StoppedBadge show size="sm" />{' '}</>}{w.number} · {t(`workType.${w.type}`)}{w.tradeName && ` · ${w.tradeName}`}{w.status === 'OnHold' && w.holdReason && ` · ${t(`holdReason.${w.holdReason}`)}`}
           {w.request && <> · <Anchor component={Link} to={`/work-requests?open=${w.request.id}`} fz="sm">{t('wo.fromRequest', { number: w.request.number })}</Anchor></>}
           {w.pm && <> · <Anchor component={Link} to={`/pm/schedules/${w.pm.id}`} fz="sm">{t('pm.fromPm', { code: w.pm.code })}</Anchor></>}</>}
         actions={<>
@@ -121,6 +127,18 @@ export function WorkOrderDetailPage() {
                   <Alert variant="light" color="teal" icon={<IconShieldCheck size={18} />} title={t('wo.underWarrantyTitle', { type: t(`warrantyType.${w.asset.warrantyType}`) })}>
                     {t('wo.underWarrantyBody', { date: fmtDate(w.asset.warrantyExpiresOn) })}
                   </Alert>
+                )}
+                {w.status === 'Cancelled' && w.cancelReason && (
+                  <Alert variant="light" color="gray" icon={<IconX size={18} />} title={`${t('wo.cancelReason')}: ${w.cancelReason.name}`} />
+                )}
+                {(w.accessWindows?.length ?? 0) > 0 && <Card><AccessWindowsList windows={w.accessWindows} outside={w.outsideWindows} /></Card>}
+                {w.request && (w.request.feedback || w.request.awaitingFeedback || (w.request.comments?.length ?? 0) > 0) && (
+                  <Card><Stack gap="sm">
+                    <Text fz="xs" c="dimmed">{t('wo.fromRequest', { number: w.request.number })}</Text>
+                    {w.request.awaitingFeedback && <Text fz="sm" c="dimmed">{t('requestLoop.waitingForRequester')}</Text>}
+                    {w.request.feedback && <Stack gap={4}><Text fz="sm" fw={500}>{t('requestLoop.answer')}</Text><FeedbackLine f={w.request.feedback} /></Stack>}
+                    {(w.request.comments?.length ?? 0) > 0 && <RequestComments requestId={w.request.id} comments={w.request.comments} readOnly />}
+                  </Stack></Card>
                 )}
                 {(w.asset?.notesToTechnician || w.locationNotesToTechnician) && (
                   <Alert variant="light" color="yellow" icon={<IconAlertTriangle size={18} />} title={t('wo.notesForTech')}>
@@ -221,6 +239,7 @@ export function WorkOrderDetailPage() {
       </Tabs>
       <CompleteModal opened={completeOpen} onClose={complete.close} w={w} onDone={refresh} />
       <HoldModal opened={holdOpen} onClose={hold.close} w={w} onDone={refresh} />
+      {noteFor && <StatusNoteModal to={noteFor} onClose={() => setNoteFor(null)} w={w} onDone={refresh} />}
     </>
   );
 }
@@ -525,8 +544,36 @@ function CompleteModal({ opened, onClose, w, onDone }: { opened: boolean; onClos
   );
 }
 
+/** Cancel (with a reason from the list) or reopen with a comment, as the organization requires (0.10.0). */
+function StatusNoteModal({ to, onClose, w, onDone }: { to: WorkOrderStatus; onClose: () => void; w: WorkOrderDetail; onDone: () => Promise<void> }) {
+  const { t } = useTranslation();
+  const { me } = useAuth();
+  const needsNote = !!noteRequired(me?.tenant.settings.commentRequiredFor, w.status, to);
+  const { data: reasons } = useQuery({ queryKey: ['cancel-reasons'], queryFn: () => get<Lookup[]>('/cancel-reasons'), enabled: to === 'Cancelled' });
+  const active = (reasons ?? []).filter((x) => x.isActive);
+  const form = useForm({ initialValues: { cancelReasonId: null as string | null, note: '' } });
+  const submit = form.onSubmit(async (v) => {
+    try { await post(`/work-orders/${w.id}/status`, { status: to, note: v.note, cancelReasonId: to === 'Cancelled' ? v.cancelReasonId : null }); notifySuccess(t(`woStatus.${to}`)); onClose(); await onDone(); }
+    catch (e) { handleFormError(form, e); }
+  });
+  return (
+    <Modal opened onClose={onClose} title={`${to === 'Cancelled' ? t('transition.Cancelled') : t('transition.reopen')} · ${w.number}`}>
+      <form onSubmit={submit}><Stack>
+        {to === 'Cancelled' && active.length > 0 && (
+          <Select label={t('wo.cancelReason')} required data={active.map((x) => ({ value: x.id, label: x.name }))} {...form.getInputProps('cancelReasonId')} />
+        )}
+        <Textarea label={t('wo.note')} required={needsNote} autosize minRows={2} data-autofocus {...form.getInputProps('note')} />
+        <Group justify="flex-end"><Button variant="default" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button type="submit" color={to === 'Cancelled' ? 'red' : undefined} loading={form.submitting}>{to === 'Cancelled' ? t('transition.Cancelled') : t('transition.reopen')}</Button></Group>
+      </Stack></form>
+    </Modal>
+  );
+}
+
 function HoldModal({ opened, onClose, w, onDone }: { opened: boolean; onClose: () => void; w: WorkOrderDetail; onDone: () => Promise<void> }) {
   const { t } = useTranslation();
+  const { me } = useAuth();
+  const noteNeeded = (me?.tenant.settings.commentRequiredFor ?? []).includes('hold');
   const form = useForm({ initialValues: { holdReason: 'WaitingForParts' as string | null, note: '' } });
   const submit = form.onSubmit(async (v) => {
     try { await post(`/work-orders/${w.id}/status`, { status: 'OnHold', ...v }); onClose(); form.reset(); await onDone(); } catch (e) { handleFormError(form, e); }
@@ -535,7 +582,7 @@ function HoldModal({ opened, onClose, w, onDone }: { opened: boolean; onClose: (
     <Modal opened={opened} onClose={onClose} title={t('wo.holdTitle')}>
       <form onSubmit={submit}><Stack>
         <Select label={t('wo.holdReason')} required data={HOLD_REASONS.map((x) => ({ value: x, label: t(`holdReason.${x}`) }))} {...form.getInputProps('holdReason')} />
-        <Textarea label={t('wo.note')} autosize minRows={2} {...form.getInputProps('note')} />
+        <Textarea label={t('wo.note')} required={noteNeeded} autosize minRows={2} {...form.getInputProps('note')} />
         <Group justify="flex-end"><Button variant="default" onClick={onClose}>{t('common.cancel')}</Button><Button type="submit" color="yellow" loading={form.submitting}>{t('transition.OnHold')}</Button></Group>
       </Stack></form>
     </Modal>

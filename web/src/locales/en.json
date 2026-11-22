@@ -576,7 +576,8 @@
     "due": "Due",
     "dueAt": "Due date and time",
     "dueAtHint": "Leave empty to use the priority's target",
-    "completedSince": "Completed since"
+    "completedSince": "Completed since",
+    "cancelReason": "Cancel reason"
   },
   "wr": {
     "title": "Work requests",
@@ -1654,7 +1655,11 @@
     "onlyWhenStopped": "Only while stopped",
     "endAfterStart": "A time must end after it starts.",
     "tooMany": "Give at most 10 times.",
-    "noteTooLong": "A note can be at most 200 characters."
+    "noteTooLong": "A note can be at most 200 characters.",
+    "fromAsset": "Taken from the asset unless you change it.",
+    "droppedOutside": "{{number}} is now planned outside its access times.",
+    "maintainOnlyWhenStopped": "Maintenance only while stopped",
+    "maintainOnlyWhenStoppedHint": "Copied to this asset's requests, work orders and PMs, so planners book a shutdown."
   },
   "requestLoop": {
     "comments": "Comments",

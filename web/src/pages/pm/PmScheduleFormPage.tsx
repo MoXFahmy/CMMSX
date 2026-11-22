@@ -29,13 +29,15 @@ type V = {
   lowerLimit: number | ''; upperLimit: number | ''; lowerTaskId: string | null; upperTaskId: string | null; timeBased: boolean; isActive: boolean;
   /** What the schedule maintains: one asset, a location, or several assets (a round). */
   target: Target; roundAssets: AssetRef[];
+  /** Only while the asset is stopped (0.10.0); null on a new schedule = take it from the asset. */
+  onlyWhenStopped: boolean | null;
 };
 type Target = 'asset' | 'location' | 'several';
 const blank: V = {
   code: '', name: '', description: '', siteId: null, locationId: null, assetId: null, tradeId: null, teamId: null, priority: 'Medium', assigneeIds: [], pmTaskId: null, extraTasks: [],
   type: 'FixedInterval', basis: 'Scheduled', frequency: 1, unit: 'Month', weekOfMonth: '1', dayOfWeek: 'Monday', dayOfMonth: 1, workPeriodDays: 1, wholeMonth: false, leadDays: 7,
   startDate: new Date(), nextDueDate: null, meterId: null, meterTrigger: 'Incremental', meterInterval: '', nextDueReading: '', lowerLimit: '', upperLimit: '', lowerTaskId: null,
-  upperTaskId: null, timeBased: false, isActive: true, target: 'asset', roundAssets: [],
+  upperTaskId: null, timeBased: false, isActive: true, target: 'asset', roundAssets: [], onlyWhenStopped: null,
 };
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 const n = (v: number | '') => (v === '' ? null : v);
@@ -80,7 +82,7 @@ export function PmScheduleFormPage() {
         workPeriodDays: s.workPeriodDays, wholeMonth: s.wholeMonth, leadDays: s.leadDays, startDate: d(s.startDate), nextDueDate: d(s.nextDueDate), meterId: s.meterId ?? null,
         meterTrigger: s.meterTrigger ?? 'Incremental', meterInterval: s.meterInterval ?? '', nextDueReading: s.nextDueReading ?? '', lowerLimit: s.lowerLimit ?? '', upperLimit: s.upperLimit ?? '',
         lowerTaskId: s.lowerTaskId ?? null, upperTaskId: s.upperTaskId ?? null, timeBased: s.timeBased, isActive: s.isActive,
-        target: s.assets.length > 0 ? 'several' : s.assetId ? 'asset' : 'location', roundAssets: s.assets,
+        target: s.assets.length > 0 ? 'several' : s.assetId ? 'asset' : 'location', roundAssets: s.assets, onlyWhenStopped: s.onlyWhenStopped ?? false,
       };
       form.setValues(saved);
       form.resetDirty(saved); // the saved schedule is the baseline: "unsaved changes" means edits since
@@ -138,6 +140,8 @@ export function PmScheduleFormPage() {
                 <Select label={t('wo.trade')} clearable data={(trades ?? []).map((x) => ({ value: x.id, label: x.name }))} {...form.getInputProps('tradeId')} />
                 {(teams?.length ?? 0) > 0 && <Select label={t('teams.team')} clearable data={teamOptions(teams, form.values.teamId)} {...form.getInputProps('teamId')} />}
                 <Select label={t('priority.label')} data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))} {...form.getInputProps('priority')} />
+                <Checkbox label={t('accessWindows.onlyWhenStopped')} description={v.onlyWhenStopped === null ? t('accessWindows.fromAsset') : undefined} mt="sm"
+                  checked={!!v.onlyWhenStopped} onChange={(e) => form.setFieldValue('onlyWhenStopped', e.currentTarget.checked)} />
               </SimpleGrid>
               <Textarea label={t('common.description')} autosize {...form.getInputProps('description')} />
             </Stack></Card>
