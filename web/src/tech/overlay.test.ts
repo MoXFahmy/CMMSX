@@ -66,6 +66,12 @@ describe('withQueued', () => {
     expect(cleared.tasks[0]).toMatchObject({ value: null, isDone: false, level: null });
   });
 
+  it('shows the cause and remedy of a queued completion (0.14.0), and keeps codes a completion leaves out', () => {
+    const coded = { ...job, failureCodeId: 'c0', remedyId: 'r0' } as typeof job;
+    expect(withQueued(coded, [q(1, 'status.change', { status: 'Completed', failureCodeId: 'c1', remedyId: 'r1' })])).toMatchObject({ status: 'Completed', failureCodeId: 'c1', remedyId: 'r1' });
+    expect(withQueued(coded, [q(1, 'status.change', { status: 'Completed' })])).toMatchObject({ failureCodeId: 'c0', remedyId: 'r0' });
+  });
+
   it("leaves out changes that couldn't be sent and other jobs' changes", () => {
     const j = withQueued(job, [q(1, 'status.change', { status: 'Completed' }, { state: 'failed' }), q(2, 'status.change', { status: 'OnHold' }, { workOrderId: 'w2' })]);
     expect(j.status).toBe('Open');

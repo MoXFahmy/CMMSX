@@ -1413,7 +1413,7 @@
     "holdReason": "لماذا عُلّق؟",
     "workDone": "العمل المنجز",
     "cause": "السبب",
-    "failureCode": "رمز العطل",
+    "failureCode": "السبب",
     "assetWasDown": "كان الأصل متوقفًا عن الخدمة",
     "downtime": "مدة التوقف (ساعات)",
     "mySignature": "توقيعك",

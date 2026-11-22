@@ -15,6 +15,8 @@ export type TechJob = {
   teamName?: string | null;
   /** 0.10.0: when the work may be done, and "only while the asset is stopped". */
   accessWindows?: { start: string; end: string; note?: string | null }[]; onlyWhenStopped?: boolean;
+  /** What was seen, what was wrong, what was done (0.14.0). */
+  symptomId?: string | null; failureCodeId?: string | null; remedyId?: string | null;
   /** downSince: when the asset's open stop began (as of the last refresh); empty while it runs. */
   asset?: { id: string; assetNumber: string; name: string; notesToTechnician?: string | null; downSince?: string | null } | null;
   /** The job's own stop on the asset's downtime log (as of the last refresh): completing the job ends it and fills the downtime. */
@@ -62,6 +64,9 @@ export type TechStock = {
 export type TechBundle = {
   employeeId: string; userId: string; jobs: TechJob[];
   failureCodes: { id: string; code: string; name: string }[];
+  /** Symptoms and remedies (0.14.0), and the codes most often recorded together, for ordering offline. */
+  symptoms?: { id: string; code: string; name: string }[]; remedies?: { id: string; code: string; name: string }[];
+  codePairs?: import('@/components/codes').CodePairs;
   completionRules: { notes: boolean; labour: boolean; allSteps: boolean; failureCodeOnBreakdown: boolean; holdNote?: boolean; readings?: boolean };
   /** The measurement points the jobs' steps use (0.13.0): the phone judges a reading as it is typed. */
   points?: TechPoint[];

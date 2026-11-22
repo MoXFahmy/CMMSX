@@ -48,6 +48,9 @@ export function withQueued(job: TechJob, queue: QueuedChange[], opts: { canIssue
         break;
       case 'status.change':
         j = { ...j, status: p.status as TechJob['status'], holdReason: (p.holdReason as TechJob['holdReason']) ?? null };
+        // A completion's cause and remedy (0.14.0); one that leaves them out keeps what the job has, as the server does.
+        if (typeof p.failureCodeId === 'string') j = { ...j, failureCodeId: p.failureCodeId };
+        if (typeof p.remedyId === 'string') j = { ...j, remedyId: p.remedyId };
         break;
       case 'photo.add':
         if ((p as { kind?: string }).kind === 'signature') pendingSignatures++; else pendingPhotos++;

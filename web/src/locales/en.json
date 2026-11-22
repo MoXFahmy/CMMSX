@@ -1379,7 +1379,7 @@
     "holdReason": "Why is it on hold?",
     "workDone": "Work done",
     "cause": "Cause",
-    "failureCode": "Failure code",
+    "failureCode": "Cause",
     "assetWasDown": "The asset was out of service",
     "downtime": "Downtime (hours)",
     "mySignature": "Your signature",

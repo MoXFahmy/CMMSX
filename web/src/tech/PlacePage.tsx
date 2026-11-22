@@ -95,8 +95,10 @@ function ReadingModal({ meter, onClose, onSave }: { meter?: { name: string; unit
 
 /** A request about the scanned place; with an asset, it can say the asset is down (the stop starts when the request is made, even offline). */
 function RequestModal({ opened, onClose, onSave, withAsset }: { opened: boolean; onClose: () => void; withAsset: boolean;
-  onSave: (p: { title: string; description: string | null; priority: WorkPriority; assetIsDown?: boolean }) => void }) {
+  onSave: (p: { title: string; description: string | null; priority: WorkPriority; assetIsDown?: boolean; symptomId?: string | null }) => void }) {
   const { t } = useTranslation();
+  const { bundle } = useTech();
+  const [symptom, setSymptom] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<WorkPriority>('Medium');
@@ -107,10 +109,12 @@ function RequestModal({ opened, onClose, onSave, withAsset }: { opened: boolean;
         <TextInput label={t('tech.whatsWrong')} required maxLength={300} value={title} onChange={(e) => setTitle(e.currentTarget.value)} data-autofocus />
         <Textarea label={t('common.description')} autosize minRows={2} value={description} onChange={(e) => setDescription(e.currentTarget.value)} />
         <Select label={t('priority.label')} data={PRIORITIES.map((p) => ({ value: p, label: t(`priority.${p}`) }))} value={priority} onChange={(v) => setPriority((v as WorkPriority) ?? 'Medium')} />
+        {(bundle?.symptoms ?? []).length > 0 && <Select label={t('codes.symptom')} description={t('codes.symptomHint')} clearable searchable
+          data={(bundle?.symptoms ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))} value={symptom} onChange={setSymptom} />}
         {withAsset && <Checkbox color="red" label={t('downtime.assetIsDown')} description={t('tech.assetIsDownHint')} checked={down} onChange={(e) => setDown(e.currentTarget.checked)} />}
         <Button disabled={!title.trim()} onClick={() => {
-          onSave({ title: title.trim(), description: description.trim() || null, priority, ...(withAsset && down ? { assetIsDown: true } : {}) });
-          setTitle(''); setDescription(''); setDown(false); onClose();
+          onSave({ title: title.trim(), description: description.trim() || null, priority, ...(withAsset && down ? { assetIsDown: true } : {}), ...(symptom ? { symptomId: symptom } : {}) });
+          setTitle(''); setDescription(''); setDown(false); setSymptom(null); onClose();
         }}>{t('tech.send')}</Button>
       </Stack>
     </Modal>

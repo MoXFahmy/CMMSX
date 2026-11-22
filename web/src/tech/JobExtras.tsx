@@ -98,7 +98,8 @@ export function JobActions({ job }: { job: TechJob }) {
 export function NewWorkOrderPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { places, add } = useTech();
+  const { places, bundle, add } = useTech();
+  const [symptom, setSymptom] = useState<string | null>(null);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
   const [priority, setPriority] = useState<string | null>('Medium');
@@ -107,7 +108,7 @@ export function NewWorkOrderPage() {
   const site = asset ? places?.assets.find((a) => a.id === asset)?.siteId : location ? places?.locations.find((l) => l.id === location)?.siteId : undefined;
   const save = async () => {
     try {
-      await add({ type: 'workorder.create', payload: { title: title.trim(), description: description.trim() || null, priority, type: 'Corrective', siteId: site, assetId: asset, locationId: location } });
+      await add({ type: 'workorder.create', payload: { title: title.trim(), description: description.trim() || null, priority, type: 'Corrective', siteId: site, assetId: asset, locationId: location, ...(symptom ? { symptomId: symptom } : {}) } });
       notifySuccess(t('techJob.workOrderSaved')); navigate('/tech');
     } catch (e) { notifyError(e); }
   };
@@ -118,6 +119,8 @@ export function NewWorkOrderPage() {
       <TextInput label={t('techJob.whatToDo')} required value={title} onChange={(e) => setTitle(e.currentTarget.value)} data-autofocus />
       <Textarea label={t('common.description')} autosize value={description} onChange={(e) => setDescription(e.currentTarget.value)} />
       <Select label={t('priority.label')} data={WORK_PRIORITIES.map((p) => ({ value: p, label: t(`priority.${p}`) }))} value={priority} onChange={setPriority} />
+      {(bundle?.symptoms ?? []).length > 0 && <Select label={t('codes.symptom')} clearable searchable
+        data={(bundle?.symptoms ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))} value={symptom} onChange={setSymptom} />}
       <Select label={t('wo.asset')} searchable clearable data={(places?.assets ?? []).map((a) => ({ value: a.id, label: `${a.assetNumber} · ${a.name}` }))} value={asset} onChange={(v) => { setAsset(v); if (v) setLocation(null); }} />
       {!asset && <Select label={t('wo.location')} searchable clearable data={(places?.locations ?? []).map((l) => ({ value: l.id, label: l.path ?? l.name }))} value={location} onChange={setLocation} />}
       <Button disabled={!title.trim() || !site} onClick={save}>{t('techJob.createWorkOrder')}</Button>

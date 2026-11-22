@@ -268,9 +268,9 @@ public static class WorkRequestEndpoints
     /// <summary>Raises a work request (numbered, requester defaulted from the signed-in user, reviewers e-mailed).</summary>
     /// <param name="raisedAt">When it was raised, if not now (a request made offline on a phone): its deadlines count from then.</param>
     internal static async Task<(Validator V, WorkRequest? Request)> CreateAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, AccessService access, RequestInput input,
-        CancellationToken ct, DateTimeOffset? raisedAt = null)
+        CancellationToken ct, DateTimeOffset? raisedAt = null, bool fromPhone = false)
     {
-        var v = await ValidateAsync(input, db, access, ct);
+        var v = await ValidateAsync(input, db, access, ct, fromPhone);
         if (!v.IsValid) return (v, null);
         return await AtomicallyAsync(db, token => CreateCoreAsync(db, ctx, mail, input, v, raisedAt, token), ct);
     }
@@ -331,7 +331,7 @@ public static class WorkRequestEndpoints
         await ApproveCoreAsync(db, ctx, mail, r, input, $"Approved automatically (type: {type.Name})", ct);
     }
 
-    private static async Task<Validator> ValidateAsync(RequestInput i, CmmsDbContext db, AccessService access, CancellationToken ct)
+    private static async Task<Validator> ValidateAsync(RequestInput i, CmmsDbContext db, AccessService access, CancellationToken ct, bool fromPhone = false)
     {
         var v = new Validator().Required("title", i.Title, "What needs to be done", 300).MaxLength("description", i.Description, "Details", 8000)
             .MaxLength("requesterName", i.RequesterName, "Name", 200).MaxLength("requesterPhone", i.RequesterPhone, "Phone", 50)
@@ -341,7 +341,7 @@ public static class WorkRequestEndpoints
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct)) v.Add("locationId", "Location must belong to the selected site.");
         if (i.AssetId is not null && !await db.Assets.AnyAsync(a => a.Id == i.AssetId && a.SiteId == i.SiteId, ct)) v.Add("assetId", "Asset must belong to the selected site.");
         if (i.RequestTypeId is { } typeId && !await db.RequestTypes.AnyAsync(t => t.Id == typeId && t.IsActive, ct)) v.Add("requestTypeId", "Choose a request type.");
-        if (await Codes.CheckAsync(db.Symptoms, i.SymptomId, null, Codes.UnknownSymptom, ct) is { } symptom) v.Add("symptomId", symptom);
+        if (await Codes.CheckAsync(db.Symptoms, i.SymptomId, null, Codes.UnknownSymptom, ct, anyState: fromPhone) is { } symptom) v.Add("symptomId", symptom);
         if (AccessWindows.Problem(i.AccessWindows) is { } windows) v.Add("accessWindows", windows);
         var extra = (i.ExtraRecipientIds ?? []).Distinct().ToList();
         if (extra.Count > MaxExtraRecipients) v.Add("extraRecipientIds", $"Choose at most {MaxExtraRecipients} people.");
