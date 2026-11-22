@@ -133,3 +133,21 @@
 **Files:** `ar.json`, web `ar`, `docs/TECHNICIAN_APP.md` (update), README row, `docs/DEPLOY_AWS.md` (push key).
 
 - [ ] Arabic coverage test for the Global Constraints messages; docs; full `wt-test`, `wt-vitest`, `wt-web`, debug APK; commit.
+
+## Deferred minors (final review)
+
+- Two phones using the last part at the same moment: the second is refused "Not enough stock" instead of becoming short (retry by hand works).
+- A count line can land on a count while it is being posted (narrow race); it is then never applied.
+- Two partial receipts on the same order line at once can both pass the outstanding check (older than 0.11.0).
+- For custom roles without stock permission the phone still offers "Issue to a job" and the counts list (Give back is now hidden).
+- Receiving on the phone offers order lines with no store and shelf-life lines, which the server refuses.
+- A stop's time isn't limited to 30 days back; the stop card only changes after the next refresh.
+- The fingerprint lock replaces the app, so an open completion sheet is lost after 5 minutes away.
+- Hours logged for a crew mate show under "My hours" until the next refresh.
+- Firebase answers 400 INVALID_ARGUMENT / 403 SENDER_ID_MISMATCH aren't treated as dead tokens (5 retries each); push messages are never cleaned up.
+- The "no key, nothing queued" push test would pass without the key check (only the acting user is assigned).
+- "Request approved" pushes link to /tech/requests, which the phone has no page for; requesters without an employee link never register; the guide says the tap opens the job.
+- The phone's stock copy downloads in full on most refreshes, uncompressed; a failed stock download marks the whole refresh failed.
+- A planned line shows the part's id when the part isn't in the phone's stock copy.
+- Cleanups: SuggestedQuantity lost its summary comment; PushMessage.Link comment says /tech/job; count posting is dated by the UTC day.
+- AWS template: the "never in an environment variable" comment is inaccurate; the IAM grant needs the exact full ARN; a customer-managed KMS key would need kms:Decrypt.
