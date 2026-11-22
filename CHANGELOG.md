@@ -4,6 +4,11 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.12.1] - 2026-11-22
+
+### Fixed
+- Adding a material to a saved work template failed with "This record was changed by someone else".
+
 ## [0.12.0] - 2026-11-22
 
 Work templates, triggers and group work. PM tasks become work templates with documents and recipients; PMs can share

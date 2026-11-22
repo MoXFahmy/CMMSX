@@ -589,6 +589,24 @@ public class PlannedPartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Adding_a_part_to_a_saved_pm_task_keeps_both()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var first = await PartAsync(o.C, "P-1", o.Main);
+        var second = await PartAsync(o.C, "P-2", o.Main);
+        var task = await TaskAsync(o.C, "T1", [new { partId = first, quantity = 2 }]);
+        // The work template page adds a material and saves the whole list.
+        await Ok(await o.C.PutAsJsonAsync($"/api/pm-tasks/{task}", new
+        {
+            code = "T1", name = "Renamed", isActive = true, parts = new[] { new { partId = first, quantity = 2 }, new { partId = second, quantity = 1 } },
+        }));
+        var parts = (await Ok(await o.C.GetAsync($"/api/pm-tasks/{task}"))).GetProperty("parts").EnumerateArray().ToList();
+        Assert.Equal(2, parts.Count);
+        Assert.Equal(1m, Dec(parts.Single(p => p.GetProperty("partId").GetGuid() == second), "quantity"));
+    }
+
+    [SkippableFact]
     public async Task A_quantity_that_rounds_to_zero_is_refused()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
