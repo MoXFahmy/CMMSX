@@ -4,6 +4,38 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.10.0] - 2026-11-22
+
+Requests that close the loop: requests go to the right people, the requester accepts or refuses finished work, and an
+administrator chooses which actions need a comment and who gets which e-mail. See docs/REQUESTS_AND_NOTIFICATIONS.md.
+
+### Added
+- Request types (Settings › Request types): a default trade and priority, people told about new requests, and optional
+  automatic approval into a work order for the default trade or a team (also for requests raised on the phone).
+- "Keep informed" on a request: up to 10 extra people who can see the place. The site's, the type's and the request's
+  own recipients are all told about a new request.
+- The requester accepts or refuses finished work with a 1–5 rating and a comment. Accepting closes the request (new
+  status Closed); refusing reopens the work order with the reason. A requester with a CMX login answers on the request;
+  anyone else gets a single-use link that works without signing in and expires after 30 days.
+- Comments on requests, e-mailed to the other side; the work order shows them read-only.
+- Required comments (Settings › Organization): reject a request, refuse finished work, put on hold, reopen, cancel and
+  complete, on the web, for many work orders at once and on the phone.
+- Cancel reasons (Settings › Cancel reasons): cancelling a work order asks for one; the reason shows on the work order,
+  in the list (filter) and in the new Cancelled work report.
+- Access windows on requests and work orders, shown on the work order, the phone job and the planning board, with a
+  warning when work is planned outside every window.
+- "Maintenance only while stopped" on assets, copied to their requests, work orders and PM schedules, with a badge and a
+  filter on the work order list and the planning board.
+- Settings › Notifications is a grid: for each work and request e-mail, choose the requester, request recipients,
+  technicians, contractors and issuer. New e-mails: comments on requests, finished work refused, work cancelled and work
+  overdue (once per due time; old backlog is never e-mailed).
+- Reports: Requester satisfaction and Cancelled work.
+
+### Changed
+- Cancelling a work order needs a reason when the list has an active one (four are provided).
+- When work raised from a request is completed, the requester is asked to accept or refuse it.
+- Every e-mail that existed before still goes to the same people by default.
+
 ## [0.9.1] - 2026-11-22
 
 Small fixes to sites and access, from the 0.9.0 review.
