@@ -509,4 +509,15 @@ public class TechTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var request = (await Ok(await o.C.GetAsync("/api/work-requests?pageSize=50"))).GetProperty("items").EnumerateArray().Single(r => r.GetProperty("title").GetString() == "Press stopped");
         Assert.Equal(other, (await Ok(await o.C.GetAsync($"/api/work-requests/{Id(request)}"))).GetProperty("downtimeEventId").GetGuid());
     }
+
+    [SkippableFact]
+    public async Task The_bundle_names_the_team()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var team = Id(await Ok(await o.C.PostAsJsonAsync("/api/teams", new { code = "NIGHT", name = "Night shift", siteId = o.SiteA, memberIds = new[] { o.Me }, isActive = true })));
+        var wo = Id(await Ok(await o.C.PostAsJsonAsync("/api/work-orders", new { title = "Team job", siteId = o.SiteA, type = "Corrective", priority = "Low", teamId = team })));
+        var job = (await Ok(await o.C.GetAsync("/api/tech/bundle"))).GetProperty("jobs").EnumerateArray().Single(j => Id(j) == wo);
+        Assert.Equal("Night shift", job.GetProperty("teamName").GetString());
+    }
 }

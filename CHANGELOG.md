@@ -4,6 +4,36 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.9.0] - 2026-11-22
+
+People can be limited to their own sites or parts of the location tree, each site can have settings of its own, and
+work can be given to teams. Nothing changes until you set something. See [docs/SITES_AND_ACCESS.md](docs/SITES_AND_ACCESS.md).
+
+### Added
+- **Sites per person** (Settings › Users): a person sees only their sites, everywhere — lists, records, pickers,
+  reports, exports, the import, the dashboard, the alert bell, e-mails and the technician app. A record from another
+  site answers "not found". No sites = every site, as before.
+- **Limits by part of the location tree**: a person can be limited to places (a building, a floor, a line) and
+  everything under them, including places added later. They must choose a location when they add work, requests,
+  assets or PM schedules.
+- **Site switch** in the header for people who see more than one site, and **Work by site** on the dashboard (open,
+  late, completed in 30 days, requests waiting — each number opens that site's list).
+- **A site's own settings**: number prefixes (each with its own count), default store, who is told about new requests,
+  e-mail sender name and working hours. Empty = the organization's.
+- **Teams** (People › Teams): give work orders and PM schedules to a team; members get the e-mail and see the work on
+  their phones ("Team: …"); team filter and column on work orders, team filter on the planning board, group by team in
+  the Labour hours and Maintenance costs reports.
+- **Working hours** for the organization, each site and each person; the planning board measures each person's load
+  against their hours for the day (a day off counts as 0).
+
+### Changed
+- Settings › Organization: **Working hours** (a weekly pattern) replaces "Hours per day"; until a pattern is saved the
+  old number still applies to every day.
+- E-mails go only to people who can see the record's site.
+- Codes and numbers stay unique across the organization even when the clash is in a site the person can't see (the
+  message says so, and the import makes that row a problem instead of failing).
+- People whose own access is limited can't add sites and can only give access inside their own.
+
 ## [0.8.1] - 2026-11-21
 
 ### Added

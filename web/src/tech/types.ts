@@ -4,6 +4,8 @@ import type { HoldReason, WorkOrderStatus, WorkPriority, WorkType } from '@/api/
 export type TechJob = {
   id: string; number: string; title: string; description?: string | null; type: WorkType; priority: WorkPriority; status: WorkOrderStatus;
   holdReason?: HoldReason | null; dueDate?: string | null; dueAt?: string | null; plannedStart?: string | null; siteId: string;
+  /** The team the job was given to (0.9.0): it's on this phone because the person is in that team. */
+  teamName?: string | null;
   /** downSince: when the asset's open stop began (as of the last refresh); empty while it runs. */
   asset?: { id: string; assetNumber: string; name: string; notesToTechnician?: string | null; downSince?: string | null } | null;
   /** The job's own stop on the asset's downtime log (as of the last refresh): completing the job ends it and fills the downtime. */
