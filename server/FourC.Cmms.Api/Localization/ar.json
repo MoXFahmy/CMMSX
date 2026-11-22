@@ -928,5 +928,8 @@
  "Cause": "السبب",
  "Remedy": "المعالجة",
  "with its components": "مع مكوناته",
- "{0} · the first 5,000": "{0} · أول 5,000"
+ "{0} · the first 5,000": "{0} · أول 5,000",
+ "The limit can't be below 0.": "لا يمكن أن يقل الحد عن 0.",
+ "The limit can be at most {0} a month.": "لا يمكن أن يزيد الحد عن {0} في الشهر.",
+ "AI isn't set up on this server.": "المساعد الذكي غير مُعَدّ على هذا الخادم."
 }

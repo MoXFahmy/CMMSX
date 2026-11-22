@@ -74,6 +74,9 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<CancelReason> CancelReasons => Set<CancelReason>();
     public DbSet<WorkRequestComment> WorkRequestComments => Set<WorkRequestComment>();
     public DbSet<RequestFeedback> RequestFeedback => Set<RequestFeedback>();
+    public DbSet<FourC.Cmms.Core.Ai.AiCall> AiCalls => Set<FourC.Cmms.Core.Ai.AiCall>();
+    public DbSet<FourC.Cmms.Core.Ai.AiDiagnosis> AiDiagnoses => Set<FourC.Cmms.Core.Ai.AiDiagnosis>();
+    public DbSet<FourC.Cmms.Core.Ai.AiDiagnosisVote> AiDiagnosisVotes => Set<FourC.Cmms.Core.Ai.AiDiagnosisVote>();
     public DbSet<StockCount> StockCounts => Set<StockCount>();
     public DbSet<StockCountLine> StockCountLines => Set<StockCountLine>();
     public DbSet<PushMessage> PushMessages => Set<PushMessage>();
@@ -471,6 +474,26 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Title).HasMaxLength(200); e.Property(x => x.Body).HasMaxLength(1000); e.Property(x => x.Link).HasMaxLength(300);
             e.Property(x => x.EntityType).HasMaxLength(50); e.Property(x => x.LastError).HasMaxLength(2000);
             e.HasIndex(x => new { x.Status, x.NextAttemptAt });
+        });
+        // The AI assistant (0.15.0): the call log, kept diagnoses and their votes.
+        b.Entity<FourC.Cmms.Core.Ai.AiCall>(e =>
+        {
+            e.Property(x => x.UserName).HasMaxLength(200); e.Property(x => x.Model).HasMaxLength(100);
+            e.Property(x => x.Feature).HasConversion<string>().HasMaxLength(20); e.Property(x => x.Result).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.EstimatedCost).HasPrecision(18, 6);
+            e.HasIndex(x => new { x.TenantId, x.CreatedAt });
+        });
+        b.Entity<FourC.Cmms.Core.Ai.AiDiagnosis>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.CreatedByName).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.WorkOrderId });
+            e.HasIndex(x => new { x.TenantId, x.WorkRequestId });
+        });
+        b.Entity<FourC.Cmms.Core.Ai.AiDiagnosisVote>(e =>
+        {
+            e.HasIndex(x => new { x.DiagnosisId, x.UserId }).IsUnique();
+            e.HasOne<FourC.Cmms.Core.Ai.AiDiagnosis>().WithMany().HasForeignKey(x => x.DiagnosisId).OnDelete(DeleteBehavior.Cascade);
         });
         b.Entity<RequestFeedback>(e =>
         {
