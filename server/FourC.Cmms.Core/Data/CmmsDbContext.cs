@@ -60,6 +60,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<Employee> Employees => Set<Employee>();
     public DbSet<Team> Teams => Set<Team>();
     public DbSet<FailureCode> FailureCodes => Set<FailureCode>();
+    public DbSet<Symptom> Symptoms => Set<Symptom>();
+    public DbSet<Remedy> Remedies => Set<Remedy>();
     public DbSet<WorkRequest> WorkRequests => Set<WorkRequest>();
     public DbSet<WorkOrder> WorkOrders => Set<WorkOrder>();
     public DbSet<WorkOrderAssignee> WorkOrderAssignees => Set<WorkOrderAssignee>();
@@ -212,6 +214,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Code).HasMaxLength(50);
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Color).HasMaxLength(20);
+            e.Property(x => x.DowntimeCostPerHour).HasPrecision(18, 2);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
 
@@ -316,6 +319,18 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
+        b.Entity<Symptom>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<Remedy>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
         b.Entity<Employee>(e =>
         {
             ConfigureTenantEntity(e);
@@ -341,6 +356,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Asset).WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Symptom).WithMany().HasForeignKey(x => x.SymptomId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasFilter("[IsDeleted] = 0");
             e.HasIndex(x => new { x.TenantId, x.Status });
             e.HasOne<DowntimeEvent>().WithMany().HasForeignKey(x => x.DowntimeEventId).OnDelete(DeleteBehavior.Restrict);
@@ -361,6 +377,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasOne(x => x.Trade).WithMany().HasForeignKey(x => x.TradeId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Team).WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.FailureCode).WithMany().HasForeignKey(x => x.FailureCodeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Symptom).WithMany().HasForeignKey(x => x.SymptomId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne(x => x.Remedy).WithMany().HasForeignKey(x => x.RemedyId).OnDelete(DeleteBehavior.Restrict);
             e.HasMany(x => x.Assignees).WithOne().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Assets).WithOne().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Cascade);
             e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasFilter("[IsDeleted] = 0");

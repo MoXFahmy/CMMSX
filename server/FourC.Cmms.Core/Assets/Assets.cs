@@ -15,6 +15,8 @@ public class AssetCategory : TenantEntity
     public string? Description { get; set; }
     public string? Color { get; set; }
     public bool IsActive { get; set; } = true;
+    /// <summary>What an hour of downtime costs for assets of this category that have no cost of their own (0.14.0).</summary>
+    public decimal? DowntimeCostPerHour { get; set; }
 }
 
 public class Asset : TenantEntity
