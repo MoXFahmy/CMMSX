@@ -75,6 +75,16 @@ public static partial class TechEndpoints
             var labor = (await db.WorkOrderLabor.AsNoTracking().Where(l => ids.Contains(l.WorkOrderId) && l.EmployeeId == me.EmployeeId).OrderByDescending(l => l.WorkDate)
                 .Select(l => new { l.WorkOrderId, l.WorkDate, l.Hours, l.OvertimeHours, l.Notes }).ToListAsync(ct)).ToLookup(l => l.WorkOrderId);
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+            // Planned parts with what is already issued (net of returns) per part and store, and each site's default store (0.11.0).
+            var planned = (await db.WorkOrderParts.AsNoTracking().Where(p => ids.Contains(p.WorkOrderId)).OrderBy(p => p.CreatedAt)
+                .Select(p => new { p.WorkOrderId, p.Id, p.PartId, p.StoreId, p.Quantity }).ToListAsync(ct)).ToLookup(p => p.WorkOrderId);
+            var issued = (await db.StockTransactions.AsNoTracking()
+                    .Where(t => t.WorkOrderId != null && ids.Contains(t.WorkOrderId.Value) && (t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Issue || t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Return))
+                    .GroupBy(t => new { t.WorkOrderId, t.PartId, t.StoreId }).Select(g => new { g.Key.WorkOrderId, g.Key.PartId, g.Key.StoreId, Net = -g.Sum(t => t.Quantity) }).ToListAsync(ct))
+                .ToDictionary(x => (x.WorkOrderId!.Value, x.PartId, x.StoreId), x => x.Net);
+            var siteIds = jobs.Select(j => j.SiteId).Distinct().ToList();
+            var defaultStores = (await db.Sites.AllSites().AsNoTracking().Where(s => siteIds.Contains(s.Id)).Select(s => new { s.Id, s.Settings }).ToListAsync(ct))
+                .ToDictionary(s => s.Id, s => s.Settings.DefaultStoreId);
             var body = new
             {
                 me.EmployeeId, ctx.UserId,
@@ -90,6 +100,9 @@ public static partial class TechEndpoints
                     Comments = comments[j.Id].Take(CommentsPerJob).Select(c => new { c.Body, c.UserName, c.CreatedAt }),
                     MyLabor = labor[j.Id].Select(l => new { l.WorkDate, l.Hours, l.OvertimeHours, l.Notes }),
                     HasLabor = withLabor.Contains(j.Id),
+                    PlannedLines = planned[j.Id].Select(p => new { p.Id, p.PartId, p.StoreId, p.Quantity,
+                        Issued = p.StoreId is { } st ? issued.GetValueOrDefault((j.Id, p.PartId, st)) : 0m }),
+                    DefaultStoreId = defaultStores.GetValueOrDefault(j.SiteId),
                 }),
                 FailureCodes = await db.FailureCodes.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
                 CompletionRules = new
@@ -98,6 +111,55 @@ public static partial class TechEndpoints
                     FailureCodeOnBreakdown = settings.RequireFailureCodeForBreakdowns,
                     HoldNote = (settings.CommentRequiredFor ?? []).Contains(CommentActions.Hold),
                 },
+            };
+            return Versioned(http, JsonSerializer.SerializeToUtf8Bytes(body, json.Value.SerializerOptions));
+        }).RequirePermission(Permissions.WorkOrdersView);
+
+        // Parts and stock of my sites' stores, cancel reasons, PM task lists, open counts and (to receive) open purchase orders,
+        // for working offline (0.11.0). Answers 304 when the phone already has this version.
+        g.MapGet("/stock", async (HttpContext http, CmmsDbContext db, ITenantContext ctx, PermissionService perms, IOptions<JsonOptions> json, CancellationToken ct) =>
+        {
+            var me = await EmployeeAsync(db, ctx, ct);
+            if (me is null) return NotLinked();
+            var sites = me.SiteIds;
+            var stores = await db.Stores.AsNoTracking().Where(s => s.IsActive && (sites.Count == 0 || sites.Contains(s.SiteId))).OrderBy(s => s.Code)
+                .Select(s => new { s.Id, s.Code, s.Name, s.SiteId }).ToListAsync(ct);
+            var storeIds = stores.Select(s => s.Id).ToList();
+            var levels = (await db.StockLevels.AsNoTracking().Where(l => storeIds.Contains(l.StoreId) && l.Part!.IsActive)
+                .Select(l => new { l.PartId, l.StoreId, l.QuantityOnHand, l.Bin }).ToListAsync(ct)).ToLookup(l => l.PartId);
+            var reserved = (await db.StockReservations.AsNoTracking().Where(r => storeIds.Contains(r.StoreId)).ToListAsync(ct))
+                .GroupBy(r => (r.PartId, r.StoreId)).ToDictionary(g => g.Key, g => g.Sum(r => r.Reserved));
+            var partIds = levels.Select(l => l.Key).ToList();
+            var photos = (await db.Attachments.AsNoTracking().Where(a => a.EntityType == "Part" && partIds.Contains(a.EntityId) && a.ContentType.StartsWith("image/"))
+                    .Select(a => new { a.EntityId, a.Id, a.IsPrimaryImage, a.CreatedAt }).ToListAsync(ct))
+                .GroupBy(a => a.EntityId).ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.IsPrimaryImage).ThenBy(a => a.CreatedAt).First().Id);
+            var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).OrderBy(p => p.PartNumber)
+                .Select(p => new { p.Id, p.PartNumber, p.Name, p.UnitOfMeasure, p.Barcode, p.IsShelfItem, p.AllowNegativeStock }).ToListAsync(ct);
+            var allowed = await perms.GetAsync(ctx.UserId!.Value);
+            var body = new
+            {
+                Stores = stores,
+                Parts = parts.Select(p => new
+                {
+                    p.Id, p.PartNumber, p.Name, p.UnitOfMeasure, p.Barcode, p.IsShelfItem, p.AllowNegativeStock, PhotoId = photos.TryGetValue(p.Id, out var ph) ? ph : (Guid?)null,
+                    Levels = levels[p.Id].Select(l => new { l.StoreId, OnHand = l.QuantityOnHand, Reserved = reserved.GetValueOrDefault((p.Id, l.StoreId)), l.Bin }),
+                }),
+                CancelReasons = await db.CancelReasons.AsNoTracking().Where(r => r.IsActive).OrderBy(r => r.Name).Select(r => new { r.Id, r.Name }).ToListAsync(ct),
+                PmTasks = await db.PmTasks.AsNoTracking().Where(t => t.IsActive).OrderBy(t => t.Code)
+                    .Select(t => new { t.Id, t.Code, t.Name, Steps = t.Steps.OrderBy(s => s.Sequence).Select(s => s.Description) }).ToListAsync(ct),
+                Counts = await db.StockCounts.AsNoTracking().Where(c => c.Status == FourC.Cmms.Core.Inventory.StockCountStatus.Open && storeIds.Contains(c.StoreId))
+                    .OrderBy(c => c.CreatedAt).Select(c => new { c.Id, c.Name, c.StoreId }).ToListAsync(ct),
+                PurchaseOrders = allowed.Contains(Permissions.PurchasingReceive)
+                    ? await db.PurchaseOrders.AsNoTracking()
+                        .Where(o => (o.Status == FourC.Cmms.Core.Purchasing.PurchaseOrderStatus.Approved || o.Status == FourC.Cmms.Core.Purchasing.PurchaseOrderStatus.PartiallyReceived)
+                            && (sites.Count == 0 || sites.Contains(o.SiteId)))
+                        .OrderBy(o => o.Number).Select(o => new
+                        {
+                            o.Id, o.Number, Supplier = o.Supplier!.Name,
+                            Lines = o.Lines.Where(l => l.PartId != null && l.QuantityReceived < l.Quantity).OrderBy(l => l.LineNumber)
+                                .Select(l => new { l.Id, l.LineNumber, l.PartId, l.Description, l.UnitOfMeasure, Outstanding = l.Quantity - l.QuantityReceived, l.StoreId }),
+                        }).ToListAsync(ct)
+                    : null,
             };
             return Versioned(http, JsonSerializer.SerializeToUtf8Bytes(body, json.Value.SerializerOptions));
         }).RequirePermission(Permissions.WorkOrdersView);
