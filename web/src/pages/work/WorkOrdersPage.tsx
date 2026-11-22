@@ -23,7 +23,7 @@ import { StoppedBadge } from '@/components/AccessWindowsEditor';
 import { BulkBar, FilterChips, ListTools, listText, rangeText, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
 /** Filters behind "More filters"; they live in the address like the others. */
-const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source', 'completedFrom', 'cancelReasonId', 'onlyWhenStopped'] as const;
+const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source', 'completedFrom', 'cancelReasonId', 'onlyWhenStopped', 'groupId'] as const;
 const isoDay = (d: string | Date | null) => (d ? dayjs(d).format('YYYY-MM-DD') : null);
 
 const TABS: { key: string; statuses: WorkOrderStatus[] | null }[] = [
@@ -52,7 +52,7 @@ export function WorkOrdersPage() {
     dueSoon: view === 'dueSoon' ? 'true' : '', responseLate: view === 'responseLate' ? 'true' : '',
     locationId: p('locationId'), assigneeId: p('assigneeId'), teamId: p('teamId'), createdFrom: p('createdFrom'), createdTo: p('createdTo'),
     dueFrom: p('dueFrom'), dueTo: p('dueTo'), source: p('source'), completedFrom: p('completedFrom'),
-    cancelReasonId: p('cancelReasonId'), onlyWhenStopped: p('onlyWhenStopped'),
+    cancelReasonId: p('cancelReasonId'), onlyWhenStopped: p('onlyWhenStopped'), groupId: p('groupId'),
   };
   const listQuery = { ...base, status: statuses ?? undefined, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
   const { data, isFetching } = useQuery({
@@ -92,6 +92,8 @@ export function WorkOrdersPage() {
     { accessor: 'asset', title: terms.asset, sortable: true, width: 220,
       export: [{ key: 'assetNumber' }, { key: 'assetName', title: `${terms.asset} · ${t('common.name')}` }],
       render: (w) => w.assetId ? <Stack gap={0}><Text fz="sm" lineClamp={1}>{w.assetNumber}</Text><Text fz="xs" c="dimmed" lineClamp={1}>{w.assetName}</Text></Stack> : <Text fz="sm" c="dimmed" lineClamp={1}>{w.locationPath ?? w.siteName}</Text> },
+    { accessor: 'group', title: t('groups.group'), noWrap: true, export: [{ key: 'groupNumber' }],
+      render: (w) => w.groupId ? <Anchor component={Link} to={`/work-groups/${w.groupId}`} fz="sm" onClick={(e) => e.stopPropagation()}>{w.groupNumber}</Anchor> : '—' },
     { accessor: 'site', title: terms.site, sortable: true, noWrap: true, export: [{ key: 'siteName' }], render: (w) => w.siteName },
     { accessor: 'location', title: terms.location, width: 220, ellipsis: true, export: [{ key: 'locationPath' }], render: (w) => <span title={w.locationPath}>{w.locationPath ?? '—'}</span> },
     { accessor: 'assignees', title: t('wo.assignees'), width: 180, render: (w) => <Text fz="sm" lineClamp={1} c={w.assignees.length ? undefined : 'dimmed'}>{w.assignees.join(', ') || t('wo.noAssignees')}</Text> },
@@ -105,7 +107,7 @@ export function WorkOrdersPage() {
     { accessor: 'createdAt', title: t('wo.createdOn'), sortable: true, noWrap: true, render: (w) => fmtDate(w.createdAt) },
     { accessor: 'completedAt', title: t('wo.completedOn'), sortable: true, noWrap: true, render: (w) => fmtDate(w.completedAt) },
   ];
-  const cols = useListColumns('work-orders', allColumns, { defaultHidden: ['type', 'trade', 'team', 'site', 'location', 'completedAt'] });
+  const cols = useListColumns('work-orders', allColumns, { defaultHidden: ['type', 'trade', 'team', 'group', 'site', 'location', 'completedAt'] });
 
   const chips: FilterDef[] = [
     { keys: ['search'], label: t('common.search') },
@@ -123,6 +125,7 @@ export function WorkOrdersPage() {
     { keys: ['source'], label: t('wo.source'), format: ([v]) => sources[v] ?? v },
     { keys: ['cancelReasonId'], label: t('wo.cancelReason'), format: ([v]) => cancelReasons?.find((x) => x.id === v)?.name ?? '…' },
     { keys: ['onlyWhenStopped'], label: t('accessWindows.onlyWhenStopped'), format: () => t('common.yes') },
+    { keys: ['groupId'], label: t('groups.group'), format: () => data?.items.find((w) => w.groupId === p('groupId'))?.groupNumber ?? '…' },
   ];
 
   // ---- bulk actions ----

@@ -69,6 +69,7 @@ export function JobPage() {
         {job.asset && <Text fz="sm" mt={6}>{job.asset.assetNumber} · {job.asset.name}</Text>}
         {job.location?.path && <Text fz="xs" c="dimmed">{job.location.path}</Text>}
         {job.teamName && <Text fz="xs" c="dimmed">{t('tech.team', { team: job.teamName })}</Text>}
+        {job.group && <Text fz="xs" c="dimmed">{t('tech.inGroup', { number: job.group.number })}</Text>}
         {job.description && <Text fz="sm" mt={6} style={{ whiteSpace: 'pre-wrap' }}>{job.description}</Text>}
       </Card>
       {job.asset?.downSince && (
@@ -81,6 +82,12 @@ export function JobPage() {
         <Alert color="yellow" title={t('tech.notesToTech')}>{[job.asset?.notesToTechnician, job.location?.notesToTechnician].filter(Boolean).join('\n\n')}</Alert>
       )}
 
+      {job.group && job.group.comments.length > 0 && (
+        <Card withBorder p="sm"><Stack gap={6}>
+          <Text fw={600}>{t('tech.groupComments', { number: job.group.number })}</Text>
+          {job.group.comments.slice(0, 10).map((c, i) => <div key={i}><Text fz="xs" c="dimmed">{c.userName} · {fmtDateTime(c.createdAt)}</Text><Text fz="sm" style={{ whiteSpace: 'pre-wrap' }}>{c.body}</Text></div>)}
+        </Stack></Card>
+      )}
       <Group grow>
         {canStart && <Button leftSection={<IconPlayerPlay size={16} />} onClick={() => void change('status.change', { status: 'InProgress' })}>{t('tech.start')}</Button>}
         {canHold && <Button variant="default" leftSection={<IconPlayerPause size={16} />} onClick={() => setHoldOpen(true)}>{t('tech.hold')}</Button>}

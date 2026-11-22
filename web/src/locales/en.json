@@ -23,7 +23,8 @@
     "myWork": "My work",
     "pm": "Preventive Maintenance",
     "insights": "Insights",
-    "planning": "Planning"
+    "planning": "Planning",
+    "workGroups": "Work groups"
   },
   "unit": {
     "overtime": "overtime",
@@ -1195,7 +1196,8 @@
       "requestRecipients": "Request recipients",
       "technicians": "Technicians",
       "contractors": "Contractors",
-      "issuer": "Issuer"
+      "issuer": "Issuer",
+      "workRecipients": "Work recipients"
     }
   },
   "plan": {
@@ -1408,7 +1410,9 @@
     "stopFromLog": "From the asset's downtime log: down since {{start}}. Completing the job ends the stop.",
     "team": "Team: {{team}}",
     "plannedParts": "Planned parts",
-    "tooSlow": "This file didn't get through on this connection ({{tries}} tries). Retry on Wi-Fi, or discard it."
+    "tooSlow": "This file didn't get through on this connection ({{tries}} tries). Retry on Wi-Fi, or discard it.",
+    "inGroup": "Group {{number}}",
+    "groupComments": "Group {{number}} comments"
   },
   "labels": {
     "title": "QR labels",
@@ -1880,5 +1884,45 @@
       "assetChecklist": "Asset checklist",
       "categoryChecklist": "Category checklist"
     }
+  },
+  "groups": {
+    "title": "Work groups",
+    "subtitle": "Work made together by group PMs: one work order per asset, handled as one job.",
+    "search": "Search number or name",
+    "number": "Group",
+    "group": "Group",
+    "pm": "PM",
+    "progress": "Done",
+    "assign": "Assign",
+    "report": "Write report",
+    "status": "Change status",
+    "assigned": "Assigned to {{count}} work order(s).",
+    "reported": "Report written to {{count}} work order(s).",
+    "changed": "{{count}} work order(s) changed.",
+    "workOrders": "Work orders ({{count}})",
+    "picked": "{{count}} ticked: actions apply to these only.",
+    "allApply": "Actions apply to every work order. Tick some to limit them.",
+    "pickAll": "Tick all",
+    "newDue": "Due date",
+    "dueHint": "Passed to every unfinished work order of the group.",
+    "comments": "Group comments",
+    "commentsHint": "Shown on every work order of the group, also on the phone.",
+    "addComment": "Write a comment…",
+    "assignHint": "Added to each work order; finished work and work with hours logged stay as they are.",
+    "reportHint": "Written to each unfinished work order; what a work order already has is kept.",
+    "statusHint": "Each work order follows its normal rules; those that can't change say why.",
+    "partOf": "Part of group",
+    "dueFromGroup": "Due date set by group {{number}}.",
+    "inList": "Open in work orders"
+  },
+  "checklists": {
+    "title": "Checklists",
+    "assetHint": "Work templates whose steps are added to every new work order of this asset.",
+    "categoryHint": "Work templates whose steps are added to every new work order of the category's assets.",
+    "none": "No checklists.",
+    "steps": "{{count}} step(s)",
+    "fromCategory": "From category",
+    "add": "Add a work template",
+    "addButton": "Add"
   }
 }

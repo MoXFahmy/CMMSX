@@ -183,8 +183,8 @@ export function WorkOrderFormPage() {
               siteId={form.values.siteId} tradeId={form.values.tradeId} error={err('assigneeIds')} />
             <SimpleGrid cols={2}>
               <DateInput label={t('wo.plannedStart')} clearable valueFormat="DD MMM YYYY" {...form.getInputProps('plannedStart')} />
-              <DateTimePicker label={t('wo.dueAt')} description={t('wo.dueAtHint')} clearable valueFormat={dateTimeFormat()} {...form.getInputProps('dueAt')}
-                error={err('dueDate')} />
+              <DateTimePicker label={t('wo.dueAt')} description={wo?.group ? t('groups.dueFromGroup', { number: wo.group.number }) : t('wo.dueAtHint')} clearable valueFormat={dateTimeFormat()} {...form.getInputProps('dueAt')}
+                disabled={!!wo?.group} error={err('dueDate')} />
             </SimpleGrid>
             <NumberInput label={t('wo.estimatedHours')} min={0} decimalScale={2} {...form.getInputProps('estimatedHours')} />
             <TextInput label={t('wo.requestedBy')} {...form.getInputProps('requestedBy')} />

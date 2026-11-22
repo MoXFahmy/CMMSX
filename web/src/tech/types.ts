@@ -18,6 +18,8 @@ export type TechJob = {
   plannedParts: { partNumber: string; partName: string; unitOfMeasure: string; quantity: number; storeCode?: string | null }[];
   files: { id: string; fileName: string; contentType: string; isSignature: boolean; signedBy?: string | null }[];
   comments: { body: string; userName?: string | null; createdAt: string }[];
+  /** 0.12.0: the group the job belongs to, with the comments its work orders share (read-only on the phone). */
+  group?: { number: string; comments: { body: string; userName?: string | null; createdAt: string }[] } | null;
   myLabor: { workDate: string; hours: number; overtimeHours: number; notes?: string | null }[];
   /** Anyone has logged hours on the job (copies saved before 0.5.5 don't say). */
   hasLabor?: boolean;
