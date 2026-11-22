@@ -1094,7 +1094,8 @@
     "completion": "Completion",
     "technician": "Technician",
     "supervisor": "Supervisor / customer",
-    "signDate": "Date"
+    "signDate": "Date",
+    "result": "Result"
   },
   "email": {
     "title": "E-mail notifications",
@@ -1382,7 +1383,8 @@
       "labour": "Log hours on this job before completing.",
       "allSteps": "Tick every checklist step before completing.",
       "photos": "Take a photo for: {{steps}}",
-      "readings": "Answer these steps first: {{steps}}"
+      "readings": "Answer these steps first: {{steps}}",
+      "safety": "Answer the safety steps first: {{steps}}"
     },
     "notOnPhone": "This isn't on your phone's list (it may be on another site). Try again with a connection.",
     "openInFullApp": "Open it in the full app",
@@ -2026,7 +2028,9 @@
       "AlertLow": "Alert low",
       "AlarmLow": "Alarm low"
     },
-    "followUpOnSync": "Follow-up work is raised when this change reaches the office."
+    "followUpOnSync": "Follow-up work is raised when this change reaches the office.",
+    "outOfRangeMax": "Enter a value of at most {{max}} {{unit}}.",
+    "outOfRangeMin": "Enter a value of at least {{min}} {{unit}}."
   },
   "measurements": {
     "tab": "Measurements",

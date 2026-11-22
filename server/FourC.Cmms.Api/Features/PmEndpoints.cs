@@ -628,10 +628,11 @@ public static class PmEndpoints
         foreach (var st in details)
         {
             var text = st.Description.Clean()!;
+            var point = st.Type == StepType.Number ? st.MeasurementPointId : null; // a point gives the unit and decimals
             x.Steps.Add(new PmTaskStep
             {
-                PmTaskId = x.Id, Sequence = ++seq, Description = text.Length > 2000 ? text[..2000] : text, Type = st.Type, Unit = st.Unit.Clean(), Decimals = st.Decimals,
-                MeasurementPointId = st.Type == StepType.Number ? st.MeasurementPointId : null, PhotoRequired = st.PhotoRequired, BeforeStart = st.BeforeStart,
+                PmTaskId = x.Id, Sequence = ++seq, Description = text.Length > 2000 ? text[..2000] : text, Type = st.Type,
+                Unit = point is null ? st.Unit.Clean() : null, Decimals = point is null ? st.Decimals : null, MeasurementPointId = point, PhotoRequired = st.PhotoRequired, BeforeStart = st.BeforeStart,
                 FollowUp = st.FollowUp, FollowUpTemplateId = st.FollowUp == FollowUpKind.None ? null : st.FollowUpTemplateId,
             });
         }

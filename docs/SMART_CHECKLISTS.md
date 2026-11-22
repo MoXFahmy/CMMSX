@@ -17,13 +17,16 @@ Any step can also be:
 - **Before starting (safety)**: lock-out, permit, protective equipment. It must be answered OK or N/A (or given a value) before the
   work can go In progress or Completed, and before any other step can be answered — on the web, in bulk, for a group and on the
   phone. A safety step answered Not OK keeps the work from starting until it is OK. Automatic start waits for safety steps too.
-  On a round, each asset's safety steps hold up that asset's steps only.
+  On a round, each asset's safety steps hold up that asset's steps only: the round can start with the round-wide safety steps
+  answered, but completing it needs every asset's.
 
 Steps from before 0.13.0 are OK / Not OK / N/A steps; a step that was ticked counts as OK.
 
 The type is set on the template and copied to every work order made from it: PM work (rounds and groups included), a new work order
 from a template, asset and category checklists, the phone's *Add a checklist* and *Own template* copies. Changing a template later
 doesn't change work already made.
+
+A Number step with a measurement point takes the point's unit and decimals.
 
 A Meter step reads the asset's meter with the step's unit (or the asset's only meter). If there's no such meter, the person answering
 chooses it. A lower reading or a big jump asks for confirmation, as on the meter form.
@@ -74,16 +77,21 @@ possible values, or changed by someone else in the meantime) raises nothing.
 The *Tasks* tab:
 
 - lists safety steps first; the other steps are locked until the safety steps are answered;
-- gives each step the answer its type asks for, shows a reading's level, and has a photo button;
+- gives each step the answer its type asks for, shows a reading's level, and has a photo button. Pressing the chosen OK / Not OK / N/A
+  again clears it;
+- keeps the free-text *Reading* and the *Remarks* on every step, as before 0.13.0;
 - offers **All OK**, which answers every remaining plain OK / Not OK / N/A step. It skips safety steps, photo steps and numbers, and
   works for the whole work order or for one asset of a round;
 - shows each round asset in green (all answered, nothing failed) or red (a Not OK or an alert/alarm reading).
+
+The printed work order shows each step's result: ☑ answered, ☒ Not OK or an alert/alarm reading, ☐ open, with the answer, the
+value with its level, the text, the reading and the follow-up number.
 
 Settings › Organization › **Require every number, meter and text step answered before completing** sits next to *every step ticked*.
 
 ## Trends and the report
 
-- **Asset › Measurements**: a chart of each point's readings with its levels, the latest readings with their work orders and
+- **Asset › Measurements**: a chart of each point's readings (the newest 200 of each point) with its levels, the latest readings with their work orders and
   follow-ups, and *Add reading* (people who may record meter readings).
 - **Reports › Out of limits** (Reliability): the readings at an alert or alarm level in a period, with point, asset, value, level,
   work order and follow-up, and totals of alarms, alerts and follow-ups raised.

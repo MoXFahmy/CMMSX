@@ -409,13 +409,17 @@ public static class WorkOrderEndpoints
             if (!v.IsValid) return v.Problem();
             if (input.Description.Clean() is { } d) t.Description = d.Length > 1000 ? d[..1000] : d;
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(x => x.Id == db.CurrentTenantId, ct)).Settings;
-            var answered = await Checklists.AnswerAsync(db, ctx, mail, settings, w, t,
-                new Checklists.StepChange(input.IsDone, input.Answer, input.Value, input.Text, input.MeterId, input.Reading, input.Remarks, input.Confirm), DateTimeOffset.UtcNow, ct);
-            if (!answered.IsValid) return answered.Problem();
-            await db.SaveChangesAsync(ct);
-            var followUp = t.FollowUpWorkOrderId is { } fw ? new { Kind = "workOrder", Id = fw, Number = await db.WorkOrders.AllSites().Where(x => x.Id == fw).Select(x => x.Number).FirstAsync(ct) }
-                : t.FollowUpRequestId is { } fr ? new { Kind = "request", Id = fr, Number = await db.WorkRequests.AllSites().Where(x => x.Id == fr).Select(x => x.Number).FirstAsync(ct) } : null;
-            return Results.Ok(new { t.Id, t.IsDone, t.Level, FollowUp = followUp });
+            // One transaction: the answer, its follow-up and an automatic start are saved together or not at all.
+            return await db.InTransactionAsync(async tk =>
+            {
+                var answered = await Checklists.AnswerAsync(db, ctx, mail, settings, w, t,
+                    new Checklists.StepChange(input.IsDone, input.Answer, input.Value, input.Text, input.MeterId, input.Reading, input.Remarks, input.Confirm), DateTimeOffset.UtcNow, tk);
+                if (!answered.IsValid) return answered.Problem();
+                await db.SaveChangesAsync(tk);
+                var followUp = t.FollowUpWorkOrderId is { } fw ? new { Kind = "workOrder", Id = fw, Number = await db.WorkOrders.AllSites().Where(x => x.Id == fw).Select(x => x.Number).FirstAsync(tk) }
+                    : t.FollowUpRequestId is { } fr ? new { Kind = "request", Id = fr, Number = await db.WorkRequests.AllSites().Where(x => x.Id == fr).Select(x => x.Number).FirstAsync(tk) } : null;
+                return Results.Ok(new { t.Id, t.IsDone, t.Level, FollowUp = followUp });
+            }, ct);
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
         // All OK (0.13.0): every unanswered plain Check step of the work order (or of one round asset) answered OK; never safety or photo steps.
@@ -430,13 +434,16 @@ public static class WorkOrderEndpoints
                 if (StepRules.SafetyBlock(steps, asset, forStart: false) is { } safety) throw new DomainException(safety);
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(x => x.Id == db.CurrentTenantId, ct)).Settings;
             var now = DateTimeOffset.UtcNow;
-            foreach (var t in open)
+            return await db.InTransactionAsync(async tk =>
             {
-                var v = await Checklists.AnswerAsync(db, ctx, mail, settings, w, t, new Checklists.StepChange(null, StepAnswer.Ok), now, ct);
-                if (!v.IsValid) return v.Problem();
-            }
-            await db.SaveChangesAsync(ct);
-            return Results.Ok(new { Answered = open.Count });
+                foreach (var t in open)
+                {
+                    var v = await Checklists.AnswerAsync(db, ctx, mail, settings, w, t, new Checklists.StepChange(null, StepAnswer.Ok), now, tk);
+                    if (!v.IsValid) return v.Problem();
+                }
+                await db.SaveChangesAsync(tk);
+                return Results.Ok(new { Answered = open.Count });
+            }, ct);
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
         g.MapDelete("/{id:guid}/tasks/{taskId:guid}", async (Guid id, Guid taskId, CmmsDbContext db, CancellationToken ct) =>
@@ -545,10 +552,14 @@ public static class WorkOrderEndpoints
             }
             else if (await db.CancelReasons.AnyAsync(x => x.IsActive, ct)) v.Add("cancelReasonId", "Choose why it is cancelled.");
         }
-        // Safety steps before starting (0.13.0): starting or completing needs them answered (a tracking query keeps answers made in this request).
-        if (input.Status is WorkOrderStatus.InProgress or WorkOrderStatus.Completed && input.Status != w.Status
-            && StepRules.SafetyBlock(await db.WorkOrderTasks.Where(t => t.WorkOrderId == w.Id).ToListAsync(ct), null, forStart: true) is { } safety)
-            v.Add("tasks", safety);
+        // Safety steps before starting (0.13.0): starting needs them answered (on a round, the round-wide ones); completing needs every one,
+        // each asset's too (a tracking query keeps answers made in this request).
+        if (input.Status is WorkOrderStatus.InProgress or WorkOrderStatus.Completed && input.Status != w.Status)
+        {
+            var all = await db.WorkOrderTasks.Where(t => t.WorkOrderId == w.Id).ToListAsync(ct);
+            if ((input.Status == WorkOrderStatus.Completed ? StepRules.CompleteSafetyBlock(all) : StepRules.SafetyBlock(all, null, forStart: true)) is { } safety)
+                v.Add("tasks", safety);
+        }
         if (input.Status == WorkOrderStatus.Completed)
         {
             var notes = input.CompletionNotes.Clean() ?? w.CompletionNotes;

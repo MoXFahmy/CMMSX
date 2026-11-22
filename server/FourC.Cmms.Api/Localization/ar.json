@@ -879,5 +879,9 @@
  "Consumption": "الاستهلاك",
  "Measurement points": "نقاط القياس",
  "Normal": "طبيعي",
- "{0} · the latest 5,000 readings": "{0} · آخر 5,000 قراءة"
+ "{0} · the latest 5,000 readings": "{0} · آخر 5,000 قراءة",
+ "Enter a value of at most {0} {1}.": "أدخل قيمة لا تزيد على {0} {1}.",
+ "Enter a value of at most {0}.": "أدخل قيمة لا تزيد على {0}.",
+ "Enter a value of at least {0} {1}.": "أدخل قيمة لا تقل عن {0} {1}.",
+ "Enter a value of at least {0}.": "أدخل قيمة لا تقل عن {0}."
 }

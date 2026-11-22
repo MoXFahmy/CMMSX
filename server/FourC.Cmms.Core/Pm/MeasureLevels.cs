@@ -7,6 +7,8 @@ public static class MeasureLevels
     public const string LevelOrder = "Levels must go up: alarm low, alert low, target, alert high, alarm high.";
     public const string LevelRange = "Levels must be inside the valid range.";
     public const string OutsideRange = "Enter a value from {0} to {1} {2}.";
+    public const string AtMost = "Enter a value of at most {0} {1}.";
+    public const string AtLeast = "Enter a value of at least {0} {1}.";
 
     /// <summary>Alarm wins over alert; a level at its threshold counts (≥ high, ≤ low); unset levels are skipped.</summary>
     public static MeasureLevel LevelOf(MeasurementPoint p, decimal value)
@@ -22,8 +24,13 @@ public static class MeasureLevels
     public static bool OutOfRange(MeasurementPoint p, decimal value) => value < (p.ValidMin ?? decimal.MinValue) || value > (p.ValidMax ?? decimal.MaxValue);
 
     /// <summary>The message for <see cref="OutOfRange"/> (English; the caller translates it).</summary>
-    public static string RangeMessage(MeasurementPoint p) =>
-        string.Format(OutsideRange, Show(p.ValidMin ?? decimal.MinValue), Show(p.ValidMax ?? decimal.MaxValue), p.Unit ?? "").TrimEnd(' ', '.') + ".";
+    public static string RangeMessage(MeasurementPoint p) => (p.ValidMin, p.ValidMax) switch
+    {
+        ({ } min, { } max) => string.Format(OutsideRange, Show(min), Show(max), p.Unit ?? ""),
+        (null, { } max) => string.Format(AtMost, Show(max), p.Unit ?? ""),
+        ({ } min, null) => string.Format(AtLeast, Show(min), p.Unit ?? ""),
+        _ => "",
+    } is var m && m.Length > 0 ? m.TrimEnd(' ', '.') + "." : "";
 
     private static string Show(decimal d) => d.ToString("0.####", System.Globalization.CultureInfo.InvariantCulture);
 

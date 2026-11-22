@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'vitest';
-import { answered, failed, formatValue, levelOf, outOfRange, roundProgress, type PointLimits, type StepState } from './measure';
+import type { TFunction } from 'i18next';
+import en from '@/locales/en.json';
+import { answered, failed, formatValue, levelOf, outOfRange, printedStep, rangeMessage, roundProgress, toggleAnswer, type PointLimits, type StepState } from './measure';
+
+/** English, as the app shows it. */
+const t = ((key: string, values?: Record<string, unknown>) => {
+  const text = key.split('.').reduce<unknown>((o, k) => (o as Record<string, unknown>)?.[k], en);
+  if (typeof text !== 'string') return key;
+  return text.replace(/{{(\w+)}}/g, (_, n: string) => String(values?.[n] ?? ''));
+}) as unknown as TFunction;
 
 const sat: PointLimits = { unit: '°C', decimals: 1, validMin: 0, validMax: 60, alarmLow: 5, alertLow: 10, target: 22, alertHigh: 28, alarmHigh: 32 };
 const step = (s: Partial<StepState>): StepState => ({ type: 'Check', answer: null, value: null, textValue: null, level: null, ...s });
@@ -40,3 +49,31 @@ describe('steps', () => {
     expect(formatValue(7, { decimals: 0 })).toBe('7');
   });
 });
+
+describe('range message', () => {
+  it('names the bounds a point has', () => {
+    expect(rangeMessage(sat, t)).toBe('Enter a value from 0 to 60 °C.');
+    expect(rangeMessage({ ...sat, validMin: null }, t)).toBe('Enter a value of at most 60 °C.');
+    expect(rangeMessage({ ...sat, validMax: null, unit: null }, t)).toBe('Enter a value of at least 0.');
+  });
+});
+
+describe('answer buttons', () => {
+  it('clicking the chosen answer again clears it', () => {
+    expect(toggleAnswer('Ok', 'Ok')).toEqual({ isDone: false });
+    expect(toggleAnswer('Ok', 'NotOk')).toEqual({ answer: 'NotOk' });
+    expect(toggleAnswer(null, 'NotApplicable')).toEqual({ answer: 'NotApplicable' });
+  });
+});
+
+describe('printed step', () => {
+  it('prints a failed step as failed, with its answer, value, level, text and reading', () => {
+    expect(printedStep({ ...step({ answer: 'NotOk' }), followUp: { number: 'WR-00012' } }, t)).toEqual({ mark: '☒', result: 'Not OK · Follow-up WR-00012' });
+    expect(printedStep({ ...step({ answer: 'Ok' }), reading: '3.2 bar' }, t)).toEqual({ mark: '☑', result: 'OK · 3.2 bar' });
+    expect(printedStep({ ...step({ type: 'Number', value: 33, level: 'AlarmHigh' }), unit: '°C', decimals: 1 }, t)).toEqual({ mark: '☒', result: '33.0 °C (Alarm high)' });
+    expect(printedStep({ ...step({ type: 'Number', value: 21, level: 'Normal' }), unit: '°C', decimals: 1 }, t)).toEqual({ mark: '☑', result: '21.0 °C' });
+    expect(printedStep(step({ type: 'Text', textValue: 'Belt worn' }), t)).toEqual({ mark: '☑', result: 'Belt worn' });
+    expect(printedStep(step({ type: 'Number' }), t)).toEqual({ mark: '☐', result: '' });
+  });
+});
+

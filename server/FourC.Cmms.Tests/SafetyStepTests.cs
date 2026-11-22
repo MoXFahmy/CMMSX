@@ -121,6 +121,27 @@ public class SafetyStepTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Completing_a_round_needs_every_assets_safety_steps()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var a = await AssetAsync(org.Admin, org.Site, "Fan A");
+        var b = await AssetAsync(org.Admin, org.Site, "Fan B");
+        var pm = Id(await SaveScheduleAsync(org.Admin, Schedule(org.Site, await TypedTemplateAsync(org.Admin, "R", Steps), Today, assets: [a, b])));
+        var wo = (await GenerateAsync(org.Admin, Today, pm)).EnumerateArray().Single().GetProperty("workOrderId").GetGuid();
+        var steps = await StepsAsync(wo);
+        var lockA = steps.Single(x => x.AssetId == a && x.BeforeStart);
+        await Ok(await MoveAsync(org.Admin, wo, new { status = "InProgress" }));
+        foreach (var x in steps.Where(x => x.AssetId == b)) await Ok(await AnswerAsync(org.Admin, wo, x.Id, new { answer = "Ok" }));
+        var done = new { status = "Completed", completionNotes = "Done" };
+        Assert.Contains($"Answer the safety steps first: #{lockA.Sequence} Lock out.", await Bad(await MoveAsync(org.Admin, wo, done)));
+        await Ok(await AnswerAsync(org.Admin, wo, lockA.Id, new { answer = "NotOk" }));
+        Assert.Contains($"A safety step isn't OK: #{lockA.Sequence} Lock out.", await Bad(await MoveAsync(org.Admin, wo, done)));
+        await Ok(await AnswerAsync(org.Admin, wo, lockA.Id, new { answer = "NotApplicable" }));
+        await Ok(await MoveAsync(org.Admin, wo, done));
+    }
+
+    [SkippableFact]
     public async Task Completing_needs_safety_steps_too()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

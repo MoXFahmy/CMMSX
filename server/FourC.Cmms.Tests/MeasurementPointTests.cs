@@ -77,6 +77,30 @@ public class MeasurementPointTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Each_point_keeps_its_readings_on_the_asset()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var asset = await AssetAsync(org.Admin, org.Site, "AHU-1");
+        var busy = await PointAsync(org.Admin, "SAT");
+        var monthly = await PointAsync(org.Admin, "RAT");
+        var now = DateTimeOffset.UtcNow;
+        MeasurementReading Reading(Guid point, DateTimeOffset at) => new()
+        {
+            TenantId = org.Tenant, PointId = point, AssetId = asset, SiteId = org.Site, Value = 20, ReadAt = at, Level = MeasureLevel.Normal, ByName = "Admin",
+        };
+        await DbAsync(fx, db =>
+        {
+            db.MeasurementReadings.AddRange(Enumerable.Range(0, 401).Select(i => Reading(busy, now.AddMinutes(-i))));
+            db.MeasurementReadings.AddRange(Reading(monthly, now.AddDays(-30)), Reading(monthly, now.AddDays(-60)));
+            return db.SaveChangesAsync();
+        });
+        var shown = (await Ok(await org.Admin.GetAsync($"/api/assets/{asset}/measurements"))).EnumerateArray()
+            .ToDictionary(p => p.GetProperty("code").GetString()!, p => p.GetProperty("readings").GetArrayLength());
+        Assert.Equal((200, 2), (shown["SAT"], shown["RAT"]));
+    }
+
+    [SkippableFact]
     public async Task Reading_outside_the_valid_range_is_refused()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

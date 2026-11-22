@@ -1,12 +1,13 @@
 import { useState } from 'react';
-import { ActionIcon, Alert, Anchor, Badge, Button, Card, FileButton, Group, NumberInput, Progress, SegmentedControl, Select, Stack, Text, TextInput, Tooltip } from '@mantine/core';
+import { ActionIcon, Alert, Anchor, Badge, Button, Card, FileButton, Group, NumberInput, Progress, Select, Stack, Text, TextInput, Tooltip } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconCamera, IconChecks, IconLock, IconPhoto, IconPlus, IconShieldCheck, IconTrash } from '@tabler/icons-react';
 import { ApiError, api, del, get, post, put } from '@/api/client';
 import type { MeterItem, WorkOrderDetail, WorkOrderStep } from '@/api/types';
-import { answered, failed, levelColor, levelOf, outOfRange, roundProgress } from '@/components/measure';
+import { AnswerButtons } from '@/components/AnswerButtons';
+import { answered, failed, levelColor, levelOf, outOfRange, rangeMessage, roundProgress } from '@/components/measure';
 import { confirmAction } from '@/components/confirm';
 import { fromNow, notifyError, notifySuccess } from '@/components/utils';
 
@@ -109,7 +110,7 @@ function StepRow({ w, x, canExec, locked, onChange }: { w: WorkOrderDetail; x: S
     const v = raw.trim() === '' ? null : Number(raw.replace(',', '.'));
     if (v === null) { if (x.value !== null && x.value !== undefined) void send({ isDone: false }); return; }
     if (Number.isNaN(v) || v === x.value) return;
-    if (point && outOfRange(point, v)) { notifyError(new Error(t('checklist.outOfRange', { min: point.validMin ?? '', max: point.validMax ?? '', unit: point.unit ?? '' }))); return; }
+    if (point && outOfRange(point, v)) { notifyError(new Error(rangeMessage(point, t))); return; }
     void send({ value: v, meterId: x.type === 'Meter' && !x.meterId ? meterId : undefined });
   };
   const upload = async (file: File | null) => {
@@ -138,12 +139,7 @@ function StepRow({ w, x, canExec, locked, onChange }: { w: WorkOrderDetail; x: S
         </Group>
       </Group>
       <Group gap="xs" pl={24} wrap="wrap" align="center">
-        {x.type === 'Check' && (
-          <SegmentedControl size="xs" disabled={!editable || busy} value={x.answer ?? ''} data={[
-            { value: 'Ok', label: t('checklist.ok') }, { value: 'NotOk', label: t('checklist.notOk') }, { value: 'NotApplicable', label: t('checklist.na') },
-          ]} color={x.answer === 'NotOk' ? 'red' : x.answer === 'Ok' ? 'teal' : 'gray'}
-            onChange={(a) => void send(a === x.answer ? { isDone: false } : { answer: a })} />
-        )}
+        {x.type === 'Check' && <AnswerButtons value={x.answer} disabled={!editable || busy} onChange={(c) => void send(c)} />}
         {(x.type === 'Number' || x.type === 'Meter') && (
           <>
             {x.type === 'Meter' && !x.meterId && editable && (
@@ -162,6 +158,8 @@ function StepRow({ w, x, canExec, locked, onChange }: { w: WorkOrderDetail; x: S
           <TextInput key={`t:${x.textValue ?? ''}`} size="xs" style={{ flex: 1, minWidth: 220 }} disabled={!editable || busy} defaultValue={x.textValue ?? ''} maxLength={1000}
             placeholder={t('checklist.answer')} onBlur={(e) => { const v = e.currentTarget.value.trim(); if (v !== (x.textValue ?? '')) void send(v ? { text: v } : { isDone: false }); }} />
         )}
+        <TextInput key={`r:${x.reading ?? ''}`} size="xs" w={130} disabled={!canExec} maxLength={100} placeholder={t('wo.reading')} aria-label={t('wo.reading')}
+          defaultValue={x.reading ?? ''} onBlur={(e) => { const v = e.currentTarget.value.trim(); if (v !== (x.reading ?? '')) void send({ reading: v }); }} />
         <TextInput key={`m:${x.remarks ?? ''}`} size="xs" style={{ flex: 1, minWidth: 180 }} disabled={!canExec} placeholder={t('wo.remarks')} aria-label={t('wo.remarks')}
           defaultValue={x.remarks ?? ''} onBlur={(e) => { if ((x.remarks ?? '') !== e.currentTarget.value.trim()) void send({ remarks: e.currentTarget.value }); }} />
         {canExec && <FileButton onChange={(f) => void upload(f)} accept="image/png,image/jpeg,image/webp">
@@ -169,7 +167,6 @@ function StepRow({ w, x, canExec, locked, onChange }: { w: WorkOrderDetail; x: S
         </FileButton>}
         {x.photos.map((p) => <Anchor key={p.id} href={`/api/attachments/${p.id}/content`} target="_blank" fz="xs">{p.fileName}</Anchor>)}
       </Group>
-      {x.type === 'Check' && x.reading && <Text fz="xs" c="dimmed" pl={24}>{t('wo.reading')}: {x.reading}</Text>}
     </Stack>
   );
 }

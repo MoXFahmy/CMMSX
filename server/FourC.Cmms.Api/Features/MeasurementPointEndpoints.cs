@@ -111,15 +111,17 @@ public static class MeasurementPointEndpoints
             var points = await db.MeasurementPoints.AsNoTracking()
                 .Where(p => db.MeasurementPointAssets.Any(x => x.PointId == p.Id && x.AssetId == assetId) || db.MeasurementReadings.Any(r => r.PointId == p.Id && r.AssetId == assetId))
                 .OrderBy(p => p.Code).ToListAsync(ct);
-            var ids = points.Select(p => p.Id).ToList();
-            var readings = (await db.MeasurementReadings.AsNoTracking().Where(r => ids.Contains(r.PointId) && r.AssetId == assetId && r.ReadAt >= start && r.ReadAt < end)
-                .OrderByDescending(r => r.ReadAt).Take(200 * Math.Max(1, ids.Count))
-                .Select(r => new { r.PointId, r.Id, r.ReadAt, r.Value, r.Level, r.WorkOrderId, r.FollowUpWorkOrderId, r.FollowUpRequestId, r.ByName, r.Note }).ToListAsync(ct))
-                .ToLookup(r => r.PointId);
+            // The newest 200 of each point, so a point read every hour doesn't push a monthly one off its chart.
+            var readings = new Dictionary<Guid, object>();
+            foreach (var point in points)
+                readings[point.Id] = (await db.MeasurementReadings.AsNoTracking().Where(r => r.PointId == point.Id && r.AssetId == assetId && r.ReadAt >= start && r.ReadAt < end)
+                    .OrderByDescending(r => r.ReadAt).Take(200)
+                    .Select(r => new { r.Id, r.ReadAt, r.Value, r.Level, r.WorkOrderId, r.FollowUpWorkOrderId, r.FollowUpRequestId, r.ByName, r.Note }).ToListAsync(ct))
+                    .OrderBy(r => r.ReadAt).ToList();
             return Results.Ok(points.Select(p => new
             {
                 p.Id, p.Code, p.Name, p.Kind, p.Unit, p.Decimals, p.ValidMin, p.ValidMax, p.AlarmLow, p.AlertLow, p.Target, p.AlertHigh, p.AlarmHigh, p.IsActive,
-                Readings = readings[p.Id].Take(200).OrderBy(r => r.ReadAt).Select(r => new { r.Id, r.ReadAt, r.Value, r.Level, r.WorkOrderId, r.FollowUpWorkOrderId, r.FollowUpRequestId, r.ByName, r.Note }),
+                Readings = readings[p.Id],
             }));
         }).WithTags("Measurement points").RequirePermission(Permissions.AssetsView);
 
@@ -158,13 +160,17 @@ public static class MeasurementPointEndpoints
                 Note = input.Note.Clean() is { } n ? n.Length > 1000 ? n[..1000] : n : null, ById = ctx.UserId, ByName = ctx.UserName,
             };
             db.MeasurementReadings.Add(reading);
-            if (reading.Level != MeasureLevel.Normal)
+            var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+            // The reading and its follow-up are saved together or not at all.
+            await db.InTransactionAsync(async tk =>
             {
-                var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
-                var (woId, requestId, _) = await Checklists.RaiseFollowUpAsync(db, ctx, mail, settings, null, null, p, reading.Level, value, asset.Id, asset.SiteId, reading.Note, ct);
-                reading.FollowUpWorkOrderId = woId; reading.FollowUpRequestId = requestId;
-            }
-            await db.SaveChangesAsync(ct);
+                if (reading.Level != MeasureLevel.Normal)
+                {
+                    var (woId, requestId, _) = await Checklists.RaiseFollowUpAsync(db, ctx, mail, settings, null, null, p, reading.Level, value, asset.Id, asset.SiteId, reading.Note, tk);
+                    reading.FollowUpWorkOrderId = woId; reading.FollowUpRequestId = requestId;
+                }
+                return await db.SaveChangesAsync(tk);
+            }, ct);
             return Results.Ok(new { reading.Id, reading.Level, reading.FollowUpWorkOrderId, reading.FollowUpRequestId });
         }).RequirePermission(Permissions.MetersRecord);
     }

@@ -49,6 +49,17 @@ public class TypedStepTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task A_point_sets_the_unit_and_decimals()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var point = await PointAsync(org.Admin, "SAT");
+        var t = await TypedTemplateAsync(org.Admin, "T1", [new { description = "Supply air", type = "Number", unit = "K", decimals = 0, measurementPointId = point }]);
+        var step = await DbAsync(fx, db => db.PmTaskSteps.IgnoreQueryFilters().SingleAsync(s => s.PmTaskId == t));
+        Assert.Equal((point, null, null), (step.MeasurementPointId!.Value, step.Unit, step.Decimals));
+    }
+
+    [SkippableFact]
     public async Task Pm_work_copies_step_types()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

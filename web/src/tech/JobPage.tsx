@@ -225,9 +225,8 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
     rules?.failureCodeOnBreakdown && job.type === 'Breakdown' && !failure && t('tech.rule.failureCode'),
     rules?.labour && needsLabour(job) && t('tech.rule.labour'),
     rules?.allSteps && job.tasks.some((x) => !x.isDone) && t('tech.rule.allSteps'),
-    safetyOpen(job.tasks, null).some((s) => !s.assetId) && t('checklist.safetyFirstBody'),
     ...(() => { const sp = stepProblems(job, queue, { readings: rules?.readings });
-      return [sp.photos.length > 0 && t('tech.rule.photos', { steps: sp.photos.join(', ') }), sp.readings.length > 0 && t('tech.rule.readings', { steps: sp.readings.join(', ') })]; })(),
+      return [sp.safety.length > 0 && t('tech.rule.safety', { steps: sp.safety.join(', ') }), sp.photos.length > 0 && t('tech.rule.photos', { steps: sp.photos.join(', ') }), sp.readings.length > 0 && t('tech.rule.readings', { steps: sp.readings.join(', ') })]; })(),
   ].filter(Boolean) as string[];
 
   const submit = async () => {

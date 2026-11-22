@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 /** Smart checklists (0.13.0) on the web and the phone: the same reading rules as the server's MeasureLevels / StepRules. */
 export type MeasureLevel = 'Normal' | 'AlertHigh' | 'AlarmHigh' | 'AlertLow' | 'AlarmLow';
 export type StepType = 'Check' | 'Number' | 'Meter' | 'Text';
@@ -39,3 +40,30 @@ export const formatValue = (value: number, p: PointLimits) => `${value.toFixed(p
 
 /** Colours for level badges. */
 export const levelColor = (l?: MeasureLevel | null) => (l === 'AlarmHigh' || l === 'AlarmLow' ? 'red' : l === 'AlertHigh' || l === 'AlertLow' ? 'orange' : 'teal');
+
+/** Pressing the chosen answer again clears it (0.13.0); another answer replaces it. */
+export const toggleAnswer = (current: StepAnswer | null | undefined, clicked: StepAnswer): { answer: StepAnswer } | { isDone: false } =>
+  (clicked === current ? { isDone: false } : { answer: clicked });
+
+/** The message for a value outside a point's possible values, naming the bounds the point has. */
+export function rangeMessage(p: PointLimits, t: TFunction): string {
+  const unit = p.unit ?? '';
+  const text = set(p.validMin) && set(p.validMax) ? t('checklist.outOfRange', { min: p.validMin, max: p.validMax, unit })
+    : set(p.validMax) ? t('checklist.outOfRangeMax', { max: p.validMax, unit }) : t('checklist.outOfRangeMin', { min: p.validMin ?? '', unit });
+  return text.replace(/\s+\.$/, '.');
+}
+
+export type PrintableStep = StepState & { unit?: string | null; decimals?: number | null; reading?: string | null; followUp?: { number?: string | null } | null };
+
+/** A step on the printed work order (0.13.0): ☐ open, ☑ answered, ☒ failed; its answer, value with unit and level, text, reading and follow-up. */
+export function printedStep(s: PrintableStep, t: TFunction): { mark: string; result: string } {
+  const parts: string[] = [];
+  if (s.type === 'Check' && s.answer) parts.push(t(`checklist.answers.${s.answer}`));
+  if (s.type === 'Number' && set(s.value)) parts.push(formatValue(s.value, s) + (s.level && s.level !== 'Normal' ? ` (${t(`checklist.levels.${s.level}`)})` : ''));
+  if (s.type === 'Meter' && set(s.value)) parts.push(`${s.value}${s.unit ? ` ${s.unit}` : ''}`);
+  if (s.type === 'Text' && s.textValue) parts.push(s.textValue);
+  if (s.reading) parts.push(s.reading);
+  if (s.followUp?.number) parts.push(t('checklist.followUp', { number: s.followUp.number }));
+  return { mark: !answered(s) ? '☐' : failed(s) ? '☒' : '☑', result: parts.join(' · ') };
+}
+

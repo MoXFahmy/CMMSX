@@ -8,6 +8,7 @@ import { IconPrinter } from '@tabler/icons-react';
 import { get } from '@/api/client';
 import type { WorkOrderDetail } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
+import { printedStep } from '@/components/measure';
 import { fmtDate, fmtDateTime, fmtQty } from '@/components/utils';
 
 /** Blank rows for the technician to fill in by hand. */
@@ -91,7 +92,7 @@ export function WorkOrderPrintPage() {
       <Table withTableBorder withColumnBorders verticalSpacing={6} mb="md">
         <Table.Thead><Table.Tr>
           <Table.Th w={36}>#</Table.Th><Table.Th>{t('jobCard.step')}</Table.Th><Table.Th w={44} ta="center">✓</Table.Th>
-          <Table.Th w={110}>{t('wo.reading')}</Table.Th><Table.Th w={200}>{t('wo.remarks')}</Table.Th>
+          <Table.Th w={170}>{t('jobCard.result')}</Table.Th><Table.Th w={180}>{t('wo.remarks')}</Table.Th>
         </Table.Tr></Table.Thead>
         <Table.Tbody>
           {groups.map((g) => (
@@ -100,8 +101,8 @@ export function WorkOrderPrintPage() {
               {g.tasks.map((x, i) => (
                 <Table.Tr key={x.id}>
                   <Table.Td>{i + 1}</Table.Td><Table.Td>{x.description}</Table.Td>
-                  <Table.Td ta="center" fz="lg">{x.isDone ? '☑' : '☐'}</Table.Td>
-                  <Table.Td>{x.reading ?? ''}</Table.Td><Table.Td>{x.remarks ?? ''}</Table.Td>
+                  <Table.Td ta="center" fz="lg">{printedStep(x, t).mark}</Table.Td>
+                  <Table.Td>{printedStep(x, t).result}</Table.Td><Table.Td>{x.remarks ?? ''}</Table.Td>
                 </Table.Tr>
               ))}
             </Fragment>

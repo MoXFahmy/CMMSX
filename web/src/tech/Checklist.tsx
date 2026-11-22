@@ -1,8 +1,9 @@
 import { useRef, useState } from 'react';
-import { ActionIcon, Alert, Badge, Button, Card, Checkbox, Group, NumberInput, SegmentedControl, Select, Stack, Text, TextInput } from '@mantine/core';
+import { ActionIcon, Alert, Badge, Button, Card, Checkbox, Group, NumberInput, Select, Stack, Text, TextInput } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 import { IconCamera, IconChecks, IconLock, IconShieldCheck } from '@tabler/icons-react';
-import { answered, failed, levelColor, outOfRange, roundProgress } from '@/components/measure';
+import { AnswerButtons } from '@/components/AnswerButtons';
+import { answered, failed, levelColor, outOfRange, rangeMessage, roundProgress } from '@/components/measure';
 import { notifyError } from '@/components/utils';
 import { safetyOpen } from './complete';
 import type { TechBundle, TechJob, TechPlaces, TechStep } from './types';
@@ -64,6 +65,7 @@ function PhoneStep({ s, locked, bundle, meters: allMeters, job, photos, onChange
   const { t } = useTranslation();
   const camera = useRef<HTMLInputElement>(null);
   const [remarks, setRemarks] = useState(s.remarks ?? '');
+  const [reading, setReading] = useState(s.reading ?? '');
   const [text, setText] = useState(s.textValue ?? '');
   const [meterId, setMeterId] = useState<string | null>(s.meterId ?? null);
   const point = bundle?.points?.find((p) => p.id === s.measurementPointId);
@@ -76,7 +78,7 @@ function PhoneStep({ s, locked, bundle, meters: allMeters, job, photos, onChange
     const v = typeof raw === 'number' ? raw : raw.trim() === '' ? null : Number(raw.replace(',', '.'));
     if (v === null) { if (s.value !== null && s.value !== undefined) onChange({ isDone: false }); return; }
     if (Number.isNaN(v) || v === s.value) return;
-    if (point && outOfRange(point, v)) { notifyError(new Error(t('checklist.outOfRange', { min: point.validMin ?? '', max: point.validMax ?? '', unit: point.unit ?? '' }))); return; }
+    if (point && outOfRange(point, v)) { notifyError(new Error(rangeMessage(point, t))); return; }
     if (type === 'Meter' && !s.meterId && !meterId) { notifyError(new Error(t('checklist.chooseMeter'))); return; }
     onChange({ value: v, meterId: type === 'Meter' && !s.meterId && meterId ? meterId : undefined });
   };
@@ -91,9 +93,7 @@ function PhoneStep({ s, locked, bundle, meters: allMeters, job, photos, onChange
       <Stack gap={4} mt={4} pl={22}>
         {type === 'Check' && (s.type === undefined
           ? <Checkbox label={t('checklist.ok')} checked={s.isDone} disabled={locked} onChange={(e) => onChange({ isDone: e.currentTarget.checked })} />
-          : <SegmentedControl size="xs" fullWidth disabled={locked} value={st.answer ?? ''} color={st.answer === 'NotOk' ? 'red' : st.answer === 'Ok' ? 'teal' : 'gray'}
-              data={[{ value: 'Ok', label: t('checklist.ok') }, { value: 'NotOk', label: t('checklist.notOk') }, { value: 'NotApplicable', label: t('checklist.na') }]}
-              onChange={(a) => onChange(a === st.answer ? { isDone: false } : { answer: a })} />)}
+          : <AnswerButtons value={st.answer} disabled={locked} fullWidth onChange={onChange} />)}
         {(type === 'Number' || type === 'Meter') && (
           <Group gap="xs" wrap="nowrap">
             {type === 'Meter' && !s.meterId && (
@@ -109,6 +109,8 @@ function PhoneStep({ s, locked, bundle, meters: allMeters, job, photos, onChange
             onBlur={() => { const v = text.trim(); if (v !== (s.textValue ?? '')) onChange(v ? { text: v } : { isDone: false }); }} />
         )}
         <Group gap="xs" wrap="nowrap">
+          <TextInput size="xs" w={96} placeholder={t('tech.reading')} maxLength={100} value={reading} onChange={(e) => setReading(e.currentTarget.value)}
+            onBlur={() => { if (reading.trim() !== (s.reading ?? '')) onChange({ reading: reading.trim() }); }} />
           <TextInput size="xs" style={{ flex: 1 }} placeholder={t('tech.remarks')} maxLength={2000} value={remarks} onChange={(e) => setRemarks(e.currentTarget.value)}
             onBlur={() => { if (remarks !== (s.remarks ?? '')) onChange({ remarks }); }} />
           <ActionIcon variant={s.photoRequired && photos === 0 ? 'filled' : 'light'} color={s.photoRequired && photos === 0 ? 'orange' : 'gray'} aria-label={t('checklist.addPhoto')}

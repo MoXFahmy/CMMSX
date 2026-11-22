@@ -47,6 +47,18 @@ public class ChecklistPureTests
     }
 
     [Fact]
+    public void Range_message_fits_the_bounds_set()
+    {
+        Assert.Equal("Enter a value from 0 to 60 °C.", MeasureLevels.RangeMessage(Sat()));
+        var max = Sat(); max.ValidMin = null;
+        Assert.Equal("Enter a value of at most 60 °C.", MeasureLevels.RangeMessage(max));
+        var min = Sat(); min.ValidMax = null;
+        Assert.Equal("Enter a value of at least 0 °C.", MeasureLevels.RangeMessage(min));
+        min.Unit = null;
+        Assert.Equal("Enter a value of at least 0.", MeasureLevels.RangeMessage(min));
+    }
+
+    [Fact]
     public void Point_problems()
     {
         var range = Sat(); range.ValidMin = 60; range.ValidMax = 60;

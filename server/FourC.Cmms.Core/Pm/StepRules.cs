@@ -30,10 +30,15 @@ public static class StepRules
     /// Why work can't go on yet, or null. Starting (<paramref name="forStart"/>) needs the safety steps without an asset — all of
     /// them on an ordinary work order, the round-wide ones on a round; answering a step needs those plus its asset's.
     /// </summary>
-    public static string? SafetyBlock(IEnumerable<WorkOrderTask> steps, Guid? assetId, bool forStart)
+    public static string? SafetyBlock(IEnumerable<WorkOrderTask> steps, Guid? assetId, bool forStart) =>
+        Block(steps.Where(t => t.BeforeStart && (t.AssetId is null || !forStart && assetId is not null && t.AssetId == assetId)));
+
+    /// <summary>Why the work can't be completed yet: every safety step answered and OK, each round asset's too.</summary>
+    public static string? CompleteSafetyBlock(IEnumerable<WorkOrderTask> steps) => Block(steps.Where(t => t.BeforeStart));
+
+    private static string? Block(IEnumerable<WorkOrderTask> steps)
     {
-        var safety = steps.Where(t => t.BeforeStart && (t.AssetId is null || !forStart && assetId is not null && t.AssetId == assetId))
-            .OrderBy(t => t.Sequence).ToList();
+        var safety = steps.OrderBy(t => t.Sequence).ToList();
         var open = safety.Where(t => !Answered(t)).ToList();
         if (open.Count > 0) return string.Format(AnswerSafety, string.Join(", ", open.Select(Name)));
         return safety.FirstOrDefault(Failed) is { } bad ? string.Format(SafetyNotOk, Name(bad)) : null;

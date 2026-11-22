@@ -36,11 +36,12 @@ export function safetyOpen(tasks: TechStep[], assetId?: string | null): TechStep
   return tasks.filter((s) => s.beforeStart && (!s.assetId || s.assetId === assetId) && (!answered(typed(s)) || failed(typed(s))));
 }
 
-/** What completing still needs (0.13.0): a photo on photo-required steps (sent or waiting), and readings when the organization asks. */
+/** What completing still needs (0.13.0): every safety step answered and OK (each round asset's too), a photo on photo-required steps (sent or waiting), and readings when the organization asks. */
 export function stepProblems(job: { tasks: TechStep[]; files: { workOrderTaskId?: string | null }[] }, queue: QueuedChange[], rules: { readings?: boolean }) {
   const waiting = new Set(queue.filter((c) => c.type === 'photo.add' && c.state !== 'failed').map((c) => (c.payload as { taskId?: string } | null)?.taskId).filter(Boolean));
   const withPhoto = (s: TechStep) => job.files.some((f) => f.workOrderTaskId === s.id) || waiting.has(s.id);
   return {
+    safety: job.tasks.filter((s) => s.beforeStart && (!answered(typed(s)) || failed(typed(s)))).map(name),
     photos: job.tasks.filter((s) => s.photoRequired && !withPhoto(s)).map(name),
     readings: rules.readings ? job.tasks.filter((s) => (s.type === 'Number' || s.type === 'Meter' || s.type === 'Text') && !answered(typed(s))).map(name) : [],
   };

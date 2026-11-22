@@ -8,7 +8,7 @@ import { IconPlus } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
 import type { AssetMeasurement } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
-import { levelColor, outOfRange } from '@/components/measure';
+import { levelColor, outOfRange, rangeMessage } from '@/components/measure';
 import { fmtDate, fmtDateTime, notifyError, notifySuccess } from '@/components/utils';
 
 /** An asset's measurements (0.13.0): a chart per measurement point with its levels, the latest readings, and Add reading. */
@@ -23,7 +23,7 @@ export function AssetMeasurements({ assetId }: { assetId: string }) {
   const [note, setNote] = useState('');
   const save = async () => {
     if (!adding || value === '') return;
-    if (outOfRange(adding, value)) { notifyError(new Error(t('checklist.outOfRange', { min: adding.validMin ?? '', max: adding.validMax ?? '', unit: adding.unit ?? '' }))); return; }
+    if (outOfRange(adding, value)) { notifyError(new Error(rangeMessage(adding, t))); return; }
     try {
       const r = await post<{ level: string; followUpWorkOrderId?: string | null; followUpRequestId?: string | null }>(`/measurement-points/${adding.id}/readings`, { assetId, value, note: note || null });
       notifySuccess(r.followUpWorkOrderId || r.followUpRequestId ? t('measurements.savedWithFollowUp') : t('common.saved'));

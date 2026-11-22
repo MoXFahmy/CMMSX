@@ -56,7 +56,7 @@ export function TemplateSteps({ value, onChange, editable, error, selfId }: {
                 {s.type === 'Number' && (
                   <Select w={240} size="xs" clearable searchable label={t('steps.point')} placeholder={t('steps.noPoint')} disabled={!editable}
                     data={(points ?? []).filter((p) => p.isActive || p.id === s.measurementPointId).map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))}
-                    value={s.measurementPointId ?? null} onChange={(x) => set(i, { measurementPointId: x })} />
+                    value={s.measurementPointId ?? null} onChange={(x) => set(i, x ? { measurementPointId: x, unit: null, decimals: null } : { measurementPointId: null })} />
                 )}
                 {(s.type === 'Meter' || (s.type === 'Number' && !s.measurementPointId)) && (
                   <TextInput w={110} size="xs" label={s.type === 'Meter' ? t('steps.meterUnit') : t('points.unit')} maxLength={20} disabled={!editable}
