@@ -388,7 +388,15 @@
     },
     "requireReadingSteps": "Require every number, meter and text step answered before completing",
     "followUpDefault": "A failed step raises",
-    "followUpDefaultHint": "Used by steps set to \"Default\" and by readings entered on an asset."
+    "followUpDefaultHint": "Used by steps set to \"Default\" and by readings entered on an asset.",
+    "symptoms": "Symptoms",
+    "newSymptom": "New symptom",
+    "causes": "Causes",
+    "newCause": "New cause",
+    "remedies": "Remedies",
+    "newRemedy": "New remedy",
+    "downtimeCostPerHour": "Downtime cost per hour",
+    "downtimeCostHint": "Used for assets of this category that have no cost of their own."
   },
   "audit": {
     "Created": "created this record",

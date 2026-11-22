@@ -1,5 +1,6 @@
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Assets;
+using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Inventory;
 using FourC.Cmms.Core.Locations;
@@ -17,6 +18,7 @@ internal static class SheetImporters
     public static IEnumerable<ISheetImporter> All(IReadOnlyList<CustomFieldDefinition> customFields) =>
     [
         new SiteImporter(), new LocationImporter(), new CategoryImporter(), new TradeImporter(), new PartGroupImporter(),
+        new SymptomImporter(), new CauseImporter(), new RemedyImporter(),
         new SupplierImporter(), new StoreImporter(), new AssetImporter(), new PeopleImporter(), new PartImporter(), new StockImporter(),
         new AssetPartImporter(), new PmTaskImporter(), new MeasurementPointImporter(), new PmStepImporter(), new PmPartImporter(), new PmScheduleImporter(),
     ];
@@ -328,11 +330,11 @@ internal sealed class CategoryImporter : RecordImporter<AssetCategory>
     }
 
     protected override Dictionary<string, object?> Values(ImportContext c, AssetCategory x) => new()
-    { ["code"] = x.Code, ["name"] = x.Name, ["color"] = x.Color, ["active"] = x.IsActive };
+    { ["code"] = x.Code, ["name"] = x.Name, ["color"] = x.Color, ["downtimeCostPerHour"] = x.DowntimeCostPerHour, ["active"] = x.IsActive };
 
     protected override Task<AssetCategory?> SaveAsync(ImportContext c, ImportRow row, AssetCategory? existing, Dictionary<string, object?> v, CancellationToken ct)
     {
-        var input = new AssetCategoryEndpoints.CategoryInput(S(v, "code")!, S(v, "name") ?? "", existing?.Description, S(v, "color"), B(v, "active", true));
+        var input = new AssetCategoryEndpoints.CategoryInput(S(v, "code")!, S(v, "name") ?? "", existing?.Description, S(v, "color"), B(v, "active", true), N(v, "downtimeCostPerHour"));
         if (!Accept(row, AssetCategoryEndpoints.CategoryRules(input))) return Task.FromResult<AssetCategory?>(null);
         if (existing is not null) { AssetCategoryEndpoints.UpdateCategory(existing, input); return Task.FromResult<AssetCategory?>(null); }
         return Task.FromResult<AssetCategory?>(AssetCategoryEndpoints.CreateCategory(c.Db, input));
@@ -367,6 +369,61 @@ internal sealed class TradeImporter : RecordImporter<Trade>
     }
 
     protected override void Remember(ImportContext c, Trade x, Dictionary<string, object?> v) => c.Remember(c.Trades, x.Code, x.Id);
+}
+
+/// <summary>A code list sheet (0.14.0 symptoms, causes, remedies): code, name, active; added and updated by code.</summary>
+internal abstract class CodeImporter<T> : RecordImporter<T> where T : TenantEntity, ICodeLookup
+{
+    protected abstract DbSet<T> Set(ImportContext c);
+    protected abstract Dictionary<string, Guid> Map(ImportContext c);
+    protected abstract T Create();
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(Set(c).Where(x => codes.Contains(x.Code)), x => x.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, T x) => new() { ["code"] = x.Code, ["name"] = x.Name, ["active"] = x.IsActive };
+
+    protected override Task<T?> SaveAsync(ImportContext c, ImportRow row, T? existing, Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var input = new PeopleEndpoints.LookupInput(S(v, "code")!, S(v, "name") ?? "", null, B(v, "active", true));
+        if (!Accept(row, PeopleEndpoints.LookupRules(input))) return Task.FromResult<T?>(null);
+        var item = existing ?? Create();
+        PeopleEndpoints.ApplyLookup(item, input, null);
+        if (existing is not null) return Task.FromResult<T?>(null);
+        Set(c).Add(item);
+        return Task.FromResult<T?>(item);
+    }
+
+    protected override void Remember(ImportContext c, T x, Dictionary<string, object?> v) => c.Remember(Map(c), x.Code, x.Id);
+}
+
+internal sealed class SymptomImporter : CodeImporter<Symptom>
+{
+    public override string Sheet => "Symptoms";
+    protected override DbSet<Symptom> Set(ImportContext c) => c.Db.Symptoms;
+    protected override Dictionary<string, Guid> Map(ImportContext c) => c.Symptoms;
+    protected override Symptom Create() => new() { Code = "", Name = "" };
+}
+
+/// <summary>Causes are the failure codes.</summary>
+internal sealed class CauseImporter : CodeImporter<FailureCode>
+{
+    public override string Sheet => "Causes";
+    protected override DbSet<FailureCode> Set(ImportContext c) => c.Db.FailureCodes;
+    protected override Dictionary<string, Guid> Map(ImportContext c) => c.Causes;
+    protected override FailureCode Create() => new() { Code = "", Name = "" };
+}
+
+internal sealed class RemedyImporter : CodeImporter<Remedy>
+{
+    public override string Sheet => "Remedies";
+    protected override DbSet<Remedy> Set(ImportContext c) => c.Db.Remedies;
+    protected override Dictionary<string, Guid> Map(ImportContext c) => c.Remedies;
+    protected override Remedy Create() => new() { Code = "", Name = "" };
 }
 
 internal sealed class PartGroupImporter : RecordImporter<PartGroup>

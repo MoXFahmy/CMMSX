@@ -121,7 +121,7 @@ export type AssetDowntime = {
   availability30?: number | null; plannedHours30: number; downHours30: number; stops: DowntimeStop[];
 };
 export type AssetPartLine = { partId: string; partNumber: string; name: string; unitOfMeasure: string; quantity: number; note?: string | null };
-export type Category = { id: string; code: string; name: string; description?: string; color?: string; isActive: boolean; assetCount: number };
+export type Category = { id: string; code: string; name: string; description?: string; color?: string; isActive: boolean; assetCount: number; downtimeCostPerHour?: number | null };
 export type CustomField = {
   id: string; entityType: string; key: string; label: string; dataType: CustomFieldType; options: string[];
   isRequired: boolean; sortOrder: number; categoryIds: string[]; showInList: boolean;

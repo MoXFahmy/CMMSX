@@ -22,6 +22,11 @@ public static class PeopleEndpoints
             (t, color) => t.Color = color, t => t.Color);
         MapLookup(api, "/failure-codes", "Failure codes", db => db.FailureCodes, () => new FailureCode { Code = "", Name = "" }, Permissions.SettingsManage,
             async (db, id, ct) => await db.WorkOrders.AllSites().AnyAsync(w => w.FailureCodeId == id, ct), null, null);
+        // Symptoms and remedies (0.14.0): the failure codes are the causes between them.
+        MapLookup(api, "/symptoms", "Symptoms", db => db.Symptoms, () => new Symptom { Code = "", Name = "" }, Permissions.SettingsManage,
+            async (db, id, ct) => await db.WorkOrders.AllSites().AnyAsync(w => w.SymptomId == id, ct) || await db.WorkRequests.AllSites().AnyAsync(r => r.SymptomId == id, ct), null, null);
+        MapLookup(api, "/remedies", "Remedies", db => db.Remedies, () => new Remedy { Code = "", Name = "" }, Permissions.SettingsManage,
+            async (db, id, ct) => await db.WorkOrders.AllSites().AnyAsync(w => w.RemedyId == id, ct), null, null);
         MapLookup(api, "/cancel-reasons", "Cancel reasons", db => db.CancelReasons, () => new CancelReason { Code = "", Name = "" }, Permissions.SettingsManage,
             async (db, id, ct) => await db.WorkOrders.AllSites().AnyAsync(w => w.CancelReasonId == id, ct), null, null);
 

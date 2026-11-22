@@ -12,7 +12,7 @@ namespace FourC.Cmms.Api.Features;
 
 public static class AssetCategoryEndpoints
 {
-    public sealed record CategoryInput(string Code, string Name, string? Description, string? Color, bool IsActive = true);
+    public sealed record CategoryInput(string Code, string Name, string? Description, string? Color, bool IsActive = true, decimal? DowntimeCostPerHour = null);
 
     public static void MapAssetCategoryEndpoints(this RouteGroupBuilder api)
     {
@@ -22,7 +22,7 @@ public static class AssetCategoryEndpoints
         {
             var counts = await db.Assets.Where(a => a.CategoryId != null).GroupBy(a => a.CategoryId!.Value).Select(x => new { x.Key, C = x.Count() }).ToDictionaryAsync(x => x.Key, x => x.C, ct);
             var cats = await db.AssetCategories.AsNoTracking().OrderBy(c => c.Name).ToListAsync(ct);
-            return cats.Select(c => new { c.Id, c.Code, c.Name, c.Description, c.Color, c.IsActive, AssetCount = counts.GetValueOrDefault(c.Id) });
+            return cats.Select(c => new { c.Id, c.Code, c.Name, c.Description, c.Color, c.IsActive, c.DowntimeCostPerHour, AssetCount = counts.GetValueOrDefault(c.Id) });
         }).RequirePermission(Permissions.AssetsView);
 
         g.MapPost("/", async (CategoryInput input, CmmsDbContext db, CancellationToken ct) =>
@@ -57,7 +57,8 @@ public static class AssetCategoryEndpoints
     }
 
     /// <summary>The checks that need no database (shared with the import).</summary>
-    internal static Validator CategoryRules(CategoryInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200).MaxLength("color", i.Color, "Color", 20);
+    internal static Validator CategoryRules(CategoryInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200).MaxLength("color", i.Color, "Color", 20)
+        .When(i.DowntimeCostPerHour is < 0, "downtimeCostPerHour", "Downtime cost can't be negative.");
 
     internal static AssetCategory CreateCategory(CmmsDbContext db, CategoryInput i)
     {
@@ -70,6 +71,7 @@ public static class AssetCategoryEndpoints
     internal static void UpdateCategory(AssetCategory c, CategoryInput i)
     {
         c.Code = i.Code.Trim(); c.Name = i.Name.Trim(); c.Description = i.Description.Clean(); c.Color = i.Color.Clean(); c.IsActive = i.IsActive;
+        c.DowntimeCostPerHour = i.DowntimeCostPerHour;
     }
 
     private static async Task<Validator> ValidateAsync(CategoryInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
