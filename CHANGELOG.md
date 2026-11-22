@@ -4,6 +4,34 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.14.0] - 2026-11-23
+
+Failure codes and maintenance analysis. What people saw, what was wrong and what was done are recorded separately, with
+the codes most often used together offered first; new reports show the failure tree, responsiveness, the PM year and
+an asset's history; assets show their costs by year including downtime; and every report prints, or saves as a PDF,
+with the organization's logo. See docs/FAILURE_ANALYSIS.md.
+
+### Added
+- Symptoms and remedies (Settings): a symptom on requests (web, phone) and work orders, copied to the work order when a
+  request is approved; a remedy next to the cause on completion (web, work group reports, phone). Columns and filters on
+  the work order list (*Not recorded* finds work without one), on the job card and in exports.
+- Smart ordering: the causes most often recorded with the chosen symptom, and the remedies most often used for the
+  chosen cause, come first — also on the phone offline.
+- Reports: **Failure tree** (symptom → cause → remedy with work orders, labour hours, downtime and cost; each line opens
+  those work orders), **Responsiveness** (each request and work order against its targets; averages by priority or
+  trade), **PM annual plan** (a year per PM, month by month: done, late, missed, cancelled and planned) and **Asset work
+  history** (one asset, optionally with its components).
+- PM compliance by asset category; Maintenance costs with labour hours and by technician.
+- Downtime cost per hour on asset categories, used for assets without their own; the asset's **Costs** tab: labour,
+  parts, other costs and downtime cost per year, with its components if asked.
+- Organization logo (Settings › Organization) on printed reports and job cards.
+- Every report prints, or saves as a PDF, on a landscape page with the logo, its period and filters, and who printed it.
+- Import: Symptoms, Causes and Remedies sheets; downtime cost per hour on Categories.
+
+### Changed
+- Failure codes are called causes on screens; the free-text cause is "Cause details". *Require a failure code on
+  breakdown work* reads *Require a cause on breakdown work* and works as before.
+
 ## [0.13.0] - 2026-11-22
 
 Smart checklists and follow-up work. A checklist step says what it asks for (OK / Not OK / N/A, a number, a meter
