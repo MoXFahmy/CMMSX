@@ -33,3 +33,6 @@ web/dist/
 *.keystore
 keystore.properties
 signing.env
+
+# Firebase app file for push (0.11.0): copied into APK builds from Drive › _private, never committed
+mobile/android/app/google-services.json

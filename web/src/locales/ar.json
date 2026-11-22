@@ -85,7 +85,8 @@
     "language": "اللغة",
     "toggleNavigation": "إظهار القائمة أو إخفاؤها",
     "toggleColorScheme": "التبديل بين الوضع الفاتح والداكن",
-    "listSeparator": "، "
+    "listSeparator": "، ",
+    "confirm": "تأكيد"
   },
   "auth": {
     "signIn": "تسجيل الدخول",
@@ -798,7 +799,9 @@
       "stores": "المخازن",
       "transactions": "الحركات",
       "stock-take": "الجرد",
-      "groups": "مجموعات القطع"
+      "groups": "مجموعات القطع",
+      "shortages": "نواقص الأعمال",
+      "counts": "عمليات الجرد"
     },
     "stockMovement": "حركة مخزون",
     "tx": {
@@ -1337,7 +1340,17 @@
       "photo.add": "صورة",
       "reading.add": "قراءة عداد",
       "status.change": "الحالة",
-      "request.create": "طلب"
+      "request.create": "طلب",
+      "part.use": "قطعة مستخدمة",
+      "part.return": "قطعة مُرجعة",
+      "stock.issue": "صرف قطع",
+      "po.receive": "استلام توريد",
+      "count.line": "جرد مخزون",
+      "downtime.start": "توقف الأصل",
+      "downtime.end": "عاد للعمل",
+      "tasks.fromPm": "إضافة قائمة خطوات",
+      "workorder.create": "أمر عمل جديد",
+      "file": "فيديو أو مستند"
     },
     "state": {
       "waiting": "بالانتظار",
@@ -1373,7 +1386,6 @@
     "addComment": "أضف تعليقًا",
     "send": "إرسال",
     "me": "أنا",
-    "newWorkOrder": "أمر عمل جديد (التطبيق الكامل)",
     "reading": "القراءة",
     "remarks": "ملاحظات",
     "date": "التاريخ",
@@ -1428,7 +1440,9 @@
     "refreshServerProblem": "تعذر على الخادم إرسال أعمالك الآن. يواصل هاتفك العمل من نسخته؛ حاول مرة أخرى بعد دقائق.",
     "assetIsDownHint": "يبدأ توقفًا في سجل توقفات الأصل وقت إرسال هذا الطلب، حتى بدون شبكة.",
     "stopFromLog": "من سجل توقفات الأصل: متوقف منذ {{start}}. إكمال المهمة ينهي التوقف.",
-    "team": "الفريق: {{team}}"
+    "team": "الفريق: {{team}}",
+    "plannedParts": "القطع المخطط لها",
+    "tooSlow": "لم يصل هذا الملف عبر هذا الاتصال ({{tries}} محاولات). أعد المحاولة على شبكة Wi-Fi أو تجاهله."
   },
   "labels": {
     "title": "ملصقات QR",
@@ -1733,5 +1747,99 @@
     "publicTitle": "هل تم إنجاز العمل؟",
     "workDone": "العمل المنجز",
     "answer": "رد مقدم الطلب"
+  },
+  "techStock": {
+    "stock": "المخزون",
+    "searchParts": "رقم القطعة أو اسمها أو الباركود",
+    "noCopy": "المخزون غير موجود على هذا الهاتف بعد: حدّث عند توفر الشبكة.",
+    "noMatch": "لا توجد قطعة مطابقة.",
+    "store": "المخزن",
+    "inStock": "{{qty}} متاح",
+    "quantity": "الكمية",
+    "shortWarning": "نسخة المخزن ينقصها {{qty}}؛ يُضاف الناقص إلى قائمة أمين المخزن.",
+    "saved": "حُفظ؛ يُرسل عند توفر الشبكة.",
+    "parts": "القطع",
+    "addPart": "إضافة قطعة",
+    "usedOf": "استُخدم {{used}} من {{planned}} {{unit}}",
+    "markUsed": "استُخدمت",
+    "giveBack": "إرجاع",
+    "noParts": "لا توجد قطع مخططة.",
+    "use": "استخدام في هذا العمل",
+    "openCounts": "عمليات جرد مفتوحة",
+    "receive": "استلام توريد",
+    "partGone": "هذه القطعة غير موجودة على الهاتف.",
+    "bin": "الرف",
+    "reserved": "{{qty}} محجوز",
+    "issueToJob": "صرف إلى عمل",
+    "issue": "صرف",
+    "countGone": "هذا الجرد مغلق أو غير موجود على الهاتف.",
+    "counted": "تم جرد {{part}}",
+    "countedQty": "الكمية المجرودة",
+    "saveCount": "حفظ الجرد",
+    "waitingToSend": "في انتظار الإرسال",
+    "received": "حُفظ الاستلام",
+    "noOrders": "لا توجد أوامر للاستلام.",
+    "order": "أمر الشراء",
+    "line": "البند",
+    "outstanding": "متبقٍ {{qty}}",
+    "receiveButton": "استلام",
+    "shelfCount": "تُجرد الأصناف ذات مدة الصلاحية حسب الدفعة من المكتب.",
+    "used": "استُخدم {{qty}} {{unit}}"
+  },
+  "techJob": {
+    "downSince": "الأصل متوقف منذ {{when}}",
+    "running": "الأصل يعمل",
+    "backRunning": "عاد للعمل",
+    "assetStopped": "توقف الأصل",
+    "when": "متى",
+    "notAFile": "لا يمكن إرفاق {{name}} (الفيديو والمستندات: MP4 أو MOV أو WebM أو PDF أو Word أو Excel أو نص).",
+    "tooBig": "حجم {{name}} أكبر من {{mb}} ميجابايت.",
+    "addChecklist": "إضافة قائمة خطوات",
+    "attachFile": "فيديو أو مستند",
+    "cancelJob": "إلغاء العمل",
+    "pmTask": "قائمة الصيانة الوقائية",
+    "addSteps": "إضافة الخطوات",
+    "workOrderSaved": "حُفظ أمر العمل؛ يُرسل عند توفر الشبكة.",
+    "newWorkOrder": "أمر عمل جديد",
+    "whatToDo": "ما المطلوب عمله",
+    "createWorkOrder": "إنشاء أمر العمل",
+    "whoseHours": "ساعات من"
+  },
+  "invPhone": {
+    "shortagesHint": "القطع المخططة للأعمال المفتوحة التي لا يغطيها مخزنها، الأكثر إلحاحًا أولًا.",
+    "allStores": "كل المخازن",
+    "noShortages": "لا توجد نواقص.",
+    "store": "المخزن",
+    "short": "الناقص",
+    "countsHint": "افتح جردًا، واجرد من الهاتف (دون شبكة أيضًا)، ثم راجع الفروق ورحّلها.",
+    "newCount": "جرد جديد",
+    "partsCounted": "القطع المجرودة",
+    "opened": "فُتح",
+    "countNameHint": "مثال: مخزن أ، نوفمبر",
+    "openCount": "فتح الجرد",
+    "status": {
+      "Open": "مفتوح",
+      "Posted": "مُرحّل",
+      "Cancelled": "ملغى"
+    },
+    "postConfirm": "ترحيل الفروق كتسويات مخزون؟",
+    "cancelConfirm": "إلغاء هذا الجرد؟ لن يتغير شيء في المخزون.",
+    "posted": "رُحّل: سُوّيت {{count}} قطعة.",
+    "cancelCount": "إلغاء الجرد",
+    "post": "ترحيل {{count}} فرق",
+    "bin": "الرف",
+    "expected": "في المخزون",
+    "counted": "المجرود",
+    "difference": "الفرق",
+    "countedBy": "جرده",
+    "nothingCounted": "لم يُجرد شيء بعد.",
+    "movedSince": "تغيّر {{qty}} منذ عدّه"
+  },
+  "techLock": {
+    "reason": "فتح CMX",
+    "title": "CMX مقفل",
+    "unlock": "الفتح بالبصمة أو الوجه",
+    "setting": "الفتح بالبصمة أو الوجه",
+    "settingHint": "يُطلب عند فتح التطبيق وبعد 5 دقائق من الغياب. يبقى تسجيل دخولك 30 يومًا كما هو."
   }
 }

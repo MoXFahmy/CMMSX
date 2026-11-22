@@ -8,8 +8,7 @@ import dayjs from 'dayjs';
 import { IconCamera, IconPhoto, IconCheck, IconChevronLeft, IconClock, IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react';
 import { HOLD_REASONS, type HoldReason } from '@/api/types';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
-import { fmtDate, fmtDateTime, fmtQty, hoursText, notifyError, notifySuccess } from '@/components/utils';
-import { post } from '@/api/client';
+import { fmtDate, fmtDateTime, hoursText, notifyError } from '@/components/utils';
 import { downFor } from '@/components/downtime';
 import { withQueued } from './overlay';
 import { shrink } from './photos';
@@ -17,6 +16,8 @@ import { dueLabel } from './due';
 import { alreadySigned, needsLabour, staleCompletions } from './complete';
 import { SignaturePad, type SignatureHandle } from './SignaturePad';
 import { useTech } from './useTech';
+import { JobParts } from './StockPages';
+import { JobActions, StopCard } from './JobExtras';
 import type { TechJob } from './types';
 
 /** One job: checklist, hours, photos, comments, and start / hold / complete — all of it works without signal. */
@@ -24,11 +25,11 @@ export function JobPage() {
   const { t } = useTranslation();
   const { id = '' } = useParams();
   const navigate = useNavigate();
-  const { bundle, queue, sent, add, online, refresh } = useTech();
-  const [backBusy, setBackBusy] = useState(false);
+  const { bundle, queue, sent, add } = useTech();
   const base = bundle?.jobs.find((j) => j.id === id);
   // Sent changes first (they are older), then those still waiting.
-  const job = useMemo(() => (base ? withQueued(base, [...sent, ...queue]) : undefined), [base, sent, queue]);
+  const canIssue = bundle?.can?.issueStock ?? true;
+  const job = useMemo(() => (base ? withQueued(base, [...sent, ...queue], { canIssue }) : undefined), [base, sent, queue, canIssue]);
   const [hoursOpen, setHoursOpen] = useState(false);
   const [holdOpen, setHoldOpen] = useState(false);
   const [completeOpen, setCompleteOpen] = useState(false);
@@ -71,16 +72,7 @@ export function JobPage() {
         {job.description && <Text fz="sm" mt={6} style={{ whiteSpace: 'pre-wrap' }}>{job.description}</Text>}
       </Card>
       {job.asset?.downSince && (
-        <Alert color="red" title={t('downtime.downSince', { when: fmtDateTime(job.asset.downSince), for: downFor(job.asset.downSince, new Date()) })}>
-          {/* Online only: the stop's end time is the moment the button is pressed. */}
-          <Button size="sm" color="teal" leftSection={<IconPlayerPlay size={14} />} disabled={!online} loading={backBusy}
-            onClick={async () => {
-              setBackBusy(true);
-              try { await post(`/assets/${job.asset!.id}/back-running`); notifySuccess(t('downtime.backRunningDone')); await refresh(); }
-              catch (e) { notifyError(e); } finally { setBackBusy(false); }
-            }}>{t('downtime.backRunning')}</Button>
-          {!online && <Text fz="xs" mt={4}>{t('downtime.backRunningOffline')}</Text>}
-        </Alert>
+        <Alert color="red" title={t('downtime.downSince', { when: fmtDateTime(job.asset.downSince), for: downFor(job.asset.downSince, new Date()) })} />
       )}
       {(job.onlyWhenStopped || (job.accessWindows?.length ?? 0) > 0) && (
         <Card><Stack gap={6}><StoppedBadge show={job.onlyWhenStopped} /><AccessWindowsList windows={job.accessWindows} /></Stack></Card>
@@ -107,15 +99,9 @@ export function JobPage() {
         </Card>
       )}
 
-      {job.plannedParts.length > 0 && (
-        <Card withBorder p="sm">
-          <Group justify="space-between" mb={6}>
-            <Text fw={600}>{t('tech.parts')}</Text>
-            {online && <Button size="compact-xs" variant="light" component="a" href={`/work-orders/${job.id}`}>{t('tech.issueParts')}</Button>}
-          </Group>
-          {job.plannedParts.map((p) => <Text key={p.partNumber} fz="sm">{fmtQty(p.quantity)} {p.unitOfMeasure} · {p.partNumber} {p.partName}{p.storeCode ? ` (${p.storeCode})` : ''}</Text>)}
-        </Card>
-      )}
+      <StopCard job={job} />
+      <JobParts job={job} />
+      <JobActions job={job} />
 
       <Card withBorder p="sm">
         <Group justify="space-between" mb={6}>
@@ -150,9 +136,10 @@ export function JobPage() {
           {job.comments.map((c, i) => <div key={i}><Text fz="xs" c="dimmed">{c.userName ?? t('tech.me')} · {fmtDateTime(c.createdAt)}</Text><Text fz="sm" style={{ whiteSpace: 'pre-wrap' }}>{c.body}</Text></div>)}
         </Stack>
       </Card>
-      {online && <Anchor fz="xs" ta="center" href="/work-orders/new">{t('tech.newWorkOrder')}</Anchor>}
+      {bundle?.can?.createWorkOrders && <Anchor fz="xs" ta="center" onClick={() => navigate('/tech/new-work-order')}>{t('techJob.newWorkOrder')}</Anchor>}
 
-      <HoursModal opened={hoursOpen} onClose={() => setHoursOpen(false)} onSave={(p) => void change('labor.add', p)} />
+      <HoursModal opened={hoursOpen} onClose={() => setHoursOpen(false)} onSave={(p) => void change('labor.add', p)}
+        crew={bundle?.can?.logForOthers ? job.crew : undefined} me={bundle?.employeeId} />
       <HoldModal opened={holdOpen} noteRequired={!!bundle?.completionRules.holdNote} onClose={() => setHoldOpen(false)} onSave={(p) => void change('status.change', { status: 'OnHold', ...p })} />
       <CompleteSheet opened={completeOpen} job={job} onClose={() => setCompleteOpen(false)} onDone={() => navigate('/tech')} />
     </Stack>
@@ -176,8 +163,13 @@ function Step({ step, onChange }: { step: TechJob['tasks'][number]; onChange: (p
   );
 }
 
-function HoursModal({ opened, onClose, onSave }: { opened: boolean; onClose: () => void; onSave: (p: { workDate: string; hours: number; overtimeHours: number; notes: string | null }) => void }) {
+function HoursModal({ opened, onClose, onSave, crew, me }: {
+  opened: boolean; onClose: () => void; onSave: (p: { workDate: string; hours: number; overtimeHours: number; notes: string | null; employeeId?: string }) => void;
+  /** A crew leader picks whose hours these are (0.11.0); empty for everyone else. */
+  crew?: { employeeId: string; name: string }[]; me?: string;
+}) {
   const { t } = useTranslation();
+  const [who, setWho] = useState<string | null>(me ?? null);
   const [date, setDate] = useState<Date | null>(new Date());
   const [hours, setHours] = useState<number | string>(1);
   const [ot, setOt] = useState<number | string>(0);
@@ -186,6 +178,10 @@ function HoursModal({ opened, onClose, onSave }: { opened: boolean; onClose: () 
   return (
     <Modal opened={opened} onClose={onClose} title={t('tech.logHours')}>
       <Stack>
+        {crew && crew.length > 0 && (
+          <Select label={t('techJob.whoseHours')} data={[...(me && !crew.some((c) => c.employeeId === me) ? [{ value: me, label: t('tech.me') }] : []),
+            ...crew.map((c) => ({ value: c.employeeId, label: c.employeeId === me ? `${c.name} (${t('tech.me')})` : c.name }))]} value={who} onChange={setWho} />
+        )}
         <DateInput label={t('tech.date')} value={date} onChange={(v) => setDate(v ? new Date(v) : null)} minDate={dayjs().subtract(30, 'day').toDate()} maxDate={new Date()} valueFormat="DD MMM YYYY" />
         <Group grow>
           <NumberInput label={t('tech.hours')} min={0} max={24} step={0.25} decimalScale={2} value={hours} onChange={setHours} data-autofocus />
@@ -193,7 +189,8 @@ function HoursModal({ opened, onClose, onSave }: { opened: boolean; onClose: () 
         </Group>
         <Textarea label={t('common.notes')} autosize value={notes} onChange={(e) => setNotes(e.currentTarget.value)} />
         <Button disabled={!date || total <= 0 || total > 24} onClick={() => {
-          onSave({ workDate: dayjs(date).format('YYYY-MM-DD'), hours: Number(hours || 0), overtimeHours: Number(ot || 0), notes: notes.trim() || null });
+          onSave({ workDate: dayjs(date).format('YYYY-MM-DD'), hours: Number(hours || 0), overtimeHours: Number(ot || 0), notes: notes.trim() || null,
+            ...(who && who !== me ? { employeeId: who } : {}) });
           setNotes(''); onClose();
         }}>{t('common.save')}</Button>
       </Stack>

@@ -53,11 +53,18 @@ Parameters:
     Type: String
     Default: ""
     Description: ARN of an issued ACM certificate for Domain, requested in us-east-1 (CloudFront only uses certificates from there).
+  PushSecretArn:
+    Type: String
+    Default: ""
+    Description: >-
+      ARN of a Secrets Manager secret (in this region) holding the Firebase service account key file, for push
+      notifications to the Android app. You create the secret yourself; leave empty for no push.
 
 Conditions:
   HasDomain: !And [!Not [!Equals [!Ref Domain, ""]], !Not [!Equals [!Ref DomainCertificateArn, ""]]]
   HasMailDomain: !Not [!Equals [!Ref MailDomain, ""]]
   HasMailFrom: !Not [!Equals [!Ref MailFromAddress, ""]]
+  HasPush: !Not [!Equals [!Ref PushSecretArn, ""]]
 
 Resources:
   # ---------------------------------------------------------------- Network
@@ -292,7 +299,7 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
-                Resource: !Ref DatabaseSecret
+                Resource: !If [HasPush, [!Ref DatabaseSecret, !Ref PushSecretArn], !Ref DatabaseSecret]
 
   # Used by the app itself: attachments in its own bucket only.
   TaskRole:
@@ -376,6 +383,8 @@ Resources:
           Secrets:
             - { Name: Database__User, ValueFrom: !Sub "${DatabaseSecret}:username::" }
             - { Name: Database__Password, ValueFrom: !Sub "${DatabaseSecret}:password::" }
+            # Push notifications (0.11.0): the Firebase key, from the secret you created. Never in an environment variable.
+            - !If [HasPush, { Name: Push__ServiceAccountJson, ValueFrom: !Ref PushSecretArn }, !Ref AWS::NoValue]
           LogConfiguration:
             LogDriver: awslogs
             Options:

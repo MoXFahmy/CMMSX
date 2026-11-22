@@ -7,6 +7,10 @@
 # Release builds need CMMS_KEYSTORE (path to the key file), CMMS_KEYSTORE_PASSWORD, CMMS_KEY_ALIAS and
 # CMMS_KEY_PASSWORD; scripts/release.sh sets them from the private signing folder. The key and its passwords only
 # exist inside the build container, never in the working tree.
+#
+# Push notifications (0.11.0) need the Firebase app file: set CMMS_GOOGLE_SERVICES to its path (release.sh uses
+# _private/firebase/google-services.json when it is there). It is copied into release build copies only (Firebase knows
+# the release package, not the debug one); without it the app builds and works, just without push.
 set -euo pipefail
 
 MODE=${1:-debug}
@@ -34,6 +38,10 @@ if [ "$MODE" = release ]; then
 else
   OUT_NAME="CMX-$VERSION-debug.apk"
 fi
+if [ -n "${CMMS_GOOGLE_SERVICES:-}" ]; then
+  [ -f "$CMMS_GOOGLE_SERVICES" ] || { echo "build-apk: Firebase file not found: $CMMS_GOOGLE_SERVICES" >&2; exit 1; }
+  args+=(-v "$CMMS_GOOGLE_SERVICES":/firebase/google-services.json:ro)
+fi
 
 docker run "${args[@]}" -e MODE="$MODE" -e OUT_NAME="$OUT_NAME" "$IMAGE" bash -euo pipefail -c '
   # Work on a copy: the repository stays read-only and the signing settings never reach the working tree.
@@ -43,6 +51,12 @@ docker run "${args[@]}" -e MODE="$MODE" -e OUT_NAME="$OUT_NAME" "$IMAGE" bash -e
   cd /work/mobile
   npm ci --no-audit --no-fund >/dev/null
   node test-config.mjs >/dev/null
+  # Firebase (push): the app file goes into the build copy only. Firebase knows the release app (com.fourcsystems.cmms),
+  # not the debug one (…cmms.debug), so debug builds go without push. CMMS_PUSH=1 tells the web app it may register.
+  if [ -f /firebase/google-services.json ] && [ "$MODE" = release ]; then
+    cp /firebase/google-services.json android/app/google-services.json; export CMMS_PUSH=1; echo "Push notifications: on"
+  elif [ -f /firebase/google-services.json ]; then echo "Push notifications: off (debug builds aren'"'"'t known to Firebase)"
+  else echo "Push notifications: off (no Firebase file)"; fi
   npx cap sync android >/dev/null
   cd android
   if [ "$MODE" = release ]; then

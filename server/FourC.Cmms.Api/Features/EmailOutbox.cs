@@ -18,7 +18,7 @@ public sealed record EmailRecipient(string? Email, string? Name, Guid? UserId);
 /// them. Applies every rule in one place: e-mail set up on the server and switched on by the organization, the
 /// organization's switch for the event, each user's opt-outs, never the person who acted, one e-mail per address.
 /// </summary>
-public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration config, AccessService access)
+public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration config, AccessService access, PushOutbox push)
 {
     public bool Available => options.Value.Available;
 
@@ -35,6 +35,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
 
     public async Task AssigneesAddedAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, IReadOnlyCollection<Guid> employeeIds, CancellationToken ct)
     {
+        await push.JobAssignedAsync(db, ctx, w, employeeIds, ct); // their phones too (0.11.0), whether or not e-mail is set up
         if (!Available || employeeIds.Count == 0) return;
         var pm = w.PmScheduleId is not null;
         var key = pm ? EmailEvents.PmAssigned : EmailEvents.WorkOrderAssigned;
@@ -94,6 +95,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     /// <summary>Approved or rejected (by the request's status): the grid's recipients hear (by default the requester).</summary>
     public async Task RequestDecidedAsync(CmmsDbContext db, ITenantContext ctx, WorkRequest r, string? workOrderNumber, CancellationToken ct)
     {
+        if (r.Status == WorkRequestStatus.Approved) await push.RequestApprovedAsync(db, ctx, r, workOrderNumber ?? "", ct);
         if (!Available) return;
         var key = r.Status switch { WorkRequestStatus.Approved => EmailEvents.RequestApproved, WorkRequestStatus.Rejected => EmailEvents.RequestRejected, _ => null };
         if (key is null) return;

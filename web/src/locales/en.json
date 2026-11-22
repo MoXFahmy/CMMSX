@@ -85,7 +85,8 @@
     "language": "Language",
     "toggleNavigation": "Show or hide the menu",
     "toggleColorScheme": "Switch between light and dark",
-    "listSeparator": ", "
+    "listSeparator": ", ",
+    "confirm": "Confirm"
   },
   "auth": {
     "signIn": "Sign in",
@@ -794,7 +795,9 @@
       "stores": "Stores",
       "transactions": "Transactions",
       "stock-take": "Stock take",
-      "groups": "Part groups"
+      "groups": "Part groups",
+      "shortages": "Short for work",
+      "counts": "Stock counts"
     },
     "stockMovement": "Stock movement",
     "tx": {
@@ -1306,7 +1309,17 @@
       "photo.add": "Photo",
       "reading.add": "Meter reading",
       "status.change": "Status",
-      "request.create": "Request"
+      "request.create": "Request",
+      "part.use": "Part used",
+      "part.return": "Part given back",
+      "stock.issue": "Parts issued",
+      "po.receive": "Delivery received",
+      "count.line": "Stock count",
+      "downtime.start": "Asset stopped",
+      "downtime.end": "Back running",
+      "tasks.fromPm": "Checklist added",
+      "workorder.create": "New work order",
+      "file": "Video or document"
     },
     "state": {
       "waiting": "Waiting",
@@ -1339,7 +1352,6 @@
     "addComment": "Add a comment",
     "send": "Send",
     "me": "Me",
-    "newWorkOrder": "New work order (full app)",
     "reading": "Reading",
     "remarks": "Remarks",
     "date": "Date",
@@ -1391,7 +1403,9 @@
     "refreshServerProblem": "The server couldn't send your jobs just now. Your phone keeps working from its copy; try again in a few minutes.",
     "assetIsDownHint": "Starts a stop on the asset's downtime log at the time you send this, even without signal.",
     "stopFromLog": "From the asset's downtime log: down since {{start}}. Completing the job ends the stop.",
-    "team": "Team: {{team}}"
+    "team": "Team: {{team}}",
+    "plannedParts": "Planned parts",
+    "tooSlow": "This file didn't get through on this connection ({{tries}} tries). Retry on Wi-Fi, or discard it."
   },
   "labels": {
     "title": "QR labels",
@@ -1689,5 +1703,99 @@
     "publicTitle": "Is the work done?",
     "workDone": "Work done",
     "answer": "Requester's answer"
+  },
+  "techStock": {
+    "stock": "Stock",
+    "searchParts": "Part number, name or barcode",
+    "noCopy": "Stock isn't on this phone yet: refresh with a signal.",
+    "noMatch": "No part matches.",
+    "store": "Store",
+    "inStock": "{{qty}} free",
+    "quantity": "Quantity",
+    "shortWarning": "The store's copy is {{qty}} short; what's missing goes on the store keeper's list.",
+    "saved": "Saved; it is sent when there's a signal.",
+    "parts": "Parts",
+    "addPart": "Add a part",
+    "usedOf": "{{used}} of {{planned}} {{unit}} used",
+    "markUsed": "Used",
+    "giveBack": "Give back",
+    "noParts": "No parts planned.",
+    "use": "Use on this job",
+    "openCounts": "Open stock counts",
+    "receive": "Receive a delivery",
+    "partGone": "This part isn't on the phone.",
+    "bin": "Bin",
+    "reserved": "{{qty}} reserved",
+    "issueToJob": "Issue to a job",
+    "issue": "Issue",
+    "countGone": "This count is closed or isn't on the phone.",
+    "counted": "{{part}} counted",
+    "countedQty": "Counted",
+    "saveCount": "Save count",
+    "waitingToSend": "Waiting to send",
+    "received": "Receipt saved",
+    "noOrders": "No orders to receive.",
+    "order": "Order",
+    "line": "Line",
+    "outstanding": "{{qty}} to come",
+    "receiveButton": "Receive",
+    "shelfCount": "Shelf-life parts are counted by batch in the office.",
+    "used": "{{qty}} {{unit}} used"
+  },
+  "techJob": {
+    "downSince": "The asset is down since {{when}}",
+    "running": "The asset is running",
+    "backRunning": "Back running",
+    "assetStopped": "Asset stopped",
+    "when": "When",
+    "notAFile": "{{name}} can't be attached (videos and documents: MP4, MOV, WebM, PDF, Word, Excel, text).",
+    "tooBig": "{{name}} is larger than {{mb}} MB.",
+    "addChecklist": "Add a checklist",
+    "attachFile": "Video or document",
+    "cancelJob": "Cancel the job",
+    "pmTask": "PM checklist",
+    "addSteps": "Add the steps",
+    "workOrderSaved": "Work order saved; it is sent when there's a signal.",
+    "newWorkOrder": "New work order",
+    "whatToDo": "What needs doing",
+    "createWorkOrder": "Create work order",
+    "whoseHours": "Whose hours"
+  },
+  "invPhone": {
+    "shortagesHint": "Planned parts on open work that their store can't cover, most urgent first.",
+    "allStores": "All stores",
+    "noShortages": "Nothing is short.",
+    "store": "Store",
+    "short": "Short",
+    "countsHint": "Open a count, count on the phone (offline too), then review the differences and post them.",
+    "newCount": "New stock count",
+    "partsCounted": "Parts counted",
+    "opened": "Opened",
+    "countNameHint": "e.g. Store A, November",
+    "openCount": "Open the count",
+    "status": {
+      "Open": "Open",
+      "Posted": "Posted",
+      "Cancelled": "Cancelled"
+    },
+    "postConfirm": "Post the differences as stock adjustments?",
+    "cancelConfirm": "Cancel this count? Nothing changes in stock.",
+    "posted": "Posted: {{count}} parts adjusted.",
+    "cancelCount": "Cancel count",
+    "post": "Post {{count}} differences",
+    "bin": "Bin",
+    "expected": "In stock",
+    "counted": "Counted",
+    "difference": "Difference",
+    "countedBy": "Counted by",
+    "nothingCounted": "Nothing counted yet.",
+    "movedSince": "{{qty}} moved since it was counted"
+  },
+  "techLock": {
+    "reason": "Unlock CMX",
+    "title": "CMX is locked",
+    "unlock": "Unlock with fingerprint or face",
+    "setting": "Unlock with fingerprint or face",
+    "settingHint": "Asked when the app opens and after 5 minutes away. You stay signed in for 30 days as before."
   }
 }

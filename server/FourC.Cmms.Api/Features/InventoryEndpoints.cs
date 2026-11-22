@@ -347,24 +347,41 @@ public static class InventoryEndpoints
         {
             var date = i.Date ?? Today;
             var note = $"Stock take {date:yyyy-MM-dd}" + (i.Notes.Clean() is { } n ? $": {n}" : "");
-            var adjusted = await db.InTransactionAsync(async tk =>
-            {
-                var count = 0;
-                foreach (var line in i.Lines.GroupBy(l => l.PartId).Select(g => g.Last()))
-                {
-                    if (line.CountedQuantity < 0) throw new DomainException("Counted quantities cannot be negative.");
-                    var onHand = await db.StockLevels.Where(l => l.StoreId == i.StoreId && l.PartId == line.PartId).Select(l => (decimal?)l.QuantityOnHand).FirstOrDefaultAsync(tk) ?? 0;
-                    var diff = line.CountedQuantity - onHand;
-                    if (diff == 0) continue;
-                    if (await db.Parts.Where(p => p.Id == line.PartId).Select(p => p.IsShelfItem).FirstOrDefaultAsync(tk))
-                        throw new DomainException("Count shelf-life items per batch with an adjustment.");
-                    await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Adjustment, line.PartId, i.StoreId, diff, date, Notes: note), tk);
-                    count++;
-                }
-                return count;
-            }, ct);
+            var adjusted = await db.InTransactionAsync(tk =>
+                PostCountAsync(db, ctx, i.StoreId, date, i.Lines.GroupBy(l => l.PartId).Select(g => (g.Key, g.Last().CountedQuantity)).ToList(), note, tk), ct);
             return Results.Ok(new { adjusted });
         }).RequirePermission(Permissions.InventoryTransact);
+
+        // Short for work (0.11.0): planned parts on open work that their store can't cover, in order of need — the store keeper's list.
+        t.MapGet("/shortages", async (Guid? storeId, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var pairs = await db.WorkOrderParts.AsNoTracking().Where(p => p.StoreId != null && (storeId == null || p.StoreId == storeId)
+                    && db.WorkOrders.Any(w => w.Id == p.WorkOrderId && (w.Status == FourC.Cmms.Core.Work.WorkOrderStatus.Open
+                        || w.Status == FourC.Cmms.Core.Work.WorkOrderStatus.InProgress || w.Status == FourC.Cmms.Core.Work.WorkOrderStatus.OnHold))
+                    && db.Stores.Any(s => s.Id == p.StoreId))
+                .Select(p => new { p.PartId, StoreId = p.StoreId!.Value }).Distinct().Take(2000).ToListAsync(ct);
+            if (pairs.Count == 0) return Results.Ok(Array.Empty<object>());
+            var partIds = pairs.Select(p => p.PartId).Distinct().ToList();
+            var storeIds = pairs.Select(p => p.StoreId).Distinct().ToList();
+            var lines = await Planning.OpenLinesAsync(db, partIds, storeIds, ct);
+            var onHand = await db.StockLevels.AsNoTracking().Where(l => partIds.Contains(l.PartId) && storeIds.Contains(l.StoreId))
+                .ToDictionaryAsync(l => (l.PartId, l.StoreId), l => l.QuantityOnHand, ct);
+            var shorts = new List<(Guid LineId, Guid PartId, Guid StoreId, decimal Short)>();
+            foreach (var pair in pairs)
+                foreach (var (lineId, qty) in Reservations.Shortages(onHand.GetValueOrDefault((pair.PartId, pair.StoreId)), lines[(pair.PartId, pair.StoreId)]))
+                    if (qty > 0) shorts.Add((lineId, pair.PartId, pair.StoreId, qty));
+            var lineIds = shorts.Select(s => s.LineId).ToList();
+            var info = await db.WorkOrderParts.AsNoTracking().Where(p => lineIds.Contains(p.Id))
+                .Select(p => new { p.Id, p.WorkOrderId, WorkOrderNumber = db.WorkOrders.Where(w => w.Id == p.WorkOrderId).Select(w => w.Number).FirstOrDefault(),
+                    DueDate = db.WorkOrders.Where(w => w.Id == p.WorkOrderId).Select(w => w.DueDate).FirstOrDefault(),
+                    p.Part!.PartNumber, PartName = p.Part.Name, p.Part.UnitOfMeasure, StoreCode = p.Store!.Code })
+                .ToDictionaryAsync(p => p.Id, ct);
+            return Results.Ok(shorts.Where(s => info.ContainsKey(s.LineId)).Select(s => new
+            {
+                info[s.LineId].WorkOrderId, info[s.LineId].WorkOrderNumber, info[s.LineId].DueDate, s.PartId, info[s.LineId].PartNumber, info[s.LineId].PartName,
+                info[s.LineId].UnitOfMeasure, s.StoreId, info[s.LineId].StoreCode, Short = s.Short,
+            }).OrderBy(x => x.DueDate ?? DateOnly.MaxValue).ThenBy(x => x.WorkOrderNumber));
+        }).RequirePermission(Permissions.InventoryView);
 
         // Purchase proposal (4CSQL): store levels at or below re-order, considering quantity already on order.
         t.MapGet("/proposal", async (CmmsDbContext db, Guid? siteId, Guid? storeId, CancellationToken ct) =>
@@ -404,6 +421,28 @@ public static class InventoryEndpoints
     /// stock and open orders when a max level is set, or enough to cover planned need beyond stock and open orders — whichever is
     /// most, never below 0. With nothing reserved the last term is never positive, so the suggestion is the one before 0.3.0.
     /// </summary>
+    /// <summary>
+    /// Posts counted quantities as adjustments (the one-step stock-take and posting a stock count, 0.11.0). Returns how many parts
+    /// changed. The caller holds the transaction.
+    /// </summary>
+    internal static async Task<int> PostCountAsync(CmmsDbContext db, ITenantContext ctx, Guid storeId, DateOnly date, IReadOnlyList<(Guid PartId, decimal Counted)> lines,
+        string note, CancellationToken tk)
+    {
+        var count = 0;
+        foreach (var (partId, counted) in lines)
+        {
+            if (counted < 0) throw new DomainException("Counted quantities cannot be negative.");
+            var onHand = await db.StockLevels.Where(l => l.StoreId == storeId && l.PartId == partId).Select(l => (decimal?)l.QuantityOnHand).FirstOrDefaultAsync(tk) ?? 0;
+            var diff = counted - onHand;
+            if (diff == 0) continue;
+            if (await db.Parts.Where(p => p.Id == partId).Select(p => p.IsShelfItem).FirstOrDefaultAsync(tk))
+                throw new DomainException("Count shelf-life items per batch with an adjustment.");
+            await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Adjustment, partId, storeId, diff, date, Notes: note), tk);
+            count++;
+        }
+        return count;
+    }
+
     internal static decimal SuggestedQuantity(decimal onHand, decimal reserved, decimal onOrder, decimal reorderQuantity, decimal maxLevel)
     {
         var available = onHand - reserved;

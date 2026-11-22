@@ -21,12 +21,39 @@ export type TechJob = {
   myLabor: { workDate: string; hours: number; overtimeHours: number; notes?: string | null }[];
   /** Anyone has logged hours on the job (copies saved before 0.5.5 don't say). */
   hasLabor?: boolean;
+  /** 0.11.0: planned lines (to mark used) and the job site's default store. */
+  plannedLines?: PlannedLine[]; defaultStoreId?: string | null;
+  /** Parts issued to the job with no planned line for that part and store (to give back). */
+  usedParts?: UsedPart[];
+  /** The people on the job and its team's members (a crew leader logs their hours). */
+  crew?: { employeeId: string; name: string }[];
+};
+
+export type PlannedLine = { id: string; partId: string; storeId?: string | null; quantity: number; issued: number };
+export type UsedPart = { partId: string; storeId: string; issued: number };
+
+/** A part as the phone keeps it (GET /api/tech/stock, 0.11.0): stock and bin in each store of my sites. */
+export type StockPart = {
+  id: string; partNumber: string; name: string; unitOfMeasure: string; barcode?: string | null; isShelfItem: boolean; allowNegativeStock: boolean;
+  photoId?: string | null; levels: { storeId: string; onHand: number; reserved: number; bin?: string | null }[];
+};
+
+/** Parts, stores, cancel reasons, PM checklists, open counts and (to receive) open purchase orders, for working offline. */
+export type TechStock = {
+  stores: { id: string; code: string; name: string; siteId: string }[];
+  parts: StockPart[];
+  cancelReasons: { id: string; name: string }[];
+  pmTasks: { id: string; code: string; name: string; steps: string[] }[];
+  counts: { id: string; name: string; storeId: string }[];
+  purchaseOrders: { id: string; number: string; supplier: string; lines: { id: string; lineNumber: number; partId: string; description: string; unitOfMeasure?: string | null; outstanding: number; storeId?: string | null }[] }[] | null;
 };
 
 export type TechBundle = {
   employeeId: string; userId: string; jobs: TechJob[];
   failureCodes: { id: string; code: string; name: string }[];
   completionRules: { notes: boolean; labour: boolean; allSteps: boolean; failureCodeOnBreakdown: boolean; holdNote?: boolean };
+  /** What this person may do on the phone (0.11.0). */
+  can?: { logForOthers: boolean; cancel: boolean; createWorkOrders: boolean; issueStock?: boolean };
 };
 
 /** The assets, locations and meters of my sites (GET /api/tech/places), for scanning offline. */

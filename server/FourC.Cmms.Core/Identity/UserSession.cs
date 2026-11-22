@@ -20,4 +20,6 @@ public class UserSession : Entity, ITenantOwned
     /// device is no longer listed; null for rows written before this was kept.
     /// </summary>
     public DateTimeOffset? ExpiresAt { get; set; }
+    /// <summary>The phone app's Firebase token for push notifications (0.11.0); signing the device out removes it.</summary>
+    public string? PushToken { get; set; }
 }

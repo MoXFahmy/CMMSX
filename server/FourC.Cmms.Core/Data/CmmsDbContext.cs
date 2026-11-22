@@ -72,6 +72,9 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<CancelReason> CancelReasons => Set<CancelReason>();
     public DbSet<WorkRequestComment> WorkRequestComments => Set<WorkRequestComment>();
     public DbSet<RequestFeedback> RequestFeedback => Set<RequestFeedback>();
+    public DbSet<StockCount> StockCounts => Set<StockCount>();
+    public DbSet<StockCountLine> StockCountLines => Set<StockCountLine>();
+    public DbSet<PushMessage> PushMessages => Set<PushMessage>();
     public DbSet<WorkOrderStatusChange> WorkOrderStatusChanges => Set<WorkOrderStatusChange>();
     public DbSet<PmTask> PmTasks => Set<PmTask>();
     public DbSet<PmTaskStep> PmTaskSteps => Set<PmTaskStep>();
@@ -420,6 +423,26 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasIndex(x => new { x.TenantId, x.WorkRequestId });
             e.HasOne<WorkRequest>().WithMany().HasForeignKey(x => x.WorkRequestId).OnDelete(DeleteBehavior.Cascade);
         });
+        b.Entity<StockCount>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Name).HasMaxLength(200);
+            e.HasOne(x => x.Store).WithMany().HasForeignKey(x => x.StoreId).OnDelete(DeleteBehavior.Restrict);
+            e.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.StockCountId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.TenantId, x.StoreId, x.Status });
+        });
+        b.Entity<StockCountLine>(e =>
+        {
+            e.Property(x => x.CountedQuantity).HasPrecision(18, 3); e.Property(x => x.CountedByName).HasMaxLength(200);
+            e.HasOne(x => x.Part).WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.StockCountId, x.PartId }).IsUnique();
+        });
+        b.Entity<PushMessage>(e =>
+        {
+            e.Property(x => x.Title).HasMaxLength(200); e.Property(x => x.Body).HasMaxLength(1000); e.Property(x => x.Link).HasMaxLength(300);
+            e.Property(x => x.EntityType).HasMaxLength(50); e.Property(x => x.LastError).HasMaxLength(2000);
+            e.HasIndex(x => new { x.Status, x.NextAttemptAt });
+        });
         b.Entity<RequestFeedback>(e =>
         {
             e.ToTable("RequestFeedback");
@@ -575,7 +598,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         });
         b.Entity<UserSession>(e =>
         {
-            e.Property(x => x.DeviceName).HasMaxLength(120);
+            e.Property(x => x.DeviceName).HasMaxLength(120); e.Property(x => x.PushToken).HasMaxLength(512);
             e.HasIndex(x => new { x.TenantId, x.UserId });
         });
         b.Entity<StockReservation>(e => { e.HasNoKey(); e.ToView(Reservations.ViewName); e.Property(x => x.Reserved).HasPrecision(18, 3); });
@@ -708,6 +731,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<WorkOrderAssignee>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
         b.Entity<WorkOrderAsset>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
         b.Entity<StockLevel>().HasQueryFilter(SiteFilter, x => Stores.Any(s => s.Id == x.StoreId));
+        b.Entity<StockCount>().HasQueryFilter(SiteFilter, x => Stores.Any(s => s.Id == x.StoreId));
+        b.Entity<StockCountLine>().HasQueryFilter(SiteFilter, x => StockCounts.Any(c => c.Id == x.StockCountId));
         b.Entity<StockTransaction>().HasQueryFilter(SiteFilter, x => Stores.Any(s => s.Id == x.StoreId));
         b.Entity<Meter>().HasQueryFilter(SiteFilter, x => Assets.Any(a => a.Id == x.AssetId));
         b.Entity<MeterReading>().HasQueryFilter(SiteFilter, x => Meters.Any(m => m.Id == x.MeterId));

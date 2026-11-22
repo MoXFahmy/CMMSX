@@ -23,20 +23,41 @@ public static partial class TechEndpoints
     public sealed record Answer(string Status, string? Message = null, string? Code = null);
 
     private sealed record TaskPayload(Guid TaskId, bool? IsDone, string? Reading, string? Remarks, bool Force = false);
-    private sealed record LaborPayload(DateOnly? WorkDate, decimal Hours, decimal OvertimeHours, string? Notes);
+    /// <summary>EmployeeId (0.11.0): a crew leader logging another technician's hours (needs "Log hours for others").</summary>
+    private sealed record LaborPayload(DateOnly? WorkDate, decimal Hours, decimal OvertimeHours, string? Notes, Guid? EmployeeId = null);
     private sealed record CommentPayload(string? Body);
     private sealed record ReadingPayload(Guid MeterId, decimal Value, string? Note, bool Confirm = false);
     private sealed record StatusPayload(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes, Guid? FailureCodeId,
-        bool? AssetWasDown, decimal? DowntimeHours);
+        bool? AssetWasDown, decimal? DowntimeHours, Guid? CancelReasonId = null);
     /// <summary>AssetIsDown: "The asset is down" (0.8.1); older app versions don't send it.</summary>
     private sealed record RequestPayload(string? Title, string? Description, WorkPriority? Priority, Guid? AssetId, Guid? LocationId, Guid? SiteId, bool? AssetIsDown = null,
         Guid? RequestTypeId = null);
 
+    /// <summary>A part used on, returned from or issued to a job (0.11.0); a planned line's store is used when no store is given.</summary>
+    private sealed record PartPayload(Guid PartId, Guid? StoreId, decimal Quantity, Guid? LineId = null, Guid? WorkOrderId = null);
+    /// <summary>A delivery received against a purchase order line on the phone (0.11.0).</summary>
+    private sealed record ReceivePayload(Guid PurchaseOrderId, Guid LineId, decimal Quantity, Guid? StoreId = null, string? BatchNumber = null, DateOnly? ExpiryDate = null);
+    /// <summary>A counted quantity for a stock count (0.11.0).</summary>
+    private sealed record CountPayload(Guid CountId, Guid PartId, decimal Quantity);
+    /// <summary>The asset's stop started or ended from a job (0.11.0); At = the time the technician chose, else when the change was made.</summary>
+    private sealed record StopPayload(Guid? AssetId, DateTimeOffset? At, string? Reason);
+    /// <summary>A PM task's steps added to a job's checklist (0.11.0).</summary>
+    private sealed record PmTasksPayload(Guid PmTaskId);
+    /// <summary>A work order raised on the phone (0.11.0), by someone who may create work orders; assigned to them unless AssignToMe is false.</summary>
+    private sealed record WorkOrderPayload(string? Title, string? Description, WorkPriority? Priority, WorkType? Type, Guid? SiteId, Guid? LocationId, Guid? AssetId,
+        bool? AssignToMe = null);
     /// <summary>A change that can't be applied; rolls back anything it did and is answered "rejected".</summary>
     private sealed class Rejected(string message, string? code = null) : Exception(message) { public string? Code { get; } = code; }
 
     private static readonly HashSet<string> ImageTypes = ["image/jpeg", "image/png", "image/webp"];
     private const long MaxImageBytes = 10 * 1024 * 1024;
+    /// <summary>Videos and documents a technician can attach from the phone (0.11.0), by the type their file name gives.</summary>
+    private static readonly HashSet<string> FileTypes = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "video/mp4", "video/quicktime", "video/webm", "application/pdf", "application/msword", "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain", "text/csv",
+    };
+    private const long MaxFileBytes = 50 * 1024 * 1024;
     private static readonly TimeSpan OldestChange = TimeSpan.FromDays(30);
 
     /// <summary>409 "otherUser": the change was queued by another person; the phone keeps it until they sign in again.</summary>
@@ -70,17 +91,27 @@ public static partial class TechEndpoints
             if (!Guid.TryParse(form["clientId"], out var clientId) || clientId == Guid.Empty) return Results.Problem(title: Translator.T("A file needs an id."), statusCode: 400);
             if (OtherUser(Guid.TryParse(form["userId"], out var by) ? by : null, ctx) is { } other) return other;
             var at = Clamp(DateTimeOffset.TryParse(form["at"], out var a) ? a : null, DateTimeOffset.UtcNow);
-            var signature = form["kind"].ToString() == "signature";
+            var kind = form["kind"].ToString();
+            var signature = kind == "signature";
+            var document = kind == "file"; // a video or document (0.11.0)
             var allowed = await perms.GetAsync(ctx.UserId!.Value);
-            return Results.Ok(await RunAsync(db, ctx, clientId, signature ? "signature.add" : "photo.add", at, async () =>
+            return Results.Ok(await RunAsync(db, ctx, clientId, signature ? "signature.add" : document ? "file.add" : "photo.add", at, async () =>
             {
                 Require(allowed, Permissions.WorkOrdersExecute);
                 var w = await WorkOrderAsync(db, Guid.TryParse(form["workOrderId"], out var wid) ? wid : null, ct);
                 var file = form.Files.GetFile("file") ?? throw new Rejected("The file is missing.");
-                if (!ImageTypes.Contains(AttachmentEndpoints.ContentTypeOf(file.FileName, file.ContentType)))
-                    throw new Rejected($"{file.FileName} isn't a photo (JPEG, PNG or WebP).");
+                var type = AttachmentEndpoints.ContentTypeOf(file.FileName, file.ContentType);
                 if (file.Length == 0) throw new Rejected($"{file.FileName} is empty.");
-                if (file.Length > MaxImageBytes) throw new Rejected($"{file.FileName} is larger than 10 MB.");
+                if (document)
+                {
+                    if (!FileTypes.Contains(type)) throw new Rejected($"{file.FileName} isn't a video or document the app can attach (MP4, MOV, WebM, PDF, Word, Excel, text).");
+                    if (file.Length > MaxFileBytes) throw new Rejected($"{file.FileName} is larger than 50 MB.");
+                }
+                else
+                {
+                    if (!ImageTypes.Contains(type)) throw new Rejected($"{file.FileName} isn't a photo (JPEG, PNG or WebP).");
+                    if (file.Length > MaxImageBytes) throw new Rejected($"{file.FileName} is larger than 10 MB.");
+                }
                 var att = await AttachmentEndpoints.SaveAttachmentAsync(db, storage, "WorkOrder", w.Id, file, ct);
                 if (signature)
                 {
@@ -92,7 +123,7 @@ public static partial class TechEndpoints
                 await Housekeeping.SaveOrRemoveFileAsync(storage, att.StorageKey, () => db.SaveChangesAsync(ct), ct);
                 return new Answer("done");
             }, ct));
-        }).DisableAntiforgery();
+        }).DisableAntiforgery().WithMetadata(new Microsoft.AspNetCore.Mvc.RequestSizeLimitAttribute(MaxFileBytes + 2 * 1024 * 1024));
     }
 
     /// <summary>
@@ -156,6 +187,15 @@ public static partial class TechEndpoints
         if (!allowed.Contains(permission)) throw new Rejected("You don't have permission to do this.");
     }
 
+    /// <summary>The store a part change uses: the one sent, else its planned line's, else the job site's default store.</summary>
+    private static async Task<Guid> StoreOfAsync(CmmsDbContext db, WorkOrder w, PartPayload p, CancellationToken ct)
+    {
+        if (p.StoreId is { } given) return given;
+        if (p.LineId is { } lineId && await db.WorkOrderParts.Where(l => l.Id == lineId && l.WorkOrderId == w.Id).Select(l => l.StoreId).FirstOrDefaultAsync(ct) is { } lineStore)
+            return lineStore;
+        return await db.Sites.AllSites().Where(s => s.Id == w.SiteId).Select(s => s.Settings.DefaultStoreId).FirstOrDefaultAsync(ct) ?? throw new Rejected("Choose the store.");
+    }
+
     private static async Task<WorkOrder> WorkOrderAsync(CmmsDbContext db, Guid? id, CancellationToken ct) =>
         (id is { } wid ? await db.WorkOrders.FirstOrDefaultAsync(w => w.Id == wid, ct) : null) ?? throw new Rejected("This work order no longer exists.");
 
@@ -197,13 +237,21 @@ public static partial class TechEndpoints
                 RequireNotClosed(w);
                 var p = Read<LaborPayload>(input.Payload, options);
                 var me = await EmployeeAsync(db, ctx, ct) ?? throw new Rejected("Your account isn't linked to an employee.");
+                var who = me.EmployeeId;
+                if (p.EmployeeId is { } other && other != me.EmployeeId)
+                {
+                    // A crew leader logs another technician's hours (0.11.0).
+                    Require(allowed, Permissions.WorkOrdersLogForOthers);
+                    if (!await db.Employees.AnyAsync(e => e.Id == other && e.IsActive, ct)) throw new Rejected("Choose an active person.");
+                    who = other;
+                }
                 // Like the changes themselves: hours for the last 30 days (a day of slack for time zones), never for days to come.
                 var day = DateOnly.FromDateTime(at.UtcDateTime);
                 var workDate = p.WorkDate ?? day;
                 if (workDate < day.AddDays(-OldestChange.Days) || workDate > day.AddDays(1))
                     throw new Rejected("The work date must be within the last 30 days.");
                 var (v, _) = await WorkOrderEndpoints.AddLaborAsync(db, ctx, w.Id,
-                    new WorkOrderEndpoints.LaborInput(me.EmployeeId, workDate, p.Hours, p.OvertimeHours, p.Notes), ct, at);
+                    new WorkOrderEndpoints.LaborInput(who, workDate, p.Hours, p.OvertimeHours, p.Notes), ct, at);
                 Ensure(v);
                 await db.SaveChangesAsync(ct);
                 return new Answer("done");
@@ -227,6 +275,104 @@ public static partial class TechEndpoints
             }
             case "status.change":
                 return await ChangeStatusAsync(db, ctx, mail, allowed, Read<StatusPayload>(input.Payload, options), input.WorkOrderId, at, ct);
+            case "part.use":
+            case "part.return":
+            {
+                Require(allowed, Permissions.WorkOrdersExecute);
+                var w = await WorkOrderAsync(db, input.WorkOrderId, ct);
+                RequireNotClosed(w);
+                var p = Read<PartPayload>(input.Payload, options);
+                var store = await StoreOfAsync(db, w, p, ct);
+                if (input.Type == "part.return")
+                {
+                    Require(allowed, Permissions.InventoryTransact);
+                    await PhoneStock.ReturnAsync(db, ctx, w, p.PartId, store, p.Quantity, at, ct);
+                    return new Answer("done");
+                }
+                // Someone who can't take parts from the store asks for them instead (the store keeper issues them).
+                var note = allowed.Contains(Permissions.InventoryTransact)
+                    ? await PhoneStock.UseAsync(db, ctx, w, p.PartId, store, p.Quantity, at, ct)
+                    : await PhoneStock.AskAsync(db, w, p.PartId, store, p.Quantity, ct);
+                return new Answer("done", note);
+            }
+            case "stock.issue":
+            {
+                Require(allowed, Permissions.InventoryTransact);
+                var p = Read<PartPayload>(input.Payload, options);
+                var w = await WorkOrderAsync(db, p.WorkOrderId ?? input.WorkOrderId, ct);
+                RequireNotClosed(w);
+                var store = p.StoreId ?? throw new Rejected("Choose the store.");
+                return new Answer("done", await PhoneStock.UseAsync(db, ctx, w, p.PartId, store, p.Quantity, at, ct));
+            }
+            case "po.receive":
+            {
+                Require(allowed, Permissions.PurchasingReceive);
+                var p = Read<ReceivePayload>(input.Payload, options);
+                var day = Sla.LocalDay(at, Sla.Zone((await SlaQueries.SettingsAsync(db, ct)).TimeZone));
+                await PurchasingEndpoints.ReceiveCoreAsync(db, ctx, mail, p.PurchaseOrderId,
+                    new PurchasingEndpoints.ReceiveInput(day, null, [new PurchasingEndpoints.ReceiveLine(p.LineId, p.Quantity, p.StoreId, p.BatchNumber, p.ExpiryDate)]), day, ct);
+                return new Answer("done");
+            }
+            case "count.line":
+            {
+                Require(allowed, Permissions.InventoryView);
+                var p = Read<CountPayload>(input.Payload, options);
+                await StockCountEndpoints.CountLineAsync(db, ctx, p.CountId, p.PartId, p.Quantity, at, ct);
+                await db.SaveChangesAsync(ct);
+                return new Answer("done");
+            }
+            case "downtime.start":
+            case "downtime.end":
+            {
+                Require(allowed, Permissions.WorkOrdersExecute);
+                var w = await WorkOrderAsync(db, input.WorkOrderId, ct);
+                RequireNotClosed(w);
+                var p = Read<StopPayload>(input.Payload, options);
+                var asset = p.AssetId ?? w.AssetId ?? throw new Rejected("Choose the asset.");
+                if (!await db.Assets.AnyAsync(a => a.Id == asset, ct)) throw new Rejected("Asset not found.");
+                if (p.At > DateTimeOffset.UtcNow.AddMinutes(1)) throw new Rejected("The time can't be in the future.");
+                var when = p.At ?? at;
+                if (input.Type == "downtime.end")
+                {
+                    if (!await Downtime.EndOpenAsync(db, ctx, asset, when, ct)) throw new Rejected("The asset isn't down.");
+                    await db.SaveChangesAsync(ct);
+                    return new Answer("done");
+                }
+                var already = await db.DowntimeEvents.AnyAsync(e => e.AssetId == asset && e.EndedAt == null, ct);
+                var stop = await Downtime.StartOrJoinAsync(db, asset, when, p.Reason ?? w.Title, FourC.Cmms.Core.Assets.DowntimeSource.WorkOrder, w.Number, ct);
+                // The job is about this stop: completing it ends the stop (as "The asset is down" on the web).
+                if (w.AssetId == asset && w.DowntimeEventId is null) { w.DowntimeEventId = stop.Id; w.AssetWasDown = true; }
+                await db.SaveChangesAsync(ct);
+                return new Answer("done", already ? "The asset is already down." : null);
+            }
+            case "tasks.fromPm":
+            {
+                Require(allowed, Permissions.WorkOrdersExecute);
+                var w = await WorkOrderAsync(db, input.WorkOrderId, ct);
+                RequireNotClosed(w);
+                var p = Read<PmTasksPayload>(input.Payload, options);
+                var steps = await db.PmTaskSteps.AsNoTracking().Where(s => s.PmTaskId == p.PmTaskId).OrderBy(s => s.Sequence).Select(s => s.Description).ToListAsync(ct);
+                if (steps.Count == 0 && !await db.PmTasks.AnyAsync(t => t.Id == p.PmTaskId, ct)) throw new Rejected("This checklist no longer exists.");
+                var next = (await db.WorkOrderTasks.Where(t => t.WorkOrderId == w.Id).MaxAsync(t => (int?)t.Sequence, ct) ?? 0) + 1;
+                foreach (var step in steps)
+                    db.WorkOrderTasks.Add(new WorkOrderTask { WorkOrderId = w.Id, Sequence = next++, Description = step.Length > 1000 ? step[..1000] : step });
+                await db.SaveChangesAsync(ct);
+                return new Answer("done");
+            }
+            case "workorder.create":
+            {
+                Require(allowed, Permissions.WorkOrdersCreate);
+                var p = Read<WorkOrderPayload>(input.Payload, options);
+                var site = p.SiteId ?? (p.AssetId is { } aid ? await db.Assets.Where(x => x.Id == aid).Select(x => (Guid?)x.SiteId).FirstOrDefaultAsync(ct) : null)
+                           ?? (p.LocationId is { } lid ? await db.Locations.Where(x => x.Id == lid).Select(x => (Guid?)x.SiteId).FirstOrDefaultAsync(ct) : null)
+                           ?? throw new Rejected("Choose where the work is.");
+                var me = await EmployeeAsync(db, ctx, ct);
+                var woInput = new WorkOrderEndpoints.WorkOrderInput(p.Title ?? "", p.Description, p.Type ?? WorkType.Corrective, p.Priority ?? WorkPriority.Medium, site, p.LocationId,
+                    p.AssetId, null, p.AssignToMe != false && me is not null ? [me.EmployeeId] : null, null, null, null, null);
+                Ensure(await WorkOrderEndpoints.ValidateAsync(woInput, db, ct));
+                await WorkOrderEndpoints.CreateAsync(db, ctx, woInput, null, ct, mail: mail, raisedAt: at, note: "Created on the phone");
+                return new Answer("done");
+            }
             case "request.create":
             {
                 Require(allowed, Permissions.RequestsCreate);
@@ -254,7 +400,10 @@ public static partial class TechEndpoints
         DateTimeOffset at, CancellationToken ct)
     {
         Require(allowed, Permissions.WorkOrdersExecute);
-        if (p.Status is not (WorkOrderStatus.InProgress or WorkOrderStatus.OnHold or WorkOrderStatus.Completed)) throw new Rejected("The phone can start, hold or complete work only.");
+        if (p.Status is not (WorkOrderStatus.InProgress or WorkOrderStatus.OnHold or WorkOrderStatus.Completed or WorkOrderStatus.Cancelled))
+            throw new Rejected("The phone can start, hold, complete or cancel work only.");
+        // Cancelling (0.11.0): as on the web — the close permission, and the reason the organization asks for.
+        if (p.Status == WorkOrderStatus.Cancelled && !allowed.Contains(Permissions.WorkOrdersClose)) throw new Rejected("You can't cancel work orders.");
         var w = await WorkOrderAsync(db, workOrderId, ct);
         if (p.Status == WorkOrderStatus.Completed && w.Status is WorkOrderStatus.Completed or WorkOrderStatus.Closed)
         {
@@ -285,7 +434,8 @@ public static partial class TechEndpoints
         var completed = p.Status == WorkOrderStatus.Completed;
         var input = new WorkOrderEndpoints.StatusInput(p.Status, p.HoldReason, p.Note, p.CompletionNotes, p.CauseNotes, p.FailureCodeId, p.AssetWasDown, p.DowntimeHours,
             // When the technician started (offline) or, on completion, never later than when they finished.
-            ActualStart: p.Status == WorkOrderStatus.InProgress || (completed && w.StartedAt > at) ? at : null, ActualEnd: completed ? at : null, At: at);
+            ActualStart: p.Status == WorkOrderStatus.InProgress || (completed && w.StartedAt > at) ? at : null, ActualEnd: completed ? at : null, At: at,
+            CancelReasonId: p.CancelReasonId);
         Ensure(await WorkOrderEndpoints.ChangeStatusAsync(db, ctx, mail, settings, w, input, ct));
         await db.SaveChangesAsync(ct);
         return new Answer("done");

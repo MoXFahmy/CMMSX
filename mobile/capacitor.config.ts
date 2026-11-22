@@ -24,8 +24,9 @@ const config: CapacitorConfig = {
     SystemBars: { insetsHandling: 'native' },
   },
   android: {
-    // Lets the web app show "Android app x.y.z" and the server's logs tell app traffic apart.
-    appendUserAgent: `4CCMMS-Android/${version}`,
+    // Lets the web app show "Android app x.y.z" and the server's logs tell app traffic apart. A build that carries the
+    // Firebase file (mobile/build-apk.sh sets CMMS_PUSH=1) adds 4CCMMS-Push, so the web app knows it may register for push.
+    appendUserAgent: `4CCMMS-Android/${version}${process.env.CMMS_PUSH === '1' ? ' 4CCMMS-Push' : ''}`,
   },
 };
 

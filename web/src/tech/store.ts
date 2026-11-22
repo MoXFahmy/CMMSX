@@ -1,6 +1,6 @@
 import { openDB, type DBSchema, type IDBPDatabase } from 'idb';
 import type { OutboxStore, QueuedChange } from './outbox';
-import type { TechBundle, TechPlaces } from './types';
+import type { TechBundle, TechPlaces, TechStock } from './types';
 
 /**
  * What the phone keeps (IndexedDB "cmms-tech"): per user, the last bundle and places, the queue of changes and their
@@ -36,7 +36,12 @@ export async function wipeCopy(userId: string) {
   await db.delete('bundle', userId);
   await db.delete('places', userId);
   await db.delete('meta', `notes:${userId}`);
+  await db.delete('meta', `stock:${userId}`);
 }
+
+/** The phone's copy of parts and stock (0.11.0), kept with the other small things. */
+export async function saveStock(userId: string, data: TechStock, etag?: string) { await setMeta(`stock:${userId}`, { savedAt: Date.now(), etag, data }); }
+export async function loadStock(userId: string) { return getMeta<{ savedAt: number; etag?: string; data: TechStock }>(`stock:${userId}`); }
 
 export async function getMeta<T>(key: string): Promise<T | undefined> { return (await (await techDb()).get('meta', key)) as T | undefined; }
 export async function setMeta(key: string, value: unknown) {

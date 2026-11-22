@@ -19,6 +19,7 @@ public sealed class ApiFixture : IAsyncLifetime
     public bool Enabled => Factory is not null;
     /// <summary>Every e-mail the app sends in this fixture (the app's mail service is replaced by a recorder).</summary>
     public RecordingEmailSender Emails { get; } = new();
+    public RecordingPushTransport Pushes { get; } = new();
 
     public Task InitializeAsync()
     {
@@ -37,7 +38,13 @@ public sealed class ApiFixture : IAsyncLifetime
             b.UseSetting("Email:AllowedOrganizations", "*"); // sign-up is open in tests; the operator allows every organization
             b.UseSetting("App:PublicUrl", "https://cmms.test");
             b.UseSetting("Email:OverdueAutoRun", "false"); // tests run the overdue pass themselves
-            b.ConfigureTestServices(s => { s.RemoveAll<FourC.Cmms.Api.Infrastructure.IEmailSender>(); s.AddSingleton<FourC.Cmms.Api.Infrastructure.IEmailSender>(Emails); });
+            b.UseSetting("Push:ServiceAccountJson", "{\"project_id\":\"cmx-test\"}"); // push "set up"; the transport is a recorder
+            b.UseSetting("Push:AutoSend", "false");
+            b.ConfigureTestServices(s =>
+            {
+                s.RemoveAll<FourC.Cmms.Api.Infrastructure.IEmailSender>(); s.AddSingleton<FourC.Cmms.Api.Infrastructure.IEmailSender>(Emails);
+                s.RemoveAll<FourC.Cmms.Api.Features.IPushTransport>(); s.AddSingleton<FourC.Cmms.Api.Features.IPushTransport>(Pushes);
+            });
         });
         return Task.CompletedTask;
     }

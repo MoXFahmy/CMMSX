@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { ShortagesTab, StockCountsTab } from './CountsAndShortages';
 import { ActionIcon, Anchor, Badge, Button, Card, Checkbox, Group, Menu, Modal, NumberInput, Select, SimpleGrid, Stack, Switch, Tabs, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { useDisclosure } from '@mantine/hooks';
@@ -22,7 +23,7 @@ import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtPrice, fmtQty, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { BulkBar, FilterChips, ListTools, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
-const TABS = ['parts', 'stores', 'transactions', 'stock-take', 'groups'] as const;
+const TABS = ['parts', 'stores', 'transactions', 'shortages', 'counts', 'stock-take', 'groups'] as const;
 
 export function InventoryPage() {
   const { t } = useTranslation();
@@ -56,6 +57,8 @@ export function InventoryPage() {
       {tab === 'parts' && <PartsTab />}
       {tab === 'stores' && <StoresTab />}
       {tab === 'transactions' && <TransactionsTab />}
+      {tab === 'shortages' && <ShortagesTab />}
+      {tab === 'counts' && <StockCountsTab />}
       {tab === 'stock-take' && <StockTakeTab />}
       {tab === 'groups' && <LookupTable path="/part-groups" title={t('inv.tabs.groups')} newLabel={t('inv.newGroup')} editable={can(P.inventoryManage)} />}
       {txKind && <StockTxModal kind={txKind} opened onClose={() => setTxKind(null)} />}
