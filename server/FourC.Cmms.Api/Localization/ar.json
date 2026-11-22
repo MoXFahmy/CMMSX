@@ -758,5 +758,8 @@
  "This took parts reserved for {0}.": "استُخدمت قطع محجوزة لـ {0}.",
  "Added to the job's parts; the store keeper issues them.": "أُضيفت إلى قطع العمل؛ يصرفها أمين المخزن.",
  "{0} is a shelf-life item: issue it with its batch in the office.": "{0} صنف له مدة صلاحية: اصرفه مع رقم دفعته من المكتب.",
- "Choose the store.": "اختر المخزن."
+ "Choose the store.": "اختر المخزن.",
+ "This count was already posted or cancelled.": "تم ترحيل هذا الجرد أو إلغاؤه من قبل.",
+ "This count no longer exists.": "هذا الجرد لم يعد موجودًا.",
+ "Count not found.": "الجرد غير موجود."
 }

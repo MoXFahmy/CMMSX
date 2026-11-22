@@ -155,6 +155,7 @@ api.MapImportEndpoints();
 api.MapWorkRequestEndpoints();
 api.MapRequestTypeEndpoints();
 api.MapRequestFeedbackEndpoints();
+api.MapStockCountEndpoints();
 api.MapWorkOrderEndpoints();
 api.MapDowntimeEndpoints();
 api.MapPlanningEndpoints();

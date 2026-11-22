@@ -36,6 +36,8 @@ public static partial class TechEndpoints
     private sealed record PartPayload(Guid PartId, Guid? StoreId, decimal Quantity, Guid? LineId = null, Guid? WorkOrderId = null);
     /// <summary>A delivery received against a purchase order line on the phone (0.11.0).</summary>
     private sealed record ReceivePayload(Guid PurchaseOrderId, Guid LineId, decimal Quantity, Guid? StoreId = null, string? BatchNumber = null, DateOnly? ExpiryDate = null);
+    /// <summary>A counted quantity for a stock count (0.11.0).</summary>
+    private sealed record CountPayload(Guid CountId, Guid PartId, decimal Quantity);
     /// <summary>A change that can't be applied; rolls back anything it did and is answered "rejected".</summary>
     private sealed class Rejected(string message, string? code = null) : Exception(message) { public string? Code { get; } = code; }
 
@@ -276,6 +278,14 @@ public static partial class TechEndpoints
                 var day = Sla.LocalDay(at, Sla.Zone((await SlaQueries.SettingsAsync(db, ct)).TimeZone));
                 await PurchasingEndpoints.ReceiveCoreAsync(db, ctx, mail, p.PurchaseOrderId,
                     new PurchasingEndpoints.ReceiveInput(day, null, [new PurchasingEndpoints.ReceiveLine(p.LineId, p.Quantity, p.StoreId, p.BatchNumber, p.ExpiryDate)]), day, ct);
+                return new Answer("done");
+            }
+            case "count.line":
+            {
+                Require(allowed, Permissions.InventoryView);
+                var p = Read<CountPayload>(input.Payload, options);
+                await StockCountEndpoints.CountLineAsync(db, ctx, p.CountId, p.PartId, p.Quantity, at, ct);
+                await db.SaveChangesAsync(ct);
                 return new Answer("done");
             }
             case "request.create":

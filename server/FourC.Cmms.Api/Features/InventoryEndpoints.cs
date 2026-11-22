@@ -347,22 +347,8 @@ public static class InventoryEndpoints
         {
             var date = i.Date ?? Today;
             var note = $"Stock take {date:yyyy-MM-dd}" + (i.Notes.Clean() is { } n ? $": {n}" : "");
-            var adjusted = await db.InTransactionAsync(async tk =>
-            {
-                var count = 0;
-                foreach (var line in i.Lines.GroupBy(l => l.PartId).Select(g => g.Last()))
-                {
-                    if (line.CountedQuantity < 0) throw new DomainException("Counted quantities cannot be negative.");
-                    var onHand = await db.StockLevels.Where(l => l.StoreId == i.StoreId && l.PartId == line.PartId).Select(l => (decimal?)l.QuantityOnHand).FirstOrDefaultAsync(tk) ?? 0;
-                    var diff = line.CountedQuantity - onHand;
-                    if (diff == 0) continue;
-                    if (await db.Parts.Where(p => p.Id == line.PartId).Select(p => p.IsShelfItem).FirstOrDefaultAsync(tk))
-                        throw new DomainException("Count shelf-life items per batch with an adjustment.");
-                    await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Adjustment, line.PartId, i.StoreId, diff, date, Notes: note), tk);
-                    count++;
-                }
-                return count;
-            }, ct);
+            var adjusted = await db.InTransactionAsync(tk =>
+                PostCountAsync(db, ctx, i.StoreId, date, i.Lines.GroupBy(l => l.PartId).Select(g => (g.Key, g.Last().CountedQuantity)).ToList(), note, tk), ct);
             return Results.Ok(new { adjusted });
         }).RequirePermission(Permissions.InventoryTransact);
 
@@ -435,6 +421,28 @@ public static class InventoryEndpoints
     /// stock and open orders when a max level is set, or enough to cover planned need beyond stock and open orders — whichever is
     /// most, never below 0. With nothing reserved the last term is never positive, so the suggestion is the one before 0.3.0.
     /// </summary>
+    /// <summary>
+    /// Posts counted quantities as adjustments (the one-step stock-take and posting a stock count, 0.11.0). Returns how many parts
+    /// changed. The caller holds the transaction.
+    /// </summary>
+    internal static async Task<int> PostCountAsync(CmmsDbContext db, ITenantContext ctx, Guid storeId, DateOnly date, IReadOnlyList<(Guid PartId, decimal Counted)> lines,
+        string note, CancellationToken tk)
+    {
+        var count = 0;
+        foreach (var (partId, counted) in lines)
+        {
+            if (counted < 0) throw new DomainException("Counted quantities cannot be negative.");
+            var onHand = await db.StockLevels.Where(l => l.StoreId == storeId && l.PartId == partId).Select(l => (decimal?)l.QuantityOnHand).FirstOrDefaultAsync(tk) ?? 0;
+            var diff = counted - onHand;
+            if (diff == 0) continue;
+            if (await db.Parts.Where(p => p.Id == partId).Select(p => p.IsShelfItem).FirstOrDefaultAsync(tk))
+                throw new DomainException("Count shelf-life items per batch with an adjustment.");
+            await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Adjustment, partId, storeId, diff, date, Notes: note), tk);
+            count++;
+        }
+        return count;
+    }
+
     internal static decimal SuggestedQuantity(decimal onHand, decimal reserved, decimal onOrder, decimal reorderQuantity, decimal maxLevel)
     {
         var available = onHand - reserved;
