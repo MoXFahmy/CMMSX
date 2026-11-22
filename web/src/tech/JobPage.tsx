@@ -8,7 +8,7 @@ import dayjs from 'dayjs';
 import { IconCamera, IconPhoto, IconCheck, IconChevronLeft, IconClock, IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react';
 import { HOLD_REASONS, type HoldReason } from '@/api/types';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
-import { fmtDate, fmtDateTime, fmtQty, hoursText, notifyError, notifySuccess } from '@/components/utils';
+import { fmtDate, fmtDateTime, hoursText, notifyError, notifySuccess } from '@/components/utils';
 import { post } from '@/api/client';
 import { downFor } from '@/components/downtime';
 import { withQueued } from './overlay';
@@ -17,6 +17,7 @@ import { dueLabel } from './due';
 import { alreadySigned, needsLabour, staleCompletions } from './complete';
 import { SignaturePad, type SignatureHandle } from './SignaturePad';
 import { useTech } from './useTech';
+import { JobParts } from './StockPages';
 import type { TechJob } from './types';
 
 /** One job: checklist, hours, photos, comments, and start / hold / complete — all of it works without signal. */
@@ -107,15 +108,7 @@ export function JobPage() {
         </Card>
       )}
 
-      {job.plannedParts.length > 0 && (
-        <Card withBorder p="sm">
-          <Group justify="space-between" mb={6}>
-            <Text fw={600}>{t('tech.parts')}</Text>
-            {online && <Button size="compact-xs" variant="light" component="a" href={`/work-orders/${job.id}`}>{t('tech.issueParts')}</Button>}
-          </Group>
-          {job.plannedParts.map((p) => <Text key={p.partNumber} fz="sm">{fmtQty(p.quantity)} {p.unitOfMeasure} · {p.partNumber} {p.partName}{p.storeCode ? ` (${p.storeCode})` : ''}</Text>)}
-        </Card>
-      )}
+      <JobParts job={job} />
 
       <Card withBorder p="sm">
         <Group justify="space-between" mb={6}>

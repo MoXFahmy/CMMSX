@@ -1,6 +1,6 @@
 import i18n from '@/i18n';
 import type { QueuedChange, SendResult } from './outbox';
-import type { TechBundle, TechPlaces } from './types';
+import type { TechBundle, TechPlaces, TechStock } from './types';
 
 /** Thrown when the server can't be reached, doesn't answer in time, or answers 5xx (the phone keeps working from its copy). */
 export class Offline extends Error {}
@@ -61,6 +61,14 @@ export async function fetchBundle(etag?: string): Promise<{ data: TechBundle; et
 export async function fetchPlaces(etag?: string): Promise<{ data: TechPlaces; etag?: string } | null> {
   const res = await call('/tech/places', { headers: etag ? { 'If-None-Match': etag } : {} }, LOAD_MS);
   if (res.status === 304) return null;
+  if (!res.ok) throw new Error(await title(res));
+  return { data: await res.json(), etag: res.headers.get('ETag') ?? undefined };
+}
+
+/** Parts and stock of my sites (0.11.0), or null when the phone's copy (etag) is still current; null too on an older server. */
+export async function fetchStock(etag?: string): Promise<{ data: TechStock; etag?: string } | null> {
+  const res = await call('/tech/stock', { headers: etag ? { 'If-None-Match': etag } : {} }, LOAD_MS);
+  if (res.status === 304 || res.status === 404 || res.status === 405) return null;
   if (!res.ok) throw new Error(await title(res));
   return { data: await res.json(), etag: res.headers.get('ETag') ?? undefined };
 }

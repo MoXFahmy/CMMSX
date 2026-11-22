@@ -34,7 +34,7 @@ public class PushTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Sender.RunOnceAsync(CancellationToken.None);
         var push = Assert.Single(fx.Pushes.To(token));
         Assert.Contains("Check chiller", push.Body);
-        Assert.Equal($"/tech/job/{wo}", push.Link);
+        Assert.Equal($"/tech/jobs/{wo}", push.Link);
     }
 
     [SkippableFact]

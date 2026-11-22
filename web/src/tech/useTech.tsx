@@ -1,10 +1,10 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import { fetchBundle, fetchMe, fetchPlaces, logout, Offline, refreshProblem, sendChange, ServerError, SignedOut } from './api';
+import { fetchBundle, fetchMe, fetchPlaces, fetchStock, logout, Offline, refreshProblem, sendChange, ServerError, SignedOut } from './api';
 import { confirmUser, forgetUser, type IdentityDeps } from './identity';
 import { drain, retryNow, type QueuedChange, type SendResult } from './outbox';
 import { stillShown, type SentChange } from './overlay';
-import { enqueue, getMeta, idbOutboxStore, loadBundle, loadPlaces, queued, saveBundle, savePlaces, setMeta, techDb, wipeCopy } from './store';
-import type { TechBundle, TechPlaces } from './types';
+import { enqueue, getMeta, idbOutboxStore, loadBundle, loadPlaces, loadStock, queued, saveBundle, savePlaces, saveStock, setMeta, techDb, wipeCopy } from './store';
+import type { TechBundle, TechPlaces, TechStock } from './types';
 import { registerTechWorker } from './worker';
 import { keepData } from './persist';
 
@@ -21,6 +21,8 @@ export const MODE_KEY = 'cmms.tech.mode';
 type Note = { at: string; text: string };
 type TechState = {
   phase: Phase; userId?: string; fullName?: string; bundle?: TechBundle; places?: TechPlaces; queue: QueuedChange[]; online: boolean;
+  /** Parts, stock, counts and orders of my sites (0.11.0). */
+  stock?: TechStock;
   /** Changes the server took that the phone's copy doesn't show yet (shown on top of it like waiting ones). */
   sent: SentChange[];
   lastRefresh?: number; notes: Note[]; busy: boolean;
@@ -42,6 +44,7 @@ export function TechProvider({ children }: { children: ReactNode }) {
   const [fullName, setFullName] = useState<string>();
   const [bundle, setBundle] = useState<TechBundle>();
   const [places, setPlaces] = useState<TechPlaces>();
+  const [stock, setStock] = useState<TechStock>();
   const [queue, setQueue] = useState<QueuedChange[]>([]);
   const [online, setOnline] = useState(true);
   const [lastRefresh, setLastRefresh] = useState<number>();
@@ -60,7 +63,7 @@ export function TechProvider({ children }: { children: ReactNode }) {
   /** The server said this device was signed out: forget the jobs and places on the phone (the queue stays with its owner). */
   const revoked = useCallback(async () => {
     if (user.current) await wipeCopy(user.current);
-    setBundle(undefined); setPlaces(undefined); setSent([]); setPhase('revoked');
+    setBundle(undefined); setPlaces(undefined); setStock(undefined); setSent([]); setPhase('revoked');
   }, []);
 
   const contact = useCallback(async () => { setOnline(true); await setMeta('lastContactAt', Date.now()); }, []);
@@ -77,7 +80,7 @@ export function TechProvider({ children }: { children: ReactNode }) {
       if (!me.employeeId) { window.location.replace('/'); return false; }
       if (me.userId !== user.current) {
         user.current = me.userId; setUserId(me.userId); setFullName(me.fullName);
-        setBundle(undefined); setPlaces(undefined); setSent([]);
+        setBundle(undefined); setPlaces(undefined); setStock(undefined); setSent([]);
         setNotes((await getMeta<Note[]>(`notes:${me.userId}`)) ?? []);
         await reloadQueue();
       }
@@ -108,6 +111,9 @@ export function TechProvider({ children }: { children: ReactNode }) {
       const saved = await loadPlaces(id);
       const p = await fetchPlaces(saved?.etag);
       if (p) { await savePlaces(id, p.data, p.etag); setPlaces(p.data); } else if (saved) setPlaces(saved.data);
+      const savedStock = await loadStock(id);
+      const st = await fetchStock(savedStock?.etag);
+      if (st) { await saveStock(id, st.data, st.etag); setStock(st.data); } else if (savedStock) setStock(savedStock.data);
       await contact();
       setLastRefresh(Date.now());
       setProblem(undefined);
@@ -170,7 +176,7 @@ export function TechProvider({ children }: { children: ReactNode }) {
         if (Date.now() - ((await getMeta<number>('lastContactAt')) ?? 0) > LOCK_AFTER_MS) { setPhase('locked'); return; }
         const cached = await loadBundle(id);
         if (!cached) { setPhase('noCopy'); return; }
-        setBundle(cached.data); setPlaces((await loadPlaces(id))?.data); setLastRefresh(cached.savedAt);
+        setBundle(cached.data); setPlaces((await loadPlaces(id))?.data); setStock((await loadStock(id))?.data); setLastRefresh(cached.savedAt);
         setNotes((await getMeta<Note[]>(`notes:${id}`)) ?? []);
         setPhase('ready');
       }
@@ -223,8 +229,8 @@ export function TechProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const sent = useMemo(() => stillShown(sentRaw, fetchedAt), [sentRaw, fetchedAt]);
-  const value = useMemo<TechState>(() => ({ phase, userId, fullName, bundle, places, queue, sent, online, lastRefresh, notes, busy, problem, refresh, drainNow, add, retry, discard, signOut }),
-    [phase, userId, fullName, bundle, places, queue, sent, online, lastRefresh, notes, busy, problem, refresh, drainNow, add, retry, discard, signOut]);
+  const value = useMemo<TechState>(() => ({ phase, userId, fullName, bundle, places, stock, queue, sent, online, lastRefresh, notes, busy, problem, refresh, drainNow, add, retry, discard, signOut }),
+    [phase, userId, fullName, bundle, places, stock, queue, sent, online, lastRefresh, notes, busy, problem, refresh, drainNow, add, retry, discard, signOut]);
   return <Ctx.Provider value={value}>{children}</Ctx.Provider>;
 }
 

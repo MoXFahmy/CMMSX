@@ -5,13 +5,14 @@ import { useTranslation } from 'react-i18next';
 import { IconCamera, IconCameraOff } from '@tabler/icons-react';
 import { get } from '@/api/client';
 import { exactPart, lookupCode, parseCode, placeTarget } from './scan';
+import { findPart } from './stock';
 import { useTech } from './useTech';
 
 /** Scan a QR label or barcode with the camera, or type an asset number; opens the asset or location from the phone's copy. */
 export function ScanPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { places, online } = useTech();
+  const { places, stock, online } = useTech();
   const video = useRef<HTMLVideoElement>(null);
   const stopper = useRef<(() => void) | null>(null);
   const [scanning, setScanning] = useState(false);
@@ -34,13 +35,17 @@ export function ScanPage() {
       return;
     }
     if (s.kind === 'part') {
-      if (online) window.location.href = `/inventory/parts/${s.id}`;
+      // On the phone (0.11.0): stock and bin in each store, offline too.
+      if (stock?.parts.some((p) => p.id === s.id)) navigate(`/tech/parts/${s.id}`);
+      else if (online) window.location.href = `/inventory/parts/${s.id}`;
       else setProblem(t('tech.partOnline'));
       return;
     }
     if (s.kind !== 'code') return;
     const hit = lookupCode(places, s.code);
     if (hit) { navigate(`/tech/place/asset/${hit.id}`); return; }
+    const onPhone = findPart(stock, s.code);
+    if (onPhone) { navigate(`/tech/parts/${onPhone.id}`); return; }
     // Not an asset on the phone: with a connection it may be a part's number or barcode.
     if (online) {
       const found = await get<{ id: string; partNumber: string; barcode?: string | null }[]>(`/parts/lookup?search=${encodeURIComponent(s.code)}`).catch(() => []);

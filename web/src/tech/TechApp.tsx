@@ -2,10 +2,11 @@ import { useMemo, useState } from 'react';
 import { ActionIcon, Alert, Anchor, Badge, Box, Button, Card, Center, Group, Indicator, Loader, Stack, Text, TextInput, Title, UnstyledButton } from '@mantine/core';
 import { modals } from '@mantine/modals';
 import { Link, Route, Routes, useLocation, useNavigate } from 'react-router';
+import { CountPage, PartPage, ReceivePage, StockSearchPage } from './StockPages';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { notifications } from '@mantine/notifications';
-import { IconCloudOff, IconCloudCheck, IconList, IconLogout, IconRefresh, IconScan, IconSearch, IconTransferVertical } from '@tabler/icons-react';
+import { IconCloudOff, IconCloudCheck, IconList, IconLogout, IconPackage, IconRefresh, IconScan, IconSearch, IconTransferVertical } from '@tabler/icons-react';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDateTime, fromNow } from '@/components/utils';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
@@ -39,6 +40,10 @@ function TechShell() {
           <Route path="/tech/sync" element={<SyncPage />} />
           <Route path="/tech/scan" element={<ScanPage />} />
           <Route path="/tech/place/:kind/:id" element={<PlacePage />} />
+          <Route path="/tech/stock" element={<StockSearchPage />} />
+          <Route path="/tech/parts/:id" element={<PartPage />} />
+          <Route path="/tech/counts/:id" element={<CountPage />} />
+          <Route path="/tech/receive" element={<ReceivePage />} />
           <Route path="*" element={<MyJobsPage />} />
         </Routes>
       </Box>
@@ -146,7 +151,10 @@ function MyJobsPage() {
   return (
     <Stack gap="sm">
       {problem && <Alert color="orange" p="xs">{problem === 'server' ? t('tech.refreshServerProblem') : problem}</Alert>}
-      <TextInput leftSection={<IconSearch size={16} />} placeholder={t('tech.searchJobs')} value={search} onChange={(e) => setSearch(e.currentTarget.value)} />
+      <Group gap="xs" wrap="nowrap">
+        <TextInput style={{ flex: 1 }} leftSection={<IconSearch size={16} />} placeholder={t('tech.searchJobs')} value={search} onChange={(e) => setSearch(e.currentTarget.value)} />
+        <Button variant="light" leftSection={<IconPackage size={16} />} onClick={() => navigate('/tech/stock')}>{t('techStock.stock')}</Button>
+      </Group>
       {groups.length === 0 && <Text c="dimmed" ta="center" py="xl">{t('tech.noJobs')}</Text>}
       {groups.map(({ g, items }) => (
         <Stack key={g} gap={6}>
