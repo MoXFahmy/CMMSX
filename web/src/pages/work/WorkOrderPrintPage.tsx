@@ -144,7 +144,11 @@ export function WorkOrderPrintPage() {
           <div key={label as string}><Text fz="xs" fw={600}>{label}</Text><Text fz="sm" style={line}>{value ?? ''}</Text>{!value && <div style={line} />}</div>
         ))}
         <SimpleGrid cols={3}>
-          <div><Text fz="xs" fw={600}>{t('wo.failureCode')}</Text><Text fz="sm" style={line}>{w.failureCode ? `${w.failureCode.code} · ${w.failureCode.name}` : ''}</Text></div>
+          {([[t('codes.symptom'), w.symptom], [t('codes.cause'), w.failureCode], [t('codes.remedy'), w.remedy]] as const).map(([label, c]) => (
+            <div key={label}><Text fz="xs" fw={600}>{label}</Text><Text fz="sm" style={line}>{c ? `${c.code} · ${c.name}` : ''}</Text></div>
+          ))}
+        </SimpleGrid>
+        <SimpleGrid cols={3}>
           <div><Text fz="xs" fw={600}>{t('wo.assetWasDown')}</Text><Text fz="sm" style={line}>{w.completedAt ? (w.assetWasDown ? t('common.yes') : t('common.no')) : `${t('common.yes')} / ${t('common.no')}`}</Text></div>
           <div><Text fz="xs" fw={600}>{t('wo.downtimeHours')}</Text><Text fz="sm" style={line}>{w.downtimeHours != null ? fmtQty(w.downtimeHours) : ''}</Text></div>
         </SimpleGrid>

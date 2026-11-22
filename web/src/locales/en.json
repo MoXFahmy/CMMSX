@@ -347,7 +347,7 @@
     "requireCompletionNotes": "Require \"work done\" notes to complete a work order",
     "requireLaborToComplete": "Require labour before a work order can be completed",
     "requireAllTasksDone": "Require every checklist step ticked before completing",
-    "requireFailureCodeForBreakdowns": "Require a failure code on breakdown work",
+    "requireFailureCodeForBreakdowns": "Require a cause on breakdown work",
     "autoStartWork": "Start work automatically when labour is logged or a checklist step is ticked",
     "autoGeneratePm": "Generate PM work orders automatically (within each schedule's lead time)",
     "pmRules": "Preventive maintenance",
@@ -590,7 +590,8 @@
     "dueAt": "Due date and time",
     "dueAtHint": "Leave empty to use the priority's target",
     "completedSince": "Completed since",
-    "cancelReason": "Cancel reason"
+    "cancelReason": "Cancel reason",
+    "completedUntil": "Completed until"
   },
   "wr": {
     "title": "Work requests",
@@ -1387,7 +1388,7 @@
     "clear": "Clear",
     "rule": {
       "notes": "Describe the work that was done.",
-      "failureCode": "Choose a failure code for breakdown work.",
+      "failureCode": "Choose a cause for breakdown work.",
       "labour": "Log hours on this job before completing.",
       "allSteps": "Tick every checklist step before completing.",
       "photos": "Take a photo for: {{steps}}",
@@ -2051,6 +2052,12 @@
   },
   "codes": {
     "mostUsed": "Most used together",
-    "all": "All"
+    "all": "All",
+    "symptom": "Symptom",
+    "cause": "Cause",
+    "remedy": "Remedy",
+    "symptomHint": "What did you see?",
+    "notRecorded": "Not recorded",
+    "inFailureTree": "In the failure tree"
   }
 }

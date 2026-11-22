@@ -11,6 +11,7 @@ import dayjs from 'dayjs';
 import { IconAlertTriangle, IconCheck, IconCopy, IconDots, IconEdit, IconPrinter, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp } from '@tabler/icons-react';
 import { del, get, post } from '@/api/client';
 import { HOLD_REASONS, type ActivityItem, type Lookup, type WorkOrderDetail, type WorkOrderStatus } from '@/api/types';
+import { CodeSelect } from '@/components/CodeSelect';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { Attachments } from '@/components/Attachments';
@@ -173,7 +174,8 @@ export function WorkOrderDetailPage() {
                       <Field label={t('wo.completionNotes')}>{w.completionNotes}</Field>
                       <Field label={t('wo.causeNotes')}>{w.causeNotes}</Field>
                       <Field label={t('wo.preventionNotes')}>{w.preventionNotes}</Field>
-                      <Field label={t('wo.failureCode')}>{w.failureCode ? `${w.failureCode.code} · ${w.failureCode.name}` : null}</Field>
+                      <Field label={t('codes.cause')}>{w.failureCode ? `${w.failureCode.code} · ${w.failureCode.name}` : null}</Field>
+                      <Field label={t('codes.remedy')}>{w.remedy ? `${w.remedy.code} · ${w.remedy.name}` : null}</Field>
                       <Field label={t('wo.downtimeHours')}>{w.assetWasDown ? hoursText(w.downtimeHours ?? 0) : t('common.no')}
                         {w.downtime && <Text span fz="xs" c="dimmed"> · {t('downtime.fromLogShort')}</Text>}</Field>
                     </SimpleGrid>
@@ -198,6 +200,7 @@ export function WorkOrderDetailPage() {
                   {(w.recipients?.length ?? 0) > 0 && <Field label={t('pm12.recipients')}>{w.recipients!.map((r) => r.fullName).join(', ')}</Field>}
                   <Field label={t('wo.trade')}>{w.tradeName}</Field>
                   {w.team && <Field label={t('teams.team')}>{w.team.name}</Field>}
+                  <Field label={t('codes.symptom')}>{w.symptom ? `${w.symptom.code} · ${w.symptom.name}` : null}</Field>
                   <Field label={t('wo.requestedBy')}>{w.requestedBy ?? w.request?.requesterName}</Field>
                   <Field label={t('wo.plannedStart')}>{fmtDate(w.plannedStart)}</Field>
                   <Field label={t('wo.due')}>
@@ -423,13 +426,12 @@ function ActivityPanel({ id }: { id: string }) {
 
 function CompleteModal({ opened, onClose, w, onDone }: { opened: boolean; onClose: () => void; w: WorkOrderDetail; onDone: () => Promise<void> }) {
   const { t } = useTranslation();
-  const { data: codes } = useQuery({ queryKey: ['failure-codes'], queryFn: () => get<Lookup[]>('/failure-codes') });
   // Defaults are recomputed every time the dialog opens, so they reflect work started/labour logged since page load.
   const defaults = () => {
     const earliestLabor = [...w.labor].sort((a, b) => a.workDate.localeCompare(b.workDate))[0];
     const start = w.startedAt ? new Date(w.startedAt) : earliestLabor ? new Date(`${earliestLabor.workDate}T08:00:00`) : null;
     return { completionNotes: w.completionNotes ?? '', causeNotes: w.causeNotes ?? '', preventionNotes: w.preventionNotes ?? '', failureCodeId: (w.failureCodeId ?? null) as string | null,
-      assetWasDown: w.assetWasDown || w.type === 'Breakdown', downtimeHours: (w.downtimeHours ?? '') as number | '', actualStart: start as Date | null, actualEnd: new Date() as Date | null };
+      remedyId: (w.remedyId ?? null) as string | null, assetWasDown: w.assetWasDown || w.type === 'Breakdown', downtimeHours: (w.downtimeHours ?? '') as number | '', actualStart: start as Date | null, actualEnd: new Date() as Date | null };
   };
   const form = useForm({ initialValues: defaults() });
   useEffect(() => { if (opened) { form.setValues(defaults()); form.clearErrors(); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [opened]);
@@ -456,7 +458,12 @@ function CompleteModal({ opened, onClose, w, onDone }: { opened: boolean; onClos
           <Textarea label={t('wo.causeNotes')} autosize minRows={2} {...form.getInputProps('causeNotes')} />
           <Textarea label={t('wo.preventionNotes')} autosize minRows={2} {...form.getInputProps('preventionNotes')} />
         </SimpleGrid>
-        <Select label={t('wo.failureCode')} clearable searchable data={(codes ?? []).filter((c) => c.isActive).map((c) => ({ value: c.id, label: `${c.code} · ${c.name}` }))} {...form.getInputProps('failureCodeId')} />
+        <SimpleGrid cols={{ base: 1, sm: 2 }}>
+          <CodeSelect path="/failure-codes" label={t('codes.cause')} value={form.values.failureCodeId} onChange={(v) => form.setFieldValue('failureCodeId', v)}
+            current={w.failureCode ?? null} pairing="symptomCause" pairedWith={w.symptomId} error={form.errors.failureCodeId} />
+          <CodeSelect path="/remedies" label={t('codes.remedy')} value={form.values.remedyId} onChange={(v) => form.setFieldValue('remedyId', v)}
+            current={w.remedy ?? null} pairing="causeRemedy" pairedWith={form.values.failureCodeId} error={form.errors.remedyId} />
+        </SimpleGrid>
         {w.assetId && w.downtime && (
           <Alert color="blue" variant="light" title={t('wo.assetWasDown')}>
             {w.downtime.endedAt

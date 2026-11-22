@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { EmployeePicker } from '@/components/EmployeePicker';
 import { WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, fmtDateTime, fmtMoney, fmtNumber, notifyError, notifySuccess, notifyWarning, toIsoDate } from '@/components/utils';
+import { CodeSelect } from '@/components/CodeSelect';
 
 const asStatus = (s: string) => s as WorkOrderStatus;
 
@@ -52,12 +53,11 @@ export function WorkGroupDetailPage() {
   const { can, me, terms } = useAuth();
   const currency = me?.tenant.settings.currency ?? 'USD';
   const { data: g, isLoading } = useQuery({ queryKey: ['work-group', id], queryFn: () => get<WorkGroupDetail>(`/work-groups/${id}`) });
-  const { data: failureCodes } = useQuery({ queryKey: ['failure-codes'], queryFn: () => get<Lookup[]>('/failure-codes') });
   const { data: cancelReasons } = useQuery({ queryKey: ['cancel-reasons'], queryFn: () => get<Lookup[]>('/cancel-reasons') });
   const [picked, setPicked] = useState<string[]>([]);
   const [modal, setModal] = useState<'assign' | 'report' | 'status' | null>(null);
   const [people, setPeople] = useState<string[]>([]);
-  const [report, setReport] = useState({ completionNotes: '', causeNotes: '', preventionNotes: '', failureCodeId: null as string | null });
+  const [report, setReport] = useState({ completionNotes: '', causeNotes: '', preventionNotes: '', failureCodeId: null as string | null, remedyId: null as string | null });
   const [status, setStatus] = useState({ status: 'InProgress', holdReason: null as string | null, cancelReasonId: null as string | null, note: '', completionNotes: '' });
   const [comment, setComment] = useState('');
   const [due, setDue] = useState<string | null | undefined>(undefined);
@@ -174,8 +174,9 @@ export function WorkGroupDetailPage() {
           <Textarea label={t('wo.completionNotes')} autosize minRows={2} value={report.completionNotes} onChange={(e) => setReport({ ...report, completionNotes: e.currentTarget.value })} />
           <Textarea label={t('wo.causeNotes')} autosize value={report.causeNotes} onChange={(e) => setReport({ ...report, causeNotes: e.currentTarget.value })} />
           <Textarea label={t('wo.preventionNotes')} autosize value={report.preventionNotes} onChange={(e) => setReport({ ...report, preventionNotes: e.currentTarget.value })} />
-          <Select label={t('wo.failureCode')} clearable searchable data={(failureCodes ?? []).map((f) => ({ value: f.id, label: `${f.code} · ${f.name}` }))} value={report.failureCodeId}
-            onChange={(x) => setReport({ ...report, failureCodeId: x })} />
+          <CodeSelect path="/failure-codes" label={t('codes.cause')} value={report.failureCodeId} onChange={(x) => setReport({ ...report, failureCodeId: x })} />
+          <CodeSelect path="/remedies" label={t('codes.remedy')} value={report.remedyId} onChange={(x) => setReport({ ...report, remedyId: x })}
+            pairing="causeRemedy" pairedWith={report.failureCodeId} />
           <Button onClick={sendReport}>{t('groups.report')}</Button>
         </Stack>
       </Modal>
