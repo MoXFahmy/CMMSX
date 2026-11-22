@@ -49,10 +49,41 @@ public static class PmTriggers
         return best;
     }
 
+    /// <summary>Even spread: the k-th of <paramref name="parts"/> blocks of <paramref name="assetCount"/> assets in list order, as equal as possible.</summary>
+    public static (int Start, int Count) Spread(int assetCount, int parts, int k)
+    {
+        var size = assetCount / parts;
+        var extra = assetCount % parts;
+        return (k * size + Math.Min(k, extra), size + (k < extra ? 1 : 0));
+    }
+
+    /// <summary>Even spread: the start of the k-th of <paramref name="parts"/> occurrences in the period from <paramref name="cycleStart"/> to <paramref name="nextCycle"/>.</summary>
+    public static DateOnly SpreadDate(DateOnly cycleStart, DateOnly nextCycle, int parts, int k) =>
+        cycleStart.AddDays((int)((long)k * (nextCycle.DayNumber - cycleStart.DayNumber) / parts));
+
+    /// <summary>The PM spreads its assets over each period (0.12.0).</summary>
+    public static bool Spreads(PmSchedule s) => s.SpreadParts is >= 2 && s.Assets.Count > 0;
+
     /// <summary>Upcoming target dates from the PM's next date (Actual-basis PMs only know their next one).</summary>
     public static IEnumerable<DateOnly> Forecast(PmSchedule s, DateOnly to, int max, IReadOnlyList<ScheduleCalendar> calendars)
     {
         if (s.NextDueDate is not { } d || !UsesDates(s, calendars.Count)) yield break;
+        if (Spreads(s))
+        {
+            // Each period's parts in turn, from where the PM is now.
+            var parts = s.SpreadParts!.Value;
+            var cycle = s.CycleStart ?? d;
+            var k = s.CycleStart is null ? 0 : s.SpreadIndex;
+            for (var i = 0; i < max; i++)
+            {
+                var next = PmCalendar.Next(s, cycle);
+                var date = SpreadDate(cycle, next, parts, k);
+                if (date > to) yield break;
+                yield return date;
+                if (++k == parts) { k = 0; cycle = next; }
+            }
+            yield break;
+        }
         for (var i = 0; i < max && d <= to; i++)
         {
             yield return d;

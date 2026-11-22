@@ -28,7 +28,7 @@ public static class PmEndpoints
         bool? ManagesTeam = null, bool? OnlyWhenStopped = null, List<Guid>? RecipientIds = null,
         bool? ManagesRules = null, List<Core.Assets.AssetStatus>? SkipStatusesOverride = null, List<DayOfWeek>? NonWorkingDaysOverride = null, bool? NoStackingOverride = null,
         List<AssetTemplateInput>? AssetTemplates = null, List<Guid>? CalendarIds = null, List<ExtraMeterInput>? ExtraMeters = null,
-        MultiAssetMode? MultiAssetMode = null, GroupPlan? GroupPlan = null);
+        MultiAssetMode? MultiAssetMode = null, GroupPlan? GroupPlan = null, int? SpreadParts = null);
     /// <summary>A meter trigger on top of the PM's own (0.12.0), whichever comes first.</summary>
     public sealed record ExtraMeterInput(Guid MeterId, decimal Interval, decimal? NextDueReading = null);
     /// <summary>A multi-asset PM's asset with its own template (empty = the PM's).</summary>
@@ -182,7 +182,7 @@ public static class PmEndpoints
             {
                 s.Id, s.Code, s.Name, s.Description, s.SiteId, s.LocationId, s.AssetId, Asset = s.Asset is null ? null : new { s.Asset.Id, s.Asset.AssetNumber, s.Asset.Name },
                 Assets = s.Assets.Where(a => a.Asset is not null).OrderBy(a => a.Sequence).Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name, a.PmTaskId }),
-                s.SkipStatusesOverride, s.NonWorkingDaysOverride, s.NoStackingOverride, s.MultiAssetMode, s.GroupPlan,
+                s.SkipStatusesOverride, s.NonWorkingDaysOverride, s.NoStackingOverride, s.MultiAssetMode, s.GroupPlan, s.SpreadParts, s.SpreadIndex, s.CycleStart,
                 s.TradeId, s.TeamId, s.Priority, s.AssigneeIds, s.RecipientIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, s.PmTask.Name }, s.OnlyWhenStopped,
                 ExtraTasks = s.ExtraTasks.Select(e => new { e.PmTaskId, e.EveryNth }), s.Type, s.Basis, s.Frequency, s.Unit, s.WeekOfMonth, s.DayOfWeek, s.DayOfMonth,
                 s.WorkPeriodDays, s.WholeMonth, s.LeadDays, s.StartDate, s.NextDueDate, s.LastDueDate, s.LastGeneratedAt, s.GenerationCount,
@@ -614,6 +614,9 @@ public static class PmEndpoints
         else if (extra.GroupBy(m => m.MeterId).Any(g => g.Count() > 1) || extra.Any(m => i.Type == PmScheduleType.Meter && m.MeterId == i.MeterId))
             v.Add("extraMeters", "List each meter once.");
         else if (extra.Count > 0 && round.Count > 0) v.Add("extraMeters", "Extra meters need a single asset.");
+        if (i.SpreadParts is >= 2 && (i.Type != PmScheduleType.FixedInterval || i.Basis != PmBasis.Scheduled || calendars > 0 || extra.Count > 0))
+            v.Add("spreadParts", "Spread needs a fixed interval, the Scheduled basis, and no calendars or extra meters.");
+        else if (i.SpreadParts is >= 2 && (round.Count < 2 || i.SpreadParts > round.Count)) v.Add("spreadParts", $"Spread over 2 to {Math.Max(2, round.Count)} parts.");
         if (i.MultiAssetMode == MultiAssetMode.Group && round.Count < 2) v.Add("multiAssetMode", "Choose several assets for a group.");
         else if (i.MultiAssetMode == MultiAssetMode.Group && i.Basis == PmBasis.Actual) v.Add("multiAssetMode", "Groups need the Scheduled basis.");
         if ((i.ExtraTasks ?? []).Any(e => e.EveryNth is < 2 or > 1000)) v.Add("extraTasks", "\"Every Nth\" must be between 2 and 1000.");
@@ -767,6 +770,11 @@ public static class PmEndpoints
         s.Description = i.Description.Clean(); s.SiteId = i.SiteId; s.LocationId = i.LocationId; s.AssetId = i.AssetId; s.TradeId = i.TradeId; s.TeamId = i.TeamId; s.Priority = i.Priority;
         if (i.OnlyWhenStopped is { } stopped) s.OnlyWhenStopped = stopped; // left out (older pages, the import): unchanged
         if (i.RecipientIds is not null) s.RecipientIds = i.RecipientIds.Distinct().ToList(); // left out: unchanged
+        if (i.SpreadParts is { } spread && (spread >= 2 ? spread : (int?)null) != s.SpreadParts)
+        {
+            // Even spread (0.12.0): 0 or 1 = off; a change starts a new period at the next date.
+            s.SpreadParts = spread >= 2 ? spread : null; s.SpreadIndex = 0; s.CycleStart = null;
+        }
         if (i.MultiAssetMode is { } multi) s.MultiAssetMode = multi;
         if (i.GroupPlan is { } plan) s.GroupPlan = plan;
         if (i.ManagesRules == true)

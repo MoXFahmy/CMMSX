@@ -74,4 +74,20 @@ public class PmPureTests
         Assert.Equal("Cancelled", FourC.Cmms.Api.Features.WorkGroups.Status([Core.Work.WorkOrderStatus.Cancelled]));
         Assert.Equal("Completed", FourC.Cmms.Api.Features.WorkGroups.Status([Core.Work.WorkOrderStatus.Closed, Core.Work.WorkOrderStatus.Completed]));
     }
+
+    [Fact]
+    public void Spread_blocks_are_even()
+    {
+        Assert.Equal([(0, 4), (4, 3), (7, 3)], Enumerable.Range(0, 3).Select(k => PmTriggers.Spread(10, 3, k)));
+        Assert.Equal([(0, 1), (1, 1)], Enumerable.Range(0, 2).Select(k => PmTriggers.Spread(2, 2, k)));
+    }
+
+    [Fact]
+    public void Spread_dates_split_the_period()
+    {
+        DateOnly start = new(2026, 1, 1), next = new(2027, 1, 1);
+        Assert.Equal(start, PmTriggers.SpreadDate(start, next, 12, 0));
+        Assert.Equal(new DateOnly(2026, 1, 31), PmTriggers.SpreadDate(start, next, 12, 1));
+        Assert.Equal(new DateOnly(2026, 7, 2), PmTriggers.SpreadDate(start, next, 12, 6));
+    }
 }

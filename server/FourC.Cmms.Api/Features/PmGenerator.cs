@@ -83,6 +83,15 @@ public static class PmGenerator
             last = due;
             var count = s.GenerationCount + 1;
             var task = tasks.GetValueOrDefault(PmCalendar.TaskFor(s, count)) ?? tasks.GetValueOrDefault(s.PmTaskId);
+            // Even spread (0.12.0): this occurrence covers one block of the assets; "every Nth" counts periods.
+            var spread = PmTriggers.Spreads(s) && round is not null;
+            if (spread && s.CycleStart is null) { s.CycleStart = due; s.SpreadIndex = 0; }
+            var part = round;
+            if (spread)
+            {
+                var (from, size) = PmTriggers.Spread(round!.Count, s.SpreadParts!.Value, Math.Min(s.SpreadIndex, s.SpreadParts.Value - 1));
+                part = round.Skip(from).Take(size).ToList();
+            }
             WorkOrder? wo = null;
             var exists = await db.WorkOrders.AnyAsync(w => w.PmScheduleId == s.Id && w.PmDueDate == due, ct)
                 || await db.WorkOrderGroups.AnyAsync(g => g.PmScheduleId == s.Id && g.PmDueDate == due, ct);
@@ -98,7 +107,8 @@ public static class PmGenerator
                 // A skipped occurrence moves the schedule on but is not a generation, so "every Nth" tasks are not lost.
                 results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, null, null, $"Skipped: {skip}"));
                 s.LastDueDate = due;
-                s.NextDueDate = PmTriggers.Next(s, due, calendars);
+                if (spread) AdvanceSpread(s, countPeriod: false);
+                else s.NextDueDate = PmTriggers.Next(s, due, calendars);
                 if (!dryRun) await db.SaveChangesAsync(ct);
                 if (s.Basis == PmBasis.Actual) break;
                 continue;
@@ -107,13 +117,19 @@ public static class PmGenerator
             if (!exists && !dryRun && task is not null)
             {
                 // A group PM (0.12.0): a group with a work order per asset, instead of one round work order.
-                if (s.MultiAssetMode == MultiAssetMode.Group && round is { Count: > 0 }) group = await WorkGroups.CreateGroupAsync(db, ctx, s, task, due, round, rules.NonWorking, ct, mail);
-                else wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct, round, rules.NonWorking, mail);
+                if (part is { Count: 0 }) { }
+                else if (s.MultiAssetMode == MultiAssetMode.Group && part is { Count: > 0 }) group = await WorkGroups.CreateGroupAsync(db, ctx, s, task, due, part, rules.NonWorking, ct, mail);
+                else wo = await CreateWorkOrderAsync(db, ctx, s, task, due, null, ct, part, rules.NonWorking, mail);
             }
             results.Add(new Result(s.Id, s.Code, s.Name, due, task?.Name, s.Asset?.AssetNumber, wo?.Id, wo?.Number,
-                task is null ? "PM task not found" : exists ? "Already generated" : null, group?.Id, group?.Number));
-            s.GenerationCount = count; s.LastDueDate = due; s.LastGeneratedAt = DateTimeOffset.UtcNow; s.LastWorkOrderId = wo?.Id ?? s.LastWorkOrderId;
-            s.NextDueDate = s.Basis == PmBasis.Scheduled ? PmTriggers.Next(s, due, calendars) : null;
+                task is null ? "PM task not found" : exists ? "Already generated" : part is { Count: 0 } ? "No active assets in this part" : null, group?.Id, group?.Number));
+            s.LastDueDate = due; s.LastGeneratedAt = DateTimeOffset.UtcNow; s.LastWorkOrderId = wo?.Id ?? s.LastWorkOrderId;
+            if (spread) AdvanceSpread(s, countPeriod: true);
+            else
+            {
+                s.GenerationCount = count;
+                s.NextDueDate = s.Basis == PmBasis.Scheduled ? PmTriggers.Next(s, due, calendars) : null;
+            }
             if (s.Basis == PmBasis.Scheduled && !dryRun) await RestartMetersAsync(db, s, null, 0, ct); // whichever comes first: every meter starts again
             if (!dryRun) await db.SaveChangesAsync(ct);
             if (s.Basis == PmBasis.Actual) break;
@@ -124,9 +140,29 @@ public static class PmGenerator
         return results;
     }
 
+    /// <summary>
+    /// Even spread: moves to the next part of the period, or to the first part of the next period (counted as a generation for
+    /// "every Nth" when <paramref name="countPeriod"/>).
+    /// </summary>
+    private static void AdvanceSpread(PmSchedule s, bool countPeriod)
+    {
+        var parts = s.SpreadParts!.Value;
+        var cycle = s.CycleStart!.Value;
+        var next = PmCalendar.Next(s, cycle);
+        if (s.SpreadIndex + 1 < parts)
+        {
+            s.SpreadIndex++;
+            s.NextDueDate = PmTriggers.SpreadDate(cycle, next, parts, s.SpreadIndex);
+            return;
+        }
+        if (countPeriod) s.GenerationCount++;
+        s.CycleStart = next; s.SpreadIndex = 0; s.NextDueDate = next;
+    }
+
     public const string NoNextDate = "No next date: its calendars have no dates after {0}.";
     public const string AlreadyGenerated = "This occurrence was already generated as {0}.";
     public const string NotAnOccurrence = "This date isn't one of the PM's next occurrences.";
+    public const string SpreadInOrder = "Generate a spread PM's occurrences in order.";
 
     /// <summary>
     /// Generates one of the PM's next occurrences now (0.12.0). The next one goes through normal generation (the PM moves on); a
@@ -147,6 +183,7 @@ public static class PmGenerator
             var made = await GenerateForAsync(db, ctx, s, date, false, settings, ct, mail);
             return made.FirstOrDefault() ?? new Result(s.Id, s.Code, s.Name, date, null, s.Asset?.AssetNumber, null, null, "Nothing to generate");
         }
+        if (PmTriggers.Spreads(s)) throw new DomainException(SpreadInOrder);
         var rules = Rules(s, settings);
         var taskId = PmCalendar.TaskFor(s, s.GenerationCount + 1 + k);
         var task = await db.PmTasks.AsNoTracking().Include(t => t.Steps).FirstAsync(t => t.Id == taskId, ct);
