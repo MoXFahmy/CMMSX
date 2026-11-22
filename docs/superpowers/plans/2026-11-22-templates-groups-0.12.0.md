@@ -188,3 +188,22 @@
 
 - [ ] Failing Arabic theory; add translations; PASS.
 - [ ] Docs; full `wt-test`, `wt-vitest`, `wt-web`, debug APK; commit.
+
+---
+
+## Deferred minors (final review, 22 Nov 2026)
+
+- work order detail lists template documents to people without pm.view, whose download then gets 403 (default roles have pm.view); template pickers need pm.view.
+- "Own template" does not copy the template's documents.
+- group creation is not one transaction — a failing child leaves a partial group that later runs treat as generated.
+- group children and round work take type/priority from the PM's template, not the asset's own template.
+- on a round, a checklist template that is also an asset's own template is added twice for that asset.
+- import UpdateSchedule without calendars can clear NextDueDate of a meter PM with calendar triggers; import reactivation ignores calendars.
+- a propagated reading to a follower whose latest reading is later stores an earlier-dated reading.
+- followers' PMs in sites the recording person can't see run at their next reading.
+- generating ahead with "wait for the previous work order" makes earlier occurrences skip.
+- group list has no status filter and stops at 500 rows.
+- a group PM sends one pm.assigned e-mail per child to each person.
+- ApplyTask clears Title/Priority/ExpectedStopHours when left out but keeps WorkType/RecipientIds.
+- PM recipients are not checked against site access on save (filtered when sending).
+- Existing_schedules_generate_as_before checks dates, not the work order's contents.
