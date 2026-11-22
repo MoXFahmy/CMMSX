@@ -120,6 +120,13 @@ public static class WorkOrderEndpoints
             var followUpNumbers = followIds.Count == 0 ? [] : (await db.WorkOrders.AllSites().AsNoTracking().Where(x => followIds.Contains(x.Id)).Select(x => new { x.Id, x.Number }).ToListAsync(ct))
                 .Concat(await db.WorkRequests.AllSites().AsNoTracking().Where(x => followIds.Contains(x.Id)).Select(x => new { x.Id, x.Number }).ToListAsync(ct))
                 .ToDictionary(x => x.Id, x => x.Number);
+            // Smart checklists (0.13.0): the points steps use, the meters they read and the photos taken on them.
+            var stepPoints = await Checklists.PointsAsync(db, tasks.Select(t => t.MeasurementPointId), ct);
+            var meterIds = tasks.Select(t => t.MeterId).OfType<Guid>().Distinct().ToList();
+            var meterNames = meterIds.Count == 0 ? [] : await db.Meters.AllSites().AsNoTracking().Where(m => meterIds.Contains(m.Id))
+                .ToDictionaryAsync(m => m.Id, m => $"{m.Code} · {m.Name} ({m.Unit})", ct);
+            var stepPhotos = (await db.Attachments.AsNoTracking().Where(a => a.EntityType == "WorkOrder" && a.EntityId == id && a.WorkOrderTaskId != null).OrderBy(a => a.CreatedAt)
+                .Select(a => new { TaskId = a.WorkOrderTaskId!.Value, a.Id, a.FileName, a.ContentType }).ToListAsync(ct)).ToLookup(a => a.TaskId, a => new { a.Id, a.FileName, a.ContentType });
             var roundAssets = await db.WorkOrderAssets.AsNoTracking().Where(a => a.WorkOrderId == id && a.Asset != null).OrderBy(a => a.Sequence)
                 .Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name }).ToListAsync(ct);
             var labor = await db.WorkOrderLabor.AsNoTracking().Where(l => l.WorkOrderId == id).OrderByDescending(l => l.WorkDate).ThenByDescending(l => l.CreatedAt)
@@ -200,10 +207,13 @@ public static class WorkOrderEndpoints
                 Tasks = tasks.Select(t => new
                 {
                     t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName,
+                    t.Type, Unit = t.Unit ?? stepPoints.FirstOrDefault(p => p.Id == t.MeasurementPointId)?.Unit, Decimals = t.Decimals ?? stepPoints.FirstOrDefault(p => p.Id == t.MeasurementPointId)?.Decimals,
+                    t.MeasurementPointId, t.MeterId, MeterName = t.MeterId is { } mid ? meterNames.GetValueOrDefault(mid) : null, t.PhotoRequired, t.BeforeStart,
+                    FollowUpKind = t.FollowUp, t.Answer, t.Value, t.TextValue, t.Level, Photos = stepPhotos[t.Id],
                     FollowUp = t.FollowUpWorkOrderId is { } fw ? new { Kind = "workOrder", Id = fw, Number = followUpNumbers.GetValueOrDefault(fw) }
                         : t.FollowUpRequestId is { } fr ? new { Kind = "request", Id = fr, Number = followUpNumbers.GetValueOrDefault(fr) } : null,
                 }),
-                Source = await Checklists.SourceAsync(db, w.SourceWorkOrderId, w.SourceTaskId, ct),
+                Source = await Checklists.SourceAsync(db, w.SourceWorkOrderId, w.SourceTaskId, ct), Points = stepPoints,
                 Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned, Signatures = signatures,
                 Planned = new { LaborHours = labour.Hours, LaborCost = labour.Cost, PartsCost = plannedParts, TotalCost = labour.Cost + plannedParts },
                 Totals = new

@@ -166,6 +166,19 @@ public static class Checklists
         return (null, request.Id, request.Number);
     }
 
+    /// <summary>The measurement points steps use, with their range and levels (for the work order page and the phone).</summary>
+    internal static async Task<List<PointView>> PointsAsync(CmmsDbContext db, IEnumerable<Guid?> ids, CancellationToken ct)
+    {
+        var list = ids.OfType<Guid>().Distinct().ToList();
+        if (list.Count == 0) return [];
+        return await db.MeasurementPoints.IgnoreQueryFilters().AsNoTracking().Where(p => list.Contains(p.Id) && p.TenantId == db.CurrentTenantId).OrderBy(p => p.Code)
+            .Select(p => new PointView(p.Id, p.Code, p.Name, p.Kind, p.Unit, p.Decimals, p.ValidMin, p.ValidMax, p.AlarmLow, p.AlertLow, p.Target, p.AlertHigh, p.AlarmHigh))
+            .ToListAsync(ct);
+    }
+
+    public sealed record PointView(Guid Id, string Code, string Name, MeasurementKind Kind, string? Unit, int Decimals, decimal? ValidMin, decimal? ValidMax,
+        decimal? AlarmLow, decimal? AlertLow, decimal? Target, decimal? AlertHigh, decimal? AlarmHigh);
+
     /// <summary>The work order and step a follow-up came from, for its page; null when there is none or it can't be seen.</summary>
     internal static async Task<object?> SourceAsync(CmmsDbContext db, Guid? workOrderId, Guid? taskId, CancellationToken ct)
     {

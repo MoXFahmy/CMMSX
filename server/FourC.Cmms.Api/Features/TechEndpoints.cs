@@ -67,7 +67,10 @@ public static partial class TechEndpoints
                 .ToLookup(c => c.GroupId, c => new { c.Body, c.UserName, c.CreatedAt });
             var names = await LocationNamesAsync(db, jobs.Where(j => j.LocationPath != null).SelectMany(j => LocationEndpoints.PathIds(j.LocationPath!)).Distinct().ToList(), ct);
             var tasks = (await db.WorkOrderTasks.AsNoTracking().Where(t => ids.Contains(t.WorkOrderId)).OrderBy(t => t.Sequence)
-                .Select(t => new { t.WorkOrderId, t.Id, t.Sequence, t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName }).ToListAsync(ct))
+                .Select(t => new { t.WorkOrderId, t.Id, t.Sequence, t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName,
+                    t.Type, t.Unit, t.Decimals, t.MeasurementPointId, t.MeterId, t.PhotoRequired, t.BeforeStart, t.Answer, t.Value, t.TextValue, t.Level,
+                    FollowUpNumber = db.WorkOrders.Where(w => w.Id == t.FollowUpWorkOrderId).Select(w => w.Number).FirstOrDefault()
+                        ?? db.WorkRequests.Where(r => r.Id == t.FollowUpRequestId).Select(r => r.Number).FirstOrDefault() }).ToListAsync(ct))
                 .ToLookup(t => t.WorkOrderId);
             var round = (await db.WorkOrderAssets.AsNoTracking().Where(a => ids.Contains(a.WorkOrderId) && a.Asset != null).OrderBy(a => a.Sequence)
                 .Select(a => new { a.WorkOrderId, a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name }).ToListAsync(ct)).ToLookup(a => a.WorkOrderId);
@@ -75,7 +78,7 @@ public static partial class TechEndpoints
                 .Select(p => new { p.WorkOrderId, p.Part!.PartNumber, PartName = p.Part.Name, p.Part.UnitOfMeasure, p.Quantity, StoreCode = p.Store != null ? p.Store.Code : null })
                 .ToListAsync(ct)).ToLookup(p => p.WorkOrderId);
             var files = (await db.Attachments.AsNoTracking().Where(a => a.EntityType == "WorkOrder" && ids.Contains(a.EntityId)).OrderBy(a => a.CreatedAt)
-                .Select(a => new { a.EntityId, a.Id, a.FileName, a.ContentType, a.IsSignature, a.SignedBy }).ToListAsync(ct)).ToLookup(a => a.EntityId);
+                .Select(a => new { a.EntityId, a.Id, a.FileName, a.ContentType, a.IsSignature, a.SignedBy, a.WorkOrderTaskId }).ToListAsync(ct)).ToLookup(a => a.EntityId);
             var comments = (await db.WorkOrderComments.AsNoTracking().Where(c => ids.Contains(c.WorkOrderId)).OrderByDescending(c => c.CreatedAt)
                 .Select(c => new { c.WorkOrderId, c.Body, c.UserName, c.CreatedAt }).ToListAsync(ct)).ToLookup(c => c.WorkOrderId);
             // Anyone's hours satisfy "log labour before completing" (as on the server); the phone lists only mine.
@@ -116,9 +119,10 @@ public static partial class TechEndpoints
                     j.AccessWindows, j.OnlyWhenStopped,
                     Location = j.LocationId is null ? null : new { Id = j.LocationId, Path = PathText(j.LocationPath, names), NotesToTechnician = j.LocationNotes },
                     RoundAssets = round[j.Id].Select(a => new { a.Id, a.AssetNumber, a.Name }),
-                    Tasks = tasks[j.Id].Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName }),
+                    Tasks = tasks[j.Id].Select(t => new { t.Id, t.Sequence, t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName,
+                        t.Type, t.Unit, t.Decimals, t.MeasurementPointId, t.MeterId, t.PhotoRequired, t.BeforeStart, t.Answer, t.Value, t.TextValue, t.Level, t.FollowUpNumber }),
                     PlannedParts = parts[j.Id].Select(p => new { p.PartNumber, p.PartName, p.UnitOfMeasure, p.Quantity, p.StoreCode }),
-                    Files = files[j.Id].Select(f => new { f.Id, f.FileName, f.ContentType, f.IsSignature, f.SignedBy }),
+                    Files = files[j.Id].Select(f => new { f.Id, f.FileName, f.ContentType, f.IsSignature, f.SignedBy, f.WorkOrderTaskId }),
                     TemplateDocuments = j.PmTaskId is { } tid ? templateDocs[tid].Select(d => new { d.Id, d.FileName, d.ContentType }) : [],
                     Comments = comments[j.Id].Take(CommentsPerJob).Select(c => new { c.Body, c.UserName, c.CreatedAt }),
                     MyLabor = labor[j.Id].Select(l => new { l.WorkDate, l.Hours, l.OvertimeHours, l.Notes }),
@@ -139,11 +143,13 @@ public static partial class TechEndpoints
                     LogForOthers = allowed.Contains(Permissions.WorkOrdersLogForOthers), Cancel = allowed.Contains(Permissions.WorkOrdersClose),
                     CreateWorkOrders = allowed.Contains(Permissions.WorkOrdersCreate), IssueStock = allowed.Contains(Permissions.InventoryTransact),
                 },
+                // The measurement points the jobs' steps use (0.13.0): the phone judges a reading as it is typed.
+                Points = await Checklists.PointsAsync(db, tasks.SelectMany(g => g).Select(t => t.MeasurementPointId), ct),
                 FailureCodes = await db.FailureCodes.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
                 CompletionRules = new
                 {
                     Notes = settings.RequireCompletionNotes, Labour = settings.RequireLaborToComplete, AllSteps = settings.RequireAllTasksDone,
-                    FailureCodeOnBreakdown = settings.RequireFailureCodeForBreakdowns,
+                    FailureCodeOnBreakdown = settings.RequireFailureCodeForBreakdowns, Readings = settings.RequireReadingSteps,
                     HoldNote = (settings.CommentRequiredFor ?? []).Contains(CommentActions.Hold),
                 },
             };
