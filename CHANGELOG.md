@@ -4,6 +4,38 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.12.0] - 2026-11-22
+
+Work templates, triggers and group work. PM tasks become work templates with documents and recipients; PMs can share
+calendars, add extra meters and spread their assets over the year; a PM on several assets can make a work group (one
+work order per asset, handled together); and checklists can be attached to an asset or a category. See
+docs/PM_TEMPLATES_AND_GROUPS.md.
+
+### Added
+- Work templates (PM › Work templates, formerly PM tasks): work order title, work type, priority, recipients, expected
+  stop hours and documents, with where each template is used. A work order can be made from a template (Template on
+  the form), and a PM can make its own copy of a shared template.
+- PM calendars (PM › Calendars): every N days, weeks, months or years from a date, or chosen dates (up to 500), shared
+  by many PMs. New PM type Calendar; other PMs can add calendars and up to 5 extra meters — whichever comes first.
+  Editing a calendar moves the next date of every PM using it.
+- Recipients on templates and PMs, and a Work recipients column in Settings › Notifications.
+- A PM's own generation rules: skipped asset statuses, non-working days and waiting for the previous work order.
+- On a PM with several assets: a template per asset, Round or Group mode, Copy or Split of the plan, and Spread over N
+  parts (one block of assets per part, e.g. one asset a month).
+- Occurrences on a PM: the next 24 dates or meter readings, and Generate this one now.
+- Work › Work groups: assign, write one report, change status, set the due date and comment for all of a group's work
+  orders (or the ticked ones); group column and filter on the work order list; the phone shows a job's group and its
+  comments.
+- Checklists on an asset (Maintenance plan tab) or a category (Settings › Asset categories): their steps are added to
+  every new work order on the asset.
+- Meters that follow another meter: increases recorded on the source are added to the follower and run its PMs.
+- The phone job lists its work template's documents (opened online).
+
+### Changed
+- The import's *PM tasks* sheet is called *Work templates* (the old name still imports), with optional Title, Work
+  type, Priority and Expected stop hours columns; *PM schedules* has an optional Multi-asset mode column.
+- Deleting a template is refused while a PM uses it for an asset or it is a checklist on an asset or category.
+
 ## [0.11.0] - 2026-11-22
 
 Phone app: parts, stock and stops. Technicians use and give back parts, look up stock, count stores and receive
