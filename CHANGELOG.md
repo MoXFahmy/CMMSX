@@ -4,6 +4,37 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.18.0] - 2026-11-23
+
+Supplier catalogue and purchase units. A part can be bought from several suppliers, each with their own part number,
+pack, price, discount, lead time and minimum order. Order lines are filled from the catalogue in whole packs, and
+receiving a pack books its pieces at cost per piece. Stock stays in the part's own unit; existing orders don't change
+(every existing line is a pack of 1). See docs/SUPPLIER_CATALOGUE.md.
+
+### Added
+- **Part page › Suppliers:** one row per supplier with their part number, pack (name and pieces per pack), price per pack
+  in the row's own currency, discount, lead time, minimum packs and notes. The star sets the preferred supplier; choosing a
+  preferred supplier on the part adds a row for it. Each row shows the **last price paid** (set by receipts, which never
+  change the catalogue price) with **Use last price** to copy it in.
+- **Orders in packs:** picking a part or changing the supplier on the order form fills lines from the catalogue — the
+  supplier's pack rounded up to whole packs (at least the minimum), their price and discount when the row is in the
+  order's currency, their part number, and the expected date from the longest lead time. Without a catalogue price the
+  line keeps its own price per piece × pack. The pieces show under each line, and the supplier's part number is printed
+  and e-mailed on the order.
+- **Receiving packs** (web and phone) books quantity × pieces per pack at net price × exchange rate ÷ pieces per pack.
+- **Re-order proposal:** suggests the preferred supplier, else the only catalogue supplier, else the last one received
+  from; lists catalogue suppliers first with their pack and price, and shows what each line becomes ("→ 1 Box of 100").
+  *Create orders* and *Order from requests* turn pieces into whole packs at the catalogue price.
+- A company shows the **parts it supplies**.
+- **Import:** new *Supplier catalogue* sheet (adds and updates rows; blank cells keep what is there) and in the current
+  data export. The 4CSQL migration adds a row for every part–supplier pair.
+
+### Changed
+- **On order** (parts list, part page, re-order proposal, inventory report) and a purchase request's **ordered** and
+  **received** amounts count pieces.
+- The upgrade adds a catalogue row for every part with a preferred supplier (pack of 1; its price only in the base
+  currency and when more than 0).
+
 ## [0.17.0] - 2026-11-23
 
 Contracts and contractors. Suppliers become companies that can supply, contract and/or manufacture; contractor work is
