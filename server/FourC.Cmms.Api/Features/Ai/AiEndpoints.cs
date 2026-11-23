@@ -27,5 +27,6 @@ public static class AiEndpoints
             Guard(() => AiReport.HandleAsync(input, db, ai, ct))).RequirePermission(Permissions.WorkOrdersExecute);
 
         AiDiagnose.Map(api);
+        AiUsage.Map(g);
     }
 }
