@@ -4,6 +4,37 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.15.0] - 2026-11-23
+
+AI assistant. Claude (Anthropic's AI) turns a technician's notes into the completion report and diagnoses a fault from
+the asset's own history, citing the work orders it relied on. cworks holds one Claude key for the server; every use is
+counted against a monthly limit and logged with its estimated cost. Off by default, and off everywhere until the server
+has a key. See docs/AI_ASSISTANT.md.
+
+### Added
+- Settings › Organization › **AI assistant**: the switch and the monthly limit (AI actions a month; empty means the
+  server's ceiling, 300 unless set otherwise). The month runs in the organization's time zone.
+- Phone completion sheet: a **microphone** next to *Work done* dictates in Arabic or English with the phone's own speech
+  recognition (Android app 0.15.0 and later; the audio stays on the phone), and **Fill with AI** fills work done, cause
+  details, symptom, cause and remedy from the notes. Suggested hours and parts become ticked *Log N h for me* and
+  *Use N × part* lines, sent on completion as the usual changes; hours already logged or parts already issued start
+  unticked.
+- Web completion dialog: **Fill from notes** fills work done, cause details and the three codes; suggested hours and
+  parts are listed to add by hand.
+- **Diagnose** on a work order and in a request's panel: the probable cause with a confidence and up to five ranked
+  actions (why, parts with quantities, estimated hours), each citing the past work orders it relied on, with links.
+  History comes from the asset, then assets of the same category (same manufacturer and model first), only work the
+  person may see; with fewer than three, CMX says so without asking Claude. Diagnoses are kept (*Earlier diagnoses*,
+  *Run again*), take a thumbs up or down from everyone, and an action's parts can be added to the planned parts.
+- Settings › **AI usage**: this month against the limit, the last 12 months, by feature and by person, and the call log
+  (who, feature, record, model, tokens, estimated cost, result) with filters and export to Excel or CSV.
+- A symptom field in the web completion dialog and on the phone completion sheet.
+- AWS: the stack takes the Claude key from a Secrets Manager secret named by the GitHub variable
+  `CMMS_ANTHROPIC_SECRET_ARN`, and an `AiMonthlyCeiling` parameter (default 300).
+
+### Changed
+- Android app: microphone permission (asked only when the microphone is first used) for dictation.
+
 ## [0.14.0] - 2026-11-23
 
 Failure codes and maintenance analysis. What people saw, what was wrong and what was done are recorded separately, with
