@@ -25,6 +25,11 @@ public static class PlanningBoardEndpoints
     /// <summary>A person's day on the board (0.19.0): available hours, planned hours (all their visible work) and the time away or extra time that applies.</summary>
     public sealed record BoardDay(DateOnly Day, decimal Available, decimal Planned, List<SlotView> Slots);
     public sealed record TakeInput(Guid WorkOrderId);
+    /// <summary>A contractor visit on the board (0.19.0): a contractor line on active work, on its visit day, else the work order's day.</summary>
+    public sealed record Visit(Guid LineId, Guid WorkOrderId, string Number, string Title, Guid SiteId, Guid CompanyId, string CompanyName, Guid? CategoryId,
+        string? CategoryName, string? Person, decimal PlannedHours, decimal HoursDone, DateOnly? DoneOn, DateOnly? PlannedOn, DateOnly? Day);
+    /// <summary>Day: the visit's new day; none clears it (the work order's day again).</summary>
+    public sealed record VisitInput(Guid LineId, DateOnly? Day);
     /// <summary>Day: the new planned start. From → To: move that person's assignment; To alone adds a person; From alone removes one.</summary>
     /// <param name="PlannedHours">With To alone: the person's planned hours on the job (Undo puts back what they had).</param>
     public sealed record MoveInput(Guid WorkOrderId, DateOnly? Day, Guid? FromEmployeeId, Guid? ToEmployeeId, decimal? PlannedHours = null);
@@ -184,6 +189,45 @@ public static class PlanningBoardEndpoints
             await mail.AssigneesAddedAsync(db, ctx, w, w.Assignees.Select(a => a.EmployeeId).Where(e => !before.Contains(e)).ToList(), ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { warning = Join(warning, await PeopleWarningAsync(db, w, ct)) });
+        }).RequirePermission(Permissions.WorkOrdersEdit);
+
+        // Contractor visits by company (0.19.0).
+        g.MapGet("/contractors", async (DateOnly from, DateOnly to, Guid? siteId, Guid? companyId, Guid? categoryId, CmmsDbContext db, CancellationToken ct) =>
+        {
+            if (to < from || to.DayNumber - from.DayNumber >= MaxDays) throw new DomainException("Choose a range of up to six weeks.");
+            var q = from l in db.WorkOrderContractors.AsNoTracking()
+                    join w in db.WorkOrders.AsNoTracking() on l.WorkOrderId equals w.Id
+                    where w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold
+                    select new { l, w };
+            if (siteId is { } s) q = q.Where(x => x.w.SiteId == s);
+            if (companyId is { } c) q = q.Where(x => x.l.SupplierId == c);
+            if (categoryId is { } k) q = q.Where(x => x.l.ContractorCategoryId == k);
+            var shaped = q.Select(x => new
+            {
+                LineId = x.l.Id, WorkOrderId = x.w.Id, x.w.Number, x.w.Title, x.w.SiteId, CompanyId = x.l.SupplierId, CompanyName = x.l.Supplier!.Name,
+                CategoryId = x.l.ContractorCategoryId, CategoryName = x.l.Category == null ? null : x.l.Category.Name,
+                Person = x.l.ContactId == null ? x.l.PersonName : db.SupplierContacts.Where(p => p.Id == x.l.ContactId).Select(p => p.Name).FirstOrDefault(),
+                x.l.PlannedHours, x.l.HoursDone, x.l.DoneOn, x.l.PlannedOn, Day = x.l.PlannedOn ?? x.w.PlannedStart ?? x.w.DueDate,
+            });
+            var visits = (await shaped.Where(v => v.Day >= from && v.Day <= to).OrderBy(v => v.Day).ThenBy(v => v.Number).ToListAsync(ct))
+                .Select(v => new Visit(v.LineId, v.WorkOrderId, v.Number, v.Title, v.SiteId, v.CompanyId, v.CompanyName, v.CategoryId, v.CategoryName, v.Person,
+                    v.PlannedHours, v.HoursDone, v.DoneOn, v.PlannedOn, v.Day)).ToList();
+            var undated = (await shaped.Where(v => v.Day == null).OrderByDescending(v => v.Number).Take(MaxTray).ToListAsync(ct))
+                .Select(v => new Visit(v.LineId, v.WorkOrderId, v.Number, v.Title, v.SiteId, v.CompanyId, v.CompanyName, v.CategoryId, v.CategoryName, v.Person,
+                    v.PlannedHours, v.HoursDone, v.DoneOn, v.PlannedOn, v.Day)).ToList();
+            var companies = visits.Concat(undated).GroupBy(v => v.CompanyId).Select(gr => new { Id = gr.Key, Name = gr.First().CompanyName }).OrderBy(x => x.Name).ToList();
+            return Results.Ok(new { Companies = companies, Visits = visits, Undated = undated });
+        }).RequirePermission(Permissions.WorkOrdersView);
+
+        // Dragging a visit (0.19.0) changes its day only; the company, rate and hours stay as they are.
+        g.MapPost("/visit", async (VisitInput input, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var line = await db.WorkOrderContractors.FirstOrDefaultAsync(l => l.Id == input.LineId, ct);
+            if (line is null) return Results.NotFound();
+            await WorkOrderEndpoints.RequireOpenAsync(db, line.WorkOrderId, ct);
+            line.PlannedOn = input.Day;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { line.Id, line.PlannedOn });
         }).RequirePermission(Permissions.WorkOrdersEdit);
 
         // "Assign to me" (0.19.0): someone who can do the work takes it while nobody is on it.
