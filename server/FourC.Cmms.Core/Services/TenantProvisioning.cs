@@ -41,6 +41,14 @@ public static partial class TenantProvisioning
     /// <summary>Kinds of service contract (0.17.0); the migration gives existing organizations the same list.</summary>
     public static readonly (string Code, string Name)[] DefaultContractTypes = [("MAINT", "Maintenance"), ("INSP", "Inspection"), ("LEASE", "Lease"), ("WARR", "Warranty")];
 
+    /// <summary>Time away and extra time (0.19.0); the migration gives existing organizations the same list.</summary>
+    public static readonly (string Code, string Name, string Color, Planning.AvailabilityKind Kind)[] DefaultAvailabilityTypes =
+    [
+        ("HOL", "Holiday", "#40c057", Planning.AvailabilityKind.Away), ("SICK", "Sick leave", "#fa5252", Planning.AvailabilityKind.Away),
+        ("TRAIN", "Training", "#7950f2", Planning.AvailabilityKind.Away), ("MEET", "Meeting", "#fab005", Planning.AvailabilityKind.Away),
+        ("EXTRA", "Extra shift", "#228be6", Planning.AvailabilityKind.Extra),
+    ];
+
     public static readonly (string Code, string Name)[] DefaultOrderTypes = [("PARTS", "Parts"), ("SERVICES", "Services"), ("CAPITAL", "Capital")];
 
     /// <summary>Why work is cancelled (0.10.0); the migration gives existing organizations the same list.</summary>
@@ -96,6 +104,7 @@ public static partial class TenantProvisioning
         db.CancelReasons.AddRange(DefaultCancelReasons.Select(r => new FourC.Cmms.Core.Work.CancelReason { TenantId = tenantId, Code = r.Code, Name = r.Name }));
         db.OrderTypes.AddRange(DefaultOrderTypes.Select(o => new FourC.Cmms.Core.Purchasing.OrderType { TenantId = tenantId, Code = o.Code, Name = o.Name }));
         db.ContractTypes.AddRange(DefaultContractTypes.Select(o => new FourC.Cmms.Core.Contracts.ContractType { TenantId = tenantId, Code = o.Code, Name = o.Name }));
+        db.AvailabilityTypes.AddRange(DefaultAvailabilityTypes.Select(a => new Planning.AvailabilityType { TenantId = tenantId, Code = a.Code, Name = a.Name, Color = a.Color, Kind = a.Kind }));
         var admin = NewUser(tenantId, adminName, adminEmail);
         admin.PasswordHash = hasher.HashPassword(admin, adminPassword);
         db.Users.Add(admin);

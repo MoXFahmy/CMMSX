@@ -172,6 +172,8 @@ api.MapCodeEndpoints();
 api.MapDowntimeEndpoints();
 api.MapPlanningEndpoints();
 api.MapPlanningBoardEndpoints();
+api.MapAvailabilityEndpoints();
+api.MapTimesheetEndpoints();
 api.MapPmEndpoints();
 api.MapPmCalendarEndpoints();
 api.MapMeasurementPointEndpoints();

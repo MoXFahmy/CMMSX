@@ -14,9 +14,9 @@ import { lineRate } from '@/pages/purchasing/companies';
 
 type Values = {
   supplierId: string | null; categoryId: string | null; contactId: string | null; personName: string; plannedHours: number | ''; hoursDone: number | '';
-  doneOn: Date | string | null; rate: number | ''; notes: string;
+  doneOn: Date | string | null; rate: number | ''; notes: string; plannedOn: Date | string | null;
 };
-const blank: Values = { supplierId: null, categoryId: null, contactId: null, personName: '', plannedHours: '', hoursDone: '', doneOn: null, rate: '', notes: '' };
+const blank: Values = { supplierId: null, categoryId: null, contactId: null, personName: '', plannedHours: '', hoursDone: '', doneOn: null, rate: '', notes: '', plannedOn: null };
 
 /**
  * Contractor lines on a work order (0.17.0). Planners (edit) add, change and remove lines and planned hours; technicians (execute) record the
@@ -34,7 +34,7 @@ export function ContractorsPanel({ w, canPlan, canExec, onChange, currency }: { 
     setEditing(l); form.clearErrors();
     form.setValues(l ? {
       supplierId: l.supplierId, categoryId: l.categoryId ?? null, contactId: l.contactId ?? null, personName: l.contactId ? '' : l.personName ?? '', plannedHours: l.plannedHours,
-      hoursDone: l.hoursDone || '', doneOn: l.doneOn ?? null, rate: l.rate, notes: l.notes ?? '',
+      hoursDone: l.hoursDone || '', doneOn: l.doneOn ?? null, rate: l.rate, notes: l.notes ?? '', plannedOn: l.plannedOn ?? null,
     } : blank);
     setOpened(true);
   };
@@ -49,6 +49,7 @@ export function ContractorsPanel({ w, canPlan, canExec, onChange, currency }: { 
     const body = {
       supplierId: v.supplierId, categoryId: v.categoryId, contactId: v.contactId, personName: v.contactId ? null : v.personName || null,
       plannedHours: num(v.plannedHours), hoursDone: num(v.hoursDone), doneOn: toIsoDate(v.doneOn), rate: v.rate === '' ? null : v.rate, notes: v.notes || null,
+      plannedOn: toIsoDate(v.plannedOn),
     };
     try {
       if (editing) await put(`/work-orders/${w.id}/contractors/${editing.id}`, body); else await post(`/work-orders/${w.id}/contractors`, body);
@@ -113,6 +114,7 @@ export function ContractorsPanel({ w, canPlan, canExec, onChange, currency }: { 
           <SimpleGrid cols={{ base: 2, sm: 3 }}>
             <NumberInput label={t('contractors.plannedHours')} min={0} decimalScale={2} disabled={planOnly} {...form.getInputProps('plannedHours')} />
             <NumberInput label={t('contractors.rate')} min={0} decimalScale={2} disabled={planOnly} {...form.getInputProps('rate')} />
+            <DateInput label={t('contractors.visitOn')} description={t('contractors.visitOnHint')} clearable valueFormat="DD MMM YYYY" disabled={planOnly} {...form.getInputProps('plannedOn')} />
           </SimpleGrid>
           <SimpleGrid cols={{ base: 2, sm: 3 }}>
             <NumberInput label={t('contractors.hoursDone')} min={0} decimalScale={2} disabled={!canExec && !canPlan} {...form.getInputProps('hoursDone')} />

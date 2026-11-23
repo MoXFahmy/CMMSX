@@ -162,14 +162,16 @@ export function JobPage() {
 }
 
 
-function HoursModal({ opened, onClose, onSave, crew, me }: {
+export function HoursModal({ opened, onClose, onSave, crew, me, initialDate }: {
   opened: boolean; onClose: () => void; onSave: (p: { workDate: string; hours: number; overtimeHours: number; notes: string | null; employeeId?: string }) => void;
   /** A crew leader picks whose hours these are (0.11.0); empty for everyone else. */
   crew?: { employeeId: string; name: string }[]; me?: string;
+  /** The day the hours are for (My day, 0.19.0); today when not given. */
+  initialDate?: string;
 }) {
   const { t } = useTranslation();
   const [who, setWho] = useState<string | null>(me ?? null);
-  const [date, setDate] = useState<Date | null>(new Date());
+  const [date, setDate] = useState<Date | null>(initialDate ? new Date(`${initialDate}T12:00:00`) : new Date());
   const [hours, setHours] = useState<number | string>(1);
   const [ot, setOt] = useState<number | string>(0);
   const [notes, setNotes] = useState('');

@@ -44,6 +44,7 @@ export function SettingsPage() {
     { value: 'remedies', label: t('settings.remedies'), show: can(P.woView) },
     { value: 'request-types', label: t('requestTypes.title'), show: can(P.settingsManage) },
     { value: 'cancel-reasons', label: t('settings.cancelReasons'), show: can(P.woView) },
+    { value: 'availability-types', label: t('availability.types'), show: can(P.woView) },
     { value: 'purchasing', label: t('settings.purchasingTab'), show: can(P.settingsManage) },
     { value: 'contractor-categories', label: t('contractorCategories.title'), show: can(P.purchasingView) || can(P.suppliersManage) },
     { value: 'contract-types', label: t('contracts.types'), show: can(P.contractsView) },
@@ -67,6 +68,8 @@ export function SettingsPage() {
         <Tabs.Panel value="failure-codes"><LookupTable path="/failure-codes" title={t('settings.causes')} newLabel={t('settings.newCause')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="remedies"><LookupTable path="/remedies" title={t('settings.remedies')} newLabel={t('settings.newRemedy')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="request-types"><RequestTypesSettings editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="availability-types"><LookupTable path="/availability-types" title={t('availability.types')} newLabel={t('availability.newType')} editable={can(P.settingsManage)} withColor
+          kinds={[{ value: 'Away', label: t('availability.away') }, { value: 'Extra', label: t('availability.extra') }]} /></Tabs.Panel>
         <Tabs.Panel value="cancel-reasons"><LookupTable path="/cancel-reasons" title={t('settings.cancelReasons')} newLabel={t('settings.newCancelReason')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="users"><UserSettings /></Tabs.Panel>
         <Tabs.Panel value="roles"><RoleSettings /></Tabs.Panel>

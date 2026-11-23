@@ -170,7 +170,7 @@ export const WO_STATUSES: WorkOrderStatus[] = ['Open', 'InProgress', 'OnHold', '
 export const HOLD_REASONS: HoldReason[] = ['WaitingForParts', 'WaitingForApproval', 'WaitingForAccess', 'WaitingForContractor', 'Other'];
 export const WR_STATUSES: WorkRequestStatus[] = ['New', 'Approved', 'Closed', 'Rejected', 'Cancelled'];
 
-export type Lookup = { id: string; code: string; name: string; color?: string; isActive: boolean };
+export type Lookup = { id: string; code: string; name: string; color?: string; isActive: boolean; /** Availability types (0.19.0): Away or Extra. */ kind?: string };
 export type Employee = {
   id: string; code: string; fullName: string; jobTitle?: string; email?: string; phone?: string; tradeIds: string[]; siteIds: string[];
   hourlyRate?: number; overtimeRate?: number; isContractor: boolean; company?: string; userId?: string; notes?: string; isActive: boolean;
@@ -503,7 +503,17 @@ export type ContractDetail = {
 export type ContractOption = { id: string; number: string; title: string; companyName: string; status: ContractStatus; covers: boolean };
 export type CoveredBy = { id: string; number: string; title: string; companyName: string };
 export type ContractorLine = { id: string; supplierId: string; companyName: string; categoryId?: string | null; categoryName?: string | null; contactId?: string | null; personName?: string | null;
-  plannedHours: number; hoursDone: number; doneOn?: string | null; rate: number; cost: number; plannedCost: number; notes?: string | null };
+  plannedHours: number; hoursDone: number; doneOn?: string | null; rate: number; cost: number; plannedCost: number; notes?: string | null;
+  /** The planned visit day (0.19.0); none = the work order's day. */
+  plannedOn?: string | null };
+
+/** A type of time away or extra time (0.19.0). */
+export type AvailabilityType = { id: string; code: string; name: string; color?: string | null; kind: 'Away' | 'Extra'; isActive: boolean };
+/** Time away or extra time for a person or a team (0.19.0). */
+export type AvailabilityEntry = {
+  id: string; typeId: string; typeName: string; typeColor?: string | null; typeKind: 'Away' | 'Extra'; employeeId?: string | null; employeeName?: string | null;
+  teamId?: string | null; teamName?: string | null; from: string; to: string; days: string[]; hours?: number | null; notes?: string | null;
+};
 
 /** A part's supplier with their pack and price (0.18.0). */
 export type SupplierPartRow = {

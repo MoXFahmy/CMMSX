@@ -7,7 +7,7 @@ import { useNavigate, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core';
-import { IconChevronLeft, IconChevronRight, IconClockExclamation, IconHandStop, IconPlayerPlay } from '@tabler/icons-react';
+import { IconChevronLeft, IconChevronRight, IconClockExclamation, IconHandStop, IconPlayerPlay, IconPlus } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
 import type { Lookup } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -18,7 +18,8 @@ import { SlaText } from '@/components/SlaBadge';
 import { notifyError } from '@/components/utils';
 import { generateNow } from '@/pages/pm/generateNow';
 import { useTeams, teamOptions } from '@/components/teams';
-import { capacityOn, cellsByAsset, cellsByPerson, days as dayList, isPm, load, NO_ASSET, planMove, TRAY, UNASSIGNED, type Board, type BoardJob, type ForecastRow, type Move } from './board';
+import { canAssignToMe, capacityOn, cellsByAsset, cellsByPerson, dayOf, days as dayList, isPm, NO_ASSET, plannedOn, planMove, TRAY, UNASSIGNED, type Board, type BoardDay, type BoardJob, type ForecastRow, type Move } from './board';
+import { ContractorBoard } from './ContractorBoard';
 
 /** When the last drag ended: the click that ends a drag must not also open the work order. */
 let lastDragEnd = 0;
@@ -30,7 +31,7 @@ export function PlanningPage() {
   const { t } = useTranslation();
   const { can, terms, me } = useAuth();
   const [params, setParams] = useSearchParams();
-  const view = params.get('view') === 'asset' ? 'asset' : 'person';
+  const view = params.get('view') === 'asset' ? 'asset' : params.get('view') === 'contractor' ? 'contractor' : 'person';
   const span = params.get('span') === 'month' ? 'month' : 'week';
   const anchor = params.get('from') ?? dayjs().format('YYYY-MM-DD');
   const from = span === 'month' ? dayjs(anchor).startOf('month') : dayjs(anchor);
@@ -52,6 +53,7 @@ export function PlanningPage() {
   const { data, refetch, isFetching } = useQuery({
     queryKey: ['planning-board', fromIso, toIso, siteId, tradeId, teamId, stoppedOnly], placeholderData: (prev) => prev,
     queryFn: () => get<Board>('/planning/board', { from: fromIso, to: toIso, siteId, tradeId, teamId, onlyWhenStopped: stoppedOnly || undefined }),
+    enabled: view !== 'contractor',
   });
   const canEdit = can(P.woEdit);
   const days = useMemo(() => dayList(fromIso, toIso), [fromIso, toIso]);
@@ -79,7 +81,7 @@ export function PlanningPage() {
     const target = e.over?.id ? String(e.over.id).split('|') : null; // "row|day"
     if (!dragged || !target) return;
     const [row, day] = target;
-    const plan = planMove(dragged.job, dragged.row, row, day, view);
+    const plan = planMove(dragged.job, dragged.row, row, day, view === 'asset' ? 'asset' : 'person');
     if (!plan) return;
     // Dropped on a day none of its access windows touches: allowed, with a warning (0.10.0).
     if (day && day !== TRAY && isOutside(dragged.job.accessWindows, day, me?.tenant.settings.timeZone))
@@ -89,7 +91,9 @@ export function PlanningPage() {
 
   const byPerson = useMemo(() => (data ? cellsByPerson(data) : new Map()), [data]);
   const byAsset = useMemo(() => (data ? cellsByAsset(data) : new Map()), [data]);
-  const hours = useMemo(() => (data ? load(data) : new Map<string, Map<string, number>>()), [data]);
+  const canAddAway = can(P.peopleManage) || can(P.woEdit);
+  // Assign to me: someone who may do the work and is an employee (0.19.0).
+  const takeAs = can(P.woExecute) ? me?.employeeId ?? null : null;
   const rows: { key: string; label: string }[] = view === 'person'
     ? [{ key: UNASSIGNED, label: t('planning.unassigned') }, ...(data?.people ?? []).map((p) => ({ key: p.id, label: p.name }))]
     : assetRows(data, t('planning.noAsset'));
@@ -102,8 +106,9 @@ export function PlanningPage() {
       <PageHeader title={t('planning.title')} subtitle={t('planning.subtitle')} />
       <Card mb="sm" p="sm">
         <Group gap="sm" wrap="wrap">
-          <SegmentedControl size="xs" value={view} onChange={(v) => set({ view: v === 'asset' ? 'asset' : null })}
-            data={[{ value: 'person', label: t('planning.byPerson') }, { value: 'asset', label: t('planning.byAsset', { asset: terms.asset }) }]} />
+          <SegmentedControl size="xs" value={view} onChange={(v) => set({ view: v === 'person' ? null : v })}
+            data={[{ value: 'person', label: t('planning.byPerson') }, { value: 'asset', label: t('planning.byAsset', { asset: terms.asset }) },
+              { value: 'contractor', label: t('planning.byContractor') }]} />
           <SegmentedControl size="xs" value={span} onChange={(v) => set({ span: v === 'month' ? 'month' : null })}
             data={[{ value: 'week', label: t('planning.week') }, { value: 'month', label: t('planning.month') }]} />
           <Group gap={4}>
@@ -114,16 +119,19 @@ export function PlanningPage() {
           <Text fw={600} fz="sm">{span === 'month' ? from.format('MMMM YYYY') : `${from.format('D MMM')} – ${to.format('D MMM YYYY')}`}</Text>
           <Select size="xs" w={180} placeholder={terms.site} clearable searchable data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))}
             value={siteId} onChange={(v) => set({ siteId: v })} />
-          <Select size="xs" w={160} placeholder={t('wo.trade')} clearable data={(trades ?? []).filter((x) => x.isActive).map((x) => ({ value: x.id, label: x.name }))}
+          {view !== 'contractor' && <><Select size="xs" w={160} placeholder={t('wo.trade')} clearable data={(trades ?? []).filter((x) => x.isActive).map((x) => ({ value: x.id, label: x.name }))}
             value={tradeId} onChange={(v) => set({ tradeId: v })} />
           {(teams?.length ?? 0) > 0 && (
             <Select size="xs" w={160} placeholder={t('teams.team')} clearable data={teamOptions(teams, teamId)} value={teamId} onChange={(v) => set({ teamId: v })} />
           )}
-          <Chip size="xs" checked={stoppedOnly} onChange={(v) => set({ stopped: v ? '1' : null })}>{t('accessWindows.onlyWhenStopped')}</Chip>
+          <Chip size="xs" checked={stoppedOnly} onChange={(v) => set({ stopped: v ? '1' : null })}>{t('accessWindows.onlyWhenStopped')}</Chip></>}
           {isFetching && <Loader size="xs" />}
         </Group>
       </Card>
-      {!data ? <Loader /> : (
+      {view === 'contractor' ? (
+        <ContractorBoard from={fromIso} to={toIso} days={days} siteId={siteId} companyId={params.get('companyId')} categoryId={params.get('categoryId')}
+          onFilter={set} canEdit={canEdit} canExec={can(P.woExecute)} />
+      ) : !data ? <Loader /> : (
         <DndContext sensors={sensors} onDragEnd={onDragEnd}>
           <Group align="flex-start" gap="sm" wrap="nowrap">
             <ScrollArea type="auto" style={{ flex: 1, minWidth: 0 }}>
@@ -135,7 +143,10 @@ export function PlanningPage() {
                 ))}
                 {rows.map((r) => (
                   <Row key={r.key} label={r.label} rowKey={r.key} days={days} cells={cells.get(r.key)} capacity={view === 'person' && r.key !== UNASSIGNED ? (d: string) => capacityOn(data, r.key, d) : undefined}
-                    hours={hours.get(r.key)} canEdit={canEdit} onGenerated={() => void refetch()} canGenerate={can(P.pmGenerate)} />
+                    hours={view === 'person' && r.key !== UNASSIGNED ? (d: string) => plannedOn(data, r.key, d) : undefined}
+                    day={view === 'person' && r.key !== UNASSIGNED ? (d: string) => dayOf(data, r.key, d) : undefined}
+                    addAway={view === 'person' && r.key !== UNASSIGNED && canAddAway ? `/planning/availability?employeeId=${r.key}&add=1` : undefined}
+                    canEdit={canEdit} takeAs={takeAs} onChanged={() => void refetch()} onGenerated={() => void refetch()} canGenerate={can(P.pmGenerate)} showStop={view === 'asset'} />
                 ))}
               </Box>
             </ScrollArea>
@@ -159,42 +170,55 @@ function assetRows(data: Board | undefined, noAsset: string) {
   return [...seen.entries()].map(([key, label]) => ({ key, label })).sort((a, b) => (a.key === NO_ASSET ? 1 : b.key === NO_ASSET ? -1 : a.label.localeCompare(b.label)));
 }
 
-function Row({ label, rowKey, days, cells, capacity, hours, canEdit, canGenerate, onGenerated }: {
-  label: string; rowKey: string; days: string[]; cells?: Map<string, (BoardJob | ForecastRow)[]>; capacity?: (day: string) => number; hours?: Map<string, number>;
-  canEdit: boolean; canGenerate: boolean; onGenerated: () => void;
+function Row({ label, rowKey, days, cells, capacity, hours, day, addAway, canEdit, takeAs, onChanged, canGenerate, onGenerated, showStop }: {
+  label: string; rowKey: string; days: string[]; cells?: Map<string, (BoardJob | ForecastRow)[]>; capacity?: (day: string) => number; hours?: (day: string) => number;
+  day?: (day: string) => BoardDay | undefined; addAway?: string; canEdit: boolean; takeAs: string | null; onChanged: () => void; canGenerate: boolean; onGenerated: () => void;
+  showStop: boolean;
 }) {
+  const { t } = useTranslation();
+  const navigate = useNavigate();
   return (
     <>
-      <Text fz="sm" fw={500} py={6} pr="xs" lineClamp={2} style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>{label}</Text>
+      <Group gap={4} wrap="nowrap" justify="space-between" py={6} pr="xs" style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>
+        <Text fz="sm" fw={500} lineClamp={2}>{label}</Text>
+        {addAway && <Tooltip label={t('availability.addAway')}><ActionIcon size="xs" variant="subtle" aria-label={t('availability.addAway')} onClick={() => navigate(addAway)}><IconPlus size={12} /></ActionIcon></Tooltip>}
+      </Group>
       {days.map((d) => (
-        <Cell key={d} id={`${rowKey}|${d}`} items={cells?.get(d) ?? []} rowKey={rowKey} capacity={capacity?.(d)} hours={hours?.get(d)}
-          canEdit={canEdit} canGenerate={canGenerate} onGenerated={onGenerated} />
+        <Cell key={d} id={`${rowKey}|${d}`} items={cells?.get(d) ?? []} rowKey={rowKey} capacity={capacity?.(d)} hours={hours?.(d)} day={day?.(d)}
+          canEdit={canEdit} takeAs={takeAs} onChanged={onChanged} canGenerate={canGenerate} onGenerated={onGenerated} showStop={showStop} />
       ))}
     </>
   );
 }
 
-function Cell({ id, items, rowKey, capacity, hours, canEdit, canGenerate, onGenerated }: {
-  id: string; items: (BoardJob | ForecastRow)[]; rowKey: string; capacity?: number; hours?: number; canEdit: boolean; canGenerate: boolean; onGenerated: () => void;
+function Cell({ id, items, rowKey, capacity, hours, day, canEdit, takeAs, onChanged, canGenerate, onGenerated, showStop }: {
+  id: string; items: (BoardJob | ForecastRow)[]; rowKey: string; capacity?: number; hours?: number; day?: BoardDay; canEdit: boolean; takeAs: string | null;
+  onChanged: () => void; canGenerate: boolean; onGenerated: () => void; showStop: boolean;
 }) {
   const { t } = useTranslation();
   const { setNodeRef, isOver } = useDroppable({ id, disabled: !canEdit });
   const over = capacity !== undefined && (hours ?? 0) > capacity;
+  // Time away tints the day in its type's colour (0.19.0).
+  const away = day?.slots.find((x) => x.kind === 'Away');
+  const tint = away?.color && /^#[0-9a-f]{6}$/i.test(away.color) ? `${away.color}26` : undefined;
   return (
     <Stack ref={setNodeRef} gap={4} p={4} mih={64}
       style={{ borderBottom: '1px solid var(--mantine-color-default-border)', borderLeft: '1px solid var(--mantine-color-default-border)',
-        background: isOver ? 'var(--mantine-color-brand-light)' : over ? 'var(--mantine-color-red-light)' : undefined }}>
-      {capacity !== undefined && (hours ?? 0) > 0 && (
+        background: isOver ? 'var(--mantine-color-brand-light)' : over ? 'var(--mantine-color-red-light)' : tint }}>
+      {day && day.slots.length > 0 && (
+        <Text fz={10} fw={600} lineClamp={1} title={day.slots.map((x) => x.name).join(', ')}>{day.slots.map((x) => (x.hours ? `${x.name} ${x.hours} h` : x.name)).join(' · ')}</Text>
+      )}
+      {capacity !== undefined && ((hours ?? 0) > 0 || (day?.slots.length ?? 0) > 0) && (
         <Text fz={10} c={over ? 'red' : 'dimmed'} fw={over ? 700 : undefined} ta="right">{t('planning.load', { hours: Math.round((hours ?? 0) * 10) / 10, capacity })}</Text>
       )}
       {items.map((x) => (isPm(x)
         ? <PmCard key={`pm-${x.id}-${x.date}`} pm={x} canGenerate={canGenerate} onGenerated={onGenerated} />
-        : <JobCard key={x.id} job={x} row={rowKey} canEdit={canEdit} />))}
+        : <JobCard key={x.id} job={x} row={rowKey} canEdit={canEdit} canTake={canAssignToMe(x, rowKey, !!takeAs, takeAs)} onChanged={onChanged} showStop={showStop} />))}
     </Stack>
   );
 }
 
-function JobCard({ job, row, canEdit }: { job: BoardJob; row: string; canEdit: boolean }) {
+function JobCard({ job, row, canEdit, canTake = false, onChanged, showStop = false }: { job: BoardJob; row: string; canEdit: boolean; canTake?: boolean; onChanged?: () => void; showStop?: boolean }) {
   const { t } = useTranslation();
   const navigate = useNavigate();
   const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({ id: `${job.id}|${row}`, data: { job, row } satisfies Dragged, disabled: !canEdit });
@@ -218,6 +242,18 @@ function JobCard({ job, row, canEdit }: { job: BoardJob; row: string; canEdit: b
         </Group>
       )}
       {(job.sla.completion === 'Late' || job.sla.completion === 'DueSoon') && <SlaText fz="10px" deadline={job.dueAt} state={job.sla.completion} />}
+      {showStop && job.expectedStopHours != null && <Text fz={10} c="red">{t('planning.expectedStop', { hours: job.expectedStopHours })}</Text>}
+      {canTake && (
+        <Button size="compact-xs" variant="light" mt={2} onPointerDown={(e) => e.stopPropagation()}
+          onClick={async (e) => {
+            e.stopPropagation();
+            try {
+              const r = await post<{ warning?: string | null }>('/planning/take', { workOrderId: job.id });
+              notifications.show({ color: r.warning ? 'orange' : 'teal', message: r.warning ?? t('planning.taken', { number: job.number }) });
+            } catch (err) { notifyError(err); }
+            onChanged?.();
+          }}>{t('planning.assignToMe')}</Button>
+      )}
     </Paper>
   );
 }

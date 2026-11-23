@@ -288,6 +288,8 @@ public class WorkOrderContractor : Entity, ITenantOwned, IAuditable
     public decimal HoursDone { get; set; }
     /// <summary>When the hours were done; cost is dated by it (set to the day of recording when not given).</summary>
     public DateOnly? DoneOn { get; set; }
+    /// <summary>The planned visit day (0.19.0); none = the work order's day.</summary>
+    public DateOnly? PlannedOn { get; set; }
     public decimal Rate { get; set; }
     public string? Notes { get; set; }
     public DateTimeOffset CreatedAt { get; set; }

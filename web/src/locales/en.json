@@ -26,7 +26,9 @@
     "planning": "Planning",
     "workGroups": "Work groups",
     "myApprovals": "My approvals",
-    "contracts": "Contracts"
+    "contracts": "Contracts",
+    "availability": "Availability",
+    "timesheet": "Timesheet"
   },
   "unit": {
     "overtime": "overtime",
@@ -1566,7 +1568,21 @@
     "trayEmpty": "Nothing here.",
     "wasPlanned": "was planned {{date}}",
     "moved": "Moved.",
-    "undo": "Undo"
+    "undo": "Undo",
+    "assignToMe": "Assign to me",
+    "taken": "{{number}} is yours.",
+    "byContractor": "By contractor",
+    "expectedStop": "Stop ~{{hours}} h",
+    "noVisits": "No contractor visits in these days.",
+    "undatedVisits": "No visit date",
+    "undatedVisitsHint": "Contractor work without a day yet. Drag a visit onto a day.",
+    "otherCompany": "Change the company on the work order.",
+    "visitMoved": "Visit moved.",
+    "recordVisit": "Record the visit",
+    "visitRecorded": "Visit recorded.",
+    "visitHours": "{{done}} of {{planned}} h done",
+    "notesForPlanners": "Planners write the notes; add yours as a comment on the work order.",
+    "followsWorkOrder": "This visit has no date of its own: it follows the work order's day. Change that day on the work order."
   },
   "import": {
     "title": "Import data",
@@ -2500,7 +2516,9 @@
     "rate": "Hourly rate",
     "doneOn": "Date done",
     "doneOnHint": "Today when left empty.",
-    "techHint": "You can record the hours done, the date and the person. A planner changes the rest."
+    "techHint": "You can record the hours done, the date and the person. A planner changes the rest.",
+    "visitOn": "Visit date",
+    "visitOnHint": "Empty = the work order's day"
   },
   "catalogue": {
     "title": "Suppliers",
@@ -2535,5 +2553,69 @@
     "receivesPieces": "Books {{pieces}} {{unit}} into stock",
     "refilled": "Lines refilled from the supplier's catalogue: {{parts}}",
     "yourNumber": "Your part no. {{number}}"
+  },
+  "availability": {
+    "title": "Availability",
+    "subtitle": "Time away and extra time, by person or team. The planning board counts it in each person's hours.",
+    "add": "Add time away or extra time",
+    "addAway": "Add time away",
+    "edit": "Edit availability",
+    "none": "No time away or extra time from this date.",
+    "type": "Type",
+    "types": "Availability types",
+    "newType": "New availability type",
+    "kind": "Counts as",
+    "away": "Time away",
+    "extra": "Extra time",
+    "who": "Person or team",
+    "person": "Person",
+    "dates": "Dates",
+    "from": "From",
+    "to": "To",
+    "toHint": "Empty = the same day",
+    "days": "Weekdays",
+    "daysHint": "None = every day in the range",
+    "everyDay": "Every day",
+    "hours": "Hours",
+    "hoursPerDay": "Hours a day",
+    "hoursHint": "Empty = the whole working day (time away only)",
+    "wholeDay": "Whole day",
+    "weekday": {
+      "Sunday": "Sun",
+      "Monday": "Mon",
+      "Tuesday": "Tue",
+      "Wednesday": "Wed",
+      "Thursday": "Thu",
+      "Friday": "Fri",
+      "Saturday": "Sat"
+    }
+  },
+  "timesheet": {
+    "title": "Timesheet",
+    "subtitle": "Hours per work order for one person's day, the same entries as each work order's Labour tab.",
+    "day": "Day",
+    "week": "Week",
+    "me": "Me",
+    "workOrder": "Work order",
+    "hours": "Hours",
+    "overtime": "Overtime",
+    "total": "Total",
+    "available": "{{hours}} h available",
+    "nothing": "No work and no hours on this day.",
+    "closed": "Closed",
+    "addHours": "Add hours",
+    "otherWorkOrder": "Add hours on another work order",
+    "weekHint": "Logged hours / hours available. Red: more than available; orange: less. Click a day to open it."
+  },
+  "techDay": {
+    "title": "My day",
+    "today": "Today",
+    "total": "{{hours}} h logged",
+    "overtime": "{{hours}} h overtime",
+    "available": "{{hours}} h available",
+    "nothing": "No jobs and no hours on this day.",
+    "finished": "Finished",
+    "hours": "{{hours}} h",
+    "addHours": "Hours"
   }
 }

@@ -74,6 +74,11 @@ export type TechBundle = {
   can?: { logForOthers: boolean; cancel: boolean; createWorkOrders: boolean; issueStock?: boolean };
   /** The AI assistant (0.15.0): "Fill with AI" on the completion sheet; missing from 0.14 servers. */
   ai?: { enabled: boolean };
+  /** My day (0.19.0): my hours of the last 30 days on every work order, and my available hours for those days and today. */
+  myDay?: {
+    labour: { workOrderId: string; number: string; title: string; workDate: string; hours: number; overtimeHours: number }[];
+    available: { day: string; hours: number; away: string[] }[];
+  };
 };
 
 /** The assets, locations and meters of my sites (GET /api/tech/places), for scanning offline. */

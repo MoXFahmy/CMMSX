@@ -148,7 +148,7 @@ public static class WorkOrderEndpoints
                 {
                     l.Id, l.SupplierId, CompanyName = l.Supplier!.Name, CategoryId = l.ContractorCategoryId, CategoryName = l.Category == null ? null : l.Category.Name, l.ContactId,
                     PersonName = l.ContactId == null ? l.PersonName : db.SupplierContacts.Where(c => c.Id == l.ContactId).Select(c => c.Name).FirstOrDefault(),
-                    l.PlannedHours, l.HoursDone, l.DoneOn, l.Rate, Cost = l.HoursDone * l.Rate, PlannedCost = l.PlannedHours * l.Rate, l.Notes,
+                    l.PlannedHours, l.HoursDone, l.DoneOn, l.Rate, Cost = l.HoursDone * l.Rate, PlannedCost = l.PlannedHours * l.Rate, l.Notes, l.PlannedOn,
                 }).ToListAsync(ct);
             var linkedLabour = labor.Where(l => l.CompanyName is not null).Sum(l => l.Cost);
             // The contract the work is done under, and the active contract covering its asset (0.17.0).

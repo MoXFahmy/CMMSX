@@ -13,8 +13,9 @@ namespace FourC.Cmms.Api.Features;
 public static class ContractorEndpoints
 {
     public sealed record ContractorCategoryInput(string Code, string Name, decimal DefaultRate, bool IsActive = true);
+    /// <param name="PlannedOn">The visit day (0.19.0), a planner field; none = the work order's day (a technician's save leaves it as it is).</param>
     public sealed record ContractorLineInput(Guid SupplierId, Guid? CategoryId, Guid? ContactId, string? PersonName, decimal PlannedHours, decimal? Rate,
-        decimal HoursDone, DateOnly? DoneOn, string? Notes);
+        decimal HoursDone, DateOnly? DoneOn, string? Notes, DateOnly? PlannedOn = null);
 
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
     private static Guid UserId(HttpContext http) => Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
@@ -67,6 +68,7 @@ public static class ContractorEndpoints
             var v = await ValidateLineAsync(db, i, null, ct);
             if (!v.IsValid) return v.Problem();
             await ApplyLineAsync(db, line, i, rateFromCompany: i.Rate is null, ct);
+            line.PlannedOn = i.PlannedOn;
             db.WorkOrderContractors.Add(line);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { line.Id });
@@ -81,13 +83,14 @@ public static class ContractorEndpoints
             var line = await db.WorkOrderContractors.FirstOrDefaultAsync(l => l.Id == lineId && l.WorkOrderId == id, ct);
             if (line is null) return Results.NotFound();
             if (!canEdit && (i.SupplierId != line.SupplierId || i.CategoryId != line.ContractorCategoryId || i.PlannedHours != line.PlannedHours
-                             || (i.Rate is { } r && r != line.Rate) || (i.Notes.Clean() ?? "") != (line.Notes ?? "")))
+                             || (i.Rate is { } r && r != line.Rate) || (i.Notes.Clean() ?? "") != (line.Notes ?? "") || (i.PlannedOn is { } po && po != line.PlannedOn)))
                 throw new DomainException("You can record the hours done, the date and the person; ask a planner to change the rest.");
             var v = await ValidateLineAsync(db, i, line, ct);
             if (!v.IsValid) return v.Problem();
             // The rate is taken again only when the company or category changes and no rate is given.
             var retake = i.Rate is null && (i.SupplierId != line.SupplierId || i.CategoryId != line.ContractorCategoryId);
             await ApplyLineAsync(db, line, i, retake, ct);
+            if (canEdit) line.PlannedOn = i.PlannedOn;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { line.Id });
         }).RequireAuthorization();
