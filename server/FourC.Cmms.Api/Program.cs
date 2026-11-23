@@ -178,6 +178,7 @@ api.MapAssetChecklistEndpoints();
 api.MapInventoryEndpoints();
 api.MapPurchasingEndpoints();
 api.MapPurchaseRequestEndpoints();
+api.MapContractorEndpoints();
 api.MapApprovalLevelEndpoints();
 api.MapMyApprovalsEndpoints();
 api.MapReportEndpoints();

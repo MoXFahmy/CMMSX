@@ -1007,5 +1007,14 @@
  "Sign purchase order {0} ({1})": "اعتماد أمر الشراء {0} ({1})",
  "A purchase order is waiting for your signature": "أمر شراء في انتظار اعتمادك",
  "Level '{0}' needs all its approvers, and you submitted this order, so you can't sign it. Ask someone else to submit it, or let any one of them sign.": "المستوى '{0}' يحتاج إلى جميع معتمِديه، وأنت من أرسل هذا الأمر فلا يمكنك اعتماده. اطلب من شخص آخر إرساله، أو اجعل أيًّا منهم يكفي للاعتماد.",
- "Level '{0}' needs all its approvers, but {1} can't sign orders for {2}. Ask an administrator to fix the approval levels.": "المستوى '{0}' يحتاج إلى جميع معتمِديه، لكن {1} لا يستطيع اعتماد أوامر {2}. اطلب من المسؤول إصلاح مستويات الاعتماد."
+ "Level '{0}' needs all its approvers, but {1} can't sign orders for {2}. Ask an administrator to fix the approval levels.": "المستوى '{0}' يحتاج إلى جميع معتمِديه، لكن {1} لا يستطيع اعتماد أوامر {2}. اطلب من المسؤول إصلاح مستويات الاعتماد.",
+ "Choose at least one role.": "اختر دورًا واحدًا على الأقل.",
+ "Contact {0}: enter a name.": "جهة الاتصال {0}: أدخل الاسم.",
+ "Contact {0}: enter a valid email address.": "جهة الاتصال {0}: أدخل بريدًا إلكترونيًا صحيحًا.",
+ "Address {0}: enter the address.": "العنوان {0}: أدخل العنوان.",
+ "Each category can have one rate.": "لكل فئة سعر واحد فقط.",
+ "Unknown contractor category.": "فئة مقاولين غير معروفة.",
+ "Choose a company with the Supplier role.": "اختر شركة لها دور المورّد.",
+ "Choose an active company with the Contractor role.": "اختر شركة نشطة لها دور المقاول.",
+ "This company is used on work orders, contracts or employees. Mark it inactive instead.": "هذه الشركة مستخدمة في أوامر عمل أو عقود أو موظفين. اجعلها غير نشطة بدلًا من ذلك."
 }
