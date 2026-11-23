@@ -50,7 +50,7 @@ and the phone all use this same figure.
   never makes a full day look empty.
 - **Warnings** (the move still happens): dropping work on a day someone is away ("Ann Fitter is away on that day
   (Holiday).") or past their hours ("This takes Ann Fitter to 10 of 8 hours on 3 Dec.").
-- **Assign to me** on work nobody is on yet: a technician takes it. If two people press at once, one gets it and the other
+- **Assign to me** on work nobody is on yet, for people linked to an employee: a technician takes it. If two people press at once, one gets it and the other
   is told "Someone was assigned meanwhile."
 - **By asset**: a card from a work template shows its expected stop ("Stop ~4 h") next to the "only while stopped" mark.
 
@@ -59,8 +59,9 @@ and the phone all use this same figure.
 **By contractor** shows one row per company with visits in the range. A visit is a contractor line on open work; its day
 is its **visit date**, else the work order's day. Lines with neither are in **No visit date**.
 
-- Drag a visit to another day of its company to set its visit date (back to the tray clears it). The company itself is
-  changed on the work order.
+- Drag a visit to another day of its company to set its visit date; dragging it back to the tray clears that date (a visit
+  without a date of its own follows its work order's day, which is changed on the work order). The company itself is
+  changed on the work order too.
 - Click a visit to **record** the hours done, the date and the person. Notes are written by planners, as in 0.17.0.
 - The visit date is also on the work order's Contractors tab.
 
