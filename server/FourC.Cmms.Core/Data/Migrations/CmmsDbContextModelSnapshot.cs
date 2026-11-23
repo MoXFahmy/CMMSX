@@ -820,6 +820,311 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.ToTable("AuditEntries");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Contracts.Contract", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("AlertDays")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly?>("AlertSentFor")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("AutoRenew")
+                        .HasColumnType("bit");
+
+                    b.Property<Guid?>("ContractTypeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Currency")
+                        .HasMaxLength(3)
+                        .HasColumnType("nvarchar(3)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<string>("ExpectedPer")
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
+
+                    b.Property<int?>("ExpectedWorkOrders")
+                        .HasColumnType("int");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("ManagerId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(4000)
+                        .HasColumnType("nvarchar(4000)");
+
+                    b.Property<int>("NoticeDays")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Number")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("PaymentTerms")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int?>("RenewalMonths")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid?>("SiteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("SupplierId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("TerminatedOn")
+                        .HasColumnType("date");
+
+                    b.Property<string>("TerminationReason")
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("Title")
+                        .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<Guid?>("TradeId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("Value")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractTypeId");
+
+                    b.HasIndex("SiteId");
+
+                    b.HasIndex("SupplierId");
+
+                    b.HasIndex("TradeId");
+
+                    b.HasIndex("TenantId", "EndDate");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "Number")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("Contracts");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Contracts.ContractAmendment", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("CreatedByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<DateOnly>("Date")
+                        .HasColumnType("date");
+
+                    b.Property<string>("Description")
+                        .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<decimal?>("NewValue")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId");
+
+                    b.ToTable("ContractAmendments");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Contracts.ContractAsset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("YearlyCost")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("AssetId");
+
+                    b.HasIndex("ContractId", "AssetId")
+                        .IsUnique();
+
+                    b.HasIndex("TenantId", "AssetId");
+
+                    b.ToTable("ContractAssets");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Contracts.ContractPeriod", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateOnly>("EndDate")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsRenewal")
+                        .HasColumnType("bit");
+
+                    b.Property<int>("Number")
+                        .HasColumnType("int");
+
+                    b.Property<DateOnly>("StartDate")
+                        .HasColumnType("date");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("Value")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractId", "Number")
+                        .IsUnique();
+
+                    b.ToTable("ContractPeriods");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Contracts.ContractType", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.ToTable("ContractTypes");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Files.Attachment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1989,6 +2294,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<Guid?>("CompanyId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -2069,6 +2377,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasColumnType("nvarchar(max)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CompanyId");
 
                     b.HasIndex("TenantId", "Code")
                         .IsUnique()
@@ -2599,6 +2909,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(50)
                         .HasColumnType("nvarchar(50)");
 
+                    b.Property<Guid?>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -2775,6 +3088,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssetId");
+
+                    b.HasIndex("ContractId");
 
                     b.HasIndex("LocationId");
 
@@ -3207,6 +3522,72 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasIndex("TenantId", "SiteId", "OrderTypeId");
 
                     b.ToTable("ApprovalLevels");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Purchasing.ContractorCategory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("DefaultRate")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.ToTable("ContractorCategories");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Purchasing.OrderType", b =>
@@ -3844,6 +4225,14 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsManufacturer")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsSupplier")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("bit")
+                        .HasDefaultValue(true);
+
                     b.Property<string>("LegacyRef")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
@@ -3893,6 +4282,104 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasFilter("[LegacyRef] IS NOT NULL");
 
                     b.ToTable("Suppliers");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Purchasing.SupplierAddress", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Address")
+                        .IsRequired()
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<string>("City")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Country")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Label")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<int>("Sort")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SupplierId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SupplierId");
+
+                    b.ToTable("SupplierAddresses");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Purchasing.SupplierCategoryRate", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("ContractorCategoryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Rate")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("SupplierId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractorCategoryId");
+
+                    b.HasIndex("SupplierId", "ContractorCategoryId")
+                        .IsUnique();
+
+                    b.ToTable("SupplierCategoryRates");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Purchasing.SupplierContact", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Email")
+                        .HasMaxLength(256)
+                        .HasColumnType("nvarchar(256)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Phone")
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<string>("Role")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("Sort")
+                        .HasColumnType("int");
+
+                    b.Property<Guid>("SupplierId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SupplierId");
+
+                    b.ToTable("SupplierContacts");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Settings.NumberSequence", b =>
@@ -4486,6 +4973,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<string>("CompletionNotes")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<Guid?>("ContractId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -4641,6 +5131,8 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.HasIndex("CancelReasonId");
 
+                    b.HasIndex("ContractId");
+
                     b.HasIndex("DowntimeEventId");
 
                     b.HasIndex("FailureCodeId");
@@ -4748,6 +5240,75 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasIndex("TenantId", "WorkOrderId");
 
                     b.ToTable("WorkOrderComments");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderContractor", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ContactId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("ContractorCategoryId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateOnly?>("DoneOn")
+                        .HasColumnType("date");
+
+                    b.Property<decimal>("HoursDone")
+                        .HasPrecision(9, 2)
+                        .HasColumnType("decimal(9,2)");
+
+                    b.Property<string>("Notes")
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("PersonName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<decimal>("PlannedHours")
+                        .HasPrecision(9, 2)
+                        .HasColumnType("decimal(9,2)");
+
+                    b.Property<decimal>("Rate")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("SupplierId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("WorkOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ContractorCategoryId");
+
+                    b.HasIndex("SupplierId");
+
+                    b.HasIndex("WorkOrderId");
+
+                    b.HasIndex("TenantId", "WorkOrderId");
+
+                    b.ToTable("WorkOrderContractors");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderCost", b =>
@@ -5587,6 +6148,69 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Navigation("Asset");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Contracts.Contract", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Contracts.ContractType", "ContractType")
+                        .WithMany()
+                        .HasForeignKey("ContractTypeId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("FourC.Cmms.Core.Locations.Site", "Site")
+                        .WithMany()
+                        .HasForeignKey("SiteId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("FourC.Cmms.Core.Purchasing.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.People.Trade", null)
+                        .WithMany()
+                        .HasForeignKey("TradeId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("ContractType");
+
+                    b.Navigation("Site");
+
+                    b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Contracts.ContractAmendment", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Contracts.Contract", null)
+                        .WithMany("Amendments")
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Contracts.ContractAsset", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Assets.Asset", null)
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.Contracts.Contract", null)
+                        .WithMany("Assets")
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Contracts.ContractPeriod", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Contracts.Contract", null)
+                        .WithMany("Periods")
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Identity.UserRole", b =>
                 {
                     b.HasOne("FourC.Cmms.Core.Identity.Role", "Role")
@@ -5709,6 +6333,16 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Navigation("Site");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.People.Employee", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Purchasing.Supplier", "CompanyRecord")
+                        .WithMany()
+                        .HasForeignKey("CompanyId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.Navigation("CompanyRecord");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.People.Team", b =>
                 {
                     b.HasOne("FourC.Cmms.Core.Locations.Site", "Site")
@@ -5765,6 +6399,11 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .WithMany()
                         .HasForeignKey("AssetId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FourC.Cmms.Core.Contracts.Contract", null)
+                        .WithMany()
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("FourC.Cmms.Core.Locations.Location", "Location")
                         .WithMany()
@@ -6023,6 +6662,39 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Navigation("Part");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Purchasing.SupplierAddress", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Purchasing.Supplier", null)
+                        .WithMany("Addresses")
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Purchasing.SupplierCategoryRate", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Purchasing.ContractorCategory", null)
+                        .WithMany()
+                        .HasForeignKey("ContractorCategoryId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.Purchasing.Supplier", null)
+                        .WithMany("CategoryRates")
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Purchasing.SupplierContact", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Purchasing.Supplier", null)
+                        .WithMany("Contacts")
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Work.RequestFeedback", b =>
                 {
                     b.HasOne("FourC.Cmms.Core.Work.WorkOrder", null)
@@ -6062,6 +6734,11 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .WithMany()
                         .HasForeignKey("CancelReasonId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FourC.Cmms.Core.Contracts.Contract", null)
+                        .WithMany()
+                        .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("FourC.Cmms.Core.Assets.DowntimeEvent", null)
                         .WithMany()
@@ -6160,6 +6837,30 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Employee");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderContractor", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Purchasing.ContractorCategory", "Category")
+                        .WithMany()
+                        .HasForeignKey("ContractorCategoryId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("FourC.Cmms.Core.Purchasing.Supplier", "Supplier")
+                        .WithMany()
+                        .HasForeignKey("SupplierId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.Work.WorkOrder", null)
+                        .WithMany()
+                        .HasForeignKey("WorkOrderId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Category");
+
+                    b.Navigation("Supplier");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrderGroup", b =>
@@ -6304,6 +7005,15 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Contracts.Contract", b =>
+                {
+                    b.Navigation("Amendments");
+
+                    b.Navigation("Assets");
+
+                    b.Navigation("Periods");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Identity.AppUser", b =>
                 {
                     b.Navigation("Roles");
@@ -6345,6 +7055,15 @@ namespace FourC.Cmms.Core.Data.Migrations
             modelBuilder.Entity("FourC.Cmms.Core.Purchasing.PurchaseRequest", b =>
                 {
                     b.Navigation("Lines");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Purchasing.Supplier", b =>
+                {
+                    b.Navigation("Addresses");
+
+                    b.Navigation("CategoryRates");
+
+                    b.Navigation("Contacts");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Work.WorkOrder", b =>

@@ -32,6 +32,9 @@ public static class PeopleEndpoints
         // Kinds of purchase order (0.16.0): approval levels can differ by type.
         MapLookup(api, "/order-types", "Order types", db => db.OrderTypes, () => new FourC.Cmms.Core.Purchasing.OrderType { Code = "", Name = "" }, Permissions.SettingsManage,
             async (db, id, ct) => await db.PurchaseOrders.AllSites().AnyAsync(o => o.OrderTypeId == id, ct) || await db.ApprovalLevels.AnyAsync(l => l.OrderTypeId == id, ct), null, null);
+        // Kinds of service contract (0.17.0).
+        MapLookup(api, "/contract-types", "Contract types", db => db.ContractTypes, () => new FourC.Cmms.Core.Contracts.ContractType { Code = "", Name = "" }, Permissions.ContractsManage,
+            async (db, id, ct) => await db.Contracts.AllSites().AnyAsync(c => c.ContractTypeId == id, ct), null, null);
 
         var g = api.MapGroup("/employees").WithTags("Employees");
         g.MapGet("/", async (CmmsDbContext db, string? search, Guid? tradeId, bool? activeOnly, CancellationToken ct) =>
