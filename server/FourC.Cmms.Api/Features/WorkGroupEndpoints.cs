@@ -70,7 +70,10 @@ public static partial class WorkGroups
                     Assignees = w.Assignees.Select(a => new { a.EmployeeId, a.Employee!.FullName }).ToList(),
                     StepsDone = db.WorkOrderTasks.Count(t => t.WorkOrderId == w.Id && t.IsDone), StepsTotal = db.WorkOrderTasks.Count(t => t.WorkOrderId == w.Id),
                     LaborHours = db.WorkOrderLabor.Where(l => l.WorkOrderId == w.Id).Sum(l => (decimal?)(l.Hours + l.OvertimeHours)) ?? 0,
-                    LaborCost = db.WorkOrderLabor.Where(l => l.WorkOrderId == w.Id).Sum(l => (decimal?)(l.Hours * l.Rate + l.OvertimeHours * l.OvertimeRate)) ?? 0,
+                    LaborCost = db.WorkOrderLabor.Where(l => l.WorkOrderId == w.Id && l.Employee!.CompanyId == null).Sum(l => (decimal?)(l.Hours * l.Rate + l.OvertimeHours * l.OvertimeRate)) ?? 0,
+                    // Contractor lines plus labour of company-linked employees (0.17.0).
+                    ContractorCost = (db.WorkOrderContractors.Where(l => l.WorkOrderId == w.Id).Sum(l => (decimal?)(l.HoursDone * l.Rate)) ?? 0)
+                        + (db.WorkOrderLabor.Where(l => l.WorkOrderId == w.Id && l.Employee!.CompanyId != null).Sum(l => (decimal?)(l.Hours * l.Rate + l.OvertimeHours * l.OvertimeRate)) ?? 0),
                     PartsCost = db.StockTransactions.Where(t => t.WorkOrderId == w.Id && (t.Type == Core.Inventory.StockTransactionType.Issue || t.Type == Core.Inventory.StockTransactionType.Return))
                         .Sum(t => (decimal?)(-t.Quantity * t.UnitCost)) ?? 0,
                     OtherCost = db.WorkOrderCosts.Where(c => c.WorkOrderId == w.Id).Sum(c => (decimal?)(c.Quantity * c.UnitCost)) ?? 0,
@@ -83,12 +86,13 @@ public static partial class WorkGroups
                 Children = children.Select(c => new
                 {
                     c.Id, c.Number, c.Title, c.Status, c.AssetId, c.AssetNumber, c.AssetName, c.DueDate, c.CompletedAt, c.Assignees, c.StepsDone, c.StepsTotal, c.LaborHours,
-                    Cost = Math.Round(c.LaborCost + c.PartsCost + c.OtherCost, 2),
+                    Cost = Math.Round(c.LaborCost + c.PartsCost + c.OtherCost + c.ContractorCost, 2), ContractorCost = Math.Round(c.ContractorCost, 2),
                 }),
                 Totals = new
                 {
                     LaborHours = children.Sum(c => c.LaborHours), LaborCost = Math.Round(children.Sum(c => c.LaborCost), 2), PartsCost = Math.Round(children.Sum(c => c.PartsCost), 2),
-                    OtherCost = Math.Round(children.Sum(c => c.OtherCost), 2), TotalCost = Math.Round(children.Sum(c => c.LaborCost + c.PartsCost + c.OtherCost), 2),
+                    OtherCost = Math.Round(children.Sum(c => c.OtherCost), 2), ContractorCost = Math.Round(children.Sum(c => c.ContractorCost), 2),
+                    TotalCost = Math.Round(children.Sum(c => c.LaborCost + c.PartsCost + c.OtherCost + c.ContractorCost), 2),
                 },
                 Comments = await CommentsAsync(db, id, ct),
             });

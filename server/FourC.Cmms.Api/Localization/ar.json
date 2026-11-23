@@ -1016,5 +1016,11 @@
  "Unknown contractor category.": "فئة مقاولين غير معروفة.",
  "Choose a company with the Supplier role.": "اختر شركة لها دور المورّد.",
  "Choose an active company with the Contractor role.": "اختر شركة نشطة لها دور المقاول.",
- "This company is used on work orders, contracts or employees. Mark it inactive instead.": "هذه الشركة مستخدمة في أوامر عمل أو عقود أو موظفين. اجعلها غير نشطة بدلًا من ذلك."
+ "This company is used on work orders, contracts or employees. Mark it inactive instead.": "هذه الشركة مستخدمة في أوامر عمل أو عقود أو موظفين. اجعلها غير نشطة بدلًا من ذلك.",
+ "You can record the hours done, the date and the person; ask a planner to change the rest.": "يمكنك تسجيل الساعات المنفّذة والتاريخ والشخص؛ اطلب من المخطِّط تغيير الباقي.",
+ "Rate cannot be negative.": "لا يمكن أن يكون السعر سالبًا.",
+ "Date done cannot be in the future.": "لا يمكن أن يكون تاريخ التنفيذ في المستقبل.",
+ "Choose a contact of this company.": "اختر جهة اتصال من هذه الشركة.",
+ "Choose an active contractor category.": "اختر فئة مقاولين نشطة.",
+ "Hours are too large.": "الساعات كبيرة جدًا."
 }

@@ -141,7 +141,16 @@ public static class WorkOrderEndpoints
                 .Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name }).ToListAsync(ct);
             var labor = await db.WorkOrderLabor.AsNoTracking().Where(l => l.WorkOrderId == id).OrderByDescending(l => l.WorkDate).ThenByDescending(l => l.CreatedAt)
                 .Select(l => new { l.Id, l.EmployeeId, EmployeeName = l.Employee!.FullName, l.WorkDate, l.CreatedAt, l.Hours, l.OvertimeHours, l.Rate, l.OvertimeRate, l.Notes,
-                    Cost = l.Hours * l.Rate + l.OvertimeHours * l.OvertimeRate }).ToListAsync(ct);
+                    Cost = l.Hours * l.Rate + l.OvertimeHours * l.OvertimeRate, CompanyName = l.Employee.CompanyRecord == null ? null : l.Employee.CompanyRecord.Name }).ToListAsync(ct);
+            // Contractor lines (0.17.0); labour of employees linked to a company counts as contractor cost, not labour.
+            var contractors = await db.WorkOrderContractors.AsNoTracking().Where(l => l.WorkOrderId == id).OrderBy(l => l.CreatedAt)
+                .Select(l => new
+                {
+                    l.Id, l.SupplierId, CompanyName = l.Supplier!.Name, CategoryId = l.ContractorCategoryId, CategoryName = l.Category == null ? null : l.Category.Name, l.ContactId,
+                    PersonName = l.ContactId == null ? l.PersonName : db.SupplierContacts.Where(c => c.Id == l.ContactId).Select(c => c.Name).FirstOrDefault(),
+                    l.PlannedHours, l.HoursDone, l.DoneOn, l.Rate, Cost = l.HoursDone * l.Rate, PlannedCost = l.PlannedHours * l.Rate, l.Notes,
+                }).ToListAsync(ct);
+            var linkedLabour = labor.Where(l => l.CompanyName is not null).Sum(l => l.Cost);
             var costs = await db.WorkOrderCosts.AsNoTracking().Where(c => c.WorkOrderId == id).OrderBy(c => c.CreatedAt)
                 .Select(c => new { c.Id, c.Description, c.Quantity, c.UnitCost, c.Vendor, c.Reference, Total = c.Quantity * c.UnitCost, c.CreatedAt }).ToListAsync(ct);
             var parts = await db.StockTransactions.AsNoTracking().Where(t => t.WorkOrderId == id && (t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Issue || t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Return))
@@ -226,12 +235,17 @@ public static class WorkOrderEndpoints
                         : t.FollowUpRequestId is { } fr ? new { Kind = "request", Id = fr, Number = followUpNumbers.GetValueOrDefault(fr) } : null,
                 }),
                 Source = await Checklists.SourceAsync(db, w.SourceWorkOrderId, w.SourceTaskId, ct), Points = stepPoints,
-                Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned, Signatures = signatures,
-                Planned = new { LaborHours = labour.Hours, LaborCost = labour.Cost, PartsCost = plannedParts, TotalCost = labour.Cost + plannedParts },
+                Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned, Signatures = signatures, Contractors = contractors,
+                Planned = new
+                {
+                    LaborHours = labour.Hours, LaborCost = labour.Cost, PartsCost = plannedParts, ContractorHours = contractors.Sum(l => l.PlannedHours),
+                    ContractorCost = contractors.Sum(l => l.PlannedCost), TotalCost = labour.Cost + plannedParts + contractors.Sum(l => l.PlannedCost),
+                },
                 Totals = new
                 {
-                    LaborHours = labor.Sum(l => l.Hours + l.OvertimeHours), LaborCost = labor.Sum(l => l.Cost), PartsCost = parts.Sum(p => p.Total), OtherCost = costs.Sum(c => c.Total),
-                    TotalCost = labor.Sum(l => l.Cost) + parts.Sum(p => p.Total) + costs.Sum(c => c.Total),
+                    LaborHours = labor.Sum(l => l.Hours + l.OvertimeHours), LaborCost = labor.Sum(l => l.Cost) - linkedLabour, PartsCost = parts.Sum(p => p.Total), OtherCost = costs.Sum(c => c.Total),
+                    ContractorHours = contractors.Sum(l => l.HoursDone), ContractorCost = contractors.Sum(l => l.Cost) + linkedLabour,
+                    TotalCost = labor.Sum(l => l.Cost) + parts.Sum(p => p.Total) + costs.Sum(c => c.Total) + contractors.Sum(l => l.Cost),
                 },
                 AllowedTransitions = transitions, IsOverdue = sla.Completion == SlaState.Late || sla.Response == SlaState.Late, Sla = sla,
                 w.CreatedAt, w.UpdatedAt, w.LegacyRef, RowVersion = Convert.ToBase64String(w.RowVersion),
@@ -888,7 +902,7 @@ public static class WorkOrderEndpoints
         await MarkRespondedAsync(db, workOrderId, at, ct);
     }
 
-    private static async Task RequireOpenAsync(CmmsDbContext db, Guid id, CancellationToken ct)
+    internal static async Task RequireOpenAsync(CmmsDbContext db, Guid id, CancellationToken ct)
     {
         var status = await db.WorkOrders.Where(w => w.Id == id).Select(w => (WorkOrderStatus?)w.Status).FirstOrDefaultAsync(ct)
                      ?? throw new BadHttpRequestException("Work order not found.", 404);
