@@ -4,6 +4,32 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.20.0] - 2026-11-23
+
+Cost centres and budgets. Maintenance cost is charged to the organization's own cost centres, set once on locations and assets
+and taken by every new work order, and compared with a monthly budget in the Budget against actual report. Organizations that
+set up no cost centres see no change. See docs/COST_CENTRES_AND_BUDGETS.md.
+
+### Added
+- **Cost centres** (Settings › Cost centres): a tree ("Production › Line 1 › Packing"), each for one site or all; one in use
+  can only be made inactive. Someone limited to some sites sees their sites' cost centres and the shared ones.
+- **Where cost goes:** a cost centre on locations and assets. Every new work order takes the one chosen, the request's or PM's
+  override, else its asset's (up the asset tree), else its location's (up the location tree); a PM round takes the one its
+  assets share. Parts issued straight to a location take the location's, or one chosen when issuing.
+- **Corrections:** Change cost centre on any work order, closed and cancelled included, one at a time or from the list; it shows
+  in the work order's activity and its costs and purchase commitments move with it. A direct issue's cost centre is changed from
+  Inventory › Stock movements. Fill in past work gives work and direct issues from a chosen date that have none the cost centre
+  in force today; it counts first and never overwrites.
+- **Budgets** (Reports › Budgets): one amount per cost centre per month in a year grid; a total typed in spreads evenly over the
+  months.
+- **Budget against actual** report: budget, committed (approved orders for work orders, not yet received), labour, parts,
+  contractors, other costs, parts issued straight to locations, actual and variance, by cost centre (children indented under
+  their parents, which add them up, and a "No cost centre" row) or by month, with a cost-centre filter. Opens on this year to
+  date.
+- **Maintenance costs** report: a cost-centre filter (with the ones under it) and a "Cost centre" grouping; its totals don't change.
+- **Import and export:** Cost centres and Budgets sheets, and a Cost centre code column on the Locations, Assets and PM schedules
+  sheets.
+
 ## [0.19.0] - 2026-11-23
 
 Calendars, availability and the daily timesheet. Planning stays by the day on the planning board, which now counts time away
