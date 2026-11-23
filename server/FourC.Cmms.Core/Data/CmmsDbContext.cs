@@ -124,6 +124,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<ContractorCategory> ContractorCategories => Set<ContractorCategory>();
     public DbSet<SupplierCategoryRate> SupplierCategoryRates => Set<SupplierCategoryRate>();
     public DbSet<WorkOrderContractor> WorkOrderContractors => Set<WorkOrderContractor>();
+    public DbSet<SupplierPart> SupplierParts => Set<SupplierPart>();
     public DbSet<FourC.Cmms.Core.Contracts.Contract> Contracts => Set<FourC.Cmms.Core.Contracts.Contract>();
     public DbSet<FourC.Cmms.Core.Contracts.ContractPeriod> ContractPeriods => Set<FourC.Cmms.Core.Contracts.ContractPeriod>();
     public DbSet<FourC.Cmms.Core.Contracts.ContractAmendment> ContractAmendments => Set<FourC.Cmms.Core.Contracts.ContractAmendment>();
@@ -744,7 +745,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Quantity).HasPrecision(18, 3); e.Property(x => x.QuantityReceived).HasPrecision(18, 3);
             e.Property(x => x.UnitPrice).HasPrecision(18, 4); e.Property(x => x.DiscountPercent).HasPrecision(9, 3);
             e.HasOne(x => x.Part).WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Restrict);
-            e.Ignore(x => x.NetUnitPrice); e.Ignore(x => x.LineTotal);
+            e.Ignore(x => x.NetUnitPrice); e.Ignore(x => x.LineTotal); e.Ignore(x => x.Pieces); e.Ignore(x => x.PiecesReceived);
+            e.Property(x => x.PackSize).HasPrecision(18, 4).HasDefaultValue(1m); e.Property(x => x.SupplierPartNumber).HasMaxLength(100);
             e.HasOne<PurchaseRequestLine>().WithMany().HasForeignKey(x => x.PurchaseRequestLineId).OnDelete(DeleteBehavior.NoAction);
             e.HasIndex(x => x.PurchaseRequestLineId);
         });
@@ -791,6 +793,19 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasMany(x => x.Contacts).WithOne().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.Addresses).WithOne().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Cascade);
             e.HasMany(x => x.CategoryRates).WithOne().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Cascade);
+        });
+        // Supplier catalogue (0.18.0). Parts and companies are soft-deleted, so the rows are removed by the API, not by a cascade.
+        b.Entity<SupplierPart>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.SupplierPartNumber).HasMaxLength(100); e.Property(x => x.PackName).HasMaxLength(100); e.Property(x => x.Currency).HasMaxLength(3);
+            e.Property(x => x.PackSize).HasPrecision(18, 4); e.Property(x => x.PackPrice).HasPrecision(18, 4); e.Property(x => x.DiscountPercent).HasPrecision(9, 3);
+            e.Property(x => x.LastPaidPrice).HasPrecision(18, 4); e.Property(x => x.LastPaidDiscount).HasPrecision(9, 3); e.Property(x => x.LastPaidCurrency).HasMaxLength(3);
+            e.Property(x => x.Notes).HasMaxLength(1000);
+            e.HasOne(x => x.Part).WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.NoAction);
+            e.HasIndex(x => new { x.TenantId, x.PartId, x.SupplierId }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => x.SupplierId);
         });
         b.Entity<SupplierContact>(e =>
         {
