@@ -18,6 +18,11 @@ internal static class PurchaseApprovals
     public static async Task<List<PurchaseOrderApprovalStep>> StepsAsync(CmmsDbContext db, PurchaseOrder po, CancellationToken ct) =>
         po.ApprovalRound == 0 ? [] : await db.PurchaseOrderApprovalSteps.Where(s => s.PurchaseOrderId == po.Id && s.Round == po.ApprovalRound).OrderBy(s => s.Step).ToListAsync(ct);
 
+    /// <summary>The order is being signed by levels right now: its current round has a waiting step.</summary>
+    public static async Task<bool> SigningAsync(CmmsDbContext db, PurchaseOrder po, CancellationToken ct) =>
+        po.Status == PurchaseOrderStatus.Submitted && po.ApprovalRound > 0
+        && await db.PurchaseOrderApprovalSteps.AnyAsync(s => s.PurchaseOrderId == po.Id && s.Round == po.ApprovalRound && s.Status == ApprovalStepStatus.Waiting, ct);
+
     /// <summary>Whether levels would apply to this order now (to refuse approving a draft straight away).</summary>
     public static async Task<IReadOnlyList<ApprovalLevel>> LevelsForAsync(CmmsDbContext db, PurchaseOrder po, CancellationToken ct) =>
         ApprovalLevelRules.Required(await db.ApprovalLevels.AsNoTracking().ToListAsync(ct), po.SiteId, po.OrderTypeId, PurchaseOrderMath.TotalInBase(po));
@@ -59,16 +64,27 @@ internal static class PurchaseApprovals
         CancellationToken ct)
     {
         var levels = await LevelsForAsync(db, po, ct);
-        if (levels.Count == 0) return false;
+        if (levels.Count == 0)
+        {
+            // Signed by levels before (then returned), none apply now: an empty round, so today's rule takes over.
+            if (po.ApprovalRound > 0) po.ApprovalRound++;
+            return false;
+        }
         foreach (var level in levels)
         {
             var able = new List<Guid>();
             foreach (var id in level.ApproverIds) if (await MaySignAsync(db, perms, access, po, id, ct)) able.Add(id);
-            var ok = level.Rule == ApprovalRule.Any ? able.Count > 0 : able.Count == level.ApproverIds.Count;
-            if (!ok)
-            {
-                var site = await db.Sites.AllSites().Where(s => s.Id == po.SiteId).Select(s => s.Name).FirstOrDefaultAsync(ct);
+            var site = await db.Sites.AllSites().Where(s => s.Id == po.SiteId).Select(s => s.Name).FirstOrDefaultAsync(ct);
+            if (level.Rule == ApprovalRule.Any && able.Count == 0)
                 throw new DomainException($"Level '{level.Name}' has nobody who can sign orders for {site}. Ask an administrator to fix the approval levels.");
+            if (level.Rule == ApprovalRule.All && able.Count < level.ApproverIds.Count)
+            {
+                // Say exactly why an "all must sign" level could never be completed.
+                if (po.SubmittedById is { } me && level.ApproverIds.Contains(me))
+                    throw new DomainException($"Level '{level.Name}' needs all its approvers, and you submitted this order, so you can't sign it. Ask someone else to submit it, or let any one of them sign.");
+                var missing = level.ApproverIds.First(a => !able.Contains(a));
+                var who = await db.Users.Where(u => u.Id == missing).Select(u => u.FullName).FirstOrDefaultAsync(ct) ?? "?";
+                throw new DomainException($"Level '{level.Name}' needs all its approvers, but {who} can't sign orders for {site}. Ask an administrator to fix the approval levels.");
             }
         }
         po.ApprovalRound++;
@@ -160,7 +176,7 @@ internal static class PurchaseApprovals
             var steps = await StepsAsync(db, po, tk);
             if (po.Status != PurchaseOrderStatus.Submitted || steps.Count == 0) throw new DomainException("This order isn't being signed by approval levels.");
             foreach (var s in steps.Where(s => s.Status is ApprovalStepStatus.Waiting or ApprovalStepStatus.Pending)) s.Status = ApprovalStepStatus.Stopped;
-            if (!await StartAsync(db, ctx, perms, access, mail, po, tk)) po.ApprovalRound++; // no level applies now: today's rule from here on
+            await StartAsync(db, ctx, perms, access, mail, po, tk); // no level applies now: an empty round, today's rule from here on
             await db.SaveChangesAsync(tk);
             return true;
         }, ct);

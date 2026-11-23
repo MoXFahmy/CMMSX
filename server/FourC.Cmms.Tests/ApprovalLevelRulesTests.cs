@@ -52,4 +52,22 @@ public class ApprovalLevelRulesTests
         Assert.Equal(["All0"], Names(ApprovalLevelRules.Required(all, SiteA, Parts, 60_000)));
         Assert.Equal(["All0"], Names(ApprovalLevelRules.Required(all, SiteA, null, 60_000)));
     }
+
+    [Fact]
+    public void A_site_type_level_keeps_the_organization_levels_for_other_types()
+    {
+        ApprovalLevel[] all = [L("Org0", 0), L("Org10k", 10_000), L("ACap50k", 50_000, site: SiteA, type: Capital)];
+        Assert.Equal(["Org0", "Org10k"], Names(ApprovalLevelRules.Required(all, SiteA, Parts, 20_000)));
+        Assert.Equal(["ACap50k"], Names(ApprovalLevelRules.Required(all, SiteA, Capital, 60_000)));
+        Assert.Empty(ApprovalLevelRules.Required(all, SiteA, Capital, 20_000));
+    }
+
+    [Fact]
+    public void Most_specific_levels_win()
+    {
+        ApprovalLevel[] all = [L("Org0", 0), L("OrgCap0", 0, type: Capital), L("A0", 0, site: SiteA)];
+        Assert.Equal(["A0"], Names(ApprovalLevelRules.Required(all, SiteA, Capital, 100)));     // the site's all-types beat the organization's Capital
+        Assert.Equal(["OrgCap0"], Names(ApprovalLevelRules.Required(all, SiteB, Capital, 100))); // no site levels: the organization's Capital
+        Assert.Equal(["Org0"], Names(ApprovalLevelRules.Required(all, SiteB, Parts, 100)));
+    }
 }

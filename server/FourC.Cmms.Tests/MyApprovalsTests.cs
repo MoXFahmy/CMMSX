@@ -1,4 +1,5 @@
 using System.Net.Http.Json;
+using Microsoft.Extensions.DependencyInjection;
 using System.Text.Json;
 using static FourC.Cmms.Tests.PurchaseRequestTests;
 
@@ -102,5 +103,28 @@ public class MyApprovalsTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(1, await BellAsync(approver));
         var (tech, _, _) = await UserAsync(fx, o.Admin, "Technician");
         Assert.Null(await BellAsync(tech));
+    }
+
+    [SkippableFact]
+    public async Task Level_orders_show_even_when_hundreds_of_old_orders_wait()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var (a, aId, _) = await UserAsync(fx, o.Admin, "Maintenance Manager");
+        // 250 old submitted orders (as the 4CSQL import leaves them: no submitted date), all first in line.
+        using (var scope = fx.Factory!.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FourC.Cmms.Core.Data.CmmsDbContext>();
+            for (var k = 0; k < 250; k++)
+                db.PurchaseOrders.Add(new FourC.Cmms.Core.Purchasing.PurchaseOrder
+                {
+                    TenantId = o.Tenant, Number = $"OLD-{k:000}", SiteId = o.Site, SupplierId = o.Supplier, Status = FourC.Cmms.Core.Purchasing.PurchaseOrderStatus.Submitted,
+                    OrderDate = DateOnly.FromDateTime(DateTime.UtcNow), Currency = "USD",
+                });
+            await db.SaveChangesAsync();
+        }
+        await Ok(await o.Admin.PostAsJsonAsync("/api/approval-levels", new { name = "L1", minAmount = 1000, rule = "Any", approverIds = new[] { aId } }));
+        var po = await SubmittedOrderAsync(o.Admin, o, 5000);
+        Assert.Contains(po, Ids((await MineAsync(a)).GetProperty("orders")));
     }
 }

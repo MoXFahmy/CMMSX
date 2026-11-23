@@ -18,14 +18,23 @@ export type ApprovalPanel = {
   round: number; steps: ApprovalStep[]; earlierRounds: { round: number; steps: ApprovalStep[] }[]; nobodyCanSign: boolean; waiting: boolean;
 };
 
-/** The same rule as the server: a site's own set replaces the organization's; type levels replace all-types levels; minimum ≤ amount, lowest first. */
+/**
+ * The same rule as the server: the most specific levels win — the site's for the order's type, else the site's for every type,
+ * else the organization's for the type, else the organization's for every type; then minimum ≤ amount, lowest first.
+ */
 export function levelsFor(levels: LevelRow[], siteId: string | null, orderTypeId: string | null, amount: number): LevelRow[] {
-  let set = siteId ? levels.filter((l) => l.siteId === siteId) : [];
-  if (set.length === 0) set = levels.filter((l) => !l.siteId);
-  const typed = orderTypeId ? set.filter((l) => l.orderTypeId === orderTypeId) : [];
-  const chosen = typed.length > 0 ? typed : set.filter((l) => !l.orderTypeId);
+  const sets: ((l: LevelRow) => boolean)[] = [
+    (l) => !!siteId && l.siteId === siteId && !!orderTypeId && l.orderTypeId === orderTypeId,
+    (l) => !!siteId && l.siteId === siteId && !l.orderTypeId,
+    (l) => !l.siteId && !!orderTypeId && l.orderTypeId === orderTypeId,
+    (l) => !l.siteId && !l.orderTypeId,
+  ];
+  const chosen = sets.map((m) => levels.filter(m)).find((s) => s.length > 0) ?? [];
   return chosen.filter((l) => l.minAmount <= amount).sort((a, b) => a.minAmount - b.minAmount);
 }
+
+/** The printed order lists the current round's signatures when it has any; otherwise it keeps the single "Approved by" line. */
+export const printsSignatures = (p: ApprovalPanel | null | undefined) => !!p && p.steps.some((s) => s.approvers.some((a) => a.signed));
 
 type T = (key: string, params?: Record<string, unknown>) => string;
 

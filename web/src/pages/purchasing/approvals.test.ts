@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { exampleSentence, levelsFor, stepState, whoIsNext, type ApprovalPanel, type LevelRow } from './approvals';
+import { exampleSentence, levelsFor, printsSignatures, stepState, whoIsNext, type ApprovalPanel, type LevelRow } from './approvals';
 
 const L = (name: string, minAmount: number, siteId: string | null = null, orderTypeId: string | null = null): LevelRow =>
   ({ id: name, name, minAmount, siteId, orderTypeId, rule: 'Any', approvers: [] } as unknown as LevelRow);
@@ -43,5 +43,21 @@ describe('approval levels', () => {
     expect(stepState(panel.steps[1])).toBe('waiting');
     expect(stepState({ ...panel.steps[1], status: 'Stopped' })).toBe('stopped');
     expect(stepState({ ...panel.steps[1], status: 'Pending' })).toBe('pending');
+  });
+
+  it('keeps the organization levels for other types when a site only has a type level', () => {
+    const all = [L('Org0', 0), L('Org10k', 10000), L('ACap', 50000, 'sA', 'cap')];
+    expect(levelsFor(all, 'sA', 'parts', 20000).map((l) => l.name)).toEqual(['Org0', 'Org10k']);
+    expect(levelsFor(all, 'sA', 'cap', 60000).map((l) => l.name)).toEqual(['ACap']);
+    expect(levelsFor([L('Org0', 0), L('OrgCap', 0, null, 'cap'), L('A0', 0, 'sA')], 'sA', 'cap', 10).map((l) => l.name)).toEqual(['A0']);
+  });
+
+  it('prints signatures only when the current round has some, else the approver line', () => {
+    const signed = { round: 1, waiting: false, nobodyCanSign: false, earlierRounds: [],
+      steps: [{ step: 1, name: 'L1', minAmount: 0, rule: 'Any', status: 'Approved', approvers: [{ id: 'a', name: 'A', signed: true, approved: true, canSign: false }] }] } as unknown as ApprovalPanel;
+    expect(printsSignatures(signed)).toBe(true);
+    expect(printsSignatures({ ...signed, round: 2, steps: [], earlierRounds: [{ round: 1, steps: signed.steps }] })).toBe(false);
+    expect(printsSignatures(null)).toBe(false);
+    expect(printsSignatures(undefined)).toBe(false);
   });
 });

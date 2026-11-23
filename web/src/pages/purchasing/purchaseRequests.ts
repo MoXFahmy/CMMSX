@@ -26,6 +26,13 @@ export type PurchaseRequestDetail = {
   rowVersion: string;
 };
 
+/** An approved line a buyer can put on an order, from one request's page or from Lines to order across requests. */
+export type OrderableLine = {
+  id: string; siteId: string; requestNumber?: string; description: string; quantity: number; unitOfMeasure?: string | null;
+  part?: { id: string; partNumber: string; name: string; preferredSupplierId?: string | null } | null; estimatedUnitPrice?: number | null;
+  workOrder?: { id: string; number: string } | null;
+};
+
 /** A line as the request form and the "Request purchase" buttons send it. */
 export type PrLineDraft = {
   partId: string | null; description: string; unitOfMeasure: string; quantity: number; storeId: string | null; workOrderId: string | null;

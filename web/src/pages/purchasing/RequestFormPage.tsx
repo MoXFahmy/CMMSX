@@ -38,7 +38,7 @@ export function RequestFormPage() {
   const { data: r, isLoading } = useQuery({ queryKey: ['purchase-request', id], queryFn: () => get<PurchaseRequestDetail>(`/purchase-requests/${id}`), enabled: editing });
   const { data: h } = useHierarchy();
   const { data: stores } = useStores();
-  const { data: people } = useQuery({ queryKey: ['users-lookup'], queryFn: () => get<{ id: string; fullName: string }[]>('/users/lookup'), retry: false });
+  const { data: people } = useQuery({ queryKey: ['pr-recipient-options'], queryFn: () => get<{ id: string; fullName: string }[]>('/purchase-requests/recipient-options') });
   const form = useForm<Values>({ initialValues: { siteId: null, neededBy: null, notes: '', recipientIds: [], lines: [blankLine()] } });
   const seeded = useRef(false);
   useEffect(() => {

@@ -58,6 +58,21 @@ public static class PurchaseRequestEndpoints
 
     private static bool Editable(PurchaseRequestStatus s) => s is PurchaseRequestStatus.Draft or PurchaseRequestStatus.Rejected;
 
+    /// <summary>
+    /// Files on a request: seen by whoever may see the request (its requester, or buyers and approvers at its site); added or removed
+    /// by its requester, buyers and approvers — not by people who may only view purchasing.
+    /// </summary>
+    internal static async Task<bool> FilesAllowedAsync(CmmsDbContext db, IReadOnlySet<string> mine, Guid me, Guid requestId, bool edit)
+    {
+        if (!MayUse(mine)) return false;
+        var requester = await db.PurchaseRequests.Where(r => r.Id == requestId).Select(r => new { r.RequestedById }).FirstOrDefaultAsync();
+        if (requester is null) return SeesAll(mine); // unknown here: the caller answers "not found" for those who may look
+        var own = requester.RequestedById == me;
+        return edit
+            ? (own && mine.Contains(Permissions.PurchasingRequest)) || mine.Contains(Permissions.PurchasingCreate) || mine.Contains(Permissions.PurchasingApproveRequests)
+            : own || SeesAll(mine);
+    }
+
     internal static async Task<PagedResult<PrListItem>> ListAsync(CmmsDbContext db, Guid me, IReadOnlySet<string> mine, PrFilter f, int page, int pageSize,
         CancellationToken ct, int maxPageSize = 500)
     {
@@ -199,6 +214,40 @@ public static class PurchaseRequestEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { r.Id, r.Status });
         });
+
+        // People a requester may name as extra recipients: those who act on requests (buyers and approvers), names only.
+        g.MapGet("/recipient-options", async (HttpContext http, CmmsDbContext db, PermissionService perms, CancellationToken ct) =>
+        {
+            if (!MayUse(await perms.GetAsync(UserId(http)))) return Results.Forbid();
+            var roleIds = (await db.Roles.AsNoTracking().Select(r => new { r.Id, r.Permissions }).ToListAsync(ct))
+                .Where(r => r.Permissions.Contains(Permissions.PurchasingCreate) || r.Permissions.Contains(Permissions.PurchasingApproveRequests)).Select(r => r.Id).ToList();
+            var ids = await db.UserRoles.Where(ur => roleIds.Contains(ur.RoleId)).Select(ur => ur.UserId).Distinct().ToListAsync(ct);
+            return Results.Ok(await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
+                .Select(u => new { u.Id, u.FullName }).ToListAsync(ct));
+        });
+
+        // Approved lines not yet on an order, across requests at my sites: the buyer picks from all of them at once.
+        g.MapGet("/lines-to-order", async (CmmsDbContext db, CancellationToken ct) =>
+        {
+            var lines = await db.PurchaseRequestLines.AsNoTracking()
+                .Where(l => db.PurchaseRequests.Any(r => r.Id == l.PurchaseRequestId && (r.Status == PurchaseRequestStatus.Approved || r.Status == PurchaseRequestStatus.PartlyOrdered)))
+                .Where(l => !db.PurchaseOrderLines.AllSites().Any(ol => ol.PurchaseRequestLineId == l.Id
+                    && db.PurchaseOrders.AllSites().Any(o => o.Id == ol.PurchaseOrderId && o.Status != PurchaseOrderStatus.Cancelled)))
+                .Select(l => new
+                {
+                    l.Id, l.LineNumber, l.PurchaseRequestId, Request = db.PurchaseRequests.Where(r => r.Id == l.PurchaseRequestId)
+                        .Select(r => new { r.Number, r.SiteId, SiteName = r.Site!.Name, r.RequestedByName, r.NeededBy }).First(),
+                    Part = l.Part == null ? null : new { l.Part.Id, l.Part.PartNumber, l.Part.Name, l.Part.PreferredSupplierId },
+                    l.Description, l.UnitOfMeasure, l.Quantity, l.NeededBy, l.EstimatedUnitPrice,
+                    WorkOrder = db.WorkOrders.Where(w => w.Id == l.WorkOrderId).Select(w => new { w.Id, w.Number }).FirstOrDefault(),
+                })
+                .Take(500).ToListAsync(ct);
+            return Results.Ok(lines.OrderBy(l => l.NeededBy ?? l.Request.NeededBy ?? DateOnly.MaxValue).ThenBy(l => l.Request.Number).ThenBy(l => l.LineNumber).Select(l => new
+            {
+                l.Id, l.LineNumber, RequestId = l.PurchaseRequestId, RequestNumber = l.Request.Number, l.Request.SiteId, l.Request.SiteName, l.Request.RequestedByName,
+                l.Part, l.Description, l.UnitOfMeasure, l.Quantity, NeededBy = l.NeededBy ?? l.Request.NeededBy, l.EstimatedUnitPrice, l.WorkOrder,
+            }));
+        }).RequirePermission(Permissions.PurchasingCreate);
 
         // Approved lines become draft orders grouped by supplier and site, as the Re-order tab does.
         g.MapPost("/order", async (OrderFromRequestsInput i, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>

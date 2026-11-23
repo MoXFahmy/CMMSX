@@ -41,34 +41,42 @@ public static class MyApprovals
         var orders = new List<OrderItem>();
         if (mine.Contains(Permissions.PurchasingApprove))
         {
-            var submitted = await db.PurchaseOrders.AsNoTracking().Include(o => o.Lines).Include(o => o.Supplier).Include(o => o.Site)
-                .Where(o => o.Status == PurchaseOrderStatus.Submitted).OrderBy(o => o.SubmittedAt).Take(Cap).ToListAsync(ct);
-            var ids = submitted.Select(o => o.Id).ToList();
-            var steps = (await db.PurchaseOrderApprovalSteps.AsNoTracking().Where(s => ids.Contains(s.PurchaseOrderId)).ToListAsync(ct)).ToLookup(s => s.PurchaseOrderId);
-            var signatures = (await db.PurchaseOrderSignatures.AsNoTracking().Where(s => ids.Contains(s.PurchaseOrderId)).ToListAsync(ct)).ToLookup(s => s.PurchaseOrderId);
-            var limit = await db.Users.Where(u => u.Id == me).Select(u => u.PurchaseApprovalLimit).FirstOrDefaultAsync(ct);
+            // Signed by levels: the waiting steps that list me, found in the database (never crowded out by other orders).
+            var mySteps = await db.PurchaseOrderApprovalSteps.AsNoTracking()
+                .Where(s => s.Status == ApprovalStepStatus.Waiting && s.ApproverIds.Contains(me)
+                    && db.PurchaseOrders.Any(o => o.Id == s.PurchaseOrderId && o.Status == PurchaseOrderStatus.Submitted && o.ApprovalRound == s.Round && o.SubmittedById != me))
+                .ToListAsync(ct);
+            var levelIds = mySteps.Select(s => s.PurchaseOrderId).Distinct().ToList();
+            var levelOrders = await db.PurchaseOrders.AsNoTracking().Include(o => o.Lines).Include(o => o.Supplier).Include(o => o.Site)
+                .Where(o => levelIds.Contains(o.Id)).ToListAsync(ct);
+            var steps = (await db.PurchaseOrderApprovalSteps.AsNoTracking().Where(s => levelIds.Contains(s.PurchaseOrderId)).ToListAsync(ct)).ToLookup(s => s.PurchaseOrderId);
+            var signatures = (await db.PurchaseOrderSignatures.AsNoTracking().Where(s => levelIds.Contains(s.PurchaseOrderId)).ToListAsync(ct)).ToLookup(s => s.PurchaseOrderId);
             var userIds = steps.SelectMany(g => g).SelectMany(s => s.ApproverIds).Distinct().ToList();
             var names = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
-            foreach (var o in submitted)
+            foreach (var o in levelOrders.OrderBy(o => o.SubmittedAt))
             {
-                var current = steps[o.Id].Where(s => s.Round == o.ApprovalRound && o.ApprovalRound > 0).OrderBy(s => s.Step).ToList();
-                var totalBase = PurchaseOrderMath.TotalInBase(o);
-                var waiting = current.FirstOrDefault(s => s.Status == ApprovalStepStatus.Waiting);
-                if (current.Count == 0)
-                {
-                    // Today's rule: anyone with "Approve purchases" within their limit.
-                    if (limit is null || totalBase <= limit)
-                        orders.Add(new OrderItem(o.Id, o.Number, o.Site!.Name, o.Supplier!.Name, PurchaseOrderMath.Total(o), o.Currency, totalBase, null, [], [], o.SubmittedAt));
-                    continue;
-                }
-                if (waiting is null || !waiting.ApproverIds.Contains(me) || o.SubmittedById == me) continue;
+                var current = steps[o.Id].Where(s => s.Round == o.ApprovalRound).OrderBy(s => s.Step).ToList();
+                var waiting = current.First(s => s.Status == ApprovalStepStatus.Waiting);
                 var sigs = signatures[o.Id].Where(s => s.Round == o.ApprovalRound).ToList();
                 if (sigs.Any(s => s.Step == waiting.Step && s.UserId == me)) continue;
                 if (!await PurchaseApprovals.MaySignAsync(db, perms, access, o, me, ct)) continue;
                 var next = current.FirstOrDefault(s => s.Step > waiting.Step);
-                orders.Add(new OrderItem(o.Id, o.Number, o.Site!.Name, o.Supplier!.Name, PurchaseOrderMath.Total(o), o.Currency, totalBase, waiting.Name,
+                orders.Add(new OrderItem(o.Id, o.Number, o.Site!.Name, o.Supplier!.Name, PurchaseOrderMath.Total(o), o.Currency, PurchaseOrderMath.TotalInBase(o), waiting.Name,
                     sigs.Where(s => s.Approved).OrderBy(s => s.At).Select(s => s.UserName).ToList(),
                     next is null ? [] : next.ApproverIds.Select(a => names.GetValueOrDefault(a) ?? "").Where(n => n.Length > 0).ToList(), o.SubmittedAt));
+            }
+
+            // Today's rule: submitted orders whose current round has no steps; anyone with "Approve purchases" within their limit.
+            var limit = await db.Users.Where(u => u.Id == me).Select(u => u.PurchaseApprovalLimit).FirstOrDefaultAsync(ct);
+            var plain = await db.PurchaseOrders.AsNoTracking().Include(o => o.Lines).Include(o => o.Supplier).Include(o => o.Site)
+                .Where(o => o.Status == PurchaseOrderStatus.Submitted
+                    && !db.PurchaseOrderApprovalSteps.Any(s => s.PurchaseOrderId == o.Id && s.Round == o.ApprovalRound))
+                .OrderBy(o => o.SubmittedAt == null).ThenBy(o => o.SubmittedAt).Take(Cap).ToListAsync(ct);
+            foreach (var o in plain)
+            {
+                var totalBase = PurchaseOrderMath.TotalInBase(o);
+                if (limit is null || totalBase <= limit)
+                    orders.Add(new OrderItem(o.Id, o.Number, o.Site!.Name, o.Supplier!.Name, PurchaseOrderMath.Total(o), o.Currency, totalBase, null, [], [], o.SubmittedAt));
             }
         }
 

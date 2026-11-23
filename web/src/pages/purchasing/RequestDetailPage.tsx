@@ -13,7 +13,7 @@ import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtDateTime, fmtPrice, fmtQty, notifyError, notifySuccess } from '@/components/utils';
 import { RequestStatusBadge } from './RequestsTab';
 import { OrderFromRequestsModal } from './OrderFromRequestsModal';
-import type { PurchaseRequestDetail } from './purchaseRequests';
+import { orderableLines, type PurchaseRequestDetail } from './purchaseRequests';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={0}><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{label}</Text><Text fz="sm" component="div">{children || '—'}</Text></Stack>;
@@ -134,7 +134,7 @@ export function RequestDetailPage() {
           }}>{reason?.kind === 'reject' ? t('pr.reject') : t('pr.cancel')}</Button>
         </Group>
       </Modal>
-      <OrderFromRequestsModal request={r} opened={ordering} onClose={() => setOrdering(false)} />
+      <OrderFromRequestsModal lines={orderableLines(r).map((l) => ({ ...l, siteId: r.siteId, requestNumber: r.number }))} opened={ordering} onClose={() => setOrdering(false)} />
     </>
   );
 }

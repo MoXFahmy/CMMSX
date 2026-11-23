@@ -2289,11 +2289,15 @@
     "requestSelected": "Request purchase ({{count}})",
     "details": "Details",
     "siteRequired": "Choose a site.",
-    "approvedByLabel": "Approved by"
+    "approvedByLabel": "Approved by",
+    "viewRequests": "Requests",
+    "viewLines": "Lines to order",
+    "orderSelected": "Order selected ({{count}})",
+    "noLinesToOrder": "No approved lines are waiting to be ordered."
   },
   "approvals": {
     "levels": "Approval levels",
-    "levelsHint": "An order needs every level whose minimum it reaches, signed lowest first. A site with levels of its own uses only those. When no level applies, approvers sign within their own limit as before.",
+    "levelsHint": "An order needs every level whose minimum it reaches, signed lowest first. The most specific levels win: a site's levels for the order's type, else the site's levels for all types, else the organization's for the type, else the organization's for all types. When no level applies, approvers sign within their own limit as before.",
     "newLevel": "New level",
     "editLevel": "Edit level",
     "set": "Applies to",

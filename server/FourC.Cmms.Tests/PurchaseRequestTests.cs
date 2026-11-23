@@ -266,4 +266,43 @@ public class PurchaseRequestTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var files = await Ok(await tech.GetAsync($"/api/attachments?entityType=PurchaseRequest&entityId={id}"));
         Assert.Equal(1, files.GetArrayLength());
     }
+
+    private static async Task<HttpResponseMessage> UploadAsync(HttpClient c, Guid id)
+    {
+        using var form = new MultipartFormDataContent { { new StringContent("PurchaseRequest"), "entityType" }, { new StringContent(id.ToString()), "entityId" } };
+        var file = new ByteArrayContent("%PDF-1.4\n%%EOF"u8.ToArray());
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        form.Add(file, "files", "quote.pdf");
+        return await c.PostAsync("/api/attachments", form);
+    }
+
+    [SkippableFact]
+    public async Task Request_files_follow_who_may_see_and_change_the_request()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var (tech, _, _) = await UserAsync(fx, o.Admin, "Technician");
+        var (other, _, _) = await UserAsync(fx, o.Admin, "Technician");
+        var (viewer, _, _) = await UserAsync(fx, o.Admin, "Viewer");
+        var id = await RequestAsync(tech, o, PartLine(o));
+        await Ok(await UploadAsync(tech, id));
+        Assert.Equal(HttpStatusCode.Forbidden, (await UploadAsync(other, id)).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await other.GetAsync($"/api/attachments?entityType=PurchaseRequest&entityId={id}")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await UploadAsync(viewer, id)).StatusCode);
+        Assert.Equal(1, (await Ok(await viewer.GetAsync($"/api/attachments?entityType=PurchaseRequest&entityId={id}"))).GetArrayLength());
+        await Ok(await UploadAsync(o.Admin, id)); // buyers and approvers may add files too
+    }
+
+    [SkippableFact]
+    public async Task Requesters_get_the_people_they_can_name_as_recipients()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var (tech, techId, _) = await UserAsync(fx, o.Admin, "Technician");
+        var (_, managerId, _) = await UserAsync(fx, o.Admin, "Maintenance Manager");
+        var people = (await Ok(await tech.GetAsync("/api/purchase-requests/recipient-options"))).EnumerateArray().ToList();
+        Assert.Contains(managerId, people.Select(Id));
+        Assert.DoesNotContain(techId, people.Select(Id)); // technicians can't act on requests
+        Assert.All(people, p => Assert.False(p.TryGetProperty("email", out _)));
+    }
 }

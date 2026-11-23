@@ -158,10 +158,11 @@ Who sees requests: the requester always sees their own; anyone with `purchasing.
 
 **Which levels an order needs** (computed when it's submitted):
 
-1. The set: the order's site's own set if it has one, else the organization's.
-2. Within the set: the levels for the order's type if any exist for that type, else the *all types* levels.
-3. Required: every level whose minimum ≤ the order's base-currency total, in ascending minimum.
-4. **None required** (no set, or the order is below every minimum) → **today's rule**: one approver within their
+1. The most specific levels win *(changed after the final review)*: the site's levels for the order's type, else the site's
+   *all types* levels, else the organization's levels for the type, else the organization's *all types* levels. So a site
+   that adds only a Capital rule keeps the organization's levels for its Parts orders.
+2. Required: every level whose minimum ≤ the order's base-currency total, in ascending minimum.
+3. **None required** (no set, or the order is below every minimum) → **today's rule**: one approver within their
   personal limit. So small orders below the first minimum still use personal limits.
 
 **Signing**

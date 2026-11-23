@@ -174,4 +174,25 @@ public class PurchaseRequestOrderTests(ApiFixture fx) : IClassFixture<ApiFixture
         var late = await o.Admin.PostAsJsonAsync("/api/purchase-requests/order", new { lines = new[] { new { requestLineId = LineId(d, 1) } } });
         Assert.Equal(HttpStatusCode.BadRequest, late.StatusCode);
     }
+
+    [SkippableFact]
+    public async Task Buyer_sees_approved_lines_to_order_across_requests()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var (tech, _, _) = await UserAsync(fx, o.Admin, "Technician");
+        var first = await ApprovedAsync(tech, o.Admin, o, PartLine(o, 2));
+        var second = await ApprovedAsync(tech, o.Admin, o, PartLine(o, 3), new { description = "Gloves", quantity = 5 });
+        var waiting = await RequestAsync(tech, o, PartLine(o, 1));
+        await Ok(await tech.PostAsync($"/api/purchase-requests/{waiting}/submit", null));
+        var lines = (await Ok(await o.Admin.GetAsync("/api/purchase-requests/lines-to-order"))).EnumerateArray().ToList();
+        Assert.Equal(3, lines.Count);
+        Assert.All(lines, l => Assert.Equal(o.Site, l.GetProperty("siteId").GetGuid()));
+        var parts = lines.Where(l => l.GetProperty("part").ValueKind != JsonValueKind.Null).Select(l => l.GetProperty("id").GetGuid()).ToList();
+        var made = await Ok(await o.Admin.PostAsJsonAsync("/api/purchase-requests/order", new { lines = parts.Select(id => new { requestLineId = id }) }));
+        Assert.Equal(1, made.GetArrayLength()); // both requests' parts on one order
+        Assert.Single((await Ok(await o.Admin.GetAsync("/api/purchase-requests/lines-to-order"))).EnumerateArray());
+        Assert.Equal(HttpStatusCode.Forbidden, (await tech.GetAsync("/api/purchase-requests/lines-to-order")).StatusCode);
+        _ = (first, second);
+    }
 }

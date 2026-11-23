@@ -305,7 +305,7 @@ public static class PurchasingEndpoints
             var o = await LoadAsync(db, id, ct);
             Require(o, PurchaseOrderStatus.Draft, PurchaseOrderStatus.Submitted);
             await RequireReadyAsync(db, o, ct);
-            if (o.Status == PurchaseOrderStatus.Submitted && (await PurchaseApprovals.StepsAsync(db, o, ct)).Count > 0)
+            if (await PurchaseApprovals.SigningAsync(db, o, ct))
             {
                 await PurchaseApprovals.SignAsync(db, ctx, perms, access, mail, id, approve: true, null, ct);
                 return Results.Ok(new { o.Id, (await db.PurchaseOrders.AsNoTracking().FirstAsync(x => x.Id == id, ct)).Status });
@@ -327,7 +327,7 @@ public static class PurchasingEndpoints
         {
             var o = await LoadAsync(db, id, ct);
             Require(o, PurchaseOrderStatus.Submitted);
-            if ((await PurchaseApprovals.StepsAsync(db, o, ct)).Count > 0)
+            if (await PurchaseApprovals.SigningAsync(db, o, ct))
             {
                 await PurchaseApprovals.SignAsync(db, ctx, perms, access, mail, id, approve: false, i.Reason, ct);
                 return Results.Ok(new { o.Id, Status = PurchaseOrderStatus.Draft });
@@ -460,7 +460,13 @@ public static class PurchasingEndpoints
         {
             var line = x.Id is { } lid ? o.Lines.FirstOrDefault(l => l.Id == lid) : null;
             var part = x.PartId is { } pid ? parts[pid] : null;
-            if (line is null) { line = new PurchaseOrderLine { Description = "" }; o.Lines.Add(line); }
+            if (line is null)
+            {
+                line = new PurchaseOrderLine { Description = "" };
+                o.Lines.Add(line);
+                // A new line on a saved order: its id is preset, so EF would take it for an existing row (as 0.12.1 found for PM task parts).
+                if (db.Entry(o).State is not (EntityState.Added or EntityState.Detached)) db.Entry(line).State = EntityState.Added;
+            }
             line.LineNumber = n++; line.PartId = x.PartId; line.Description = x.Description.Clean() ?? part?.Name ?? "";
             line.UnitOfMeasure = x.UnitOfMeasure.Clean() ?? part?.UnitOfMeasure; line.Quantity = x.Quantity; line.UnitPrice = x.UnitPrice; line.DiscountPercent = x.DiscountPercent;
             line.StoreId = x.StoreId; line.WorkOrderId = x.WorkOrderId; line.AccountCode = x.AccountCode.Clean();

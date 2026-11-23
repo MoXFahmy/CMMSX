@@ -1005,5 +1005,7 @@
  "This order isn't being signed by approval levels.": "هذا الأمر لا يُعتمد عبر مستويات الاعتماد.",
  "Submit the order for approval first.": "أرسل الأمر للاعتماد أولًا.",
  "Sign purchase order {0} ({1})": "اعتماد أمر الشراء {0} ({1})",
- "A purchase order is waiting for your signature": "أمر شراء في انتظار اعتمادك"
+ "A purchase order is waiting for your signature": "أمر شراء في انتظار اعتمادك",
+ "Level '{0}' needs all its approvers, and you submitted this order, so you can't sign it. Ask someone else to submit it, or let any one of them sign.": "المستوى '{0}' يحتاج إلى جميع معتمِديه، وأنت من أرسل هذا الأمر فلا يمكنك اعتماده. اطلب من شخص آخر إرساله، أو اجعل أيًّا منهم يكفي للاعتماد.",
+ "Level '{0}' needs all its approvers, but {1} can't sign orders for {2}. Ask an administrator to fix the approval levels.": "المستوى '{0}' يحتاج إلى جميع معتمِديه، لكن {1} لا يستطيع اعتماد أوامر {2}. اطلب من المسؤول إصلاح مستويات الاعتماد."
 }

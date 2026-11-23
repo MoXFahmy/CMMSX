@@ -225,7 +225,7 @@ public static class AttachmentEndpoints
 
         g.MapGet("/", async (string entityType, Guid entityId, CmmsDbContext db, HttpContext http, PermissionService perms, CancellationToken ct) =>
         {
-            if (!await AllowedAsync(http, perms, entityType, edit: false)) return Results.Forbid();
+            if (!await AllowedAsync(http, perms, entityType, edit: false, db, entityId)) return Results.Forbid();
             if (!await SiteAccess.VisibleAsync(db, entityType, entityId, ct)) return Results.NotFound();
             var rows = await db.Attachments.AsNoTracking().Where(a => a.EntityType == entityType && a.EntityId == entityId).OrderByDescending(a => a.CreatedAt).ToListAsync(ct);
             var userIds = rows.Select(r => r.CreatedById).OfType<Guid>().Distinct().ToList();
@@ -239,7 +239,7 @@ public static class AttachmentEndpoints
             var form = await req.ReadFormAsync(ct);
             var entityType = form["entityType"].ToString();
             if (!Guid.TryParse(form["entityId"], out var entityId)) throw new DomainException("Missing entity id.");
-            if (!await AllowedAsync(req.HttpContext, perms, entityType, edit: true)) return Results.Forbid();
+            if (!await AllowedAsync(req.HttpContext, perms, entityType, edit: true, db, entityId)) return Results.Forbid();
             var exists = entityType switch
             {
                 "Asset" => await db.Assets.AnyAsync(a => a.Id == entityId, ct),
@@ -279,7 +279,7 @@ public static class AttachmentEndpoints
         {
             var a = await db.Attachments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (a is null || !await SiteAccess.VisibleAsync(db, a.EntityType, a.EntityId, ct)) return Results.NotFound();
-            if (!await AllowedAsync(http, perms, a.EntityType, edit: false)) return Results.Forbid();
+            if (!await AllowedAsync(http, perms, a.EntityType, edit: false, db, a.EntityId)) return Results.Forbid();
             var stream = await storage.OpenReadAsync(a.StorageKey, ct);
             if (stream is null) return Results.NotFound();
             // Decided from the stored type at every request, so files uploaded before types were checked are covered too.
@@ -302,7 +302,7 @@ public static class AttachmentEndpoints
         {
             var a = await db.Attachments.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (a is null || !await SiteAccess.VisibleAsync(db, a.EntityType, a.EntityId, ct)) return Results.NotFound();
-            if (!await AllowedAsync(http, perms, a.EntityType, edit: true)) return Results.Forbid();
+            if (!await AllowedAsync(http, perms, a.EntityType, edit: true, db, a.EntityId)) return Results.Forbid();
             if (!a.ContentType.StartsWith("image/")) throw new DomainException("Only images can be the primary photo.");
             await db.Attachments.Where(x => x.EntityType == a.EntityType && x.EntityId == a.EntityId && x.Id != id).ExecuteUpdateAsync(s => s.SetProperty(x => x.IsPrimaryImage, false), ct);
             a.IsPrimaryImage = true;
@@ -314,7 +314,7 @@ public static class AttachmentEndpoints
         {
             var a = await db.Attachments.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (a is null || !await SiteAccess.VisibleAsync(db, a.EntityType, a.EntityId, ct)) return Results.NotFound();
-            if (!await AllowedAsync(http, perms, a.EntityType, edit: true)) return Results.Forbid();
+            if (!await AllowedAsync(http, perms, a.EntityType, edit: true, db, a.EntityId)) return Results.Forbid();
             db.Attachments.Remove(a);
             await db.SaveChangesAsync(ct);
             await storage.DeleteAsync(a.StorageKey, ct);
@@ -322,11 +322,11 @@ public static class AttachmentEndpoints
         });
     }
 
-    private static async Task<bool> AllowedAsync(HttpContext http, PermissionService perms, string entityType, bool edit)
+    private static async Task<bool> AllowedAsync(HttpContext http, PermissionService perms, string entityType, bool edit, CmmsDbContext db, Guid entityId)
     {
         if (!EntityPermissions.TryGetValue(entityType, out var p)) return false;
         var userId = Guid.Parse(http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
-        if (entityType == "PurchaseRequest") return PurchaseRequestEndpoints.MayUse(await perms.GetAsync(userId));
+        if (entityType == "PurchaseRequest") return await PurchaseRequestEndpoints.FilesAllowedAsync(db, await perms.GetAsync(userId), userId, entityId, edit);
         return (await perms.GetAsync(userId)).Contains(edit ? p.Edit : p.View);
     }
 }

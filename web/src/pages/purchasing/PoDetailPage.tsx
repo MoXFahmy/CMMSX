@@ -17,6 +17,7 @@ import { Attachments } from '@/components/Attachments';
 import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtDateTime, fmtPrice, fmtQty, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { ApprovalPanel } from './ApprovalPanel';
+import { printsSignatures } from './approvals';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={0}><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{label}</Text><Text fz="sm" component="div">{children || '—'}</Text></Stack>;
@@ -293,7 +294,7 @@ export function PoPrintPage() {
         <Group justify="space-between" style={{ borderTop: '2px solid #000' }} pt={4}><Text fw={700}>{t('po.total')}</Text><Text fw={700}>{fmtPrice(o.totals.total, o.currency)}</Text></Group>
       </Stack></Group>
       {o.notes && <Text mt="lg" fz="sm" style={{ whiteSpace: 'pre-wrap' }}><b>{t('common.notes')}:</b> {o.notes}</Text>}
-      {o.approval && o.approval.steps.some((s) => s.approvers.some((x) => x.signed)) && (
+      {o.approval && printsSignatures(o.approval) && (
         <Table mt="lg" fz="xs" withTableBorder>
           <Table.Thead><Table.Tr><Table.Th>{t('approvals.level')}</Table.Th><Table.Th>{t('approvals.signedBy')}</Table.Th><Table.Th>{t('approvals.date')}</Table.Th><Table.Th>{t('approvals.comment')}</Table.Th></Table.Tr></Table.Thead>
           <Table.Tbody>{o.approval.steps.flatMap((s) => s.approvers.filter((x) => x.signed).map((x) => (
@@ -302,7 +303,7 @@ export function PoPrintPage() {
         </Table>
       )}
       <Group mt={60} grow>
-        {!o.approval && <Stack gap={2}><div style={{ borderTop: '1px solid #000' }} /><Text fz="xs">{t('po.approvedBy')}{o.approvedByName ? `: ${o.approvedByName} · ${fmtDate(o.approvedAt)}` : ''}</Text></Stack>}
+        {!printsSignatures(o.approval) && <Stack gap={2}><div style={{ borderTop: '1px solid #000' }} /><Text fz="xs">{t('po.approvedBy')}{o.approvedByName ? `: ${o.approvedByName} · ${fmtDate(o.approvedAt)}` : ''}</Text></Stack>}
         <Stack gap={2}><div style={{ borderTop: '1px solid #000' }} /><Text fz="xs">{t('po.supplierAcceptance')}</Text></Stack>
       </Group>
       <Group justify="center" mt="xl" className="no-print"><Button onClick={() => window.print()} leftSection={<IconPrinter size={16} />}>{t('po.print')}</Button></Group>

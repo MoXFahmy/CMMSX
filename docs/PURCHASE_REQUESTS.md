@@ -32,7 +32,8 @@ Purchasing › **Requests** › New request (numbered `PR-00001`; a site can hav
 
 ## Requests into orders
 
-On an approved request, **Order lines** asks for a supplier per line (the part's preferred supplier by default), the
+On an approved request, **Order lines** — or, for lines from several requests at once, Purchasing › Requests › **Lines to
+order** — asks for a supplier per line (the part's preferred supplier by default), the
 quantity and the price (the estimate, else the part's last purchase price). CMX makes **one draft order per supplier and
 site**; each order line keeps its request line, and the order's notes name the requests. Orders made this way are Parts
 orders when a part is on them, else Services.
@@ -55,8 +56,9 @@ Settings › Purchasing › **Approval levels** (*Manage settings*).
   five approvers** with *Approve purchases*, and whether **all** of them or **any one** must sign.
 - **Levels add up**: an order needs every level whose minimum it reaches, signed **lowest first**. With levels at 0,
   10,000 and 100,000, a 50,000 order needs the first two; a 200,000 order all three.
-- **Sets**: the organization's levels, or a site's own — a site with levels of its own uses only those.
-- **By order type**: levels for one type replace the *all types* levels for orders of that type.
+- **Sets and types — the most specific levels win**: the site's levels for the order's type, else the site's *all types*
+  levels, else the organization's levels for the type, else the organization's *all types* levels. A site that adds only a
+  Capital rule keeps the organization's levels for its Parts and Services orders.
 - **No level applies** (none set, or the order is below every minimum): one approver within their personal limit, as
   before 0.16.0.
 - The settings page warns about approvers who can't sign (no permission, can't see the sites, inactive) and shows what

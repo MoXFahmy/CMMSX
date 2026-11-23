@@ -237,4 +237,62 @@ public class PurchaseApprovalTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal("Approved", Status(d));
         Assert.Equal(JsonValueKind.Null, d.GetProperty("approval").ValueKind);
     }
+
+    [SkippableFact]
+    public async Task Order_returned_under_levels_and_resubmitted_below_every_level_is_approved_by_the_old_rule()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var a = await SignerAsync(o, limit: 10000);
+        await Ok(await o.Admin.PostAsJsonAsync("/api/approval-levels", new { name = "From 5k", minAmount = 5000, rule = "Any", approverIds = new[] { a.Id } }));
+        var po = await OrderAsync(o.Admin, o, 6000);
+        await Ok(await o.Admin.PostAsync($"/api/purchase-orders/{po}/submit", null));
+        await Ok(await a.Client.PostAsJsonAsync($"/api/purchase-orders/{po}/reject", new { reason = "Too dear" }));
+        // Cut below the lowest level and submit again: today's rule now applies.
+        var d = await PoAsync(o.Admin, po);
+        await Ok(await o.Admin.PutAsJsonAsync($"/api/purchase-orders/{po}", new
+        {
+            siteId = o.Site, supplierId = o.Supplier, shippingCost = 0, taxPercent = 0, rowVersion = d.GetProperty("rowVersion").GetString(),
+            lines = new[] { new { description = "Overhaul", quantity = 1, unitPrice = 4000m, discountPercent = 0 } },
+        }));
+        await Ok(await o.Admin.PostAsync($"/api/purchase-orders/{po}/submit", null));
+        Assert.True((await PoAsync(a.Client, po)).GetProperty("actions").GetProperty("approve").GetBoolean());
+        await Ok(await a.Client.PostAsync($"/api/purchase-orders/{po}/approve", null));
+        d = await PoAsync(o.Admin, po);
+        Assert.Equal("Approved", Status(d));
+        Assert.Equal(1, d.GetProperty("approval").GetProperty("earlierRounds").GetArrayLength());
+    }
+
+    [SkippableFact]
+    public async Task Submitter_listed_on_an_all_level_is_told_why_submit_is_refused()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var a = await SignerAsync(o);
+        var b = await SignerAsync(o);
+        await Ok(await o.Admin.PostAsJsonAsync("/api/approval-levels", new { name = "Board", minAmount = 0, rule = "All", approverIds = new[] { a.Id, b.Id } }));
+        var po = await OrderAsync(a.Client, o, 1000);
+        Assert.Contains("Level 'Board' needs all its approvers, and you submitted this order, so you can't sign it.",
+            await RefusedAsync(await a.Client.PostAsync($"/api/purchase-orders/{po}/submit", null)));
+    }
+
+    [SkippableFact]
+    public async Task Adding_a_line_to_a_saved_draft_order_keeps_both()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var po = await OrderAsync(o.Admin, o, 100);
+        var d = await PoAsync(o.Admin, po);
+        var first = d.GetProperty("lines")[0].GetProperty("id").GetGuid();
+        await Ok(await o.Admin.PutAsJsonAsync($"/api/purchase-orders/{po}", new
+        {
+            siteId = o.Site, supplierId = o.Supplier, shippingCost = 0, taxPercent = 0, rowVersion = d.GetProperty("rowVersion").GetString(),
+            lines = new object[]
+            {
+                new { id = first, description = "Overhaul", quantity = 1, unitPrice = 100m, discountPercent = 0 },
+                new { description = "Gaskets", quantity = 4, unitPrice = 5m, discountPercent = 0 },
+            },
+        }));
+        Assert.Equal(2, (await PoAsync(o.Admin, po)).GetProperty("lines").GetArrayLength());
+    }
 }
