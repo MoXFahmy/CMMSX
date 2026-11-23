@@ -2092,5 +2092,49 @@
     "downtime": "Downtime cost",
     "downtimeHours": "Downtime (h)",
     "total": "Total"
+  },
+  "ai": {
+    "title": "AI assistant",
+    "privacy": "Pressing an AI button sends the work's texts, codes, parts, hours and the asset's category, maker and model to Anthropic — never names, e-mail addresses, phone numbers or photos. Anthropic doesn't train on it and deletes it within 30 days.",
+    "notSetUp": "AI isn't set up on this server.",
+    "use": "Use the AI assistant",
+    "monthlyLimit": "Monthly limit",
+    "limitHint": "AI actions a month. Empty uses the server's ceiling of {{max}} a month.",
+    "limitMax": "The limit can be at most {{max}} a month.",
+    "limitMin": "The limit can't be below 0.",
+    "usageTab": "AI usage",
+    "thisMonth": "This month",
+    "usedOf": "{{used}} of {{limit}} AI actions",
+    "renewsOn": "Renews on {{date}}",
+    "ceilingNote": "server ceiling {{max}}",
+    "byFeature": "This month by feature",
+    "byPerson": "This month by person",
+    "lastYear": "Last 12 months",
+    "actions": "AI actions",
+    "log": "Call log",
+    "when": "When",
+    "who": "Who",
+    "feature": "Feature",
+    "record": "Record",
+    "request": "Request",
+    "model": "Model",
+    "inputTokens": "Input tokens",
+    "outputTokens": "Output tokens",
+    "cacheTokens": "Cache reads",
+    "cacheWriteTokens": "Cache writes",
+    "cost": "Estimated cost (USD)",
+    "result": "Result",
+    "dates": "Dates",
+    "features": {
+      "Report": "Report",
+      "Diagnosis": "Diagnosis"
+    },
+    "results": {
+      "Pending": "Waiting",
+      "Answered": "Answered",
+      "Refused": "Refused",
+      "Failed": "Failed",
+      "OverLimit": "Over the limit"
+    }
   }
 }

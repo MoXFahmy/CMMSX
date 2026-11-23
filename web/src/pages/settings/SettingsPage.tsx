@@ -1,3 +1,5 @@
+import { AiSettings } from './AiSettings';
+import { AiUsageSettings } from './AiUsageSettings';
 import { useEffect, useState } from 'react';
 import { ActionIcon, Badge, Button, Card, Checkbox, ColorInput, FileButton, Group, Modal, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Table, Tabs, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
@@ -42,6 +44,7 @@ export function SettingsPage() {
     { value: 'users', label: t('settings.users'), show: can(P.usersManage) },
     { value: 'roles', label: t('settings.roles'), show: can(P.usersManage) },
     { value: 'import', label: t('settings.import'), show: can(P.settingsManage) },
+    { value: 'ai-usage', label: t('ai.usageTab'), show: can(P.settingsManage) },
   ].filter((x) => x.show);
   const current = tabs.some((x) => x.value === sub) ? sub! : 'organization';
   return (
@@ -61,6 +64,7 @@ export function SettingsPage() {
         <Tabs.Panel value="users"><UserSettings /></Tabs.Panel>
         <Tabs.Panel value="roles"><RoleSettings /></Tabs.Panel>
         <Tabs.Panel value="import"><ImportSettings /></Tabs.Panel>
+        <Tabs.Panel value="ai-usage"><AiUsageSettings /></Tabs.Panel>
       </Tabs>
     </>
   );
@@ -173,6 +177,7 @@ function OrganizationSettings() {
             <NumberInput label={t('settings.defaultTax')} min={0} max={100} suffix="%" decimalScale={3} disabled={!editable} {...form.getInputProps('settings.defaultTaxPercent')} />
           </SimpleGrid>
         </Stack></Card>
+        <AiSettings form={form} editable={editable} />
         {editable && <Group justify="flex-end"><Button type="submit" loading={form.submitting}>{t('common.saveChanges')}</Button></Group>}
         {editable && (
           <Card><Group justify="space-between" wrap="nowrap">
