@@ -24,6 +24,13 @@ public static class EmailEvents
     public const string RequestRefused = "request.refused";
     public const string WorkOrderCancelled = "workorder.cancelled";
     public const string WorkOrderOverdue = "workorder.overdue";
+    // Purchase requests and approval levels (0.16.0)
+    public const string PrSubmitted = "pr.submitted";
+    public const string PrApproved = "pr.approved";
+    public const string PrRejected = "pr.rejected";
+    public const string PrOrdered = "pr.ordered";
+    public const string PrReceived = "pr.received";
+    public const string PoApprovalWaiting = "po.approvalWaiting";
     /// <summary>"Send me a test e-mail" from Settings; not a notification anyone can switch off.</summary>
     public const string Test = "test";
 
@@ -32,6 +39,7 @@ public static class EmailEvents
         RequestSubmitted, RequestApproved, RequestRejected, RequestComment, WorkOrderAssigned, PmAssigned, WorkOrderCompleted, RequestCompleted,
         RequestRefused, WorkOrderCancelled, WorkOrderOverdue, PartsReceived,
         PoSubmitted, PoApproved, PoRejected, PoSent,
+        PrSubmitted, PrApproved, PrRejected, PrOrdered, PrReceived, PoApprovalWaiting,
     ];
 
     /// <summary>

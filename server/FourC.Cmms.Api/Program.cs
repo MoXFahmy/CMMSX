@@ -177,6 +177,7 @@ api.MapWorkGroupEndpoints();
 api.MapAssetChecklistEndpoints();
 api.MapInventoryEndpoints();
 api.MapPurchasingEndpoints();
+api.MapPurchaseRequestEndpoints();
 api.MapReportEndpoints();
 api.MapDashboardEndpoints();
 api.MapAlertEndpoints();

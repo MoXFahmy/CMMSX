@@ -284,6 +284,51 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         }
     }
 
+    // ---------------- Purchase requests (0.16.0) ----------------
+
+    /// <summary>Submitted: the site's purchase-request recipients (else the organization's, else everyone who may approve requests), plus the request's own.</summary>
+    public async Task PrSubmittedAsync(CmmsDbContext db, ITenantContext ctx, PurchaseRequest r, CancellationToken ct)
+    {
+        if (!Available) return;
+        var site = (await db.Sites.AllSites().Where(s => s.Id == r.SiteId).Select(s => s.Settings).FirstOrDefaultAsync(ct))?.PurchaseRequestRecipientIds ?? [];
+        var org = site.Count > 0 ? [] : (await db.Tenants.AsNoTracking().Where(t => t.Id == db.CurrentTenantId).Select(t => t.Settings).FirstAsync(ct)).PurchaseRequestRecipientIds ?? [];
+        var named = site.Concat(org).Distinct().ToList();
+        var to = named.Count > 0 ? await UsersAsync(db, named, ct) : await UsersWithPermissionAsync(db, Permissions.PurchasingApproveRequests, ct);
+        if (r.RecipientIds.Count > 0) to.AddRange(await UsersAsync(db, r.RecipientIds, ct));
+        var facts = await FactsAsync(db, r, ct);
+        await QueueAsync(db, ctx, EmailEvents.PrSubmitted, to.DistinctBy(p => p.UserId), o => EmailTemplates.PrSubmitted(o, facts, Link($"/purchasing/requests/{r.Id}")),
+            "PurchaseRequest", r.Id, ct, siteId: r.SiteId, siteLevel: true);
+    }
+
+    /// <summary>Approved or returned: the requester hears.</summary>
+    public async Task PrDecidedAsync(CmmsDbContext db, ITenantContext ctx, PurchaseRequest r, bool approved, string? reason, CancellationToken ct)
+    {
+        if (!Available || r.RequestedById is not { } requester) return;
+        var facts = await FactsAsync(db, r, ct);
+        var link = Link($"/purchasing/requests/{r.Id}");
+        await QueueAsync(db, ctx, approved ? EmailEvents.PrApproved : EmailEvents.PrRejected, await UsersAsync(db, [requester], ct),
+            o => approved ? EmailTemplates.PrApproved(o, facts, link) : EmailTemplates.PrRejected(o, facts, reason ?? "", link), "PurchaseRequest", r.Id, ct,
+            siteId: r.SiteId, siteLevel: true);
+    }
+
+    /// <summary>Lines were put on orders: the requester hears which orders.</summary>
+    public async Task PrOrderedAsync(CmmsDbContext db, ITenantContext ctx, PurchaseRequest r, IReadOnlyList<string> orderNumbers, CancellationToken ct)
+    {
+        if (!Available || r.RequestedById is not { } requester) return;
+        var facts = await FactsAsync(db, r, ct);
+        await QueueAsync(db, ctx, EmailEvents.PrOrdered, await UsersAsync(db, [requester], ct),
+            o => EmailTemplates.PrOrdered(o, facts, orderNumbers, Link($"/purchasing/requests/{r.Id}")), "PurchaseRequest", r.Id, ct, siteId: r.SiteId, siteLevel: true);
+    }
+
+    /// <summary>Lines from the request were received: the requester hears.</summary>
+    public async Task PrReceivedAsync(CmmsDbContext db, ITenantContext ctx, PurchaseRequest r, IReadOnlyList<string> lines, CancellationToken ct)
+    {
+        if (!Available || r.RequestedById is not { } requester) return;
+        var facts = await FactsAsync(db, r, ct);
+        await QueueAsync(db, ctx, EmailEvents.PrReceived, await UsersAsync(db, [requester], ct),
+            o => EmailTemplates.PrReceived(o, facts, lines, Link($"/purchasing/requests/{r.Id}")), "PurchaseRequest", r.Id, ct, siteId: r.SiteId, siteLevel: true);
+    }
+
     /// <summary>"Send to supplier": queues the order to the supplier. Returns why it can't, or null when queued.</summary>
     public async Task<string?> PoToSupplierAsync(CmmsDbContext db, ITenantContext ctx, PurchaseOrder po, CancellationToken ct)
     {
@@ -427,6 +472,16 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         var roleIds = (await db.Roles.AsNoTracking().Select(r => new { r.Id, r.Permissions }).ToListAsync(ct))
             .Where(r => r.Permissions.Contains(permission)).Select(r => r.Id).ToList();
         return await db.UserRoles.Where(ur => roleIds.Contains(ur.RoleId)).Select(ur => ur.UserId).Distinct().ToListAsync(ct);
+    }
+
+    private static async Task<PrFacts> FactsAsync(CmmsDbContext db, PurchaseRequest r, CancellationToken ct)
+    {
+        var site = await db.Sites.AllSites().AsNoTracking().Where(s => s.Id == r.SiteId).Select(s => s.Name).FirstOrDefaultAsync(ct);
+        var currency = (await db.Tenants.AsNoTracking().Where(t => t.Id == db.CurrentTenantId).Select(t => t.Settings).FirstAsync(ct)).Currency;
+        var lines = string.Join("; ", r.Lines.OrderBy(l => l.LineNumber).Take(5).Select(l => $"{l.Quantity:0.###} × {l.Description}"))
+            + (r.Lines.Count > 5 ? $" (+{r.Lines.Count - 5})" : "");
+        var estimate = r.Lines.Where(l => l.EstimatedUnitPrice is not null).Sum(l => (decimal?)l.EstimatedUnitPrice * l.Quantity);
+        return new PrFacts(r.Number, site, r.RequestedByName, lines, estimate is { } e ? $"{e:N2} {currency}" : null);
     }
 
     private static async Task<PoFacts> FactsAsync(CmmsDbContext db, PurchaseOrder po, CancellationToken ct)

@@ -175,6 +175,8 @@ public static class AttachmentEndpoints
         ["Part"] = (Permissions.InventoryView, Permissions.InventoryManage),
         ["Supplier"] = (Permissions.PurchasingView, Permissions.SuppliersManage),
         ["PurchaseOrder"] = (Permissions.PurchasingView, Permissions.PurchasingCreate),
+        // Purchase requests (0.16.0): anyone who may use requests (checked in AllowedAsync).
+        ["PurchaseRequest"] = (Permissions.PurchasingRequest, Permissions.PurchasingRequest),
     };
 
     // Files are served from the app's own origin, so a file the browser runs as a page (SVG, HTML, any XML) would run
@@ -249,6 +251,7 @@ public static class AttachmentEndpoints
                 "Part" => await db.Parts.AnyAsync(a => a.Id == entityId, ct),
                 "Supplier" => await db.Suppliers.AnyAsync(a => a.Id == entityId, ct),
                 "PurchaseOrder" => await db.PurchaseOrders.AnyAsync(a => a.Id == entityId, ct),
+                "PurchaseRequest" => await db.PurchaseRequests.AnyAsync(a => a.Id == entityId, ct),
                 _ => false,
             };
             if (!exists) return Results.NotFound();
@@ -323,6 +326,7 @@ public static class AttachmentEndpoints
     {
         if (!EntityPermissions.TryGetValue(entityType, out var p)) return false;
         var userId = Guid.Parse(http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
+        if (entityType == "PurchaseRequest") return PurchaseRequestEndpoints.MayUse(await perms.GetAsync(userId));
         return (await perms.GetAsync(userId)).Contains(edit ? p.Edit : p.View);
     }
 }
@@ -356,6 +360,7 @@ public static class SiteAccess
             "PmSchedule" => await db.PmSchedules.AnyAsync(x => x.Id == id, ct),
             "Store" => await db.Stores.AnyAsync(x => x.Id == id, ct),
             "PurchaseOrder" => await db.PurchaseOrders.AnyAsync(x => x.Id == id, ct),
+            "PurchaseRequest" => await db.PurchaseRequests.AnyAsync(x => x.Id == id, ct),
             "Team" => await db.Teams.AnyAsync(x => x.Id == id, ct),
             "Meter" => await db.Meters.AnyAsync(x => x.Id == id, ct),
             "DowntimeEvent" => await db.DowntimeEvents.AnyAsync(x => x.Id == id, ct),
