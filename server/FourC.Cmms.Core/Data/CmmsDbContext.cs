@@ -72,6 +72,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<WorkOrderComment> WorkOrderComments => Set<WorkOrderComment>();
     public DbSet<RequestType> RequestTypes => Set<RequestType>();
     public DbSet<CancelReason> CancelReasons => Set<CancelReason>();
+    public DbSet<Planning.AvailabilityType> AvailabilityTypes => Set<Planning.AvailabilityType>();
+    public DbSet<Planning.AvailabilityEntry> AvailabilityEntries => Set<Planning.AvailabilityEntry>();
     public DbSet<WorkRequestComment> WorkRequestComments => Set<WorkRequestComment>();
     public DbSet<RequestFeedback> RequestFeedback => Set<RequestFeedback>();
     public DbSet<FourC.Cmms.Core.Ai.AiCall> AiCalls => Set<FourC.Cmms.Core.Ai.AiCall>();
@@ -463,6 +465,24 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasOne<Trade>().WithMany().HasForeignKey(x => x.DefaultTradeId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne<Team>().WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.Restrict);
         });
+        // Time away and extra time (0.19.0).
+        b.Entity<Planning.AvailabilityType>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.Color).HasMaxLength(20);
+            e.Property(x => x.Kind).HasConversion<string>().HasMaxLength(20);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<Planning.AvailabilityEntry>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Days).HasMaxLength(200).HasConversion(JsonConverter<List<DayOfWeek>>()).Metadata.SetValueComparer(JsonComparer<List<DayOfWeek>>());
+            e.Property(x => x.Hours).HasPrecision(5, 2); e.Property(x => x.Notes).HasMaxLength(1000);
+            e.HasOne(x => x.Type).WithMany().HasForeignKey(x => x.TypeId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne<Employee>().WithMany().HasForeignKey(x => x.EmployeeId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne<Team>().WithMany().HasForeignKey(x => x.TeamId).OnDelete(DeleteBehavior.NoAction);
+            e.HasIndex(x => new { x.TenantId, x.From, x.To });
+        });
         b.Entity<CancelReason>(e =>
         {
             ConfigureTenantEntity(e);
@@ -833,6 +853,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         {
             e.Property(x => x.PersonName).HasMaxLength(200); e.Property(x => x.Notes).HasMaxLength(2000);
             e.Property(x => x.PlannedHours).HasPrecision(9, 2); e.Property(x => x.HoursDone).HasPrecision(9, 2); e.Property(x => x.Rate).HasPrecision(18, 2);
+            e.HasIndex(x => new { x.TenantId, x.PlannedOn });
             e.HasOne<WorkOrder>().WithMany().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Cascade);
             e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.NoAction);
             e.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.ContractorCategoryId).OnDelete(DeleteBehavior.NoAction);
