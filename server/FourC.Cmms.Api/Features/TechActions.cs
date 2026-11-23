@@ -30,7 +30,7 @@ public static partial class TechEndpoints
     private sealed record CommentPayload(string? Body);
     private sealed record ReadingPayload(Guid MeterId, decimal Value, string? Note, bool Confirm = false);
     private sealed record StatusPayload(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes, Guid? FailureCodeId,
-        bool? AssetWasDown, decimal? DowntimeHours, Guid? CancelReasonId = null, Guid? RemedyId = null);
+        bool? AssetWasDown, decimal? DowntimeHours, Guid? CancelReasonId = null, Guid? RemedyId = null, Guid? SymptomId = null);
     /// <summary>AssetIsDown: "The asset is down" (0.8.1); older app versions don't send it.</summary>
     private sealed record RequestPayload(string? Title, string? Description, WorkPriority? Priority, Guid? AssetId, Guid? LocationId, Guid? SiteId, bool? AssetIsDown = null,
         Guid? RequestTypeId = null, Guid? SymptomId = null);
@@ -445,7 +445,7 @@ public static partial class TechEndpoints
         var input = new WorkOrderEndpoints.StatusInput(p.Status, p.HoldReason, p.Note, p.CompletionNotes, p.CauseNotes, p.FailureCodeId, p.AssetWasDown, p.DowntimeHours,
             // When the technician started (offline) or, on completion, never later than when they finished.
             ActualStart: p.Status == WorkOrderStatus.InProgress || (completed && w.StartedAt > at) ? at : null, ActualEnd: completed ? at : null, At: at,
-            CancelReasonId: p.CancelReasonId, RemedyId: p.RemedyId);
+            CancelReasonId: p.CancelReasonId, RemedyId: p.RemedyId, SymptomId: p.SymptomId);
         Ensure(await WorkOrderEndpoints.ChangeStatusAsync(db, ctx, mail, settings, w, input, ct, fromPhone: true));
         await db.SaveChangesAsync(ct);
         return new Answer("done");
