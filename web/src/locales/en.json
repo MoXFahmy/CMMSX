@@ -2135,6 +2135,11 @@
       "Refused": "Refused",
       "Failed": "Failed",
       "OverLimit": "Over the limit"
-    }
+    },
+    "fillFromNotes": "Fill from notes",
+    "fromAi": "From AI — check before completing",
+    "addYourself": "Suggested — add these yourself",
+    "hintHours": "{{hours}} h of work",
+    "usePart": "Use {{qty}} × {{part}}"
   }
 }
