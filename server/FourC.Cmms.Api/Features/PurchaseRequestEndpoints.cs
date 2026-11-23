@@ -20,6 +20,8 @@ public static class PurchaseRequestEndpoints
         Guid? AssetId, Guid? StoreId, decimal? EstimatedUnitPrice, string? Reason);
     public sealed record PrInput(Guid SiteId, DateOnly? NeededBy, string? Notes, List<Guid>? RecipientIds, List<PrLineInput>? Lines, string? RowVersion = null);
     public sealed record CommentInput(string? Body);
+    public sealed record OrderRequestLine(Guid RequestLineId, Guid? SupplierId, decimal? Quantity, decimal? UnitPrice);
+    public sealed record OrderFromRequestsInput(List<OrderRequestLine>? Lines);
 
     public sealed class PrFilter
     {
@@ -198,6 +200,70 @@ public static class PurchaseRequestEndpoints
             return Results.Ok(new { r.Id, r.Status });
         });
 
+        // Approved lines become draft orders grouped by supplier and site, as the Re-order tab does.
+        g.MapPost("/order", async (OrderFromRequestsInput i, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
+        {
+            var wanted = (i.Lines ?? []).DistinctBy(l => l.RequestLineId).ToList();
+            if (wanted.Count == 0) throw new DomainException("Select at least one line.");
+            var ids = wanted.Select(l => l.RequestLineId).ToList();
+            var lines = await db.PurchaseRequestLines.Include(l => l.Part).Where(l => ids.Contains(l.Id)).ToDictionaryAsync(l => l.Id, ct);
+            var requestIds = lines.Values.Select(l => l.PurchaseRequestId).Distinct().ToList();
+            var requests = await db.PurchaseRequests.Include(r => r.Lines).Where(r => requestIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
+            var onOrder = await db.PurchaseOrderLines.AllSites().Where(l => l.PurchaseRequestLineId != null && ids.Contains(l.PurchaseRequestLineId.Value))
+                .Select(l => new { RequestLineId = l.PurchaseRequestLineId!.Value, Order = db.PurchaseOrders.AllSites().Where(o => o.Id == l.PurchaseOrderId).Select(o => new { o.Number, o.Status }).First() })
+                .ToListAsync(ct);
+            var live = onOrder.Where(x => x.Order.Status != PurchaseOrderStatus.Cancelled).ToDictionary(x => x.RequestLineId, x => x.Order.Number);
+            var resolved = wanted.Select(w =>
+            {
+                if (!lines.TryGetValue(w.RequestLineId, out var line) || !requests.TryGetValue(line.PurchaseRequestId, out var r)) throw new DomainException("Unknown request line.");
+                if (r.Status is not (PurchaseRequestStatus.Approved or PurchaseRequestStatus.PartlyOrdered)) throw new DomainException($"{r.Number} isn't approved.");
+                if (live.TryGetValue(line.Id, out var po)) throw new DomainException($"{r.Number} line {line.LineNumber} is already on {po}.");
+                var supplier = w.SupplierId ?? line.Part?.PreferredSupplierId ?? throw new DomainException($"Choose a supplier for {r.Number} line {line.LineNumber}.");
+                var qty = w.Quantity ?? line.Quantity;
+                if (qty <= 0) throw new DomainException($"{r.Number} line {line.LineNumber}: quantity must be more than 0.");
+                var price = w.UnitPrice ?? line.EstimatedUnitPrice ?? line.Part?.LastPurchasePrice ?? line.Part?.AverageCost ?? 0m;
+                if (price < 0) throw new DomainException($"{r.Number} line {line.LineNumber}: the price can't be below 0.");
+                return (Line: line, Request: r, SupplierId: supplier, Quantity: qty, Price: price);
+            }).ToList();
+            var supplierIds = resolved.Select(x => x.SupplierId).Distinct().ToList();
+            var suppliers = await db.Suppliers.AsNoTracking().Where(s => supplierIds.Contains(s.Id) && s.IsActive).ToDictionaryAsync(s => s.Id, ct);
+            if (suppliers.Count != supplierIds.Count) throw new DomainException("Choose an active supplier.");
+            var created = await db.InTransactionAsync(async tk =>
+            {
+                var list = new List<object>();
+                var ordersOf = new Dictionary<Guid, List<string>>();
+                foreach (var grp in resolved.GroupBy(x => (x.SupplierId, x.Request.SiteId)))
+                {
+                    var sup = suppliers[grp.Key.SupplierId];
+                    var numbers = grp.Select(x => x.Request.Number).Distinct().OrderBy(n => n).ToList();
+                    var who = string.Join(", ", grp.Select(x => x.Request.RequestedByName).OfType<string>().Distinct());
+                    var input = new PurchasingEndpoints.PoInput(grp.Key.SiteId, sup.Id, Today, null, who.Length > 0 ? who[..Math.Min(who.Length, 200)] : null, sup.Currency, null,
+                        sup.PaymentTerms, null, null, null, null, 0, $"From {string.Join(", ", numbers)}",
+                        grp.OrderBy(x => x.Request.Number).ThenBy(x => x.Line.LineNumber).Select(x => new PurchasingEndpoints.LineInput(null, x.Line.PartId, x.Line.Description,
+                            x.Line.UnitOfMeasure, x.Quantity, x.Price, 0, x.Line.StoreId, x.Line.WorkOrderId, null, x.Line.Id)).ToList());
+                    var o = await PurchasingEndpoints.CreateDraftAsync(db, ctx, input, tk);
+                    foreach (var x in grp) (ordersOf.TryGetValue(x.Request.Id, out var l) ? l : ordersOf[x.Request.Id] = []).Add(o.Number);
+                    list.Add(new { o.Id, o.Number, Supplier = sup.Name, Lines = o.Lines.Count });
+                }
+                await PurchaseRequestSync.SyncAsync(db, requestIds, tk);
+                foreach (var (rid, orders) in ordersOf) await mail.PrOrderedAsync(db, ctx, requests[rid], orders.Distinct().ToList(), tk);
+                await db.SaveChangesAsync(tk);
+                return list;
+            }, ct);
+            return Results.Ok(created);
+        }).RequirePermission(Permissions.PurchasingCreate);
+
+        // The buyer decides the rest won't be ordered.
+        g.MapPost("/{id:guid}/close", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var r = await db.PurchaseRequests.FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (r is null) return Results.NotFound();
+            if (r.Status is not (PurchaseRequestStatus.Approved or PurchaseRequestStatus.PartlyOrdered)) throw new DomainException("Only approved requests can be closed.");
+            r.Status = PurchaseRequestStatus.Closed; r.ClosedAt = DateTimeOffset.UtcNow;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { r.Id, r.Status });
+        }).RequirePermission(Permissions.PurchasingCreate);
+
         g.MapPost("/{id:guid}/comments", async (Guid id, CommentInput i, HttpContext http, CmmsDbContext db, ITenantContext ctx, PermissionService perms, CancellationToken ct) =>
         {
             var me = UserId(http);
@@ -368,5 +434,43 @@ public static class PurchaseRequestEndpoints
             },
             RowVersion = Convert.ToBase64String(r.RowVersion),
         };
+    }
+}
+
+/// <summary>Keeps purchase requests in step with the orders made from them (0.16.0).</summary>
+internal static class PurchaseRequestSync
+{
+    /// <summary>Recomputes each request's status from how many of its lines are on live orders. The caller saves.</summary>
+    public static async Task SyncAsync(CmmsDbContext db, IReadOnlyCollection<Guid> requestIds, CancellationToken ct)
+    {
+        if (requestIds.Count == 0) return;
+        var requests = await db.PurchaseRequests.AllSites().Include(r => r.Lines).Where(r => requestIds.Contains(r.Id)).ToListAsync(ct);
+        var lineIds = requests.SelectMany(r => r.Lines).Select(l => l.Id).ToList();
+        var ordered = await PurchaseRequestEndpoints.OrderedLineIdsAsync(db, lineIds, ct);
+        foreach (var r in requests)
+            r.Status = PurchaseRequestRules.StatusAfterOrdering(r.Status, r.Lines.Count, r.Lines.Count(l => ordered.Contains(l.Id)));
+    }
+
+    /// <summary>After order lines made from requests are deleted or their order cancelled: their requests follow.</summary>
+    public static async Task SyncLinesAsync(CmmsDbContext db, IReadOnlyCollection<Guid> requestLineIds, CancellationToken ct) =>
+        await SyncAsync(db, await db.PurchaseRequestLines.AllSites().Where(l => requestLineIds.Contains(l.Id)).Select(l => l.PurchaseRequestId).Distinct().ToListAsync(ct), ct);
+
+    /// <summary>Order lines made from requests were received: each requester hears about their lines.</summary>
+    public static async Task ReceivedAsync(CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, PurchaseOrder o, IReadOnlyCollection<(Guid LineId, decimal Quantity)> received,
+        CancellationToken ct)
+    {
+        var byRequestLine = received.Select(x => (Line: o.Lines.FirstOrDefault(l => l.Id == x.LineId), x.Quantity))
+            .Where(x => x.Line?.PurchaseRequestLineId is not null).ToList();
+        if (byRequestLine.Count == 0) return;
+        var ids = byRequestLine.Select(x => x.Line!.PurchaseRequestLineId!.Value).ToList();
+        var requestOf = await db.PurchaseRequestLines.AllSites().Where(l => ids.Contains(l.Id)).ToDictionaryAsync(l => l.Id, l => l.PurchaseRequestId, ct);
+        var requestIds = requestOf.Values.Distinct().ToList();
+        var requests = await db.PurchaseRequests.AllSites().AsNoTracking().Include(r => r.Lines).Where(r => requestIds.Contains(r.Id)).ToListAsync(ct);
+        foreach (var r in requests)
+        {
+            var lines = byRequestLine.Where(x => requestOf.GetValueOrDefault(x.Line!.PurchaseRequestLineId!.Value) == r.Id)
+                .Select(x => $"{x.Line!.Description}: {x.Quantity:0.###} {x.Line.UnitOfMeasure}".Trim()).ToList();
+            await mail.PrReceivedAsync(db, ctx, r, lines, ct);
+        }
     }
 }

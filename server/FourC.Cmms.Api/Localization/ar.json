@@ -978,5 +978,12 @@
  "Items arrived for purchase request {0}": "وصلت بنود طلب الشراء {0}",
  "Items you asked for have arrived": "وصلت البنود التي طلبتها",
  "Items": "البنود",
- "Estimate": "التقدير"
+ "Estimate": "التقدير",
+ "Unknown request line.": "بند طلب غير معروف.",
+ "{0} isn't approved.": "{0} غير معتمد.",
+ "{0} line {1} is already on {2}.": "البند {1} من {0} موجود بالفعل في {2}.",
+ "Choose a supplier for {0} line {1}.": "اختر موردًا للبند {1} من {0}.",
+ "{0} line {1}: quantity must be more than 0.": "{0} البند {1}: يجب أن تكون الكمية أكبر من 0.",
+ "{0} line {1}: the price can't be below 0.": "{0} البند {1}: لا يمكن أن يقل السعر عن 0.",
+ "Only approved requests can be closed.": "لا تُغلق إلا الطلبات المعتمدة."
 }

@@ -66,3 +66,17 @@ public class PurchaseRequestComment : Entity, ITenantOwned
     public string? UserName { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
 }
+
+public static class PurchaseRequestRules
+{
+    /// <summary>
+    /// A request's status once <paramref name="orderedLines"/> of its <paramref name="lines"/> are on live orders. Only moves among
+    /// Approved, Partly ordered and Ordered (an order cancelled or deleted can move it back); any other status stays.
+    /// </summary>
+    public static PurchaseRequestStatus StatusAfterOrdering(PurchaseRequestStatus current, int lines, int orderedLines)
+    {
+        if (current is not (PurchaseRequestStatus.Approved or PurchaseRequestStatus.PartlyOrdered or PurchaseRequestStatus.Ordered)) return current;
+        if (orderedLines <= 0) return PurchaseRequestStatus.Approved;
+        return orderedLines >= lines ? PurchaseRequestStatus.Ordered : PurchaseRequestStatus.PartlyOrdered;
+    }
+}

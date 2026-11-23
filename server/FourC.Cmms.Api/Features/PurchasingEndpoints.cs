@@ -16,7 +16,7 @@ public static class PurchasingEndpoints
     public sealed record SupplierInput(string Code, string Name, string? ContactName, string? Email, string? Phone, string? Address, string? City, string? Country,
         string? TaxNumber, string? PaymentTerms, string? Currency, bool IsContractor, string? Notes, bool IsActive = true);
     public sealed record LineInput(Guid? Id, Guid? PartId, string? Description, string? UnitOfMeasure, decimal Quantity, decimal UnitPrice, decimal DiscountPercent,
-        Guid? StoreId, Guid? WorkOrderId, string? AccountCode);
+        Guid? StoreId, Guid? WorkOrderId, string? AccountCode, Guid? PurchaseRequestLineId = null);
     public sealed record PoInput(Guid? SiteId, Guid? SupplierId, DateOnly? OrderDate, DateOnly? ExpectedDate, string? RequestedBy, string? Currency, decimal? ExchangeRate,
         string? PaymentTerms, string? ShippingMethod, string? DeliverTo, string? SupplierQuoteRef, decimal? TaxPercent, decimal ShippingCost, string? Notes,
         List<LineInput> Lines, string? RowVersion = null);
@@ -117,6 +117,7 @@ public static class PurchasingEndpoints
         if (count == 0) throw new DomainException("Enter the quantity received on at least one line.");
         o.Status = o.Lines.All(l => l.QuantityReceived >= l.Quantity) ? PurchaseOrderStatus.Received : PurchaseOrderStatus.PartiallyReceived;
         await mail.PartsReceivedAsync(db, ctx, o, forWork, tk);
+        await PurchaseRequestSync.ReceivedAsync(db, ctx, mail, o, i.Lines.Where(x => x.Quantity > 0).Select(x => (x.LineId, x.Quantity)).ToList(), tk);
         await db.SaveChangesAsync(tk);
         return count;
     }
@@ -194,6 +195,10 @@ public static class PurchasingEndpoints
             var stores = await db.Stores.AsNoTracking().Where(x => storeIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Code, ct);
             var woIds = o.Lines.Where(l => l.WorkOrderId is not null).Select(l => l.WorkOrderId!.Value).ToList();
             var wos = await db.WorkOrders.AsNoTracking().Where(w => woIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => w.Number, ct);
+            var requestLineIds = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
+            var requests = await db.PurchaseRequestLines.AllSites().AsNoTracking().Where(l => requestLineIds.Contains(l.Id))
+                .Select(l => new { l.Id, RequestId = l.PurchaseRequestId, Number = db.PurchaseRequests.AllSites().Where(r => r.Id == l.PurchaseRequestId).Select(r => r.Number).FirstOrDefault() })
+                .ToDictionaryAsync(l => l.Id, ct);
             var receipts = await db.StockTransactions.AsNoTracking().Where(t => t.PurchaseOrderId == id && t.Type == StockTransactionType.Receipt).OrderByDescending(t => t.CreatedAt)
                 .Select(t => new { t.Id, t.Date, t.PurchaseOrderLineId, t.Part!.PartNumber, StoreCode = t.Store!.Code, t.Quantity, t.UnitCost, t.Reference, t.BatchNumber, t.CreatedByName }).ToListAsync(ct);
             var mine = await perms.GetAsync(UserId(http));
@@ -211,6 +216,8 @@ public static class PurchasingEndpoints
                     l.Id, l.LineNumber, l.PartId, PartNumber = l.PartId is { } p ? parts.GetValueOrDefault(p)?.PartNumber : null, IsShelfItem = l.PartId is { } p2 && (parts.GetValueOrDefault(p2)?.IsShelfItem ?? false),
                     l.Description, l.UnitOfMeasure, l.Quantity, l.UnitPrice, l.DiscountPercent, l.NetUnitPrice, l.LineTotal, l.QuantityReceived, Outstanding = Math.Max(l.Quantity - l.QuantityReceived, 0),
                     l.StoreId, StoreCode = l.StoreId is { } sid ? stores.GetValueOrDefault(sid) : null, l.WorkOrderId, WorkOrderNumber = l.WorkOrderId is { } wid ? wos.GetValueOrDefault(wid) : null, l.AccountCode,
+                    l.PurchaseRequestLineId,
+                    Request = l.PurchaseRequestLineId is { } rl && requests.GetValueOrDefault(rl) is { } rq ? new { Id = rq.RequestId, rq.Number } : null,
                 }),
                 Totals = new { Subtotal = PurchaseOrderMath.Subtotal(o), Tax = PurchaseOrderMath.Tax(o), o.ShippingCost, Total = PurchaseOrderMath.Total(o), TotalInBase = totalBase },
                 Receipts = receipts,
@@ -248,8 +255,10 @@ public static class PurchasingEndpoints
             var v = await ValidatePoAsync(i, db, ct);
             if (!v.IsValid) return v.Problem();
             if (i.RowVersion is not null) db.Entry(o).Property(x => x.RowVersion).OriginalValue = i.RowVersion.ToVersion();
+            var before = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
             await ApplyPoAsync(db, o, i, ct);
             await db.SaveChangesAsync(ct);
+            if (before.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, before, ct); await db.SaveChangesAsync(ct); }
             return Results.Ok(new { o.Id });
         }).RequirePermission(Permissions.PurchasingCreate);
 
@@ -258,8 +267,10 @@ public static class PurchasingEndpoints
             var o = await db.PurchaseOrders.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (o is null) return Results.NotFound();
             if (o.Status != PurchaseOrderStatus.Draft) throw new DomainException("Only draft purchase orders can be deleted. Cancel it instead.");
+            var requested = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
             db.PurchaseOrders.Remove(o);
             await db.SaveChangesAsync(ct);
+            if (requested.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, requested, ct); await db.SaveChangesAsync(ct); } // their requests: back to order
             return Results.NoContent();
         }).RequirePermission(Permissions.PurchasingCreate);
 
@@ -311,6 +322,8 @@ public static class PurchasingEndpoints
             if (i.Reason.Clean() is not { } reason) return new Validator().Required("reason", i.Reason, "Reason").Problem();
             o.Status = PurchaseOrderStatus.Cancelled; o.CancelledAt = DateTimeOffset.UtcNow; o.CancelReason = reason;
             await db.SaveChangesAsync(ct);
+            var requested = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
+            if (requested.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, requested, ct); await db.SaveChangesAsync(ct); } // their requests: back to order
             return Results.Ok(new { o.Id, o.Status });
         }).RequirePermission(Permissions.PurchasingView);
 
@@ -379,7 +392,7 @@ public static class PurchasingEndpoints
         }).RequirePermission(Permissions.PurchasingCreate);
     }
 
-    private static async Task<PurchaseOrder> CreateDraftAsync(CmmsDbContext db, ITenantContext ctx, PoInput i, CancellationToken ct)
+    internal static async Task<PurchaseOrder> CreateDraftAsync(CmmsDbContext db, ITenantContext ctx, PoInput i, CancellationToken ct)
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var (sequence, prefix) = Numbering.For(settings, await db.Sites.AllSites().AsNoTracking().FirstOrDefaultAsync(s => s.Id == i.SiteId, ct), NumberKind.PurchaseOrder);
@@ -410,6 +423,7 @@ public static class PurchasingEndpoints
             line.LineNumber = n++; line.PartId = x.PartId; line.Description = x.Description.Clean() ?? part?.Name ?? "";
             line.UnitOfMeasure = x.UnitOfMeasure.Clean() ?? part?.UnitOfMeasure; line.Quantity = x.Quantity; line.UnitPrice = x.UnitPrice; line.DiscountPercent = x.DiscountPercent;
             line.StoreId = x.StoreId; line.WorkOrderId = x.WorkOrderId; line.AccountCode = x.AccountCode.Clean();
+            if (x.PurchaseRequestLineId is not null) line.PurchaseRequestLineId = x.PurchaseRequestLineId; // edits keep the line's request (0.16.0)
         }
     }
 
