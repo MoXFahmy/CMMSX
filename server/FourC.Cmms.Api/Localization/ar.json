@@ -1036,5 +1036,13 @@
  "Describe the amendment.": "صِف التعديل.",
  "The value cannot be negative.": "لا يمكن أن تكون القيمة سالبة.",
  "The expected number cannot be negative.": "لا يمكن أن يكون العدد المتوقع سالبًا.",
- "This contract is named on work orders or PMs. Terminate it instead.": "هذا العقد مذكور في أوامر عمل أو صيانة وقائية. أنهِه بدلًا من حذفه."
+ "This contract is named on work orders or PMs. Terminate it instead.": "هذا العقد مذكور في أوامر عمل أو صيانة وقائية. أنهِه بدلًا من حذفه.",
+ "Contract {0} · {1}: last day to stop the renewal is {2}": "العقد {0} · {1}: آخر يوم لإيقاف التجديد هو {2}",
+ "Contract {0} · {1} ends on {2}": "العقد {0} · {1} ينتهي في {2}",
+ "This contract renews itself unless it is stopped": "يتجدد هذا العقد تلقائيًا ما لم يتم إيقافه",
+ "This contract is about to end": "هذا العقد على وشك الانتهاء",
+ "Contract": "العقد",
+ "Ends": "ينتهي",
+ "Last day to stop the renewal": "آخر يوم لإيقاف التجديد",
+ "Open the contract": "فتح العقد"
 }

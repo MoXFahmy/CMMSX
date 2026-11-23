@@ -14,6 +14,9 @@ public sealed record PoFacts(string Number, string? Supplier, string Total, stri
 /// <summary>A purchase request in an e-mail (0.16.0).</summary>
 public sealed record PrFacts(string Number, string? Site, string? RequestedBy, string Lines, string? Estimate);
 
+/// <summary>A contract that needs attention (0.17.0).</summary>
+public sealed record ContractFacts(string Number, string Title, string Company, string? Site, DateOnly End, DateOnly Deadline, bool AutoRenew);
+
 /// <summary>A purchase order as the supplier sees it.</summary>
 public sealed record PoDocument(string Number, string OrderDate, string? ExpectedDate, string? DeliverTo, string? PaymentTerms, string? QuoteRef, string? Contact,
     IReadOnlyList<PoDocumentLine> Lines, IReadOnlyList<(string Label, string Value)> Totals);
@@ -95,6 +98,15 @@ public static class EmailTemplates
 
     private static IEnumerable<(string, string?)> PrLines(PrFacts r) =>
         [("Request", r.Number), ("Site", r.Site), ("Requested by", r.RequestedBy), ("Items", r.Lines), ("Estimate", r.Estimate)];
+
+    /// <summary>The last day to stop an automatic renewal, or the end of a contract that doesn't renew, is near (0.17.0).</summary>
+    public static EmailContent ContractAlert(string org, ContractFacts c, string? link) => Layout(org,
+        c.AutoRenew ? $"Contract {c.Number} · {c.Title}: last day to stop the renewal is {Translator.Date(c.Deadline)}"
+                    : $"Contract {c.Number} · {c.Title} ends on {Translator.Date(c.End)}",
+        c.AutoRenew ? "This contract renews itself unless it is stopped" : "This contract is about to end",
+        [("Contract", $"{c.Number} · {c.Title}"), ("Company", c.Company), ("Site", c.Site), ("Ends", Translator.Date(c.End)),
+         ("Last day to stop the renewal", c.AutoRenew ? Translator.Date(c.Deadline) : null)],
+        null, link, "Open the contract");
 
     public static EmailContent PrSubmitted(string org, PrFacts r, string? link) => Layout(org,
         $"Approve purchase request {r.Number}", "A purchase request is waiting for approval", PrLines(r), null, link, "Review the request");

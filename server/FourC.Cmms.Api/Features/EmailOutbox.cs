@@ -309,6 +309,23 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             "PurchaseRequest", r.Id, ct, siteId: r.SiteId, siteLevel: true);
     }
 
+    /// <summary>
+    /// A contract needs attention (0.17.0): its manager and the organization's contract-alert recipients hear; with neither, everyone who may
+    /// manage contracts. A site's contract only reaches people who may see that site.
+    /// </summary>
+    public async Task ContractAlertAsync(CmmsDbContext db, ITenantContext ctx, FourC.Cmms.Core.Contracts.Contract c, DateOnly deadline, CancellationToken ct)
+    {
+        if (!Available) return;
+        var settings = (await db.Tenants.AsNoTracking().Where(t => t.Id == db.CurrentTenantId).Select(t => t.Settings).FirstAsync(ct));
+        var named = (settings.ContractAlertRecipientIds ?? []).Concat(c.ManagerId is { } m ? [m] : []).Distinct().ToList();
+        var to = named.Count > 0 ? await UsersAsync(db, named, ct) : await UsersWithPermissionAsync(db, Permissions.ContractsManage, ct);
+        var company = await db.Suppliers.AsNoTracking().Where(s => s.Id == c.SupplierId).Select(s => s.Name).FirstOrDefaultAsync(ct) ?? "";
+        var site = c.SiteId is { } sid ? await db.Sites.AllSites().AsNoTracking().Where(s => s.Id == sid).Select(s => s.Name).FirstOrDefaultAsync(ct) : null;
+        var facts = new ContractFacts(c.Number, c.Title, company, site, c.EndDate, deadline, c.AutoRenew);
+        await QueueAsync(db, ctx, EmailEvents.ContractAlert, to, o => EmailTemplates.ContractAlert(o, facts, Link($"/contracts/{c.Id}")), "Contract", c.Id, ct,
+            siteId: c.SiteId, siteLevel: true);
+    }
+
     /// <summary>Approved or returned: the requester hears.</summary>
     public async Task PrDecidedAsync(CmmsDbContext db, ITenantContext ctx, PurchaseRequest r, bool approved, string? reason, CancellationToken ct)
     {

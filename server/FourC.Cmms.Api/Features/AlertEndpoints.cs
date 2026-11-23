@@ -16,7 +16,7 @@ public static class AlertEndpoints
         api.MapGet("/alerts", async (CmmsDbContext db, HttpContext http, PermissionService perms, AccessService access, ITenantContext ctx, CancellationToken ct) =>
         {
             var mine = await perms.GetAsync(Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!));
-            int? overdue = null, myOverdue = null, triage = null, lowStock = null, approvals = null;
+            int? overdue = null, myOverdue = null, triage = null, lowStock = null, approvals = null, contracts = null;
             if (mine.Contains(Permissions.WorkOrdersView))
             {
                 // The same rule as the work order list's "late" filter.
@@ -36,7 +36,11 @@ public static class AlertEndpoints
                 var lists = await MyApprovals.ListsAsync(db, perms, access, Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!), mine, includeSentBack: false, ct);
                 approvals = lists.Requests.Count + lists.Orders.Count;
             }
-            return Results.Ok(new { OverdueWorkOrders = overdue, MyOverdueWorkOrders = myOverdue, RequestsToTriage = triage, PartsBelowReorder = lowStock, WaitingForMyApproval = approvals });
+            if (mine.Contains(Permissions.ContractsView))
+                // Contracts in their alert window (0.17.0), the ones the person's sites let them see.
+                contracts = await ContractEndpoints.NeedingAttention(db.Contracts, await ContractEndpoints.TodayAsync(db, ct)).CountAsync(ct);
+            return Results.Ok(new { OverdueWorkOrders = overdue, MyOverdueWorkOrders = myOverdue, RequestsToTriage = triage, PartsBelowReorder = lowStock, WaitingForMyApproval = approvals,
+                ContractsNeedingAttention = contracts });
         }).WithTags("Alerts").RequireAuthorization();
     }
 }
