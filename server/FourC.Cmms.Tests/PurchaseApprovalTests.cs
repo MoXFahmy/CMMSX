@@ -295,4 +295,26 @@ public class PurchaseApprovalTests(ApiFixture fx) : IClassFixture<ApiFixture>
         }));
         Assert.Equal(2, (await PoAsync(o.Admin, po)).GetProperty("lines").GetArrayLength());
     }
+
+    /// <summary>
+    /// 0.16.1: the second approver on an "any one" level arriving just after the first one signed (as on the CI runner, where it read
+    /// the order before the first signature was saved) is told the step is signed off — never sent down the old single-approver path.
+    /// </summary>
+    [SkippableFact]
+    public async Task Late_second_signature_on_an_any_step_is_told_it_is_signed_off()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var a = await SignerAsync(o);
+        var a2 = await SignerAsync(o);
+        await Ok(await o.Admin.PostAsJsonAsync("/api/approval-levels", new { name = "L1", minAmount = 0, rule = "Any", approverIds = new[] { a.Id, a2.Id } }));
+        var po = await OrderAsync(o.Admin, o, 1000);
+        await Ok(await o.Admin.PostAsync($"/api/purchase-orders/{po}/submit", null));
+        await Ok(await a.Client.PostAsync($"/api/purchase-orders/{po}/approve", null));
+        Assert.Contains("This step is already signed off.", await RefusedAsync(await a2.Client.PostAsync($"/api/purchase-orders/{po}/approve", null)));
+        Assert.Contains("This step is already signed off.", await RefusedAsync(await a2.Client.PostAsJsonAsync($"/api/purchase-orders/{po}/reject", new { reason = "Too late" })));
+        var d = await PoAsync(o.Admin, po);
+        Assert.Equal("Approved", Status(d));
+        Assert.Equal("Maintenance Manager", d.GetProperty("approvedByName").GetString());
+    }
 }
