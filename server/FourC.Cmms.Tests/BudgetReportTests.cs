@@ -129,4 +129,18 @@ public class BudgetReportTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(Total(all), Rows(grouped).Sum(x => N(x, "total")));
         Assert.Equal(150m, Total(await ReportAsync(o.Admin, "maintenance-costs", $"&costCentreId={prod}")));
     }
+
+    [SkippableFact]
+    public async Task Technician_grouping_follows_the_cost_centre_filter()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var prod = await CostCentreAsync(o.Admin, "PROD", "Production");
+        var other = await CostCentreAsync(o.Admin, "FAC", "Facilities");
+        await LabourAsync(o, await AssetAsync(o.Admin, o.Site, "Press", costCentre: prod), 2, "E1");
+        await LabourAsync(o, await AssetAsync(o.Admin, o.Site, "Boiler", costCentre: other), 4, "E2");
+        var r = await ReportAsync(o.Admin, "maintenance-costs", $"&groupBy=technician&costCentreId={prod}");
+        Assert.Equal(100m, r.GetProperty("summary").EnumerateArray().First().GetProperty("value").GetDecimal());
+        Assert.Equal(100m, Rows(r).Sum(x => N(x, "total")));
+    }
 }

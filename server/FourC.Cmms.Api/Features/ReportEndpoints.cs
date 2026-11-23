@@ -107,6 +107,8 @@ public static class ReportEndpoints
             var gb = allowed?.Options?.Any(o => o.Value == groupBy) == true ? groupBy : allowed?.Default as string;
             if (def.Params.Any(p => p.Type == "asset") && assetId is null) throw new FourC.Cmms.Core.Common.DomainException(ChooseAsset);
             if (assetId is { } chosen && def.Params.Any(p => p.Type == "asset") && !await db.Assets.AnyAsync(x => x.Id == chosen, ct)) return Results.NotFound();
+            // A cost centre the person can't see (another site's) can't be reported on.
+            if (costCentreId is { } centre && def.Params.Any(p => p.Type == "costCentre") && !await db.CostCentres.AnyAsync(x => x.Id == centre, ct)) return Results.NotFound();
             var y = year ?? Today.Year;
             if (def.Params.Any(p => p.Type == "year") && y is < 2000 or > 2100) throw new FourC.Cmms.Core.Common.DomainException(ChooseYear);
             var a = new ReportArgs(f, t, siteId, gb, Math.Clamp(days ?? 180, 1, 3650), assetId, y, components == true, costCentreId);
@@ -716,7 +718,7 @@ public static class ReportEndpoints
             "site" => dims[l.WoId].Site, "type" => dims[l.WoId].Type, "trade" => dims[l.WoId].Trade, "team" => dims[l.WoId].Team, "category" => dims[l.WoId].Category,
             "month" => $"{l.Y:0000}-{l.M:00}", "costCentre" => dims[l.WoId].CostCentre, _ => dims[l.WoId].Asset,
         };
-        var grouped = a.GroupBy == "technician" ? await ByTechnicianAsync(db, a, ct) : lines.GroupBy(Key).Select(g => Row(("group", a.GroupBy == "month" ? MonthLabel(int.Parse(g.Key[..4]), int.Parse(g.Key[5..])) : g.Key), ("sortKey", g.Key),
+        var grouped = a.GroupBy == "technician" ? await ByTechnicianAsync(db, wos, a, ct) : lines.GroupBy(Key).Select(g => Row(("group", a.GroupBy == "month" ? MonthLabel(int.Parse(g.Key[..4]), int.Parse(g.Key[5..])) : g.Key), ("sortKey", g.Key),
             ("labor", R2(g.Sum(x => x.Labor))), ("parts", R2(g.Sum(x => x.Parts))), ("other", R2(g.Sum(x => x.Other))), ("contractor", R2(g.Sum(x => x.Contractor))),
             ("total", R2(g.Sum(x => x.Total))),
             ("workOrders", g.Select(x => x.WoId).Distinct().Count()), ("hours", R2(g.Sum(x => x.Hours)))));
@@ -774,9 +776,10 @@ public static class ReportEndpoints
     }
 
     /// <summary>Maintenance costs by technician (0.14.0): each person's labour hours and cost and the work orders they logged hours on; parts and other costs aren't per person.</summary>
-    private static async Task<IEnumerable<Dictionary<string, object?>>> ByTechnicianAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
+    /// <summary>Labour by technician over the report's work orders (its site and cost-centre filters already applied).</summary>
+    private static async Task<IEnumerable<Dictionary<string, object?>>> ByTechnicianAsync(CmmsDbContext db, IQueryable<WorkOrder> wos, ReportArgs a, CancellationToken ct)
     {
-        var labour = await (from l in db.WorkOrderLabor.AsNoTracking() join w in Wo(db, a) on l.WorkOrderId equals w.Id
+        var labour = await (from l in db.WorkOrderLabor.AsNoTracking() join w in wos on l.WorkOrderId equals w.Id
                             where l.WorkDate >= a.From && l.WorkDate <= a.To
                             select new { l.EmployeeId, l.WorkOrderId, Cost = l.Hours * l.Rate + l.OvertimeHours * l.OvertimeRate, Hours = l.Hours + l.OvertimeHours }).ToListAsync(ct);
         var ids = labour.Select(l => l.EmployeeId).Distinct().ToList();

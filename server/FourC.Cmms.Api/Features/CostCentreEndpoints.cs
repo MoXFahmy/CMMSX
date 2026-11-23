@@ -106,7 +106,7 @@ public static class CostCentreEndpoints
         await db.CostCentres.AllSites().AnyAsync(x => x.ParentId == id, ct)
         || await db.Locations.AllSites().AnyAsync(x => x.CostCentreId == id, ct) || await db.Assets.AllSites().AnyAsync(x => x.CostCentreId == id, ct)
         || await db.WorkRequests.AllSites().AnyAsync(x => x.CostCentreId == id, ct) || await db.PmSchedules.AllSites().AnyAsync(x => x.CostCentreId == id, ct)
-        || await db.WorkOrders.AllSites().AnyAsync(x => x.CostCentreId == id, ct) || await db.StockTransactions.AnyAsync(x => x.CostCentreId == id, ct)
+        || await db.WorkOrders.AllSites().AnyAsync(x => x.CostCentreId == id, ct) || await db.StockTransactions.AllSites().AnyAsync(x => x.CostCentreId == id, ct)
         || await db.Budgets.AnyAsync(x => x.CostCentreId == id, ct);
 
     private static async Task<Validator> CheckAsync(CmmsDbContext db, CostCentreInput i, CostCentre? existing, CancellationToken ct)

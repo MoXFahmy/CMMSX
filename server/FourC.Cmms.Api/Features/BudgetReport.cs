@@ -26,23 +26,40 @@ public static class BudgetReport
         var own = new Dictionary<(Guid?, int, int), Figures>();
         Figures At(Guid? cc, int y, int m) => own.TryGetValue((cc, y, m), out var f) ? f : own[(cc, y, m)] = new Figures();
 
+        // A cost centre's figures are whole (every site), but cost with no cost centre counts only at the viewer's own sites:
+        // the work orders and direct issues the viewer can see.
+        async Task<HashSet<Guid>> SeenAsync(IEnumerable<Guid> workOrderIds)
+        {
+            var seen = new HashSet<Guid>();
+            foreach (var chunk in workOrderIds.Distinct().Chunk(1000))
+                seen.UnionWith(await db.WorkOrders.AsNoTracking().Where(w => chunk.Contains(w.Id)).Select(w => w.Id).ToListAsync(ct));
+            return seen;
+        }
+
         var lines = await CostLinesAsync(db, db.WorkOrders.AllSites().AsNoTracking(), a.From, a.To, ct);
         var woIds = lines.Select(l => l.WoId).Distinct().ToList();
         var centreOf = new Dictionary<Guid, Guid?>();
         foreach (var chunk in woIds.Chunk(1000))
             foreach (var w in await db.WorkOrders.AllSites().AsNoTracking().Where(w => chunk.Contains(w.Id)).Select(w => new { w.Id, w.CostCentreId }).ToListAsync(ct))
                 centreOf[w.Id] = w.CostCentreId;
+        var seenWithout = await SeenAsync(woIds.Where(id => centreOf.GetValueOrDefault(id) is null));
         foreach (var l in lines)
         {
-            var f = At(centreOf.GetValueOrDefault(l.WoId), l.Y, l.M);
+            var cc = centreOf.GetValueOrDefault(l.WoId);
+            if (cc is null && !seenWithout.Contains(l.WoId)) continue;
+            var f = At(cc, l.Y, l.M);
             f.Labor += l.Labor; f.Parts += l.Parts; f.Contractor += l.Contractor; f.Other += l.Other;
         }
 
-        var direct = await db.StockTransactions.AsNoTracking()
+        IQueryable<StockTransaction> Direct(IQueryable<StockTransaction> q) => q.AsNoTracking()
             .Where(t => t.WorkOrderId == null && t.LocationId != null && (t.Type == StockTransactionType.Issue || t.Type == StockTransactionType.Return)
-                        && t.Date >= a.From && t.Date <= a.To)
+                        && t.Date >= a.From && t.Date <= a.To);
+        var direct = await Direct(db.StockTransactions.AllSites()).Where(t => t.CostCentreId != null)
             .GroupBy(t => new { t.CostCentreId, t.Date.Year, t.Date.Month })
             .Select(g => new { g.Key.CostCentreId, g.Key.Year, g.Key.Month, Amount = g.Sum(t => -t.Quantity * t.UnitCost) }).ToListAsync(ct);
+        direct.AddRange(await Direct(db.StockTransactions).Where(t => t.CostCentreId == null)
+            .GroupBy(t => new { t.CostCentreId, t.Date.Year, t.Date.Month })
+            .Select(g => new { g.Key.CostCentreId, g.Key.Year, g.Key.Month, Amount = g.Sum(t => -t.Quantity * t.UnitCost) }).ToListAsync(ct));
         foreach (var d in direct) At(d.CostCentreId, d.Year, d.Month).Direct += d.Amount;
 
         // Committed: the open part of approved order lines for work orders, dated by the order's expected date, else its order date.
@@ -51,9 +68,10 @@ public static class BudgetReport
                           join w in db.WorkOrders.AllSites().AsNoTracking() on l.WorkOrderId equals w.Id
                           where (o.Status == PurchaseOrderStatus.Approved || o.Status == PurchaseOrderStatus.PartiallyReceived) && l.Quantity > l.QuantityReceived
                                 && (o.ExpectedDate ?? o.OrderDate) >= a.From && (o.ExpectedDate ?? o.OrderDate) <= a.To
-                          select new { w.CostCentreId, Day = o.ExpectedDate ?? o.OrderDate, l.Quantity, l.QuantityReceived, l.UnitPrice, l.DiscountPercent, o.ExchangeRate })
+                          select new { WoId = w.Id, w.CostCentreId, Day = o.ExpectedDate ?? o.OrderDate, l.Quantity, l.QuantityReceived, l.UnitPrice, l.DiscountPercent, o.ExchangeRate })
             .ToListAsync(ct);
-        foreach (var c in open)
+        var seenOpen = await SeenAsync(open.Where(c => c.CostCentreId is null).Select(c => c.WoId));
+        foreach (var c in open.Where(c => c.CostCentreId is not null || seenOpen.Contains(c.WoId)))
             At(c.CostCentreId, c.Day.Year, c.Day.Month).Committed +=
                 Math.Round((c.Quantity - c.QuantityReceived) * Math.Round(c.UnitPrice * (1 - c.DiscountPercent / 100m), 4) * c.ExchangeRate, 2);
 
@@ -108,12 +126,14 @@ public static class BudgetReport
         Figures total;
         if (a.GroupBy == "month")
         {
-            HashSet<Guid>? scope = a.CostCentreId is { } c ? Subtree(c) : null;
+            // The chosen cost centre with its children, else every cost centre the viewer sees (with theirs) and cost with none.
+            var scope = a.CostCentreId is { } c ? Subtree(c) : visible.SelectMany(v => Subtree(v.Id)).ToHashSet();
+            var withNone = a.CostCentreId is null;
             total = new Figures();
             for (var m = firstMonth; m <= lastMonth; m++)
             {
                 int y = m / 12, mo = m % 12 + 1;
-                var f = Sum(k => k.Y == y && k.M == mo && (scope is null || (k.Cc is { } id && scope.Contains(id))));
+                var f = Sum(k => k.Y == y && k.M == mo && (k.Cc is { } id ? scope.Contains(id) : withNone));
                 rows.Add(RowOf(new DateOnly(y, mo, 1).ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture), null, f));
                 total.Add(f);
             }
