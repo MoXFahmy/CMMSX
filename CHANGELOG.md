@@ -4,6 +4,13 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.16.2] - 2026-11-23
+
+### Fixed
+- **Re-order proposal:** people who may raise purchase requests but not orders can now tick lines and request them.
+  Before, they saw the "Request purchase" button but no tick boxes. The hint above the list now says the lines become
+  draft purchase requests, one per site.
+
 ## [0.16.1] - 2026-11-23
 
 Ships 0.16.0 (purchase requests and approval levels), which never went live: its build check failed on the fix below.

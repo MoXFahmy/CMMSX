@@ -963,6 +963,7 @@
     "received": "Received",
     "total": "Total",
     "proposalHint": "Store levels at or below their re-order point, net of quantities already on order. Select lines to raise draft orders — one per supplier.",
+    "proposalHintRequest": "Store levels at or below their re-order point, net of quantities already on order. Select lines to raise draft purchase requests — one per site.",
     "createOrders": "Create {{count}} draft orders · {{total}}",
     "createOrders_one": "Create 1 draft order · {{total}}",
     "selectLines": "Select lines to order",
