@@ -57,7 +57,7 @@ export const P = {
   assetsView: 'assets.view', assetsCreate: 'assets.create', assetsEdit: 'assets.edit', assetsDelete: 'assets.delete',
   assetsTransfer: 'assets.transfer', usersManage: 'users.manage', settingsManage: 'settings.manage',
   peopleView: 'people.view', peopleManage: 'people.manage', requestsView: 'requests.view', requestsCreate: 'requests.create', requestsManage: 'requests.manage',
-  woView: 'workorders.view', woCreate: 'workorders.create', woEdit: 'workorders.edit', woExecute: 'workorders.execute', woClose: 'workorders.close', woDelete: 'workorders.delete',
+  woView: 'workorders.view', woCreate: 'workorders.create', woEdit: 'workorders.edit', woExecute: 'workorders.execute', woClose: 'workorders.close', woDelete: 'workorders.delete', woLogForOthers: 'workorders.logForOthers',
   pmView: 'pm.view', pmManage: 'pm.manage', pmGenerate: 'pm.generate', metersRecord: 'meters.record',
   inventoryView: 'inventory.view', inventoryManage: 'inventory.manage', inventoryTransact: 'inventory.transact',
   purchasingView: 'purchasing.view', purchasingCreate: 'purchasing.create', purchasingApprove: 'purchasing.approve', purchasingReceive: 'purchasing.receive',

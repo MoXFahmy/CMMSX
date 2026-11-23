@@ -9,9 +9,22 @@ export type BoardJob = {
   day?: string | null; plannedStart?: string | null; dueAt?: string | null; sla: SlaView; estimatedHours?: number | null; assignees: BoardAssignee[];
   /** 0.10.0: when the work may be done, whether its day misses every window, and "only while stopped". */
   accessWindows?: AccessWindow[] | null; outsideWindows?: boolean; onlyWhenStopped?: boolean;
+  /** 0.19.0: the expected stop of the work template it came from. */
+  expectedStopHours?: number | null;
 };
-/** hours: working hours on each weekday, Sunday first (0.9.0; older servers send none). */
-export type BoardPerson = { id: string; name: string; tradeIds?: string[]; hours?: number[] };
+/** Time away or extra time that applies to a person on a day (0.19.0). */
+export type Slot = { typeId: string; name: string; color?: string | null; kind: 'Away' | 'Extra'; hours?: number | null };
+/** A person's day (0.19.0): hours available after time away and extra time, planned hours from all their visible work. */
+export type BoardDay = { day: string; available: number; planned: number; slots: Slot[] };
+/** hours: working hours on each weekday, Sunday first (0.9.0; older servers send none); days: each day of the range (0.19.0). */
+export type BoardPerson = { id: string; name: string; tradeIds?: string[]; hours?: number[]; days?: BoardDay[] };
+/** A contractor visit (0.19.0): a contractor line on active work, on its visit day, else the work order's day. */
+export type Visit = {
+  lineId: string; workOrderId: string; number: string; title: string; siteId: string; companyId: string; companyName: string;
+  categoryId?: string | null; categoryName?: string | null; person?: string | null; plannedHours: number; hoursDone: number;
+  doneOn?: string | null; plannedOn?: string | null; day?: string | null;
+};
+export type ContractorBoard = { companies: { id: string; name: string }[]; visits: Visit[]; undated: Visit[] };
 /** An upcoming PM occurrence (not generated yet). */
 export type ForecastRow = {
   date: string; id: string; code: string; name: string; assetId?: string | null; assetNumber?: string | null; siteId: string; siteName: string;
@@ -102,23 +115,38 @@ export function cellsByAsset(data: Board): Map<string, Map<string, (BoardJob | F
   return cells;
 }
 
-/** A person's working hours on a day (yyyy-MM-dd): from their weekly pattern, else the organization's hours per day. */
+/** A person's day from the server (0.19.0), if it sent one. */
+export function dayOf(data: Board, personId: string, day: string): BoardDay | undefined {
+  return data.people.find((p) => p.id === personId)?.days?.find((d) => d.day === day);
+}
+
+/** A person's hours available on a day: the server's (after time away and extra time), else their weekly pattern, else the organization's. */
 export function capacityOn(data: Board, personId: string, day: string): number {
+  const fromServer = dayOf(data, personId, day);
+  if (fromServer) return fromServer.available;
   const week = data.people.find((p) => p.id === personId)?.hours;
   return week?.length === 7 ? week[new Date(`${day}T00:00:00Z`).getUTCDay()] : data.capacityHours;
 }
 
-/** person → day → planned hours (jobs on the board only; the trays count in nobody's day). */
-export function load(data: Board): Map<string, Map<string, number>> {
-  const hours = new Map<string, Map<string, number>>();
-  for (const j of data.jobs) {
-    if (!j.day) continue;
-    for (const a of j.assignees) {
-      if (a.hours == null) continue;
-      const r = hours.get(a.employeeId) ?? new Map<string, number>();
-      r.set(j.day, (r.get(j.day) ?? 0) + a.hours);
-      hours.set(a.employeeId, r);
-    }
-  }
-  return hours;
+/** A person's planned hours on a day, from the server: all their visible work, whatever the board's filters (0.19.0). */
+export function plannedOn(data: Board, personId: string, day: string): number {
+  return dayOf(data, personId, day)?.planned ?? 0;
 }
+
+/** company → day → visits; visits without a day stay out (they are in the tray). */
+export function cellsByContractor(visits: Visit[]): Map<string, Map<string, Visit[]>> {
+  const cells = new Map<string, Map<string, Visit[]>>();
+  for (const v of visits) if (v.day) add(cells, v.companyId, v.day, v);
+  return cells;
+}
+
+/**
+ * What dropping a visit does (0.19.0): another day of its company's row sets its visit day (the tray clears it); another company's
+ * row is refused, since the company is changed on the work order. Null when nothing changes.
+ */
+export function planVisitMove(v: Visit, toCompany: string, toDay: string): { lineId: string; day: string | null } | 'other-company' | null {
+  if (toCompany !== v.companyId && toDay !== TRAY) return 'other-company';
+  const day = toDay === TRAY ? null : toDay;
+  return day === (v.day ?? null) ? null : { lineId: v.lineId, day };
+}
+
