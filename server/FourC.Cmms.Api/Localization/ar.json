@@ -1063,5 +1063,14 @@
  "Nothing has been received from this supplier yet.": "لم يُستلم شيء من هذا المورّد بعد.",
  "The last price was paid in another currency.": "دُفع آخر سعر بعملة أخرى.",
  "Discount must be between 0 and 100%.": "يجب أن يكون الخصم بين 0 و100%.",
- "Your part no. {0}": "رقم القطعة لديكم {0}"
+ "Your part no. {0}": "رقم القطعة لديكم {0}",
+ "Choose a person or a team, not both.": "اختر شخصًا أو فريقًا، وليس كليهما.",
+ "The end can't be before the start.": "لا يمكن أن تكون النهاية قبل البداية.",
+ "Use at most 366 days.": "استخدم 366 يومًا على الأكثر.",
+ "Hours must be more than 0 and at most 24.": "يجب أن تكون الساعات أكثر من 0 و24 على الأكثر.",
+ "Extra time needs hours.": "الوقت الإضافي يحتاج إلى عدد ساعات.",
+ "Choose an active type.": "اختر نوعًا نشطًا.",
+ "Choose an active team.": "اختر فريقًا نشطًا.",
+ "This type is in use. Make it inactive instead.": "هذا النوع مستخدم. اجعله غير نشط بدلًا من ذلك.",
+ "Choose time away or extra time.": "اختر وقت غياب أو وقتًا إضافيًا."
 }
