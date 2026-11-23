@@ -73,13 +73,19 @@ New `SupplierPart` per part and supplier company (Supplier role) — one row per
 
 - **Supplier's part number** (optional), **pack**: a name (e.g. "Box of 100", defaults to the part's unit) and **pieces
   per pack** (the part's own unit; more than 0, decimals allowed, e.g. a 2.5 L can of a part kept in litres; default 1).
-- **Price per pack** in the company's currency (the company's currency, else the base currency), **discount %**,
-  **lead time** in days (optional, else the part's), **minimum order** in packs (default 1), notes, active.
-- **Last price paid** per pack (net of discount), its currency and date — set by receipts, never typed.
+- **Price per pack** (optional) in the row's **own currency** — set when the row is made to the company's currency, else
+  the base currency, and kept when the company's currency changes later *(my call: a price never changes meaning on its
+  own)*. **Discount %**, **lead time** in days (optional, else the part's), **minimum order** in packs (default 1), notes,
+  active.
+- **Last price paid**: the gross price per pack, its discount, currency and date — set by receipts, never typed. When the
+  received line's pack differs from the row's (the row was edited, or the line had no row), the price is converted
+  through pieces to the row's pack *(my call)*.
 - The **preferred supplier** stays the part's `PreferredSupplierId` *(my call)*: the star on a catalogue row sets it, and
-  choosing a preferred supplier on the part (form or import) without a row for it creates a row with a pack of 1 at the
-  part's last purchase price (else standard price) and its lead time.
-- "**Use last price**" copies the last price paid into the price (same currency only).
+  choosing a preferred supplier on the part (form or import) without a row for it creates a row with a pack of 1 and the
+  part's lead time. Its price is the part's last purchase price (else standard price) **only when the company's currency
+  is the base currency** — those are base-currency prices per piece; otherwise the price is left empty *(my call)*.
+- "**Use last price**" copies the last price paid **and its discount** into the row (only when the currencies match),
+  so the discount is never applied twice *(my call)*.
 - Edited with *Manage parts* (`inventory.manage`) or *Manage suppliers* (`suppliers.manage`); seen with *View inventory*.
 
 ### Order lines in packs
@@ -96,9 +102,10 @@ New `SupplierPart` per part and supplier company (Supplier role) — one row per
 On the order form, in the re-order proposal's "Create orders" and in "order from requests":
 
 - A part line on an order whose supplier has an **active catalogue row** for the part takes its pack, supplier part
-  number, discount and lead time, and its **price per pack when the order's currency is the company's currency** (another
-  currency: price left as before, with a hint). The quantity becomes **packs = pieces needed ÷ pieces per pack, rounded up,
-  at least the minimum**.
+  number, discount and lead time, and its **price per pack when the row has a price in the order's currency**. Otherwise
+  the line still takes the pack (the supplier ships packs), priced at today's price per piece (last purchase price, else
+  average cost) **× pieces per pack**, with a hint that it isn't the catalogue price *(my call: the line's value stays
+  right in pieces)*. The quantity becomes **packs = pieces needed ÷ pieces per pack, rounded up, at least the minimum**.
 - **No catalogue row**: as today (pack of 1 in the part's unit, last purchase price else average cost).
 - **Changing the supplier on a draft order** refills its part lines from the new supplier's catalogue, keeping at least
   the pieces each line had *(my call; the web form does it and shows what changed)*.
@@ -109,16 +116,18 @@ On the order form, in the re-order proposal's "Create orders" and in "order from
 - Received quantity is in the line's order unit (decimals allowed, e.g. half a box) on the web and the phone.
 - **Stock + received × pieces per unit**, at **unit cost = net price × exchange rate ÷ pieces per unit** (4 decimals);
   average cost and the part's last purchase price (per piece, base currency) follow as today.
-- The catalogue row of the order's supplier records the **last price paid** (net price per pack, order currency) and the
-  receipt date. No catalogue row: nothing more is recorded.
+- The catalogue row of the order's supplier records the **last price paid** (gross price per pack and discount, order
+  currency, receipt date; converted through pieces when the packs differ). No catalogue row: nothing more is recorded.
 
 ### Quantities that must be pieces
 
 Every reader of order quantities that means the part's own unit multiplies by pieces per unit:
 
 - "On order" on the parts list, the part page, the re-order proposal and the inventory report;
-- a purchase request line's **ordered** and **received** amounts and the request status that follows them;
-- the request's "lines to order" (what is still to order, in pieces).
+- a purchase request line's **ordered** and **received** amounts shown on the request (in pieces, the request's unit).
+
+Requests keep 0.16.0's rule *(my call)*: a request line is ordered when it is on a live order line, whatever the
+quantity; status, "lines to order" and the "already on PO-…" refusal are unchanged. Only the amounts shown convert.
 
 ### Re-order proposal and requests
 
@@ -127,8 +136,8 @@ Every reader of order quantities that means the part's own unit multiplies by pi
   suppliers first with their pack and price.
 - The suggested quantity stays in pieces (needs); each line shows what it becomes ("→ 1 Box of 100") and the value at the
   catalogue price. Creating orders converts to whole packs.
-- Order from requests: request lines (pieces) become order lines in whole packs of the chosen supplier; a request line
-  ordered beyond its quantity (pack rounding) counts as fully ordered.
+- Order from requests: request lines (pieces) become order lines in whole packs of the chosen supplier (one order line per
+  request line, as today).
 
 ### Screens
 
@@ -145,8 +154,11 @@ Every reader of order quantities that means the part's own unit multiplies by pi
 ### Data (one migration, `SupplierCatalogue`)
 
 - New `SupplierParts` (unique part × supplier); `PurchaseOrderLines` + `PackSize` (default 1) and `SupplierPartNumber`.
-- Data: a catalogue row for every part with a preferred supplier (pack of 1 in the part's unit, price = last purchase
-  price else standard price, the part's lead time).
+- Data: a catalogue row for every part with a preferred supplier (pack of 1 in the part's unit, the part's lead time,
+  currency = the company's else the base currency; price = last purchase price else standard price only when that
+  currency is the base currency, else empty).
+- The **4CSQL importer** creates a catalogue row for every part–supplier pair it reads (`stock_code_supplier` has no
+  prices: pack of 1, no price); the first stays the preferred supplier as today *(my call)*.
 
 ### Builder's questions, settled *(my calls)*
 
@@ -156,7 +168,7 @@ Every reader of order quantities that means the part's own unit multiplies by pi
 - **Deleting a company** with catalogue rows but no purchasing history deletes its rows; a part with orders can't be
   deleted as today.
 - **Free-text lines** have no catalogue: pieces per unit 1.
-- **Currency**: the catalogue price is in the company's currency; no conversion anywhere.
+- **Currency**: each row keeps its own currency; a price is used only on orders in that currency; no conversion anywhere.
 
 ## Review focus (most likely to bite)
 
