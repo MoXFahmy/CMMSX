@@ -1581,7 +1581,8 @@
     "recordVisit": "Record the visit",
     "visitRecorded": "Visit recorded.",
     "visitHours": "{{done}} of {{planned}} h done",
-    "notesForPlanners": "Planners write the notes; add yours as a comment on the work order."
+    "notesForPlanners": "Planners write the notes; add yours as a comment on the work order.",
+    "followsWorkOrder": "This visit has no date of its own: it follows the work order's day. Change that day on the work order."
   },
   "import": {
     "title": "Import data",

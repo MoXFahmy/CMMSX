@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dayRows } from './day';
+import { dayRows, myDayChanges } from './day';
 import type { QueuedChange } from './outbox';
 import type { TechBundle, TechJob } from './types';
 
@@ -33,5 +33,18 @@ describe('My day on the phone (0.19.0)', () => {
   });
   it('has no available hours without the server\'s figure', () => {
     expect(dayRows(bundle([job('a', day)]), day, []).available).toBeNull();
+  });
+});
+
+describe('My day counts what was sent and leaves out what failed (0.19.0)', () => {
+  const day = '2026-11-23';
+  it('ignores a change that failed to send', () => {
+    const failed = { ...queued('a', day, 4), state: 'failed' as const };
+    expect(dayRows(bundle([job('a', day)]), day, [failed]).hours).toBe(0);
+  });
+  it('takes sent changes not yet in the copy, then those waiting, without the failed ones', () => {
+    const sent = [{ ...queued('a', day, 2), clientId: 's1', sentAt: 1 }];
+    const waiting = [queued('b', day, 1), { ...queued('c', day, 3), clientId: 'f1', state: 'failed' as const }];
+    expect(myDayChanges(sent, waiting).map((c) => c.clientId)).toEqual(['s1', 'c-b']);
   });
 });

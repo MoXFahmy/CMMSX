@@ -1,4 +1,5 @@
 import type { QueuedChange } from './outbox';
+import type { SentChange } from './overlay';
 import type { TechBundle } from './types';
 
 export type DayRow = { workOrderId: string; number: string; title: string; hours: number; overtimeHours: number; readOnly: boolean };
@@ -26,7 +27,8 @@ export function dayRows(bundle: TechBundle, date: string, pending: QueuedChange[
     rows.set(l.workOrderId, { ...r, hours: r.hours + l.hours, overtimeHours: r.overtimeHours + l.overtimeHours });
   }
   for (const c of pending) {
-    if (c.type !== 'labor.add' || !c.workOrderId) continue;
+    // A change that failed to send never reaches the server, so it doesn't count.
+    if (c.type !== 'labor.add' || !c.workOrderId || c.state === 'failed') continue;
     const p = c.payload as { workDate?: string; hours?: number; overtimeHours?: number; employeeId?: string };
     if (p.workDate !== date || (p.employeeId && p.employeeId !== bundle.employeeId)) continue;
     const job = bundle.jobs.find((j) => j.id === c.workOrderId);
@@ -38,4 +40,12 @@ export function dayRows(bundle: TechBundle, date: string, pending: QueuedChange[
   return {
     rows: list, hours: round(list.reduce((a, r) => a + r.hours, 0)), overtimeHours: round(list.reduce((a, r) => a + r.overtimeHours, 0)), available,
   };
+}
+
+/**
+ * The changes My day adds on top of the phone's copy: those already sent but not yet in it (oldest first), then those waiting —
+ * never one that failed to send.
+ */
+export function myDayChanges(sent: SentChange[], queue: QueuedChange[]): QueuedChange[] {
+  return [...sent, ...queue].filter((c) => c.state !== 'failed');
 }

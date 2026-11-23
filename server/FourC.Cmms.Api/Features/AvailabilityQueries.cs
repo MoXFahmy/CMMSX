@@ -25,8 +25,9 @@ public static class AvailabilityQueries
         var settings = await SlaQueries.SettingsAsync(db, ct);
         var people = await db.Employees.AsNoTracking().Where(e => ids.Contains(e.Id)).Select(e => new { e.Id, e.SiteIds, e.WorkingHours }).ToListAsync(ct);
         var siteHours = (await db.Sites.AllSites().AsNoTracking().Select(s => new { s.Id, s.Settings }).ToListAsync(ct)).ToDictionary(s => s.Id, s => s.Settings.WorkingHours);
-        // A team entry applies to whoever is a member when it is read.
-        var teams = (await db.Teams.AsNoTracking().Select(t => new { t.Id, t.MemberIds }).ToListAsync(ct)).Where(t => t.MemberIds.Any(ids.Contains)).ToList();
+        // A team entry applies to whoever is a member when it is read — every team, whatever sites the viewer sees, so a person's
+        // hours are the same for everyone looking.
+        var teams = (await db.Teams.AllSites().AsNoTracking().Select(t => new { t.Id, t.MemberIds }).ToListAsync(ct)).Where(t => t.MemberIds.Any(ids.Contains)).ToList();
         var teamIds = teams.Select(t => t.Id).ToList();
         var entries = await db.AvailabilityEntries.AsNoTracking().Include(e => e.Type)
             .Where(e => e.From <= to && e.To >= from && ((e.EmployeeId != null && ids.Contains(e.EmployeeId.Value)) || (e.TeamId != null && teamIds.Contains(e.TeamId.Value))))

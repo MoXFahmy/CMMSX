@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { IconChevronLeft, IconChevronRight, IconPlus } from '@tabler/icons-react';
 import { fmtQty } from '@/components/utils';
-import { dayRows } from './day';
+import { dayRows, myDayChanges } from './day';
 import { HoursModal } from './JobPage';
 import { useTech } from './useTech';
 
@@ -13,11 +13,12 @@ import { useTech } from './useTech';
 export function DayPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { bundle, queue, add } = useTech();
+  const { bundle, queue, sent, add } = useTech();
   const today = dayjs().format('YYYY-MM-DD');
   const [date, setDate] = useState(today);
   const [adding, setAdding] = useState<string | null>(null);
-  const day = useMemo(() => (bundle ? dayRows(bundle, date, queue) : null), [bundle, date, queue]);
+  // Hours sent but not yet in the phone's copy still count (as on the job's page); hours that failed to send don't.
+  const day = useMemo(() => (bundle ? dayRows(bundle, date, myDayChanges(sent, queue)) : null), [bundle, date, sent, queue]);
   const oldest = dayjs().subtract(30, 'day').format('YYYY-MM-DD');
   if (!bundle || !day) return null;
   return (

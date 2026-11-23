@@ -32,7 +32,8 @@ export function AvailabilityPage() {
   const editable = can(P.peopleManage) || can(P.woEdit);
   const [filters, setFilters] = useState({ employeeId: params.get('employeeId'), teamId: null as string | null, typeId: null as string | null, from: dayjs().format('YYYY-MM-DD') });
   const { data: types } = useQuery({ queryKey: ['availability-types'], queryFn: () => get<AvailabilityType[]>('/availability-types') });
-  const { data: people } = useQuery({ queryKey: ['employees', 'lookup'], queryFn: () => get<{ id: string; fullName: string }[]>('/employees/lookup') });
+  // The people an entry can be for: those of the user's sites, or everywhere.
+  const { data: people } = useQuery({ queryKey: ['availability-people'], queryFn: () => get<{ id: string; fullName: string }[]>('/availability/people') });
   const { data: teams } = useTeams(null);
   const { data, isFetching } = useQuery({
     queryKey: ['availability', filters], placeholderData: (prev) => prev,

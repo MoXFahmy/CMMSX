@@ -18,7 +18,7 @@ import { SlaText } from '@/components/SlaBadge';
 import { notifyError } from '@/components/utils';
 import { generateNow } from '@/pages/pm/generateNow';
 import { useTeams, teamOptions } from '@/components/teams';
-import { capacityOn, cellsByAsset, cellsByPerson, dayOf, days as dayList, isPm, NO_ASSET, plannedOn, planMove, TRAY, UNASSIGNED, type Board, type BoardDay, type BoardJob, type ForecastRow, type Move } from './board';
+import { canAssignToMe, capacityOn, cellsByAsset, cellsByPerson, dayOf, days as dayList, isPm, NO_ASSET, plannedOn, planMove, TRAY, UNASSIGNED, type Board, type BoardDay, type BoardJob, type ForecastRow, type Move } from './board';
 import { ContractorBoard } from './ContractorBoard';
 
 /** When the last drag ended: the click that ends a drag must not also open the work order. */
@@ -92,6 +92,8 @@ export function PlanningPage() {
   const byPerson = useMemo(() => (data ? cellsByPerson(data) : new Map()), [data]);
   const byAsset = useMemo(() => (data ? cellsByAsset(data) : new Map()), [data]);
   const canAddAway = can(P.peopleManage) || can(P.woEdit);
+  // Assign to me: someone who may do the work and is an employee (0.19.0).
+  const takeAs = can(P.woExecute) ? me?.employeeId ?? null : null;
   const rows: { key: string; label: string }[] = view === 'person'
     ? [{ key: UNASSIGNED, label: t('planning.unassigned') }, ...(data?.people ?? []).map((p) => ({ key: p.id, label: p.name }))]
     : assetRows(data, t('planning.noAsset'));
@@ -144,7 +146,7 @@ export function PlanningPage() {
                     hours={view === 'person' && r.key !== UNASSIGNED ? (d: string) => plannedOn(data, r.key, d) : undefined}
                     day={view === 'person' && r.key !== UNASSIGNED ? (d: string) => dayOf(data, r.key, d) : undefined}
                     addAway={view === 'person' && r.key !== UNASSIGNED && canAddAway ? `/planning/availability?employeeId=${r.key}&add=1` : undefined}
-                    canEdit={canEdit} canTake={can(P.woExecute)} onChanged={() => void refetch()} onGenerated={() => void refetch()} canGenerate={can(P.pmGenerate)} showStop={view === 'asset'} />
+                    canEdit={canEdit} takeAs={takeAs} onChanged={() => void refetch()} onGenerated={() => void refetch()} canGenerate={can(P.pmGenerate)} showStop={view === 'asset'} />
                 ))}
               </Box>
             </ScrollArea>
@@ -168,9 +170,9 @@ function assetRows(data: Board | undefined, noAsset: string) {
   return [...seen.entries()].map(([key, label]) => ({ key, label })).sort((a, b) => (a.key === NO_ASSET ? 1 : b.key === NO_ASSET ? -1 : a.label.localeCompare(b.label)));
 }
 
-function Row({ label, rowKey, days, cells, capacity, hours, day, addAway, canEdit, canTake, onChanged, canGenerate, onGenerated, showStop }: {
+function Row({ label, rowKey, days, cells, capacity, hours, day, addAway, canEdit, takeAs, onChanged, canGenerate, onGenerated, showStop }: {
   label: string; rowKey: string; days: string[]; cells?: Map<string, (BoardJob | ForecastRow)[]>; capacity?: (day: string) => number; hours?: (day: string) => number;
-  day?: (day: string) => BoardDay | undefined; addAway?: string; canEdit: boolean; canTake: boolean; onChanged: () => void; canGenerate: boolean; onGenerated: () => void;
+  day?: (day: string) => BoardDay | undefined; addAway?: string; canEdit: boolean; takeAs: string | null; onChanged: () => void; canGenerate: boolean; onGenerated: () => void;
   showStop: boolean;
 }) {
   const { t } = useTranslation();
@@ -183,14 +185,14 @@ function Row({ label, rowKey, days, cells, capacity, hours, day, addAway, canEdi
       </Group>
       {days.map((d) => (
         <Cell key={d} id={`${rowKey}|${d}`} items={cells?.get(d) ?? []} rowKey={rowKey} capacity={capacity?.(d)} hours={hours?.(d)} day={day?.(d)}
-          canEdit={canEdit} canTake={canTake} onChanged={onChanged} canGenerate={canGenerate} onGenerated={onGenerated} showStop={showStop} />
+          canEdit={canEdit} takeAs={takeAs} onChanged={onChanged} canGenerate={canGenerate} onGenerated={onGenerated} showStop={showStop} />
       ))}
     </>
   );
 }
 
-function Cell({ id, items, rowKey, capacity, hours, day, canEdit, canTake, onChanged, canGenerate, onGenerated, showStop }: {
-  id: string; items: (BoardJob | ForecastRow)[]; rowKey: string; capacity?: number; hours?: number; day?: BoardDay; canEdit: boolean; canTake: boolean;
+function Cell({ id, items, rowKey, capacity, hours, day, canEdit, takeAs, onChanged, canGenerate, onGenerated, showStop }: {
+  id: string; items: (BoardJob | ForecastRow)[]; rowKey: string; capacity?: number; hours?: number; day?: BoardDay; canEdit: boolean; takeAs: string | null;
   onChanged: () => void; canGenerate: boolean; onGenerated: () => void; showStop: boolean;
 }) {
   const { t } = useTranslation();
@@ -211,7 +213,7 @@ function Cell({ id, items, rowKey, capacity, hours, day, canEdit, canTake, onCha
       )}
       {items.map((x) => (isPm(x)
         ? <PmCard key={`pm-${x.id}-${x.date}`} pm={x} canGenerate={canGenerate} onGenerated={onGenerated} />
-        : <JobCard key={x.id} job={x} row={rowKey} canEdit={canEdit} canTake={canTake && rowKey === UNASSIGNED} onChanged={onChanged} showStop={showStop} />))}
+        : <JobCard key={x.id} job={x} row={rowKey} canEdit={canEdit} canTake={canAssignToMe(x, rowKey, !!takeAs, takeAs)} onChanged={onChanged} showStop={showStop} />))}
     </Stack>
   );
 }
@@ -241,7 +243,7 @@ function JobCard({ job, row, canEdit, canTake = false, onChanged, showStop = fal
       )}
       {(job.sla.completion === 'Late' || job.sla.completion === 'DueSoon') && <SlaText fz="10px" deadline={job.dueAt} state={job.sla.completion} />}
       {showStop && job.expectedStopHours != null && <Text fz={10} c="red">{t('planning.expectedStop', { hours: job.expectedStopHours })}</Text>}
-      {canTake && job.assignees.length === 0 && (
+      {canTake && (
         <Button size="compact-xs" variant="light" mt={2} onPointerDown={(e) => e.stopPropagation()}
           onClick={async (e) => {
             e.stopPropagation();

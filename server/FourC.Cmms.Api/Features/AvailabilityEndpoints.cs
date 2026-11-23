@@ -95,6 +95,14 @@ public static class AvailabilityEndpoints
                 });
         }).RequirePermission(Permissions.WorkOrdersView);
 
+        // The people an entry can be for: active, and working at one of the viewer's sites (or everywhere).
+        g.MapGet("/people", async (CmmsDbContext db, CancellationToken ct) =>
+        {
+            var visible = await VisiblePeopleAsync(db, ct);
+            return (await db.Employees.AsNoTracking().Where(e => e.IsActive).OrderBy(e => e.FullName).Select(e => new { e.Id, e.FullName }).ToListAsync(ct))
+                .Where(e => visible.Contains(e.Id));
+        }).RequirePermission(Permissions.WorkOrdersView);
+
         // A person's hours per day: the pattern, the hours available and what applies.
         g.MapGet("/hours", async (Guid employeeId, DateOnly from, DateOnly to, CmmsDbContext db, CancellationToken ct) =>
         {
@@ -119,7 +127,7 @@ public static class AvailabilityEndpoints
         {
             if (!await MayEditAsync(http, perms)) return Results.Forbid();
             var e = await db.AvailabilityEntries.FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (e is null) return Results.NotFound();
+            if (e is null || !await SeesAsync(db, e, ct)) return Results.NotFound();
             var v = await CheckEntryAsync(db, i, e, ct);
             if (!v.IsValid) return v.Problem();
             Apply(e, i);
@@ -130,7 +138,7 @@ public static class AvailabilityEndpoints
         {
             if (!await MayEditAsync(http, perms)) return Results.Forbid();
             var e = await db.AvailabilityEntries.FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (e is null) return Results.NotFound();
+            if (e is null || !await SeesAsync(db, e, ct)) return Results.NotFound();
             db.AvailabilityEntries.Remove(e);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
@@ -164,10 +172,16 @@ public static class AvailabilityEndpoints
         var type = await db.AvailabilityTypes.AsNoTracking().FirstOrDefaultAsync(t => t.Id == i.TypeId, ct);
         if (type is null || (!type.IsActive && existing?.TypeId != i.TypeId)) v.Add("typeId", "Choose an active type.");
         else if (type.Kind == AvailabilityKind.Extra && i.Hours is null) v.Add("hours", "Extra time needs hours.");
-        if (i.EmployeeId is { } p && existing?.EmployeeId != p && !await db.Employees.AnyAsync(e => e.Id == p && e.IsActive, ct)) v.Add("employeeId", "Choose an active person.");
+        // Only people the user can see (their sites, or everywhere); someone elsewhere reads as unknown.
+        if (i.EmployeeId is { } p && existing?.EmployeeId != p
+            && (!await db.Employees.AnyAsync(e => e.Id == p && e.IsActive, ct) || !(await VisiblePeopleAsync(db, ct)).Contains(p))) v.Add("employeeId", "Choose an active person.");
         if (i.TeamId is { } t && existing?.TeamId != t && !await db.Teams.AnyAsync(x => x.Id == t && x.IsActive, ct)) v.Add("teamId", "Choose an active team.");
         return v;
     }
+
+    /// <summary>Whether the user can see an entry's person or team (their sites' teams, and people of their sites or everywhere).</summary>
+    private static async Task<bool> SeesAsync(CmmsDbContext db, AvailabilityEntry e, CancellationToken ct) =>
+        e.EmployeeId is { } p ? (await VisiblePeopleAsync(db, ct)).Contains(p) : e.TeamId is { } t && await db.Teams.AnyAsync(x => x.Id == t, ct);
 
     private static void Apply(AvailabilityEntry e, AvailabilityEntryInput i)
     {

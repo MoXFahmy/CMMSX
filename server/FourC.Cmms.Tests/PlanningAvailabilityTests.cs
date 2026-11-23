@@ -125,4 +125,23 @@ public class PlanningAvailabilityTests(ApiFixture fx) : IClassFixture<ApiFixture
         var b = await BoardAsync(o.Admin, NextSunday, NextSunday);
         Assert.Equal(4m, b.GetProperty("jobs").EnumerateArray().Single(j => Id(j) == job).GetProperty("expectedStopHours").GetDecimal());
     }
+
+    [SkippableFact]
+    public async Task Available_hours_are_the_same_for_a_site_limited_viewer()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var types = await TypesAsync(o.Admin);
+        var siteB = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/sites", new { code = "SB", name = "Site B", isActive = true })));
+        // A technician who works everywhere, in a team of site B with a whole-day training.
+        var tech = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/employees", new
+        {
+            code = "T", fullName = "Roaming tech", isContractor = false, siteIds = Array.Empty<Guid>(), workingHours = SundayToThursday,
+        })));
+        var team = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/teams", new { code = "TB", name = "Team B", siteId = siteB, memberIds = new[] { tech } })));
+        await AddEntryAsync(o.Admin, Entry(types["TRAIN"], team: team, from: NextSunday));
+        var (planner, _, _) = await UserAsync(fx, o.Admin, "Planner A", ["workorders.view", "workorders.edit"], siteIds: [o.Site]);
+        Assert.Equal(0m, DayOf(await BoardAsync(o.Admin, NextSunday, NextSunday), tech, NextSunday).GetProperty("available").GetDecimal());
+        Assert.Equal(0m, DayOf(await BoardAsync(planner, NextSunday, NextSunday), tech, NextSunday).GetProperty("available").GetDecimal());
+    }
 }

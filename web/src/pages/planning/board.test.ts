@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { capacityOn, cellsByAsset, cellsByContractor, cellsByPerson, dayOf, days, NO_ASSET, plannedOn, planMove, planVisitMove, TRAY, UNASSIGNED, type Board, type BoardJob, type Visit } from './board';
+import { capacityOn, cellsByAsset, canAssignToMe, cellsByContractor, cellsByPerson, dayOf, days, NO_ASSET, plannedOn, planMove, planVisitMove, recordVisitBody, TRAY, UNASSIGNED, type Board, type BoardJob, type Visit } from './board';
 
 const sla = { response: 'None', completion: 'OnTrack' } as const;
 const job = (id: string, day: string | null, assignees: { employeeId: string; hours?: number | null }[], assetId?: string): BoardJob => ({
@@ -135,6 +135,34 @@ describe('contractor visits (0.19.0)', () => {
     expect(planVisitMove(v, 'lift', '2026-11-26')).toEqual({ lineId: 'a', day: '2026-11-26' });
     expect(planVisitMove(v, 'fire', '2026-11-26')).toBe('other-company');
     expect(planVisitMove(v, 'lift', '2026-11-24')).toBeNull();
-    expect(planVisitMove(v, 'lift', TRAY)).toEqual({ lineId: 'a', day: null });
+    expect(planVisitMove({ ...v, plannedOn: '2026-11-24' }, 'lift', TRAY)).toEqual({ lineId: 'a', day: null });
+    // Its day is the work order's: there is no visit date to take away, so the tray says why instead of "moved".
+    expect(planVisitMove(v, 'lift', TRAY)).toBe('work-order-day');
+  });
+});
+
+describe('Assign to me (0.19.0)', () => {
+  it('shows only on unassigned work for someone who can do it and is an employee', () => {
+    const j = job('a', '2026-11-24', []);
+    expect(canAssignToMe(j, UNASSIGNED, true, 'emp')).toBe(true);
+    expect(canAssignToMe(j, UNASSIGNED, true, null)).toBe(false); // an account not linked to an employee
+    expect(canAssignToMe(j, UNASSIGNED, false, 'emp')).toBe(false);
+    expect(canAssignToMe(j, 'ann', true, 'emp')).toBe(false);
+    expect(canAssignToMe(job('b', '2026-11-24', [{ employeeId: 'ann' }]), UNASSIGNED, true, 'emp')).toBe(false);
+  });
+});
+
+describe('recording a contractor visit (0.19.0)', () => {
+  const line = { id: 'l', supplierId: 'c', companyName: 'Lift', categoryId: 'k', contactId: null, personName: 'Omar', plannedHours: 4, hoursDone: 0,
+    doneOn: null, rate: 150, cost: 0, plannedCost: 600, notes: 'Bring the hoist', plannedOn: '2026-11-26' };
+  it('never stamps a done date on a visit with no hours done', () => {
+    expect(recordVisitBody(line, { hours: 0, doneOn: '2026-11-23', person: null, notes: 'Changed' }).doneOn).toBeNull();
+    expect(recordVisitBody({ ...line, doneOn: '2026-11-20', hoursDone: 2 }, { hours: 0, doneOn: null, person: null, notes: null }).doneOn).toBeNull();
+  });
+  it('sends the whole line with only what was recorded changed', () => {
+    expect(recordVisitBody(line, { hours: 3, doneOn: '2026-11-23', person: 'Sami', notes: null })).toEqual({
+      supplierId: 'c', categoryId: 'k', contactId: null, personName: 'Sami', plannedHours: 4, rate: null, hoursDone: 3, doneOn: '2026-11-23',
+      notes: 'Bring the hoist', plannedOn: '2026-11-26',
+    });
   });
 });

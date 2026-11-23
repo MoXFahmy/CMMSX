@@ -10,7 +10,7 @@ import { DndContext, PointerSensor, useDraggable, useDroppable, useSensor, useSe
 import { get, post, put } from '@/api/client';
 import type { ContractorCategory, ContractorLine, SupplierLookup, WorkOrderDetail } from '@/api/types';
 import { fmtQty, notifyError, toIsoDate } from '@/components/utils';
-import { cellsByContractor, planVisitMove, TRAY, type ContractorBoard as Board, type Visit } from './board';
+import { cellsByContractor, planVisitMove, recordVisitBody, TRAY, type ContractorBoard as Board, type Visit } from './board';
 
 let lastDragEnd = 0;
 
@@ -41,6 +41,7 @@ export function ContractorBoard({ from, to, days, siteId, companyId, categoryId,
     if (!v || !target) return;
     const plan = planVisitMove(v, target[0], target[1]);
     if (plan === 'other-company') { notifications.show({ color: 'orange', message: t('planning.otherCompany') }); return; }
+    if (plan === 'work-order-day') { notifications.show({ color: 'orange', message: t('planning.followsWorkOrder') }); return; }
     if (!plan) return;
     try { await post('/planning/visit', plan); notifications.show({ color: 'teal', message: t('planning.visitMoved') }); } catch (err) { notifyError(err); }
     await refetch();
@@ -137,7 +138,8 @@ function RecordVisit({ visit, canEdit, canExec, onClose, onSaved }: { visit: Vis
   const { data: w } = useQuery({ queryKey: ['work-order', visit.workOrderId], queryFn: () => get<WorkOrderDetail>(`/work-orders/${visit.workOrderId}`) });
   const line: ContractorLine | undefined = w?.contractors.find((l) => l.id === visit.lineId);
   const [hours, setHours] = useState<number | ''>(visit.hoursDone || '');
-  const [doneOn, setDoneOn] = useState<Date | string | null>(visit.doneOn ?? dayjs().format('YYYY-MM-DD'));
+  // Empty until hours are done: a done date on a visit with no hours would read as done (the server dates hours done today when empty).
+  const [doneOn, setDoneOn] = useState<Date | string | null>(visit.doneOn ?? null);
   const [person, setPerson] = useState<string | null>(null);
   const [notes, setNotes] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -145,11 +147,8 @@ function RecordVisit({ visit, canEdit, canExec, onClose, onSaved }: { visit: Vis
     if (!line) return;
     setBusy(true);
     try {
-      await put(`/work-orders/${visit.workOrderId}/contractors/${line.id}`, {
-        supplierId: line.supplierId, categoryId: line.categoryId ?? null, contactId: line.contactId ?? null,
-        personName: line.contactId ? null : person ?? line.personName ?? null, plannedHours: line.plannedHours, rate: null,
-        hoursDone: hours === '' ? 0 : hours, doneOn: toIsoDate(doneOn), notes: notes ?? line.notes ?? null, plannedOn: line.plannedOn ?? null,
-      });
+      await put(`/work-orders/${visit.workOrderId}/contractors/${line.id}`,
+        recordVisitBody(line, { hours: hours === '' ? 0 : hours, doneOn: toIsoDate(doneOn), person, notes }));
       notifications.show({ color: 'teal', message: t('planning.visitRecorded') });
       onSaved();
     } catch (e) { notifyError(e); } finally { setBusy(false); }

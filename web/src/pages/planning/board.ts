@@ -1,4 +1,4 @@
-import type { AccessWindow, PmScheduleType, SlaView, WorkOrderStatus, WorkPriority } from '@/api/types';
+import type { AccessWindow, ContractorLine, PmScheduleType, SlaView, WorkOrderStatus, WorkPriority } from '@/api/types';
 
 /** hours: the person's planned hours, else their share of the estimate; plannedHours: their own planned hours only. */
 export type BoardAssignee = { employeeId: string; hours?: number | null; plannedHours?: number | null };
@@ -144,9 +144,27 @@ export function cellsByContractor(visits: Visit[]): Map<string, Map<string, Visi
  * What dropping a visit does (0.19.0): another day of its company's row sets its visit day (the tray clears it); another company's
  * row is refused, since the company is changed on the work order. Null when nothing changes.
  */
-export function planVisitMove(v: Visit, toCompany: string, toDay: string): { lineId: string; day: string | null } | 'other-company' | null {
+export function planVisitMove(v: Visit, toCompany: string, toDay: string): { lineId: string; day: string | null } | 'other-company' | 'work-order-day' | null {
   if (toCompany !== v.companyId && toDay !== TRAY) return 'other-company';
+  // Its day is the work order's (no visit date of its own): there is nothing for the tray to clear.
+  if (toDay === TRAY && !v.plannedOn) return v.day ? 'work-order-day' : null;
   const day = toDay === TRAY ? null : toDay;
   return day === (v.day ?? null) ? null : { lineId: v.lineId, day };
 }
 
+/** "Assign to me" (0.19.0): on work nobody is on yet, for someone who may do the work and is an employee. */
+export function canAssignToMe(job: BoardJob, row: string, canExecute: boolean, employeeId?: string | null): boolean {
+  return row === UNASSIGNED && canExecute && !!employeeId && job.assignees.length === 0;
+}
+
+/**
+ * The contractor line as "Record the visit" saves it (0.19.0): the whole line, with only the hours done, the date, the person and
+ * the notes recorded. A visit with no hours done gets no done date.
+ */
+export function recordVisitBody(line: ContractorLine, input: { hours: number; doneOn: string | null; person: string | null; notes: string | null }) {
+  return {
+    supplierId: line.supplierId, categoryId: line.categoryId ?? null, contactId: line.contactId ?? null,
+    personName: line.contactId ? null : input.person ?? line.personName ?? null, plannedHours: line.plannedHours, rate: null,
+    hoursDone: input.hours, doneOn: input.hours > 0 ? input.doneOn : null, notes: input.notes ?? line.notes ?? null, plannedOn: line.plannedOn ?? null,
+  };
+}

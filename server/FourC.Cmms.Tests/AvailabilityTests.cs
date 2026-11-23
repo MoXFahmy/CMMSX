@@ -120,4 +120,24 @@ public class AvailabilityTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(0m, days[D(sunday.AddDays(5))].GetProperty("pattern").GetDecimal());
         Assert.Equal(6m, days[D(sunday.AddDays(5))].GetProperty("available").GetDecimal());
     }
+
+    [SkippableFact]
+    public async Task Availability_entries_are_written_only_for_people_the_user_can_see()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var types = await TypesAsync(o.Admin);
+        var siteB = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/sites", new { code = "SB", name = "Site B", isActive = true })));
+        var there = await PersonAsync(o.Admin, "B", "Site B tech", siteB);
+        var here = await PersonAsync(o.Admin, "A", "Site A tech", o.Site);
+        var (planner, _, _) = await UserAsync(fx, o.Admin, "Planner A", ["workorders.view", "workorders.edit"], siteIds: [o.Site]);
+        Assert.Contains("Choose an active person.", await Refused(await planner.PostAsJsonAsync("/api/availability", Entry(types["HOL"], person: there, from: NextSunday))));
+        var theirs = await AddEntryAsync(o.Admin, Entry(types["HOL"], person: there, from: NextSunday));
+        Assert.Equal(HttpStatusCode.NotFound, (await planner.PutAsJsonAsync($"/api/availability/{theirs}", Entry(types["SICK"], person: there, from: NextSunday))).StatusCode);
+        Assert.Equal(HttpStatusCode.NotFound, (await planner.DeleteAsync($"/api/availability/{theirs}")).StatusCode);
+        var people = (await Ok(await planner.GetAsync("/api/availability/people"))).EnumerateArray().Select(Id).ToList();
+        Assert.Contains(here, people);
+        Assert.DoesNotContain(there, people);
+        await AddEntryAsync(planner, Entry(types["HOL"], person: here, from: NextSunday));
+    }
 }
