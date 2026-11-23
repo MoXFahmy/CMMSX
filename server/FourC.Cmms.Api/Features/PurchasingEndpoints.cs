@@ -463,7 +463,8 @@ public static class PurchasingEndpoints
                     var lines = new List<(LineInput Line, int? Lead)>();
                     foreach (var r in grp)
                     {
-                        var f = await CatalogueEndpoints.FillAsync(db, r.Part, sup.Id, currency, r.Quantity, r.UnitPrice, tk);
+                        // The proposal page has no price box: its price per piece only stands in when the catalogue has no price (0.18.0).
+                        var f = await CatalogueEndpoints.FillAsync(db, r.Part, sup.Id, currency, r.Quantity, null, tk, fallbackPerPiece: r.UnitPrice);
                         lines.Add((new LineInput(null, r.Part.Id, r.Part.Name, f.UnitOfMeasure, f.Quantity, f.UnitPrice, f.DiscountPercent, r.Store.Id, null, null,
                             PackSize: f.PackSize, SupplierPartNumber: f.SupplierPartNumber), f.LeadTimeDays));
                     }

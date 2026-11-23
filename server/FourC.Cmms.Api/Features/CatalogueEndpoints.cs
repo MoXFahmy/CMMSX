@@ -15,7 +15,8 @@ public static class CatalogueEndpoints
     public sealed record SupplierPartInput(Guid SupplierId, string? SupplierPartNumber, string? PackName, decimal PackSize, decimal? PackPrice, string? Currency,
         decimal DiscountPercent, int? LeadTimeDays, int MinPacks, string? Notes, bool IsActive = true, bool IsPreferred = false);
 
-    public sealed record FillRequest(Guid PartId, decimal Pieces);
+    /// <summary>A part line to fill: the pieces it needs and its current price per piece, kept when the catalogue has no price for it.</summary>
+    public sealed record FillRequest(Guid PartId, decimal Pieces, decimal? PerPiece = null);
     public sealed record FillInput(Guid SupplierId, string? Currency, List<FillRequest> Lines);
     /// <summary>An order line as the catalogue fills it: its order unit and pieces per unit, whole packs, price and discount.</summary>
     public sealed record FilledLine(Guid PartId, string UnitOfMeasure, decimal PackSize, decimal Quantity, decimal UnitPrice, decimal DiscountPercent,
@@ -116,7 +117,7 @@ public static class CatalogueEndpoints
             var parts = await db.Parts.AsNoTracking().Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
             var filled = new List<FilledLine>();
             foreach (var l in i.Lines)
-                if (parts.GetValueOrDefault(l.PartId) is { } part) filled.Add(await FillAsync(db, part, i.SupplierId, currency, l.Pieces, null, ct));
+                if (parts.GetValueOrDefault(l.PartId) is { } part) filled.Add(await FillAsync(db, part, i.SupplierId, currency, l.Pieces, null, ct, fallbackPerPiece: l.PerPiece is > 0 ? l.PerPiece : null));
             return Results.Ok(filled);
         }).WithTags("Supplier catalogue").RequirePermission(Permissions.PurchasingCreate);
 
@@ -139,15 +140,24 @@ public static class CatalogueEndpoints
         if (existing is not null) return existing;
         var company = await db.Suppliers.AsNoTracking().Where(s => s.Id == supplierId).Select(s => new { s.Currency }).FirstOrDefaultAsync(ct);
         if (company is null) return null;
-        var baseCurrency = await BaseCurrencyAsync(db, ct);
-        var currency = company.Currency.Clean()?.ToUpperInvariant() ?? baseCurrency;
-        var row = new SupplierPart
-        {
-            PartId = part.Id, SupplierId = supplierId, PackName = part.UnitOfMeasure, PackSize = 1, Currency = currency, LeadTimeDays = part.LeadTimeDays, MinPacks = 1,
-            PackPrice = currency == baseCurrency ? part.LastPurchasePrice ?? part.StandardPrice : null,
-        };
+        var row = PreferredRow(part, supplierId, company.Currency, await BaseCurrencyAsync(db, ct));
         db.SupplierParts.Add(row);
         return row;
+    }
+
+    /// <summary>
+    /// A new row for the part's preferred supplier (no database): a pack of 1 in the part's unit and its lead time, in the company's currency
+    /// (else the base currency), at the part's last purchase price, else standard price, only in the base currency and only when more than 0.
+    /// </summary>
+    internal static SupplierPart PreferredRow(Part part, Guid supplierId, string? companyCurrency, string baseCurrency)
+    {
+        var currency = companyCurrency.Clean()?.ToUpperInvariant() ?? baseCurrency.ToUpperInvariant();
+        static decimal? Priced(decimal? v) => v is > 0 ? v : null;
+        return new SupplierPart
+        {
+            PartId = part.Id, SupplierId = supplierId, PackName = part.UnitOfMeasure, PackSize = 1, Currency = currency, LeadTimeDays = part.LeadTimeDays, MinPacks = 1,
+            PackPrice = currency == baseCurrency.ToUpperInvariant() ? Priced(part.LastPurchasePrice) ?? Priced(part.StandardPrice) : null,
+        };
     }
 
     /// <summary>

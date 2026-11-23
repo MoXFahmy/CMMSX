@@ -545,4 +545,22 @@ public class EmailTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(50, sent.Count);
         Assert.Equal(50, sent.Select(m => m.To).Distinct().Count());
     }
+
+    [SkippableFact]
+    public async Task Supplier_part_number_goes_out_with_the_order()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (admin, _, _, _, site) = await OrgAsync();
+        var s = Addr("supplier");
+        var po = Id(await Ok(await admin.PostAsJsonAsync("/api/purchase-orders", new
+        {
+            siteId = site, supplierId = await SupplierAsync(admin, s),
+            lines = new[] { new { description = "Bearing", unitOfMeasure = "Box of 100", quantity = 1m, unitPrice = 45m, discountPercent = 0m, packSize = 100m, supplierPartNumber = "6205-2RS" } },
+        })));
+        await Ok(await admin.PostAsync($"/api/purchase-orders/{po}/approve", null));
+        await Ok(await admin.PostAsync($"/api/purchase-orders/{po}/send", null));
+        await Sender.RunOnceAsync();
+        var m = Assert.Single(fx.Emails.To(s));
+        Assert.Contains("6205-2RS", m.Html);
+    }
 }

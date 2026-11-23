@@ -141,4 +141,18 @@ public class CatalogueTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Contains(await RowsAsync(viewer, o.Part), r => r.GetProperty("supplierId").GetGuid() == skf);
         Assert.Equal(HttpStatusCode.Forbidden, (await viewer.PostAsJsonAsync($"/api/parts/{o.Part}/suppliers", Row(o.Supplier, 1, 1))).StatusCode);
     }
+
+    [SkippableFact]
+    public async Task A_part_without_any_price_gets_a_row_without_a_price()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var skf = await SupplierAsync(o.Admin, "SKF");
+        var part = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/parts", new
+        {
+            partNumber = "NO-PRICE", name = "No price yet", unitOfMeasure = "EA", standardPrice = 0m, isCritical = false, isShelfItem = false, allowNegativeStock = false, preferredSupplierId = skf,
+        })));
+        var made = Assert.Single(await RowsAsync(o.Admin, part));
+        Assert.Equal(JsonValueKind.Null, made.GetProperty("packPrice").ValueKind);
+    }
 }

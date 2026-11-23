@@ -103,7 +103,7 @@ namespace FourC.Cmms.Core.Data.Migrations
                 INSERT INTO SupplierParts (Id, TenantId, PartId, SupplierId, PackName, PackSize, PackPrice, Currency, DiscountPercent, LeadTimeDays, MinPacks,
                                            IsActive, CreatedAt, IsDeleted)
                 SELECT NEWID(), p.TenantId, p.Id, s.Id, p.UnitOfMeasure, 1,
-                       CASE WHEN x.Currency = x.BaseCurrency THEN COALESCE(p.LastPurchasePrice, p.StandardPrice) END,
+                       CASE WHEN x.Currency = x.BaseCurrency THEN COALESCE(NULLIF(p.LastPurchasePrice, 0), NULLIF(p.StandardPrice, 0)) END,
                        x.Currency, 0, p.LeadTimeDays, 1, 1, SYSDATETIMEOFFSET(), 0
                 FROM Parts p
                 JOIN Suppliers s ON s.Id = p.PreferredSupplierId AND s.TenantId = p.TenantId

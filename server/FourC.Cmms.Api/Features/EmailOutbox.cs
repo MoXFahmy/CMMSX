@@ -372,7 +372,8 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         // Built in the e-mail's language (dates and labels), which for a supplier is the organization's.
         PoDocument Doc() => new(po.Number, Translator.Date(po.OrderDate), po.ExpectedDate is { } ed ? Translator.Date(ed) : null, po.DeliverTo, po.PaymentTerms,
             po.SupplierQuoteRef, po.RequestedBy,
-            [.. po.Lines.OrderBy(l => l.LineNumber).Select(l => new PoDocumentLine(l.LineNumber, l.Description,
+            [.. po.Lines.OrderBy(l => l.LineNumber).Select(l => new PoDocumentLine(l.LineNumber,
+                l.SupplierPartNumber is { Length: > 0 } theirs ? $"{l.Description} — {Translator.T($"Your part no. {theirs}")}" : l.Description,
                 $"{l.Quantity:0.###} {l.UnitOfMeasure}".Trim(), Money(l.NetUnitPrice), Money(l.LineTotal)))],
             [(Translator.T("Subtotal"), Money(PurchaseOrderMath.Subtotal(po))), (Translator.T($"Tax ({po.TaxPercent:0.##}%)"), Money(PurchaseOrderMath.Tax(po))),
              (Translator.T("Shipping"), Money(po.ShippingCost)), (Translator.T("Total"), Money(PurchaseOrderMath.Total(po)))]);

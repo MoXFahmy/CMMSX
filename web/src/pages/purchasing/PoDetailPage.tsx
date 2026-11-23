@@ -288,7 +288,7 @@ export function PoPrintPage() {
       </Group>
       <Table withTableBorder withColumnBorders verticalSpacing={6}>
         <Table.Thead><Table.Tr><Table.Th w={36}>#</Table.Th><Table.Th>{t('inv.partNumber')}</Table.Th><Table.Th>{t('common.description')}</Table.Th><Table.Th ta="right">{t('inv.quantity')}</Table.Th><Table.Th>{t('inv.unit')}</Table.Th><Table.Th ta="right">{t('po.unitPrice')}</Table.Th><Table.Th ta="right">{t('po.discount')}</Table.Th><Table.Th ta="right">{t('po.lineTotal')}</Table.Th></Table.Tr></Table.Thead>
-        <Table.Tbody>{o.lines.map((l) => <Table.Tr key={l.id}><Table.Td>{l.lineNumber}</Table.Td><Table.Td>{l.partNumber ?? ''}</Table.Td><Table.Td>{l.description}</Table.Td><Table.Td ta="right">{fmtQty(l.quantity)}</Table.Td><Table.Td>{l.unitOfMeasure}</Table.Td>
+        <Table.Tbody>{o.lines.map((l) => <Table.Tr key={l.id}><Table.Td>{l.lineNumber}</Table.Td><Table.Td>{l.partNumber ?? ''}</Table.Td><Table.Td>{l.description}{l.supplierPartNumber && <Text fz="xs">{t('catalogue.yourNumber', { number: l.supplierPartNumber })}</Text>}</Table.Td><Table.Td ta="right">{fmtQty(l.quantity)}</Table.Td><Table.Td>{l.unitOfMeasure}</Table.Td>
           <Table.Td ta="right">{fmtPrice(l.unitPrice, o.currency)}</Table.Td><Table.Td ta="right">{l.discountPercent ? `${l.discountPercent}%` : ''}</Table.Td><Table.Td ta="right">{fmtPrice(l.lineTotal, o.currency)}</Table.Td></Table.Tr>)}</Table.Tbody>
       </Table>
       <Group justify="flex-end" mt="md"><Stack gap={2} w={280}>

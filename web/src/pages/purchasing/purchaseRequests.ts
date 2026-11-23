@@ -74,3 +74,13 @@ const closed: PurchaseRequestStatus[] = ['Ordered', 'Closed', 'Cancelled'];
 /** Needed before today and not yet ordered, closed or cancelled. Dates are ISO days. */
 export const isLate = (neededBy: string | null | undefined, today: string, status: PurchaseRequestStatus) =>
   !!neededBy && neededBy < today && !closed.includes(status);
+
+/** A row of the "order from requests" dialog. */
+export type OrderRow = { lineId: string; on: boolean; supplierId: string | null; quantity: number | ''; unitPrice: number | ''; estimate: number | null };
+
+/**
+ * The dialog's rows: no price typed, so the supplier's catalogue price, else the request's estimate, prices the order (0.18.0). The estimate
+ * is shown as a hint; a price the buyer types wins.
+ */
+export const orderRows = (lines: OrderableLine[]): OrderRow[] =>
+  lines.map((l) => ({ lineId: l.id, on: true, supplierId: l.part?.preferredSupplierId ?? null, quantity: l.quantity, unitPrice: '', estimate: l.estimatedUnitPrice ?? null }));

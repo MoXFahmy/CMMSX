@@ -127,4 +127,44 @@ public class CatalogueOrderTests(ApiFixture fx) : IClassFixture<ApiFixture>
         }));
         Assert.Equal(100m, (await Ok(await x.O.Admin.GetAsync($"/api/purchase-orders/{Id(made)}"))).GetProperty("lines")[0].GetProperty("packSize").GetDecimal());
     }
+
+    [SkippableFact]
+    public async Task Proposal_orders_take_the_catalogue_price_over_the_pages_price()
+    {
+        Skip.IfNot(fx.Enabled);
+        var x = await SetupAsync(fx);
+        // The proposal page has no price box: it sends today's price per piece, which only stands in when the catalogue has no price.
+        var made = (await Ok(await x.O.Admin.PostAsJsonAsync("/api/purchase-orders/from-proposal", new
+        {
+            lines = new[] { new { partId = x.O.Part, storeId = x.O.Store, quantity = 20m, unitPrice = (decimal?)10m, supplierId = x.Skf } },
+        })))[0];
+        var line = (await Ok(await x.O.Admin.GetAsync($"/api/purchase-orders/{Id(made)}"))).GetProperty("lines")[0];
+        Assert.Equal(45m, line.GetProperty("unitPrice").GetDecimal());
+        Assert.Equal(2m, line.GetProperty("discountPercent").GetDecimal());
+        // A supplier without a catalogue row: the page's price per piece is used.
+        var none = await SupplierAsync(x.O.Admin, "NONE");
+        var plain = (await Ok(await x.O.Admin.PostAsJsonAsync("/api/purchase-orders/from-proposal", new
+        {
+            lines = new[] { new { partId = x.O.Part, storeId = x.O.Store, quantity = 3m, unitPrice = (decimal?)7m, supplierId = none } },
+        })))[0];
+        var plainLine = (await Ok(await x.O.Admin.GetAsync($"/api/purchase-orders/{Id(plain)}"))).GetProperty("lines")[0];
+        Assert.Equal(7m, plainLine.GetProperty("unitPrice").GetDecimal());
+    }
+
+    [SkippableFact]
+    public async Task Fill_keeps_the_lines_own_price_when_the_catalogue_doesnt_apply()
+    {
+        Skip.IfNot(fx.Enabled);
+        var x = await SetupAsync(fx);
+        async Task<JsonElement> Fill(Guid supplier, string? currency, decimal perPiece) =>
+            (await Ok(await x.O.Admin.PostAsJsonAsync("/api/purchase-orders/fill", new { supplierId = supplier, currency, lines = new[] { new { partId = x.O.Part, pieces = 20m, perPiece } } })))[0];
+        // Catalogue price in the order's currency: it wins over the line's price.
+        Assert.Equal(45m, (await Fill(x.Skf, null, 0.7m)).GetProperty("unitPrice").GetDecimal());
+        // Another currency: the pack, at the line's own price per piece.
+        var other = await Fill(x.Skf, "EUR", 0.7m);
+        Assert.Equal(70m, other.GetProperty("unitPrice").GetDecimal());
+        Assert.False(other.GetProperty("cataloguePrice").GetBoolean());
+        // No catalogue row: the line's own price per piece.
+        Assert.Equal(3m, (await Fill(await SupplierAsync(x.O.Admin, "NONE"), null, 3m)).GetProperty("unitPrice").GetDecimal());
+    }
 }

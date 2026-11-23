@@ -1062,5 +1062,6 @@
  "Lead time must be between 0 and 3650 days.": "يجب أن تكون مدة التوريد بين 0 و3650 يومًا.",
  "Nothing has been received from this supplier yet.": "لم يُستلم شيء من هذا المورّد بعد.",
  "The last price was paid in another currency.": "دُفع آخر سعر بعملة أخرى.",
- "Discount must be between 0 and 100%.": "يجب أن يكون الخصم بين 0 و100%."
+ "Discount must be between 0 and 100%.": "يجب أن يكون الخصم بين 0 و100%.",
+ "Your part no. {0}": "رقم القطعة لديكم {0}"
 }

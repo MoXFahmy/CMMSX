@@ -15,7 +15,7 @@ import { PartPicker, useStores } from '@/components/PartPicker';
 import { WorkOrderPicker } from '@/components/WorkOrderPicker';
 import { fmtPrice, fmtQty, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import dayjs from 'dayjs';
-import { piecesOf } from './packs';
+import { perPieceOf, piecesOf, refill } from './packs';
 
 type Line = {
   id?: string; partId: string | null; part?: { id: string; partNumber: string; name: string } | null; description: string; unitOfMeasure: string; quantity: number | '';
@@ -104,15 +104,23 @@ export function PoFormPage() {
     const lines = form.getValues().lines;
     const wanted = lines.map((l, i) => ({ l, i })).filter(({ l, i }) => l.partId && (only === undefined || i === only));
     if (!wanted.length) return;
+    const currency = form.getValues().currency || null;
     try {
-      const filled = await post<FilledLine[]>('/purchase-orders/fill', { supplierId, currency: form.getValues().currency || null,
-        lines: wanted.map(({ l }) => ({ partId: l.partId, pieces: piecesOf(n(l.quantity) || 1, l.packSize) })) });
+      // Each line sends its own price per piece: kept when the new supplier's catalogue has no price for it.
+      const filled = await post<FilledLine[]>('/purchase-orders/fill', { supplierId, currency,
+        lines: wanted.map(({ l }) => ({ partId: l.partId, pieces: piecesOf(n(l.quantity) || 1, l.packSize), perPiece: perPieceOf(l) })) });
+      // An answer for a supplier or currency changed since is dropped; a line is written back only when it is still the same line.
+      if (form.getValues().supplierId !== supplierId || (form.getValues().currency || null) !== currency) return;
+      const changed: string[] = [];
       wanted.forEach(({ l, i }, k) => {
         const f = filled[k];
-        if (!f || f.partId !== l.partId) return;
-        form.setFieldValue(`lines.${i}`, { ...form.getValues().lines[i], unitOfMeasure: f.unitOfMeasure, packSize: f.packSize, quantity: f.quantity, unitPrice: f.unitPrice,
-          discountPercent: f.discountPercent, supplierPartNumber: f.supplierPartNumber ?? '', leadTimeDays: f.leadTimeDays ?? null, notCatalogue: f.packSize !== 1 && !f.cataloguePrice });
+        const cur = form.getValues().lines[i];
+        if (!f || f.partId !== l.partId || !cur || cur.partId !== l.partId || (cur.id ?? null) !== (l.id ?? null)) return;
+        const r = refill(cur, f);
+        form.setFieldValue(`lines.${i}`, r.line);
+        if (r.changed) changed.push(cur.part?.partNumber ?? cur.description);
       });
+      if (only === undefined && changed.length) notifySuccess(t('catalogue.refilled', { parts: changed.join(', ') }));
       const x = form.getValues();
       const lead = Math.max(0, ...x.lines.map((l) => l.leadTimeDays ?? 0));
       if (!x.expectedDate && lead > 0 && x.orderDate) form.setFieldValue('expectedDate', dayjs(x.orderDate).add(lead, 'day').toDate());

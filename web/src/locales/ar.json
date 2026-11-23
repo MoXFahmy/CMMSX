@@ -2382,7 +2382,8 @@
     "viewRequests": "الطلبات",
     "viewLines": "بنود للطلب",
     "orderSelected": "طلب المحدد ({{count}})",
-    "noLinesToOrder": "لا توجد بنود معتمدة تنتظر الطلب."
+    "noLinesToOrder": "لا توجد بنود معتمدة تنتظر الطلب.",
+    "priceFromCatalogue": "سعر الكتالوج"
   },
   "approvals": {
     "levels": "مستويات الاعتماد",
@@ -2631,6 +2632,8 @@
     "noPartsSupplied": "لا توجد قطع في كتالوج هذا المورد بعد.",
     "theirNumber": "رقمهم: {{number}}",
     "notCataloguePrice": "ليس سعر الكتالوج: تقدير من تكلفة القطعة اليوم.",
-    "receivesPieces": "يُضاف {{pieces}} {{unit}} إلى المخزون"
+    "receivesPieces": "يُضاف {{pieces}} {{unit}} إلى المخزون",
+    "refilled": "تم تحديث البنود من كتالوج المورد: {{parts}}",
+    "yourNumber": "رقم القطعة لديكم {{number}}"
   }
 }

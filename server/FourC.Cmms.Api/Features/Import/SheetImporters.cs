@@ -726,7 +726,14 @@ internal sealed class PartImporter : RecordImporter<Part>
     {
         var numbers = Codes(rows, "partNumber");
         Keep(await ByKey(c.Db.Parts.Where(p => numbers.Contains(p.PartNumber)), p => p.PartNumber, ct));
+        // The preferred suppliers' catalogue rows (0.18.0): the pairs there are and every company's currency, read once for the sheet.
+        _pairs = [.. (await c.Db.SupplierParts.AsNoTracking().Where(r => numbers.Contains(r.Part!.PartNumber)).Select(r => new { r.PartId, r.SupplierId }).ToListAsync(ct))
+            .Select(r => (r.PartId, r.SupplierId))];
+        _currencies = await c.Db.Suppliers.AsNoTracking().ToDictionaryAsync(s => s.Id, s => (string?)s.Currency, ct);
     }
+
+    private HashSet<(Guid PartId, Guid SupplierId)> _pairs = [];
+    private Dictionary<Guid, string?> _currencies = [];
 
     protected override Dictionary<string, object?> Values(ImportContext c, Part p) => new()
     {
@@ -753,13 +760,17 @@ internal sealed class PartImporter : RecordImporter<Part>
         if (groupCode is not null && groupId is null) input = input with { GroupId = c.EnsureLookup(c.PartGroups, groupCode, "PartGroups") };
         var part = existing ?? InventoryEndpoints.CreatePart(c.Db, input);
         if (existing is not null) InventoryEndpoints.UpdatePart(existing, input);
-        return WithCatalogueAsync(c, part, existing is null ? part : null, ct);
+        return Task.FromResult(WithCatalogue(c, part, existing is null ? part : null));
     }
 
-    /// <summary>The preferred supplier always has a catalogue row (0.18.0).</summary>
-    private static async Task<Part?> WithCatalogueAsync(ImportContext c, Part part, Part? created, CancellationToken ct)
+    /// <summary>The preferred supplier always has a catalogue row (0.18.0); a company added earlier in this run is found among the new ones.</summary>
+    private Part? WithCatalogue(ImportContext c, Part part, Part? created)
     {
-        if (part.PreferredSupplierId is { } preferred) await CatalogueEndpoints.EnsureRowAsync(c.Db, part, preferred, ct);
+        if (part.PreferredSupplierId is { } preferred && _pairs.Add((part.Id, preferred)))
+        {
+            if (!_currencies.TryGetValue(preferred, out var currency)) currency = c.Db.Suppliers.Local.FirstOrDefault(s => s.Id == preferred)?.Currency;
+            c.Db.SupplierParts.Add(CatalogueEndpoints.PreferredRow(part, preferred, currency, c.Settings.Currency));
+        }
         return created;
     }
 
@@ -1288,7 +1299,8 @@ internal sealed class SupplierCatalogueImporter : ISheetImporter
         if (supplierId != Guid.Empty && old is null && !_companies.GetValueOrDefault(supplierId).IsSupplier) row.Problem(Translator.T("Choose a company with the Supplier role."));
         if (row.HasProblems) return Task.FromResult(Result(row, shown, RowOutcome.Problem));
         // Left out (no column): kept as it is; a new row starts from the part's unit, a pack of 1 and the company's (else the base) currency.
-        T Keep<T>(string key, T kept, T fresh) => row.Keys.Contains(key) ? row.Get<T>(key) ?? fresh : old is null ? fresh : kept;
+        // A blank cell keeps what is there, as on every other sheet; a new row takes the default.
+        T Keep<T>(string key, T kept, T fresh) => row.Has(key) ? row.Get<T>(key)! : old is null ? fresh : kept;
         var currency = (row.Get<string>("currency")?.Trim().ToUpperInvariant()) ?? old?.Currency ?? _companies[supplierId].Currency.Clean()?.ToUpperInvariant() ?? c.Settings.Currency.ToUpperInvariant();
         var input = new CatalogueEndpoints.SupplierPartInput(supplierId,
             Keep<string?>("supplierPartNumber", old?.SupplierPartNumber, null), Keep<string?>("packName", old?.PackName, null) ?? old?.PackName ?? _units.GetValueOrDefault(partId),

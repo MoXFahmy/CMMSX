@@ -2306,7 +2306,8 @@
     "viewRequests": "Requests",
     "viewLines": "Lines to order",
     "orderSelected": "Order selected ({{count}})",
-    "noLinesToOrder": "No approved lines are waiting to be ordered."
+    "noLinesToOrder": "No approved lines are waiting to be ordered.",
+    "priceFromCatalogue": "Catalogue price"
   },
   "approvals": {
     "levels": "Approval levels",
@@ -2531,6 +2532,8 @@
     "noPartsSupplied": "No parts in this supplier's catalogue yet.",
     "theirNumber": "Their number: {{number}}",
     "notCataloguePrice": "Not a catalogue price: estimated from today's cost per piece.",
-    "receivesPieces": "Books {{pieces}} {{unit}} into stock"
+    "receivesPieces": "Books {{pieces}} {{unit}} into stock",
+    "refilled": "Lines refilled from the supplier's catalogue: {{parts}}",
+    "yourNumber": "Your part no. {{number}}"
   }
 }

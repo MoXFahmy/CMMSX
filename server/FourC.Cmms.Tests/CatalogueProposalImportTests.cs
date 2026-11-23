@@ -75,4 +75,25 @@ public class CatalogueProposalImportTests(ApiFixture fx) : IClassFixture<ApiFixt
         Assert.Equal(1m, row.GetProperty("packSize").GetDecimal());
         Assert.Equal(4m, row.GetProperty("packPrice").GetDecimal());
     }
+
+    [SkippableFact]
+    public async Task Blank_cells_on_the_catalogue_sheet_keep_what_is_there()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var skf = await SupplierAsync(o.Admin, "SKF");
+        string?[] headings = ["Part number", "Supplier code", "Supplier's part number", "Pack", "Pieces per pack", "Price per pack", "Currency", "Discount %", "Lead time (days)", "Minimum packs", "Notes"];
+        await RunAsync(o.Admin, Book(new Sheet("SupplierCatalogue", headings, ["BRG-1", "SKF", "6205-2RS", "Box of 100", 100m, 45m, null, 2m, 10m, 3m, "Ask for Ali"])));
+        // A second sheet that brings the supplier's new part number and a note, with blank cells between them.
+        await RunAsync(o.Admin, Book(new Sheet("SupplierCatalogue", headings, ["BRG-1", "SKF", "6205-2RS-C3", null, null, null, null, null, null, null, "Ask for Ali"])));
+        var row = (await Ok(await o.Admin.GetAsync($"/api/parts/{o.Part}/suppliers"))).EnumerateArray().Single(r => r.GetProperty("supplierId").GetGuid() == skf);
+        Assert.Equal("6205-2RS-C3", row.GetProperty("supplierPartNumber").GetString());
+        Assert.Equal("Box of 100", row.GetProperty("packName").GetString());
+        Assert.Equal(100m, row.GetProperty("packSize").GetDecimal());
+        Assert.Equal(45m, row.GetProperty("packPrice").GetDecimal());
+        Assert.Equal(2m, row.GetProperty("discountPercent").GetDecimal());
+        Assert.Equal(10, row.GetProperty("leadTimeDays").GetInt32());
+        Assert.Equal(3, row.GetProperty("minPacks").GetInt32());
+        Assert.Equal("Ask for Ali", row.GetProperty("notes").GetString());
+    }
 }

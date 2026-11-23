@@ -16,9 +16,9 @@ Organizations that never fill in a catalogue see no change: every existing order
 
 ## Catalogue rows
 
-Part page › **Suppliers** lists one row per supplier company (Supplier role, active):
+Part page › **Suppliers** lists one row per supplier company (rows of an inactive company show a badge and are never offered):
 
-- **Supplier's part number** (optional), shown on order lines as "Their number".
+- **Supplier's part number** (optional), shown on order lines as "Their number" and printed and e-mailed on the order as "Your part no.".
 - **Pack**: a name (e.g. "Box of 100"; empty = the part's unit) and **pieces per pack** in the part's own unit — more
   than 0, decimals allowed (a 2.5 L can of a part kept in litres).
 - **Price per pack** (optional) in the row's **own currency**: the company's currency when the row is made, else the
@@ -30,7 +30,8 @@ Part page › **Suppliers** lists one row per supplier company (Supplier role, a
   paid and its discount into the row (only when the currencies match, so the discount is never applied twice).
 - The **star** marks the part's preferred supplier (the same field as on the part form). Choosing a preferred supplier on
   the part, in the form or the import, adds a row for it if there is none: a pack of 1, the part's lead time, and the
-  part's last purchase price (else standard price) only when the company works in the organization's currency.
+  part's last purchase price (else standard price) only when the company works in the organization's currency and the
+  price is more than 0.
 
 Purchasing › Companies › a company shows the **parts it supplies** with links to the parts.
 
@@ -48,12 +49,16 @@ On the order form (picking a part, or changing the supplier of a draft), in the 
 
 - The supplier has an **active row** for the part: the line takes its pack, part number, discount and lead time, and its
   price per pack **when the row's currency is the order's currency**. Otherwise it still takes the pack (the supplier
-  ships packs) at today's price per piece × pieces per pack, marked "Not a catalogue price".
+  ships packs) at the line's own price per piece (else today's) × pieces per pack, marked "Not a catalogue price".
+- The re-order proposal has no price box, so its price only stands in when the catalogue has no price. In *Order from
+  requests* the price box starts empty (the request's estimate shows as a hint): the catalogue price, else the estimate,
+  is used unless the buyer types a price.
 - **Packs = pieces needed ÷ pieces per pack, rounded up, at least the minimum.** Need 20, sold in boxes of 100 → 1 box;
   need 250 → 3 boxes.
 - **No row**: as before — the part's unit, last purchase price else average cost.
 - Changing the supplier on a draft order refills its part lines from the new supplier's catalogue, keeping at least the
-  pieces each line had.
+  pieces each line had and the line's own price and discount where the catalogue has no price; a message lists the lines
+  that changed.
 - **Expected date**, when not typed: the order date + the longest lead time of the lines (row, else the part's).
 
 ## Receiving and costs
@@ -89,7 +94,7 @@ and no price comparison across currencies.
 
 New sheet **Supplier catalogue** (Settings › Import): part number*, supplier code*, supplier's part number, pack, pieces
 per pack, price per pack, currency, discount %, lead time (days), minimum packs, notes. It adds and updates rows (one per
-part and supplier) and never removes them; the "current data" export includes it. A preferred supplier code on the Parts
+part and supplier) and never removes them; a blank cell keeps what is there; the "current data" export includes it. A preferred supplier code on the Parts
 sheet adds a row as above. The 4CSQL migration adds a row (pack of 1, no price) for every part–supplier pair it reads.
 
 ## Upgrading
