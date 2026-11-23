@@ -26,7 +26,8 @@ public static class ReportEndpoints
     public sealed record Param(string Name, string Type, List<Option>? Options = null, object? Default = null);
     public sealed record ReportDef(string Key, string Category, string Title, string Description, string Permission, List<Param> Params);
     /// <summary>A report's choices. 0.14.0: one asset (with its components), and a year.</summary>
-    public sealed record ReportArgs(DateOnly From, DateOnly To, Guid? SiteId, string? GroupBy, int Days, Guid? AssetId = null, int Year = 0, bool Components = false);
+    public sealed record ReportArgs(DateOnly From, DateOnly To, Guid? SiteId, string? GroupBy, int Days, Guid? AssetId = null, int Year = 0, bool Components = false,
+        Guid? CostCentreId = null);
     /// <summary>A month of the PM annual plan (0.14.0): column type "plan".</summary>
     public sealed record PlanCell(int Done, int Late, int Missed, int Cancelled, int Planned);
     public const string ChooseAsset = "Choose an asset.";
@@ -38,6 +39,8 @@ public static class ReportEndpoints
     private static readonly Param YearP = new("year", "year");
     private static readonly Param AssetP = new("assetId", "asset");
     private static readonly Param ComponentsP = new("components", "bool");
+    /// <summary>A cost centre with its children (0.20.0).</summary>
+    private static readonly Param CostCentreP = new("costCentreId", "costCentre");
     private static Param GroupBy(object def, params (string, string)[] o) => new("groupBy", "select", o.Select(x => new Option(x.Item1, x.Item2)).ToList(), def);
 
     public static readonly List<ReportDef> Catalog =
@@ -63,7 +66,9 @@ public static class ReportEndpoints
         new("failure-tree", "Reliability", "Failure tree", "Completed work by symptom, cause and remedy, with hours, downtime and cost.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("failure-pareto", "Reliability", "Failure analysis", "Breakdowns by failure code — the few causes behind most of the downtime.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("maintenance-costs", "Costs", "Maintenance costs", "Labour, parts and other costs booked in the period.", Permissions.WorkOrdersView,
-            [Range, SiteP, GroupBy("asset", ("asset", "Asset"), ("site", "Site"), ("category", "Asset category"), ("type", "Work type"), ("trade", "Trade"), ("team", "Team"), ("technician", "Technician"), ("month", "Month"))]),
+            [Range, SiteP, CostCentreP, GroupBy("asset", ("asset", "Asset"), ("site", "Site"), ("category", "Asset category"), ("type", "Work type"), ("trade", "Trade"), ("team", "Team"), ("technician", "Technician"), ("month", "Month"), ("costCentre", "Cost centre"))]),
+        new("budget-vs-actual", "Costs", "Budget against actual", "Budget, committed spend and actual cost by cost centre or month, with the variance.", Permissions.ReportsView,
+            [Range, CostCentreP, GroupBy("costCentre", ("costCentre", "Cost centre"), ("month", "Month"))]),
         new("contracts", "Costs", "Contracts", "Each contract's value, spend and completed work in the period against what it expects.", Permissions.ReportsView, [Range, SiteP]),
         new("asset-work-history", "Assets", "Asset work history", "Every work order on one asset in the period, with its codes, hours, cost and downtime.", Permissions.WorkOrdersView,
             [AssetP, Range, ComponentsP]),
@@ -89,7 +94,7 @@ public static class ReportEndpoints
         }).RequirePermission(Permissions.ReportsView);
 
         g.MapGet("/{key}", async (string key, HttpContext http, PermissionService perms, CmmsDbContext db, DateOnly? from, DateOnly? to, Guid? siteId, string? groupBy, int? days,
-            Guid? assetId, int? year, bool? components, CancellationToken ct) =>
+            Guid? assetId, int? year, bool? components, Guid? costCentreId, CancellationToken ct) =>
         {
             var def = Catalog.FirstOrDefault(r => r.Key == key);
             if (def is null) return Results.NotFound();
@@ -104,7 +109,7 @@ public static class ReportEndpoints
             if (assetId is { } chosen && def.Params.Any(p => p.Type == "asset") && !await db.Assets.AnyAsync(x => x.Id == chosen, ct)) return Results.NotFound();
             var y = year ?? Today.Year;
             if (def.Params.Any(p => p.Type == "year") && y is < 2000 or > 2100) throw new FourC.Cmms.Core.Common.DomainException(ChooseYear);
-            var a = new ReportArgs(f, t, siteId, gb, Math.Clamp(days ?? 180, 1, 3650), assetId, y, components == true);
+            var a = new ReportArgs(f, t, siteId, gb, Math.Clamp(days ?? 180, 1, 3650), assetId, y, components == true, costCentreId);
             ReportResult r = key switch
             {
                 "wo-backlog" => await BacklogAsync(db, a, ct),
@@ -123,6 +128,7 @@ public static class ReportEndpoints
                 "out-of-limits" => await OutOfLimitsAsync(db, a, ct),
                 "downtime" => await DowntimeLogAsync(db, a, ct),
                 "maintenance-costs" => await CostsAsync(db, a, ct),
+                "budget-vs-actual" => await BudgetReport.BuildAsync(db, a, ct),
                 "contracts" => await ContractsAsync(db, a, ct),
                 "assets-by-category" => await AssetsAsync(db, a, ct),
                 "stock-valuation" => await ValuationAsync(db, a, ct),
@@ -693,17 +699,22 @@ public static class ReportEndpoints
 
     private static async Task<ReportResult> CostsAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
     {
-        var lines = await CostLinesAsync(db, Wo(db, a), a.From, a.To, ct);
+        var wos = Wo(db, a);
+        // A cost centre with its children (0.20.0).
+        if (a.CostCentreId is { } cc) { var scope = await CostCentreQueries.SubtreeAsync(db, cc, ct); wos = wos.Where(w => w.CostCentreId != null && scope.Contains(w.CostCentreId.Value)); }
+        var lines = await CostLinesAsync(db, wos, a.From, a.To, ct);
+        var centrePaths = a.GroupBy == "costCentre" ? await CostCentreEndpoints.PathsAsync(db, ct) : [];
         var ids = lines.Select(l => l.WoId).Distinct().ToList();
-        var dims = new Dictionary<Guid, (string Site, string Type, string Trade, string Team, string Asset, string Category)>();
+        var dims = new Dictionary<Guid, (string Site, string Type, string Trade, string Team, string Asset, string Category, string CostCentre)>();
         foreach (var chunk in ids.Chunk(1000))
             foreach (var d in await db.WorkOrders.AsNoTracking().Where(w => chunk.Contains(w.Id)).Select(w => new { w.Id, Site = w.Site!.Name, w.Type, Trade = w.Trade!.Name,
-                         Team = w.Team!.Name, Asset = w.Asset == null ? null : w.Asset.AssetNumber + " · " + w.Asset.Name, Category = w.Asset!.Category!.Name }).ToListAsync(ct))
-                dims[d.Id] = (d.Site, d.Type.ToString(), d.Trade ?? "No trade", d.Team ?? "No team", d.Asset ?? "No asset (location work)", d.Category ?? "Uncategorised");
+                         Team = w.Team!.Name, Asset = w.Asset == null ? null : w.Asset.AssetNumber + " · " + w.Asset.Name, Category = w.Asset!.Category!.Name, w.CostCentreId }).ToListAsync(ct))
+                dims[d.Id] = (d.Site, d.Type.ToString(), d.Trade ?? "No trade", d.Team ?? "No team", d.Asset ?? "No asset (location work)", d.Category ?? "Uncategorised",
+                    d.CostCentreId is { } dc ? centrePaths.GetValueOrDefault(dc) ?? "No cost centre" : "No cost centre");
         string Key(CostLine l) => a.GroupBy switch
         {
             "site" => dims[l.WoId].Site, "type" => dims[l.WoId].Type, "trade" => dims[l.WoId].Trade, "team" => dims[l.WoId].Team, "category" => dims[l.WoId].Category,
-            "month" => $"{l.Y:0000}-{l.M:00}", _ => dims[l.WoId].Asset,
+            "month" => $"{l.Y:0000}-{l.M:00}", "costCentre" => dims[l.WoId].CostCentre, _ => dims[l.WoId].Asset,
         };
         var grouped = a.GroupBy == "technician" ? await ByTechnicianAsync(db, a, ct) : lines.GroupBy(Key).Select(g => Row(("group", a.GroupBy == "month" ? MonthLabel(int.Parse(g.Key[..4]), int.Parse(g.Key[5..])) : g.Key), ("sortKey", g.Key),
             ("labor", R2(g.Sum(x => x.Labor))), ("parts", R2(g.Sum(x => x.Parts))), ("other", R2(g.Sum(x => x.Other))), ("contractor", R2(g.Sum(x => x.Contractor))),
@@ -712,7 +723,7 @@ public static class ReportEndpoints
         var rows = (a.GroupBy == "month" ? grouped.OrderBy(r => (string)r["sortKey"]!) : grouped.OrderByDescending(r => (decimal)r["total"]!)).Take(a.GroupBy == "asset" ? 200 : 1000).ToList();
         foreach (var r in rows) r.Remove("sortKey");
         var total = lines.Sum(x => x.Total);
-        var label = a.GroupBy switch { "site" => "Site", "type" => "Work type", "trade" => "Trade", "team" => "Team", "category" => "Asset category", "technician" => "Technician", "month" => "Month", _ => "Asset" };
+        var label = a.GroupBy switch { "costCentre" => "Cost centre", "site" => "Site", "type" => "Work type", "trade" => "Trade", "team" => "Team", "category" => "Asset category", "technician" => "Technician", "month" => "Month", _ => "Asset" };
         return new("maintenance-costs", "Maintenance costs", Period(a),
             [new("group", label), new("labor", "Labour", "currency"), new("parts", "Parts", "currency"), new("other", "Other", "currency"), new("contractor", "Contractor", "currency"),
              new("total", "Total", "currency"), new("workOrders", "Work orders", "number"), new("hours", "Labour hours", "hours")],

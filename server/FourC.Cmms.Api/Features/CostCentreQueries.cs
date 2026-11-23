@@ -33,4 +33,15 @@ public static class CostCentreQueries
         if (costCentreId is not { } id || id == current) return null;
         return await db.CostCentres.AnyAsync(c => c.Id == id && c.IsActive, ct) ? null : "Choose an active cost centre.";
     }
+
+    /// <summary>A cost centre and all its children, at every site.</summary>
+    public static async Task<HashSet<Guid>> SubtreeAsync(CmmsDbContext db, Guid id, CancellationToken ct)
+    {
+        var tree = (await db.CostCentres.AllSites().AsNoTracking().Where(c => c.ParentId != null).Select(c => new { c.Id, c.ParentId }).ToListAsync(ct))
+            .ToLookup(c => c.ParentId!.Value, c => c.Id);
+        var set = new HashSet<Guid>();
+        var stack = new Stack<Guid>([id]);
+        while (stack.Count > 0) { var x = stack.Pop(); if (set.Add(x)) foreach (var ch in tree[x]) stack.Push(ch); }
+        return set;
+    }
 }

@@ -1083,5 +1083,14 @@
  "Choose an active cost centre.": "اختر مركز تكلفة نشطًا.",
  "Only parts issued to a location have their own cost centre.": "فقط القطع المصروفة إلى مكان لها مركز تكلفة خاص بها.",
  "A budget can't be below 0.": "لا يمكن أن تكون الموازنة أقل من 0.",
- "Give twelve months for each cost centre.": "أدخل اثني عشر شهرًا لكل مركز تكلفة."
+ "Give twelve months for each cost centre.": "أدخل اثني عشر شهرًا لكل مركز تكلفة.",
+ "No cost centre": "بلا مركز تكلفة",
+ "Cost centre": "مركز التكلفة",
+ "Budget against actual": "الموازنة مقابل الفعلي",
+ "Budget, committed spend and actual cost by cost centre or month, with the variance.": "الموازنة والمبالغ الملتزم بها والتكلفة الفعلية حسب مركز التكلفة أو الشهر، مع الفرق.",
+ "Budget": "الموازنة",
+ "Committed": "ملتزم به",
+ "Direct issues": "صرف مباشر",
+ "Actual": "الفعلي",
+ "Variance": "الفرق"
 }
