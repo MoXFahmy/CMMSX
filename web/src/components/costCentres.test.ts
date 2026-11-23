@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { CostCentre } from '@/api/types';
-import { spread, treeRows } from './costCentres';
+import type { TFunction } from 'i18next';
+import { costCentreLabel, spread, treeRows } from './costCentres';
 
 const cc = (id: string, code: string, parentId: string | null = null): CostCentre => ({ id, code, name: code, parentId, isActive: true, path: code });
 
@@ -25,5 +26,15 @@ describe('spreading a year over months', () => {
   it('gives zeros for nothing', () => expect(spread(0)).toEqual(Array(12).fill(0)));
   it('always adds up to the total', () => {
     for (const total of [1, 7.77, 100, 12345.67, 99999.99]) expect(Math.round(spread(total).reduce((a, b) => a + b, 0) * 100) / 100).toBe(total);
+  });
+});
+
+describe('a cost centre in words', () => {
+  const t = ((k: string) => k) as unknown as TFunction;
+  it('gives the path, or says there is none', () => {
+    const list = [{ ...cc('p', 'PROD'), path: 'Production' }];
+    expect(costCentreLabel(list, 'p', t)).toBe('Production');
+    expect(costCentreLabel(list, null, t)).toBe('costCentres.noneSet');
+    expect(costCentreLabel(list, 'gone', t)).toBe('costCentres.noneSet');
   });
 });

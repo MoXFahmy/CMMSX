@@ -57,4 +57,9 @@ public class CostCentreTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(new[] { shared, a }.Order(), (await ListAsync(limited)).Select(Id).Order());
         Assert.Equal(HttpStatusCode.NotFound, (await limited.PutAsJsonAsync($"/api/cost-centres/{b}", new { code = "B", name = "Changed", siteId = siteB, isActive = true })).StatusCode);
     }
+
+    /// <summary>"Parent" here is the cost centre above, not an asset (أصل means asset elsewhere in the app).</summary>
+    [Fact]
+    public void The_inactive_parent_message_speaks_of_a_parent_cost_centre_in_Arabic() =>
+        Assert.Equal("اختر مركزًا أعلى نشطًا.", FourC.Cmms.Api.Infrastructure.Translator.T("Choose an active parent.", "ar"));
 }

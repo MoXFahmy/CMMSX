@@ -1,3 +1,4 @@
+import type { TFunction } from 'i18next';
 import type { CostCentre } from '@/api/types';
 
 /** The tree as table rows: parents first with their children under them, by code. One whose parent is hidden shows at the top. */
@@ -32,4 +33,9 @@ export function spread(total: number, months = 12): number[] {
 /** Picker options: active cost centres (plus the current one, even if inactive), labelled by path. */
 export function costCentreOptions(list: CostCentre[], current?: string | null) {
   return treeRows(list).filter((c) => c.isActive || c.id === current).map((c) => ({ value: c.id, label: `${c.path} (${c.code})` }));
+}
+
+/** A cost centre's path ("Production › Line 1"), or "No cost centre" when there is none (or it's gone). */
+export function costCentreLabel(list: CostCentre[], id: string | null | undefined, t: TFunction): string {
+  return (id && list.find((c) => c.id === id)?.path) || t('costCentres.noneSet');
 }

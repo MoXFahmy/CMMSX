@@ -1077,7 +1077,7 @@
  "This takes {0} to {1} of {2} hours on {3}.": "هذا يجعل {0} عند {1} من {2} ساعة في {3}.",
  "Someone was assigned meanwhile. Refresh the board.": "تم تعيين شخص آخر في الأثناء. حدّث اللوحة.",
  "A cost centre can't be its own parent or under one of its own.": "لا يمكن أن يكون مركز التكلفة أبًا لنفسه أو تحت أحد فروعه.",
- "Choose an active parent.": "اختر أصلًا نشطًا.",
+ "Choose an active parent.": "اختر مركزًا أعلى نشطًا.",
  "This cost centre is in use. Make it inactive instead.": "مركز التكلفة هذا مستخدم. اجعله غير نشط بدلًا من ذلك.",
  "A site's cost centre can only sit under a cost centre of the same site or for all sites.": "مركز تكلفة الموقع يمكن أن يكون فقط تحت مركز تكلفة للموقع نفسه أو لكل المواقع.",
  "Choose an active cost centre.": "اختر مركز تكلفة نشطًا.",

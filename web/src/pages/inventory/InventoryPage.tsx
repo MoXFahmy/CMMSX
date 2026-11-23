@@ -17,6 +17,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { LookupTable } from '@/components/LookupTable';
 import { useHierarchy } from '@/components/LocationPicker';
 import { CostCentrePicker, useCostCentres } from '@/components/CostCentrePicker';
+import { costCentreLabel } from '@/components/costCentres';
 import { useStores } from '@/components/PartPicker';
 import { StockTxModal, type StockTxKind } from '@/components/StockTxModal';
 import { TxTypeBadge } from '@/components/InventoryBadges';
@@ -221,7 +222,6 @@ function TxCostCentre({ tx }: { tx: StockTransactionItem }) {
   const [opened, m] = useDisclosure();
   const [value, setValue] = useState<string | null>(tx.costCentreId ?? null);
   const [busy, setBusy] = useState(false);
-  const path = (centres ?? []).find((c) => c.id === tx.costCentreId)?.path;
   const save = async () => {
     setBusy(true);
     try {
@@ -232,7 +232,7 @@ function TxCostCentre({ tx }: { tx: StockTransactionItem }) {
   return (
     <>
       <Group gap={4} wrap="nowrap">
-        <Text fz="xs" c="dimmed" lineClamp={1}>{t('costCentres.one')}: {path ?? t('costCentres.none')}</Text>
+        <Text fz="xs" c="dimmed" lineClamp={1}>{t('costCentres.one')}: {costCentreLabel(centres ?? [], tx.costCentreId, t)}</Text>
         {can(P.inventoryManage) && <ActionIcon size="xs" variant="subtle" aria-label={t('costCentres.change')} onClick={() => { setValue(tx.costCentreId ?? null); m.open(); }}><IconEdit size={12} /></ActionIcon>}
       </Group>
       <Modal opened={opened} onClose={m.close} title={t('costCentres.change')}>

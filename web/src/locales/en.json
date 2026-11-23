@@ -2649,7 +2649,8 @@
     "overrideHint": "Empty follows the asset or location.",
     "workOrderHint": "Empty takes the asset's or location's cost centre.",
     "directHint": "Empty takes the location's cost centre.",
-    "withChildren": "With the cost centres under it"
+    "withChildren": "With the cost centres under it",
+    "noneSet": "No cost centre"
   },
   "budgets": {
     "title": "Budgets",
