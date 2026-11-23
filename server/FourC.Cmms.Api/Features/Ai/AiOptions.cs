@@ -13,5 +13,6 @@ public sealed class AiOptions
     public decimal OutputPrice { get; set; } = 20m;
     public decimal CacheReadPrice { get; set; } = 0.2m;
     public decimal CacheWritePrice { get; set; } = 5m;
-    public int TimeoutSeconds { get; set; } = 60;
+    /// <summary>One call's limit. CloudFront gives the server 60 seconds, so this stays well under it (history and lock queries come first).</summary>
+    public int TimeoutSeconds { get; set; } = 45;
 }

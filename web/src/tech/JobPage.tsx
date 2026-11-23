@@ -22,7 +22,7 @@ import { JobParts } from './StockPages';
 import { JobActions, StopCard } from './JobExtras';
 import type { TechJob } from './types';
 import type { AiReportResult } from '@/components/aiReport';
-import { aiChanges, aiEnabled, partStore } from './aiFill';
+import { aiChanges, aiEnabled, defaultTicks, partStore } from './aiFill';
 import { dictate, speechAvailable } from './speech';
 import { fillReport } from './api';
 
@@ -245,7 +245,7 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
       if (r.symptom) setSymptom(r.symptom.id);
       if (r.cause) setFailure(r.cause.id);
       if (r.remedy) setRemedy(r.remedy.id);
-      setTicks({ hours: !!r.hours, parts: canIssue ? r.parts.filter((p) => partStore(job, p.partId)).map((p) => p.partId) : [] });
+      setTicks(defaultTicks(job, r, canIssue));
     } catch (e) { notifyError(e); } finally { setFilling(false); }
   };
   const logsHours = !!ai?.hours && ticks.hours;

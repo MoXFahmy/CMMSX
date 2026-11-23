@@ -78,7 +78,7 @@ are deleted within 30 days, except when flagged for a usage-policy breach or req
 | `Ai__MonthlyCeiling` | 300 | The most AI actions a month any organization may use. Lowering it applies at once. |
 | `Ai__Model` | `claude-opus-5-5` | The Claude model for both features. |
 | `Ai__InputPrice`, `Ai__OutputPrice`, `Ai__CacheReadPrice`, `Ai__CacheWritePrice` | 4, 20, 0.2, 5 | US dollars per million tokens, for the usage estimate. |
-| `Ai__TimeoutSeconds` | 60 | How long one call may take. |
+| `Ai__TimeoutSeconds` | 45 | How long one call may take. Keep it under CloudFront's 60-second origin limit. |
 
 Calls retry once at most on a network or server error; a refusal is re-served by Anthropic's default fallback model on
 the same call.

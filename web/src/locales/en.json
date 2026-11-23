@@ -1456,7 +1456,8 @@
     "dictate": "Dictate",
     "fillWithAi": "Fill with AI",
     "aiNeedsConnection": "Fill with AI needs a connection. Your notes stay here; you can complete without it.",
-    "logHoursForMe": "Log {{hours}} h for me"
+    "logHoursForMe": "Log {{hours}} h for me",
+    "aiNoAnswer": "The AI assistant didn't answer. Try again in a moment."
   },
   "labels": {
     "title": "QR labels",

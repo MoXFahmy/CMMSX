@@ -43,4 +43,14 @@ public class AnthropicAiClientTests
         Assert.Null(wire["thinking"]);
         Assert.Contains("server-side-fallback-2026-07-01", p.Betas!.Select(b => b.Raw()));
     }
+
+    /// <summary>
+    /// CloudFront gives the server 60 seconds (OriginReadTimeout); the AI call must end well before, after the history and lock
+    /// queries, so the person gets "didn't answer, try again" instead of a bare 504 and no counted answer is lost.
+    /// </summary>
+    [Fact]
+    public void Time_limit_fits_under_the_CloudFront_origin_timeout()
+    {
+        Assert.InRange(new AiOptions().TimeoutSeconds, 1, 45);
+    }
 }

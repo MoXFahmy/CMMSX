@@ -9,6 +9,21 @@ export function partStore(job: TechJob, partId: string): string | null {
   return job.plannedLines?.find((l) => l.partId === partId && l.storeId)?.storeId ?? job.defaultStoreId ?? null;
 }
 
+/** A part already issued to the job (on its planned line or as an extra part): ticking it again would issue it twice. */
+const alreadyUsed = (job: TechJob, partId: string) =>
+  (job.plannedLines ?? []).some((l) => l.partId === partId && l.issued > 0) || (job.usedParts ?? []).some((u) => u.partId === partId && u.issued > 0);
+
+/**
+ * What starts ticked after Fill with AI: hours only when I have none logged on the job yet, and parts only when they can be
+ * issued (stock rights, a store) and weren't issued already — so a tap on Complete never records the same work twice.
+ */
+export function defaultTicks(job: TechJob, r: AiReportResult, canIssue: boolean): { hours: boolean; parts: string[] } {
+  return {
+    hours: !!r.hours && (job.myLabor ?? []).length === 0,
+    parts: canIssue ? r.parts.filter((p) => partStore(job, p.partId) && !alreadyUsed(job, p.partId)).map((p) => p.partId) : [],
+  };
+}
+
 /**
  * The usual hours and part changes for what the technician kept ticked, queued before the completion so stock rules, offline
  * sending and conflicts work as for any other change. Parts need stock rights and a store; nothing unticked is sent.

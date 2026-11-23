@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { AiReportResult } from '@/components/aiReport';
-import { aiChanges, aiEnabled, partStore } from './aiFill';
+import { aiChanges, aiEnabled, defaultTicks, partStore } from './aiFill';
 import type { TechBundle, TechJob } from './types';
 
 const job = (over: Partial<TechJob> = {}): TechJob => ({
@@ -44,5 +44,17 @@ describe('Fill with AI on the phone', () => {
 
   it('a suggestion without hours never logs hours', () => {
     expect(aiChanges(job(), { ...r, hours: null, parts: [] }, { hours: true, parts: [] }, true, '2026-11-23')).toEqual([]);
+  });
+
+  it('ticks hours only when nothing of mine is logged yet, and parts only when not already used', () => {
+    const fresh = job({ myLabor: [], usedParts: [], defaultStoreId: 's9' });
+    expect(defaultTicks(fresh, r, true)).toEqual({ hours: true, parts: ['p1', 'p2'] });
+    expect(defaultTicks({ ...fresh, myLabor: [{ workDate: '2026-11-23', hours: 2, overtimeHours: 0 }] } as TechJob, r, true).hours).toBe(false);
+    const issued = job({ myLabor: [], usedParts: [], defaultStoreId: 's9', plannedLines: [{ id: 'l1', partId: 'p1', storeId: 's1', quantity: 2, issued: 2 }] });
+    expect(defaultTicks(issued, r, true).parts).toEqual(['p2']);
+    const used = job({ myLabor: [], usedParts: [{ partId: 'p2', storeId: 's9', issued: 1 }], defaultStoreId: 's9' });
+    expect(defaultTicks(used, r, true).parts).toEqual(['p1']);
+    expect(defaultTicks(fresh, r, false).parts).toEqual([]);
+    expect(defaultTicks(fresh, { ...r, hours: null }, true).hours).toBe(false);
   });
 });
