@@ -38,6 +38,7 @@ import { TechApp } from './tech/TechApp';
 import { LabelsPage } from './pages/labels/LabelsPage';
 import { PlanningPage } from './pages/planning/PlanningPage';
 import { AvailabilityPage } from './pages/planning/AvailabilityPage';
+import { TimesheetPage } from './pages/planning/TimesheetPage';
 import { QrRedirect } from './pages/QrRedirect';
 import { RequestFeedbackPage } from './pages/work/RequestFeedbackPage';
 export function App() {
@@ -73,6 +74,7 @@ export function App() {
         <Route path="work-orders" element={<WorkOrdersPage />} />
         <Route path="planning" element={<PlanningPage />} />
         <Route path="planning/availability" element={<AvailabilityPage />} />
+        <Route path="planning/timesheet" element={<TimesheetPage />} />
         <Route path="work-orders/new" element={<WorkOrderFormPage />} />
         <Route path="work-orders/:id" element={<WorkOrderDetailPage />} />
         <Route path="work-orders/:id/edit" element={<WorkOrderFormPage />} />

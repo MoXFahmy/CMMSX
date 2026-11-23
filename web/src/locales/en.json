@@ -27,7 +27,8 @@
     "workGroups": "Work groups",
     "myApprovals": "My approvals",
     "contracts": "Contracts",
-    "availability": "Availability"
+    "availability": "Availability",
+    "timesheet": "Timesheet"
   },
   "unit": {
     "overtime": "overtime",
@@ -2587,5 +2588,33 @@
       "Friday": "Fri",
       "Saturday": "Sat"
     }
+  },
+  "timesheet": {
+    "title": "Timesheet",
+    "subtitle": "Hours per work order for one person's day, the same entries as each work order's Labour tab.",
+    "day": "Day",
+    "week": "Week",
+    "me": "Me",
+    "workOrder": "Work order",
+    "hours": "Hours",
+    "overtime": "Overtime",
+    "total": "Total",
+    "available": "{{hours}} h available",
+    "nothing": "No work and no hours on this day.",
+    "closed": "Closed",
+    "addHours": "Add hours",
+    "otherWorkOrder": "Add hours on another work order",
+    "weekHint": "Logged hours / hours available. Red: more than available; orange: less. Click a day to open it."
+  },
+  "techDay": {
+    "title": "My day",
+    "today": "Today",
+    "total": "{{hours}} h logged",
+    "overtime": "{{hours}} h overtime",
+    "available": "{{hours}} h available",
+    "nothing": "No jobs and no hours on this day.",
+    "finished": "Finished",
+    "hours": "{{hours}} h",
+    "addHours": "Hours"
   }
 }

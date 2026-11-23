@@ -8,7 +8,7 @@ import { NewWorkOrderPage } from './JobExtras';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import { notifications } from '@mantine/notifications';
-import { IconCloudOff, IconCloudCheck, IconFingerprint, IconList, IconLogout, IconPackage, IconRefresh, IconScan, IconSearch, IconTransferVertical } from '@tabler/icons-react';
+import { IconClock, IconCloudOff, IconCloudCheck, IconFingerprint, IconList, IconLogout, IconPackage, IconRefresh, IconScan, IconSearch, IconTransferVertical } from '@tabler/icons-react';
 import { BIOMETRIC_KEY, biometricAvailable, registerPush, shouldLock, verifyBiometric } from './native';
 import { sendPushToken } from './api';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
@@ -16,6 +16,7 @@ import { fmtDateTime, fromNow } from '@/components/utils';
 import { LanguageSwitch } from '@/components/LanguageSwitch';
 import { dueLabel } from './due';
 import { JobPage } from './JobPage';
+import { DayPage } from './DayPage';
 import { PlacePage } from './PlacePage';
 import { ScanPage } from './ScanPage';
 import { MODE_KEY, TechProvider, useTech, type Phase } from './useTech';
@@ -107,6 +108,7 @@ function TechShell() {
           <Route path="/tech" element={<MyJobsPage />} />
           <Route path="/tech/jobs/:id" element={<JobPage />} />
           <Route path="/tech/sync" element={<SyncPage />} />
+          <Route path="/tech/day" element={<DayPage />} />
           <Route path="/tech/scan" element={<ScanPage />} />
           <Route path="/tech/place/:kind/:id" element={<PlacePage />} />
           <Route path="/tech/stock" element={<StockSearchPage />} />
@@ -223,6 +225,7 @@ function MyJobsPage() {
       {problem && <Alert color="orange" p="xs">{problem === 'server' ? t('tech.refreshServerProblem') : problem}</Alert>}
       <Group gap="xs" wrap="nowrap">
         <TextInput style={{ flex: 1 }} leftSection={<IconSearch size={16} />} placeholder={t('tech.searchJobs')} value={search} onChange={(e) => setSearch(e.currentTarget.value)} />
+        <Button variant="light" leftSection={<IconClock size={16} />} onClick={() => navigate('/tech/day')}>{t('techDay.title')}</Button>
         <Button variant="light" leftSection={<IconPackage size={16} />} onClick={() => navigate('/tech/stock')}>{t('techStock.stock')}</Button>
       </Group>
       {groups.length === 0 && <Text c="dimmed" ta="center" py="xl">{t('tech.noJobs')}</Text>}
