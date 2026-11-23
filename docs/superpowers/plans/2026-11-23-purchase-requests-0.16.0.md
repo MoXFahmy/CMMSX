@@ -500,3 +500,20 @@ Expected: server all green (2 skipped as before), web tests green, build clean.
 ```bash
 git add docs README.md && git commit -m "docs(0.16.0): purchase requests and approval levels guide"
 ```
+
+---
+
+## Deferred minors (final review, 23 Nov 2026)
+
+- "order waiting for your signature" e-mails also go to listed approvers who lost "Approve purchases" (recipient list not filtered by CanSignNow).
+- the order's approval panel lists every unsigned approver as "waiting for", without marking who can't sign now.
+- "Restart approval" has no confirmation; one click drops the round's signatures and re-e-mails the first level.
+- LineInput.PurchaseRequestLineId is accepted from any client on POST/PUT /purchase-orders without validation or sync (a crafted call can double-link a request line).
+- two buyers ordering the same request line at the same moment can create two live order lines (the "already on an order" check runs before the transaction).
+- organization-wide "any one" levels made of site-limited managers who together cover every site show "no-site-access" warning badges.
+- orders returned under today's rule don't appear in "Sent back to me" (docs don't say so).
+- the legacy importer and sample data create orders with no order type.
+- editing an order whose type has since been deactivated fails with "Choose an active order type" unless the type is changed.
+- request form — a part line's store defaults to the site's first store, not the site's default store; no asset picker (work order only).
+- Short for work silently drops selected lines whose store isn't in the stores list.
+- approval-level PUT ignores the RowVersion it returns (last write wins).
