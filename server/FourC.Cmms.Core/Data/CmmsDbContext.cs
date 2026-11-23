@@ -111,6 +111,13 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<Supplier> Suppliers => Set<Supplier>();
     public DbSet<PurchaseOrder> PurchaseOrders => Set<PurchaseOrder>();
     public DbSet<PurchaseOrderLine> PurchaseOrderLines => Set<PurchaseOrderLine>();
+    public DbSet<PurchaseRequest> PurchaseRequests => Set<PurchaseRequest>();
+    public DbSet<PurchaseRequestLine> PurchaseRequestLines => Set<PurchaseRequestLine>();
+    public DbSet<PurchaseRequestComment> PurchaseRequestComments => Set<PurchaseRequestComment>();
+    public DbSet<OrderType> OrderTypes => Set<OrderType>();
+    public DbSet<ApprovalLevel> ApprovalLevels => Set<ApprovalLevel>();
+    public DbSet<PurchaseOrderApprovalStep> PurchaseOrderApprovalSteps => Set<PurchaseOrderApprovalStep>();
+    public DbSet<PurchaseOrderSignature> PurchaseOrderSignatures => Set<PurchaseOrderSignature>();
 
     /// <summary>ASP.NET Core data-protection key ring (sign-in cookies), shared by every app instance.</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -726,6 +733,68 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.UnitPrice).HasPrecision(18, 4); e.Property(x => x.DiscountPercent).HasPrecision(9, 3);
             e.HasOne(x => x.Part).WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Restrict);
             e.Ignore(x => x.NetUnitPrice); e.Ignore(x => x.LineTotal);
+            e.HasOne<PurchaseRequestLine>().WithMany().HasForeignKey(x => x.PurchaseRequestLineId).OnDelete(DeleteBehavior.NoAction);
+            e.HasIndex(x => x.PurchaseRequestLineId);
+        });
+        b.Entity<PurchaseOrder>(e => e.HasOne<OrderType>().WithMany().HasForeignKey(x => x.OrderTypeId).OnDelete(DeleteBehavior.Restrict));
+
+        // Purchase requests and approval levels (0.16.0)
+        b.Entity<PurchaseRequest>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Number).HasMaxLength(50); e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.RequestedByName).HasMaxLength(200); e.Property(x => x.DecidedByName).HasMaxLength(200);
+            e.Property(x => x.Notes).HasMaxLength(4000); e.Property(x => x.RejectReason).HasMaxLength(1000); e.Property(x => x.CancelReason).HasMaxLength(1000);
+            e.Property(x => x.RecipientIds).HasDefaultValueSql("'[]'");
+            e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
+            e.HasMany(x => x.Lines).WithOne().HasForeignKey(x => x.PurchaseRequestId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => new { x.TenantId, x.Status });
+        });
+        b.Entity<PurchaseRequestLine>(e =>
+        {
+            e.Property(x => x.Description).HasMaxLength(500); e.Property(x => x.UnitOfMeasure).HasMaxLength(30); e.Property(x => x.Reason).HasMaxLength(1000);
+            e.Property(x => x.Quantity).HasPrecision(18, 3); e.Property(x => x.EstimatedUnitPrice).HasPrecision(18, 4);
+            e.HasOne(x => x.Part).WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<WorkOrder>().WithMany().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Store>().WithMany().HasForeignKey(x => x.StoreId).OnDelete(DeleteBehavior.Restrict);
+        });
+        b.Entity<PurchaseRequestComment>(e =>
+        {
+            e.Property(x => x.Body).HasMaxLength(4000); e.Property(x => x.UserName).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.PurchaseRequestId });
+            e.HasOne<PurchaseRequest>().WithMany().HasForeignKey(x => x.PurchaseRequestId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<OrderType>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<ApprovalLevel>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.MinAmount).HasPrecision(18, 2);
+            e.Property(x => x.Rule).HasConversion<string>().HasMaxLength(10);
+            e.Property(x => x.ApproverIds).HasDefaultValueSql("'[]'");
+            e.HasOne<Site>().WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<OrderType>().WithMany().HasForeignKey(x => x.OrderTypeId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.SiteId, x.OrderTypeId });
+        });
+        b.Entity<PurchaseOrderApprovalStep>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.MinAmount).HasPrecision(18, 2);
+            e.Property(x => x.Rule).HasConversion<string>().HasMaxLength(10); e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.ApproverIds).HasDefaultValueSql("'[]'");
+            e.HasOne<PurchaseOrder>().WithMany().HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.TenantId, x.PurchaseOrderId, x.Round });
+        });
+        b.Entity<PurchaseOrderSignature>(e =>
+        {
+            e.Property(x => x.UserName).HasMaxLength(200); e.Property(x => x.Comment).HasMaxLength(1000);
+            e.HasOne<PurchaseOrder>().WithMany().HasForeignKey(x => x.PurchaseOrderId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.TenantId, x.PurchaseOrderId, x.Round });
         });
 
         b.Entity<TechAction>(e =>
@@ -889,6 +958,11 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         // An asset's checklist follows the asset; a category's is for the whole organization.
         b.Entity<AssetChecklist>().HasQueryFilter(SiteFilter, x => x.AssetId == null || Assets.Any(a => a.Id == x.AssetId));
         b.Entity<PurchaseOrderLine>().HasQueryFilter(SiteFilter, x => PurchaseOrders.Any(p => p.Id == x.PurchaseOrderId));
+        b.Entity<PurchaseRequest>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
+        b.Entity<PurchaseRequestLine>().HasQueryFilter(SiteFilter, x => PurchaseRequests.Any(r => r.Id == x.PurchaseRequestId));
+        b.Entity<PurchaseRequestComment>().HasQueryFilter(SiteFilter, x => PurchaseRequests.Any(r => r.Id == x.PurchaseRequestId));
+        b.Entity<PurchaseOrderApprovalStep>().HasQueryFilter(SiteFilter, x => PurchaseOrders.Any(p => p.Id == x.PurchaseOrderId));
+        b.Entity<PurchaseOrderSignature>().HasQueryFilter(SiteFilter, x => PurchaseOrders.Any(p => p.Id == x.PurchaseOrderId));
         b.Entity<StockReservation>().HasQueryFilter(SiteFilter, x => Stores.Any(s => s.Id == x.StoreId));
     }
 

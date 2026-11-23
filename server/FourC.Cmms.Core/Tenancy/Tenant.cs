@@ -53,6 +53,9 @@ public class TenantSettings
     /// <summary>Generate PM work orders automatically when they come within each schedule's lead time.</summary>
     public bool AutoGeneratePm { get; set; } = true;
     public string PurchaseOrderNumberPrefix { get; set; } = "PO-";
+    public string PurchaseRequestNumberPrefix { get; set; } = "PR-";
+    /// <summary>Users told about new purchase requests (0.16.0); empty = everyone who may approve requests at the site.</summary>
+    public List<Guid> PurchaseRequestRecipientIds { get; set; } = [];
     /// <summary>Default sales tax / VAT applied to new purchase orders.</summary>
     public decimal DefaultTaxPercent { get; set; }
     public string Currency { get; set; } = "USD";

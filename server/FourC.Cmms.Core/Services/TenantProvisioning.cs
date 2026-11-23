@@ -18,7 +18,8 @@ public static partial class TenantProvisioning
             Permissions.All.Select(p => p.Code).Where(c => c is not Permissions.UsersManage and not Permissions.SettingsManage).ToArray()),
         ("Technician", "Executes work orders and raises requests",
             [Permissions.DashboardView, Permissions.LocationsView, Permissions.AssetsView, Permissions.PeopleView, Permissions.RequestsView, Permissions.RequestsCreate,
-             Permissions.WorkOrdersView, Permissions.WorkOrdersCreate, Permissions.WorkOrdersExecute, Permissions.PmView, Permissions.MetersRecord, Permissions.InventoryView, Permissions.InventoryTransact]),
+             Permissions.WorkOrdersView, Permissions.WorkOrdersCreate, Permissions.WorkOrdersExecute, Permissions.PmView, Permissions.MetersRecord, Permissions.InventoryView, Permissions.InventoryTransact,
+             Permissions.PurchasingRequest]),
         ("Requester", "Submits and follows their own work requests", [Permissions.RequestsCreate, Permissions.LocationsView, Permissions.AssetsView]),
         ("Viewer", "Read-only access", [Permissions.DashboardView, Permissions.LocationsView, Permissions.AssetsView, Permissions.PeopleView, Permissions.RequestsView, Permissions.WorkOrdersView, Permissions.PmView,
              Permissions.InventoryView, Permissions.PurchasingView, Permissions.ReportsView]),
@@ -35,6 +36,9 @@ public static partial class TenantProvisioning
         ("WEAR", "Wear and tear"), ("ELEC", "Electrical fault"), ("LUBE", "Lubrication failure"), ("MISU", "Misuse / operator error"),
         ("LEAK", "Leak"), ("BLOCK", "Blockage / jam"), ("CTRL", "Control / sensor fault"), ("UNK", "Unknown"),
     ];
+
+    /// <summary>Kinds of purchase order (0.16.0); the migration gives existing organizations the same list.</summary>
+    public static readonly (string Code, string Name)[] DefaultOrderTypes = [("PARTS", "Parts"), ("SERVICES", "Services"), ("CAPITAL", "Capital")];
 
     /// <summary>Why work is cancelled (0.10.0); the migration gives existing organizations the same list.</summary>
     public static readonly (string Code, string Name)[] DefaultCancelReasons =
@@ -87,6 +91,7 @@ public static partial class TenantProvisioning
         }
         // Cancel reasons are part of how work is cancelled, so every organization gets them (not only those seeding sample lists).
         db.CancelReasons.AddRange(DefaultCancelReasons.Select(r => new FourC.Cmms.Core.Work.CancelReason { TenantId = tenantId, Code = r.Code, Name = r.Name }));
+        db.OrderTypes.AddRange(DefaultOrderTypes.Select(o => new FourC.Cmms.Core.Purchasing.OrderType { TenantId = tenantId, Code = o.Code, Name = o.Name }));
         var admin = NewUser(tenantId, adminName, adminEmail);
         admin.PasswordHash = hasher.HashPassword(admin, adminPassword);
         db.Users.Add(admin);

@@ -26,12 +26,15 @@ public class SiteSettings
     public string? WorkOrderNumberPrefix { get; set; }
     public string? WorkRequestNumberPrefix { get; set; }
     public string? PurchaseOrderNumberPrefix { get; set; }
+    public string? PurchaseRequestNumberPrefix { get; set; }
     /// <summary>The site's weekly working hours, the default for people who work only here.</summary>
     public List<People.WorkingDay>? WorkingHours { get; set; }
     /// <summary>Store that planned and issued parts on this site's work start from.</summary>
     public Guid? DefaultStoreId { get; set; }
     /// <summary>Users told about new requests at this site (instead of everyone who can manage requests).</summary>
     public List<Guid> RequestRecipientIds { get; set; } = [];
+    /// <summary>Users told about new purchase requests at this site (0.16.0; instead of the organization's).</summary>
+    public List<Guid> PurchaseRequestRecipientIds { get; set; } = [];
     /// <summary>Shown as "&lt;name&gt; via CMX" on e-mails about this site's records.</summary>
     public string? EmailSenderName { get; set; }
 }
