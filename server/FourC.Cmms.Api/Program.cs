@@ -179,6 +179,7 @@ api.MapInventoryEndpoints();
 api.MapPurchasingEndpoints();
 api.MapPurchaseRequestEndpoints();
 api.MapContractorEndpoints();
+api.MapContractEndpoints();
 api.MapApprovalLevelEndpoints();
 api.MapMyApprovalsEndpoints();
 api.MapReportEndpoints();

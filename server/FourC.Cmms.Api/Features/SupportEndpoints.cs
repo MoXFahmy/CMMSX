@@ -177,6 +177,8 @@ public static class AttachmentEndpoints
         ["PurchaseOrder"] = (Permissions.PurchasingView, Permissions.PurchasingCreate),
         // Purchase requests (0.16.0): anyone who may use requests (checked in AllowedAsync).
         ["PurchaseRequest"] = (Permissions.PurchasingRequest, Permissions.PurchasingRequest),
+        // Service contracts (0.17.0).
+        ["Contract"] = (Permissions.ContractsView, Permissions.ContractsManage),
     };
 
     // Files are served from the app's own origin, so a file the browser runs as a page (SVG, HTML, any XML) would run
@@ -252,6 +254,7 @@ public static class AttachmentEndpoints
                 "Supplier" => await db.Suppliers.AnyAsync(a => a.Id == entityId, ct),
                 "PurchaseOrder" => await db.PurchaseOrders.AnyAsync(a => a.Id == entityId, ct),
                 "PurchaseRequest" => await db.PurchaseRequests.AnyAsync(a => a.Id == entityId, ct),
+                "Contract" => await db.Contracts.AnyAsync(a => a.Id == entityId, ct),
                 _ => false,
             };
             if (!exists) return Results.NotFound();
@@ -361,6 +364,7 @@ public static class SiteAccess
             "Store" => await db.Stores.AnyAsync(x => x.Id == id, ct),
             "PurchaseOrder" => await db.PurchaseOrders.AnyAsync(x => x.Id == id, ct),
             "PurchaseRequest" => await db.PurchaseRequests.AnyAsync(x => x.Id == id, ct),
+            "Contract" => await db.Contracts.AnyAsync(x => x.Id == id, ct),
             "Team" => await db.Teams.AnyAsync(x => x.Id == id, ct),
             "Meter" => await db.Meters.AnyAsync(x => x.Id == id, ct),
             "DowntimeEvent" => await db.DowntimeEvents.AnyAsync(x => x.Id == id, ct),

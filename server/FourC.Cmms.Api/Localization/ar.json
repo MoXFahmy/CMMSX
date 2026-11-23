@@ -1023,5 +1023,18 @@
  "Choose a contact of this company.": "اختر جهة اتصال من هذه الشركة.",
  "Choose an active contractor category.": "اختر فئة مقاولين نشطة.",
  "Hours are too large.": "الساعات كبيرة جدًا.",
- "Contractor": "المقاولون"
+ "Contractor": "المقاولون",
+ "Enter a title.": "أدخل عنوانًا.",
+ "The end date must be on or after the start date.": "يجب أن يكون تاريخ الانتهاء في تاريخ البدء أو بعده.",
+ "Give the renewal length in months (1–120).": "أدخل مدة التجديد بالأشهر (1–120).",
+ "Notice and alert days must be between 0 and 3650.": "يجب أن تكون أيام الإشعار والتنبيه بين 0 و3650.",
+ "Choose a user of this organization as manager.": "اختر مستخدمًا من هذه المؤسسة مسؤولًا عن العقد.",
+ "Choose an active contract type.": "اختر نوع عقد نشطًا.",
+ "Asset {0} is at another site than the contract.": "الأصل {0} في موقع غير موقع العقد.",
+ "Record the new value as an amendment.": "سجّل القيمة الجديدة كتعديل على العقد.",
+ "The start date can't change after a renewal.": "لا يمكن تغيير تاريخ البدء بعد التجديد.",
+ "Describe the amendment.": "صِف التعديل.",
+ "The value cannot be negative.": "لا يمكن أن تكون القيمة سالبة.",
+ "The expected number cannot be negative.": "لا يمكن أن يكون العدد المتوقع سالبًا.",
+ "This contract is named on work orders or PMs. Terminate it instead.": "هذا العقد مذكور في أوامر عمل أو صيانة وقائية. أنهِه بدلًا من حذفه."
 }
