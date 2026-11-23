@@ -233,7 +233,7 @@ public static class PurchasingEndpoints
             var o = await db.PurchaseOrders.AsNoTracking().Include(x => x.Supplier).Include(x => x.Site).Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (o is null) return Results.NotFound();
             var partIds = o.Lines.Where(l => l.PartId is not null).Select(l => l.PartId!.Value).ToList();
-            var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => new { p.PartNumber, p.Name, p.IsShelfItem }, ct);
+            var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => new { p.PartNumber, p.Name, p.IsShelfItem, p.UnitOfMeasure }, ct);
             var storeIds = o.Lines.Where(l => l.StoreId is not null).Select(l => l.StoreId!.Value).ToList();
             var stores = await db.Stores.AsNoTracking().Where(x => storeIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Code, ct);
             var woIds = o.Lines.Where(l => l.WorkOrderId is not null).Select(l => l.WorkOrderId!.Value).ToList();
@@ -262,7 +262,7 @@ public static class PurchasingEndpoints
                 o.SubmittedAt, o.ApprovedAt, o.ApprovedByName, o.CancelledAt, o.CancelReason, o.CreatedAt, o.LegacyRef, o.OrderTypeId, OrderType = orderType,
                 Lines = o.Lines.OrderBy(l => l.LineNumber).Select(l => new
                 {
-                    l.Id, l.LineNumber, l.PartId, PartNumber = l.PartId is { } p ? parts.GetValueOrDefault(p)?.PartNumber : null, IsShelfItem = l.PartId is { } p2 && (parts.GetValueOrDefault(p2)?.IsShelfItem ?? false),
+                    l.Id, l.LineNumber, l.PartId, PartNumber = l.PartId is { } p ? parts.GetValueOrDefault(p)?.PartNumber : null, IsShelfItem = l.PartId is { } p2 && (parts.GetValueOrDefault(p2)?.IsShelfItem ?? false), PartUnit = l.PartId is { } p3 ? parts.GetValueOrDefault(p3)?.UnitOfMeasure : null,
                     l.Description, l.UnitOfMeasure, l.Quantity, l.UnitPrice, l.DiscountPercent, l.NetUnitPrice, l.LineTotal, l.QuantityReceived, Outstanding = Math.Max(l.Quantity - l.QuantityReceived, 0), l.PackSize, l.SupplierPartNumber,
                     l.StoreId, StoreCode = l.StoreId is { } sid ? stores.GetValueOrDefault(sid) : null, l.WorkOrderId, WorkOrderNumber = l.WorkOrderId is { } wid ? wos.GetValueOrDefault(wid) : null, l.AccountCode,
                     l.PurchaseRequestLineId,

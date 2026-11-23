@@ -16,6 +16,7 @@ import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, 
 import { RequestsTab } from './RequestsTab';
 import { CompaniesTab } from './CompaniesTab';
 import { draftFromShortages, proposalMode } from './purchaseRequests';
+import { packsFor } from './packs';
 
 const VIEWS: { key: string; statuses: PurchaseOrderStatus[] | null }[] = [
   { key: 'open', statuses: ['Draft', 'Submitted', 'Approved', 'PartiallyReceived'] }, { key: 'Draft', statuses: ['Draft'] }, { key: 'Submitted', statuses: ['Submitted'] },
@@ -150,7 +151,13 @@ function ProposalTab() {
   const qty = (r: ProposalItem) => edits[key(r)]?.qty ?? r.suggestedQuantity;
   const sup = (r: ProposalItem) => (edits[key(r)] && 'supplierId' in edits[key(r)] ? edits[key(r)].supplierId : r.preferredSupplierId) ?? null;
   const missingSupplier = selected.filter((r) => !sup(r));
-  const total = selected.reduce((a, r) => a + qty(r) * r.unitPrice, 0);
+  // The chosen supplier's catalogue row (0.18.0): its whole packs and price; without one, pieces at today's price.
+  const option = (r: ProposalItem) => r.catalogue?.find((c) => c.supplierId === sup(r));
+  const value = (r: ProposalItem) => {
+    const c = option(r);
+    return c && c.packPrice != null ? packsFor(qty(r), c.packSize, c.minPacks) * c.packPrice * (1 - c.discountPercent / 100) : qty(r) * r.unitPrice;
+  };
+  const total = selected.reduce((a, r) => a + value(r), 0);
   const groups = new Set(selected.map((r) => `${sup(r)}|${r.siteId}`)).size;
   // People who may ask but not order (0.16.0): the chosen lines become draft purchase requests, one per site.
   const requestIt = async () => {
@@ -208,12 +215,16 @@ function ProposalTab() {
             { accessor: 'available', title: t('plan.available'), textAlign: 'right', noWrap: true, render: (r) => <Text fz="sm" c={r.available < 0 ? 'red' : undefined}>{fmtQty(r.available)}</Text> },
             { accessor: 'levels', title: t('po.minReorderMax'), noWrap: true, render: (r) => <Text fz="sm" c="dimmed">{fmtQty(r.minLevel)} / {fmtQty(r.reorderLevel)} / {fmtQty(r.maxLevel)}</Text> },
             { accessor: 'onOrder', title: t('inv.onOrder'), textAlign: 'right', render: (r) => r.onOrder ? fmtQty(r.onOrder) : '—' },
-            { accessor: 'qty', title: t('po.orderQty'), width: 120, render: (r) => <NumberInput size="xs" min={0} decimalScale={3} value={qty(r)} aria-label={`${t('po.orderQty')} ${r.partNumber}`}
-              onClick={(e) => e.stopPropagation()} onChange={(v) => setEdits((x) => ({ ...x, [key(r)]: { ...x[key(r)], qty: Number(v) || 0 } }))} /> },
-            { accessor: 'supplier', title: t('po.supplier'), width: 210, render: (r) => <Select size="xs" data={(suppliers ?? []).map((s) => ({ value: s.id, label: s.name }))} value={sup(r)} searchable
+            { accessor: 'qty', title: t('po.orderQty'), width: 130, render: (r) => { const c = option(r); return <Stack gap={2}>
+              <NumberInput size="xs" min={0} decimalScale={3} value={qty(r)} aria-label={`${t('po.orderQty')} ${r.partNumber}`}
+                onClick={(e) => e.stopPropagation()} onChange={(v) => setEdits((x) => ({ ...x, [key(r)]: { ...x[key(r)], qty: Number(v) || 0 } }))} />
+              {c && c.packSize !== 1 && <Text fz="xs" c="dimmed">→ {fmtQty(packsFor(qty(r), c.packSize, c.minPacks))} {c.packName}</Text>}</Stack>; } },
+            { accessor: 'supplier', title: t('po.supplier'), width: 230, render: (r) => <Select size="xs" value={sup(r)} searchable
+              data={[...(r.catalogue ?? []).map((c) => ({ value: c.supplierId, label: `${c.isPreferred ? '★ ' : ''}${c.supplierName} · ${c.packName}${c.packPrice != null ? ` · ${fmtPrice(c.packPrice, c.currency)}` : ''}` })),
+                ...(suppliers ?? []).filter((s) => !(r.catalogue ?? []).some((c) => c.supplierId === s.id)).map((s) => ({ value: s.id, label: s.name }))]}
               aria-label={`${t('po.supplier')} ${r.partNumber}`} placeholder={t('po.chooseSupplier')} onClick={(e) => e.stopPropagation()}
               onChange={(v) => setEdits((x) => ({ ...x, [key(r)]: { ...x[key(r)], supplierId: v } }))} /> },
-            { accessor: 'value', title: t('po.estValue'), textAlign: 'right', noWrap: true, render: (r) => fmtPrice(qty(r) * r.unitPrice, currency) },
+            { accessor: 'value', title: t('po.estValue'), textAlign: 'right', noWrap: true, render: (r) => fmtPrice(value(r), option(r)?.packPrice != null ? option(r)!.currency : currency) },
           ]}
         />
       </Card>

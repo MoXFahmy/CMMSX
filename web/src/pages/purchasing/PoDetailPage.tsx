@@ -18,6 +18,7 @@ import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtDateTime, fmtPrice, fmtQty, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { ApprovalPanel } from './ApprovalPanel';
 import { printsSignatures } from './approvals';
+import { piecesOf } from './packs';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={0}><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{label}</Text><Text fz="sm" component="div">{children || '—'}</Text></Stack>;
@@ -120,7 +121,9 @@ export function PoDetailPage() {
                           <Table.Td><Stack gap={0}>{l.storeCode && <Text fz="sm">{t('po.intoStore')} {l.storeCode}</Text>}
                             {l.workOrderId && <Anchor component={Link} to={`/work-orders/${l.workOrderId}`} fz="sm">{l.workOrderNumber}</Anchor>}
                             {!l.storeCode && !l.workOrderId && <Text fz="sm" c="dimmed">{t('po.expense')}</Text>}</Stack></Table.Td>
-                          <Table.Td ta="right">{fmtQty(l.quantity)} {l.unitOfMeasure}</Table.Td>
+                          <Table.Td ta="right">{fmtQty(l.quantity)} {l.unitOfMeasure}
+                            {(l.packSize ?? 1) !== 1 && <Text fz="xs" c="dimmed">= {fmtQty(piecesOf(l.quantity, l.packSize))} {l.partUnit ?? ''}</Text>}
+                            {l.supplierPartNumber && <Text fz="xs" c="dimmed">{t('catalogue.theirNumber', { number: l.supplierPartNumber })}</Text>}</Table.Td>
                           <Table.Td ta="right">{fmtPrice(l.unitPrice, o.currency)}</Table.Td>
                           <Table.Td ta="right">{l.discountPercent ? `${l.discountPercent}%` : '—'}</Table.Td>
                           <Table.Td ta="right" fw={600}>{fmtPrice(l.lineTotal, o.currency)}</Table.Td>
@@ -236,7 +239,8 @@ function ReceiveModal({ o, onClose, onDone }: { o: PoDetail; onClose: () => void
               {open.map((l) => (
                 <Table.Tr key={l.id}>
                   <Table.Td><Text fz="sm" fw={500}>{l.partNumber ?? l.description}</Text>{l.partNumber && <Text fz="xs" c="dimmed">{l.description}</Text>}</Table.Td>
-                  <Table.Td ta="right">{fmtQty(l.outstanding)} {l.unitOfMeasure}</Table.Td>
+                  <Table.Td ta="right">{fmtQty(l.outstanding)} {l.unitOfMeasure}
+                    {(l.packSize ?? 1) !== 1 && <Text fz="xs" c="dimmed">{t('catalogue.receivesPieces', { pieces: fmtQty(piecesOf(rows[l.id].qty === '' ? 0 : rows[l.id].qty as number, l.packSize)), unit: l.partUnit ?? '' })}</Text>}</Table.Td>
                   <Table.Td><NumberInput size="xs" min={0} max={l.outstanding} decimalScale={3} value={rows[l.id].qty} onChange={(v) => set(l.id, { qty: v === '' ? '' : Number(v) })} aria-label={`${t('po.receiveNow')} ${l.lineNumber}`} /></Table.Td>
                   <Table.Td>{l.partId
                     ? <Select size="xs" data={(stores ?? []).map((s) => ({ value: s.id, label: s.code }))} value={rows[l.id].storeId} onChange={(v) => set(l.id, { storeId: v })} aria-label={t('inv.store')} />

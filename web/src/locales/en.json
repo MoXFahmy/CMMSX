@@ -1836,7 +1836,9 @@
     "outstanding": "{{qty}} to come",
     "receiveButton": "Receive",
     "shelfCount": "Shelf-life parts are counted by batch in the office.",
-    "used": "{{qty}} {{unit}} used"
+    "used": "{{qty}} {{unit}} used",
+    "piecesPerPack_one": "{{count}} per pack: {{pieces}} into stock",
+    "piecesPerPack_other": "{{count}} per pack: {{pieces}} into stock"
   },
   "techJob": {
     "downSince": "The asset is down since {{when}}",
@@ -2498,5 +2500,37 @@
     "doneOn": "Date done",
     "doneOnHint": "Today when left empty.",
     "techHint": "You can record the hours done, the date and the person. A planner changes the rest."
+  },
+  "catalogue": {
+    "title": "Suppliers",
+    "hint": "Who sells this part, in what pack and at what price. Stock is always counted in {{unit}}.",
+    "add": "Add supplier",
+    "edit": "Edit supplier",
+    "supplier": "Supplier",
+    "pack": "Pack",
+    "price": "Price",
+    "discount": "Discount %",
+    "leadTime": "Lead time",
+    "minPacks": "Minimum packs",
+    "lastPaid": "Last paid",
+    "none": "No suppliers yet. Add one, or choose a preferred supplier on the part.",
+    "preferred": "Preferred",
+    "makePreferred": "Make preferred",
+    "piecesPerPack_one": "{{count}} {{unit}} per pack",
+    "piecesPerPack_other": "{{count}} {{unit}} per pack",
+    "days_one": "{{count}} day",
+    "days_other": "{{count}} days",
+    "daysShort": "days",
+    "useLastPrice": "Use last price",
+    "supplierPartNumber": "Supplier's part number",
+    "packHint": "What the supplier sells, e.g. Box of 100",
+    "packSize": "Pieces per pack ({{unit}})",
+    "pricePerPack": "For one pack, before discount",
+    "currencyHint": "Empty = company currency",
+    "partsSupplied": "Parts supplied",
+    "noPartsSupplied": "No parts in this supplier's catalogue yet.",
+    "theirNumber": "Their number: {{number}}",
+    "notCataloguePrice": "Not a catalogue price: estimated from today's cost per piece.",
+    "receivesPieces": "Books {{pieces}} {{unit}} into stock"
   }
 }

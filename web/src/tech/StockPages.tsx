@@ -252,7 +252,8 @@ export function ReceivePage() {
       {orders.length === 0 && <Text c="dimmed">{t('techStock.noOrders')}</Text>}
       <Select label={t('techStock.order')} data={orders.map((o) => ({ value: o.id, label: `${o.number} · ${o.supplier}` }))} value={po} onChange={(v) => { setPo(v); setLine(null); }} searchable />
       {order && <Select label={t('techStock.line')} data={order.lines.map((x) => ({ value: x.id, label: `${x.lineNumber}. ${x.description} · ${t('techStock.outstanding', { qty: fmtQty(x.outstanding) })}` }))} value={line} onChange={setLine} />}
-      {l && <NumberInput label={`${t('techStock.quantity')}${l.unitOfMeasure ? ` (${l.unitOfMeasure})` : ''}`} min={0.001} max={l.outstanding} decimalScale={3} value={qty} onChange={(v) => setQty(v === '' ? '' : Number(v))} />}
+      {l && <NumberInput label={`${t('techStock.quantity')}${l.unitOfMeasure ? ` (${l.unitOfMeasure})` : ''}`} min={0.001} max={l.outstanding} decimalScale={3} value={qty} onChange={(v) => setQty(v === '' ? '' : Number(v))}
+        description={(l.packSize ?? 1) !== 1 ? t('techStock.piecesPerPack', { count: l.packSize ?? 1, pieces: fmtQty((Number(qty) || 0) * (l.packSize ?? 1)) }) : undefined} />}
       {l && <Button onClick={save} disabled={qty === '' || Number(qty) <= 0 || Number(qty) > l.outstanding}>{t('techStock.receiveButton')}</Button>}
     </Stack>
   );
