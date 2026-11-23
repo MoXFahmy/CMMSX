@@ -52,6 +52,11 @@ export const orderableLines = (d: PurchaseRequestDetail) =>
 export const previewGroups = (lines: { supplierId: string | null; siteId: string }[]) =>
   new Set(lines.filter((l) => l.supplierId).map((l) => `${l.supplierId}|${l.siteId}`)).size;
 
+/** What the re-order proposal lets someone do with ticked lines: buyers raise draft orders, requesters raise purchase requests, others only look. */
+export type ProposalMode = 'order' | 'request' | 'view';
+export const proposalMode = (canCreate: boolean, canRequest: boolean): ProposalMode =>
+  canCreate ? 'order' : canRequest ? 'request' : 'view';
+
 /** Short planned parts become one request per site, each line for its work order and needed by its due date. */
 export function draftFromShortages(rows: { partId: string; storeId: string; siteId: string; short: number; workOrderId?: string | null; dueDate?: string | null;
   description: string; unitOfMeasure: string }[]): { siteId: string; lines: PrLineDraft[] }[] {

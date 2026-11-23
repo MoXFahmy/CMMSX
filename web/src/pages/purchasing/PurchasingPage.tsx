@@ -17,7 +17,7 @@ import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtPrice, fmtQty, handleFormError, notifyError, notifySuccess } from '@/components/utils';
 import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
 import { RequestsTab } from './RequestsTab';
-import { draftFromShortages } from './purchaseRequests';
+import { draftFromShortages, proposalMode } from './purchaseRequests';
 
 const VIEWS: { key: string; statuses: PurchaseOrderStatus[] | null }[] = [
   { key: 'open', statuses: ['Draft', 'Submitted', 'Approved', 'PartiallyReceived'] }, { key: 'Draft', statuses: ['Draft'] }, { key: 'Submitted', statuses: ['Submitted'] },
@@ -145,6 +145,8 @@ function ProposalTab() {
   const [selected, setSelected] = useState<ProposalItem[]>([]);
   const [edits, setEdits] = useState<Record<string, { qty?: number; supplierId?: string | null }>>({});
   const [busy, setBusy] = useState(false);
+  const mode = proposalMode(can(P.purchasingCreate), can(P.purchasingRequest));
+  const picking = mode !== 'view';
   useEffect(() => { setSelected([]); setEdits({}); }, [data]);
   const qty = (r: ProposalItem) => edits[key(r)]?.qty ?? r.suggestedQuantity;
   const sup = (r: ProposalItem) => (edits[key(r)] && 'supplierId' in edits[key(r)] ? edits[key(r)].supplierId : r.preferredSupplierId) ?? null;
@@ -183,18 +185,18 @@ function ProposalTab() {
       <Card p="sm" mb="md">
         <Group gap="xs" wrap="wrap">
           <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={siteId} onChange={setSiteId} clearable w={220} />
-          <Text fz="sm" c="dimmed" style={{ flex: '1 1 300px' }}>{t('po.proposalHint')}</Text>
-          {can(P.purchasingCreate) && <Button leftSection={<IconShoppingCartPlus size={16} />} disabled={!selected.length || missingSupplier.length > 0} loading={busy} onClick={create}>
+          <Text fz="sm" c="dimmed" style={{ flex: '1 1 300px' }}>{t(mode === 'request' ? 'po.proposalHintRequest' : 'po.proposalHint')}</Text>
+          {mode === 'order' && <Button leftSection={<IconShoppingCartPlus size={16} />} disabled={!selected.length || missingSupplier.length > 0} loading={busy} onClick={create}>
             {selected.length ? t('po.createOrders', { count: groups, total: fmtPrice(total, currency) }) : t('po.selectLines')}</Button>}
-          {!can(P.purchasingCreate) && can(P.purchasingRequest) && <Button leftSection={<IconShoppingCartPlus size={16} />} disabled={!selected.length} loading={busy} onClick={requestIt}>
+          {mode === 'request' && <Button leftSection={<IconShoppingCartPlus size={16} />} disabled={!selected.length} loading={busy} onClick={requestIt}>
             {t('pr.requestSelected', { count: selected.length })}</Button>}
         </Group>
-        {missingSupplier.length > 0 && <Alert color="orange" mt="sm" p="xs">{t('po.chooseSupplierFor', { parts: missingSupplier.map((r) => r.partNumber).join(', ') })}</Alert>}
+        {mode === 'order' && missingSupplier.length > 0 && <Alert color="orange" mt="sm" p="xs">{t('po.chooseSupplierFor', { parts: missingSupplier.map((r) => r.partNumber).join(', ') })}</Alert>}
       </Card>
       <Card p={0}>
         <DataTable<ProposalItem>
           minHeight={220} withTableBorder={false} striped verticalSpacing={6} fetching={isFetching} records={data ?? []} idAccessor={key}
-          selectedRecords={can(P.purchasingCreate) ? selected : undefined} onSelectedRecordsChange={can(P.purchasingCreate) ? setSelected : undefined}
+          selectedRecords={picking ? selected : undefined} onSelectedRecordsChange={picking ? setSelected : undefined}
           noRecordsText={t('po.proposalEmpty')}
           columns={[
             { accessor: 'partNumber', title: t('inv.part'), width: 260, render: (r) => <Stack gap={0}>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { draftFromShortages, isLate, orderableLines, previewGroups, requestStatusColor, type PurchaseRequestDetail } from './purchaseRequests';
+import { draftFromShortages, isLate, orderableLines, previewGroups, proposalMode, requestStatusColor, type PurchaseRequestDetail } from './purchaseRequests';
 
 const detail = (status: PurchaseRequestDetail['status'], ordered: boolean[]): PurchaseRequestDetail => ({
   id: 'r1', number: 'PR-00001', status, siteId: 's1', lines: ordered.map((o, i) => ({
@@ -49,5 +49,12 @@ describe('purchase requests', () => {
     expect(isLate('2026-11-20', '2026-11-23', 'Ordered')).toBe(false);
     expect(isLate('2026-11-20', '2026-11-23', 'Cancelled')).toBe(false);
     expect(isLate(null, '2026-11-23', 'Draft')).toBe(false);
+  });
+
+  it('lets buyers order, requesters request and everyone else only look at the re-order proposal', () => {
+    expect(proposalMode(true, false)).toBe('order');
+    expect(proposalMode(true, true)).toBe('order');
+    expect(proposalMode(false, true)).toBe('request');
+    expect(proposalMode(false, false)).toBe('view');
   });
 });
