@@ -4,6 +4,7 @@ import { DateInput, DateTimePicker } from '@mantine/dates';
 import dayjs from 'dayjs';
 import { AccessWindowsEditor } from '@/components/AccessWindowsEditor';
 import { useForm } from '@mantine/form';
+import { CostCentrePicker } from '@/components/CostCentrePicker';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -38,10 +39,12 @@ type Values = {
   symptomId: string | null;
   /** The service contract the work is done under (0.17.0). */
   contractId: string | null;
+  /** 0.20.0: empty on a new work order takes the asset's or location's cost centre. */
+  costCentreId: string | null;
 };
 const empty: Values = { title: '', description: '', type: 'Corrective', priority: 'Medium', siteId: null, locationId: null, assetId: null, tradeId: null, teamId: null,
   assigneeIds: [], plannedStart: null, dueAt: null, estimatedHours: '', tasks: [], requestedBy: '', assetIsDown: false, accessWindows: [], onlyWhenStopped: null, templateId: null,
-  symptomId: null, contractId: null };
+  symptomId: null, contractId: null, costCentreId: null };
 const local = (v?: string | null) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : null);
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 
@@ -87,6 +90,7 @@ export function WorkOrderFormPage() {
         assetId: wo.assetId ?? null, tradeId: wo.tradeId ?? null, teamId: wo.teamId ?? null, assigneeIds: wo.assignees.map((a) => a.employeeId), plannedStart: d(wo.plannedStart),
         dueAt: local(wo.dueAt), estimatedHours: wo.estimatedHours ?? '', tasks: [], requestedBy: wo.requestedBy ?? '', assetIsDown: !!wo.downtime,
         accessWindows: wo.accessWindows ?? [], onlyWhenStopped: wo.onlyWhenStopped ?? false, symptomId: wo.symptomId ?? null, contractId: wo.contractId ?? null,
+        costCentreId: wo.costCentreId ?? null,
       });
       form.resetDirty();
     } else if (source) {
@@ -117,6 +121,7 @@ export function WorkOrderFormPage() {
       managesTeam: true, // this form shows the team: an empty one clears it
       managesSymptom: true, // and the symptom (0.14.0)
       managesContract: true, // and the contract (0.17.0)
+      managesCostCentre: true, // and the cost centre (0.20.0); empty on a new one takes the asset's or location's
     };
     try {
       const r = editing ? await put<{ id: string }>(`/work-orders/${id}`, body) : await post<{ id: string; number: string }>('/work-orders', body);
@@ -163,6 +168,8 @@ export function WorkOrderFormPage() {
                 current={wo?.symptom ?? source?.symptom ?? null} error={err('symptomId')} />
               <ContractSelect siteId={form.values.siteId} assetId={form.values.assetId} value={form.values.contractId} onChange={(v) => form.setFieldValue('contractId', v)}
                 current={wo?.contract ?? source?.contract ?? null} error={err('contractId')} />
+              <CostCentrePicker value={form.values.costCentreId} onChange={(v) => form.setFieldValue('costCentreId', v)} siteId={form.values.siteId}
+                description={editing ? undefined : t('costCentres.workOrderHint')} error={err('costCentreId')} />
               {form.values.assetId && <Checkbox label={t('downtime.assetIsDown')} color="red"
                 description={editing && wo?.downtime && form.values.assetId !== wo.assetId
                   ? (wo.downtime.source === 'WorkOrder' && wo.downtime.sourceNumber === wo.number && !wo.downtime.endedAt ? t('downtime.assetMovesHint') : t('downtime.assetChangedHint'))

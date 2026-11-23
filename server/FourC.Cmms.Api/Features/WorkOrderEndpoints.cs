@@ -18,12 +18,14 @@ public static class WorkOrderEndpoints
         Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? PlannedStart, DateOnly? DueDate, decimal? EstimatedHours, List<string>? Tasks, string? RowVersion = null,
         string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null, bool? AssetIsDown = null, Guid? TeamId = null,
         bool? ManagesTeam = null, List<AccessWindow>? AccessWindows = null, bool? OnlyWhenStopped = null, Guid? TemplateId = null,
-        Guid? SymptomId = null, bool? ManagesSymptom = null, Guid? ContractId = null, bool? ManagesContract = null);
+        Guid? SymptomId = null, bool? ManagesSymptom = null, Guid? ContractId = null, bool? ManagesContract = null, Guid? CostCentreId = null, bool? ManagesCostCentre = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
         DateTimeOffset? At = null, Guid? CancelReasonId = null, Guid? RemedyId = null, Guid? SymptomId = null);
     public sealed record AllOkInput(Guid? AssetId = null);
     public sealed record BulkInput(Guid[]? Ids, StatusInput? Status, WorkPriority? Priority, Guid[]? AddAssigneeIds);
+    /// <summary>A cost-centre correction (0.20.0) on one or many work orders, in any status.</summary>
+    public sealed record CostCentreChangeInput(Guid[]? Ids, Guid? CostCentreId);
     public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null, StepAnswer? Answer = null, decimal? Value = null,
         string? Text = null, Guid? MeterId = null, bool Confirm = false);
     public sealed record LaborInput(Guid EmployeeId, DateOnly WorkDate, decimal Hours, decimal OvertimeHours, string? Notes);
@@ -241,6 +243,7 @@ public static class WorkOrderEndpoints
                 Source = await Checklists.SourceAsync(db, w.SourceWorkOrderId, w.SourceTaskId, ct), Points = stepPoints,
                 Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned, Signatures = signatures, Contractors = contractors,
                 w.ContractId, Contract = contract, CoveredBy = coveredBy,
+                w.CostCentreId, CostCentrePath = w.CostCentreId is { } cc ? (await CostCentreEndpoints.PathsAsync(db, ct)).GetValueOrDefault(cc) : null,
                 Planned = new
                 {
                     LaborHours = labour.Hours, LaborCost = labour.Cost, PartsCost = plannedParts, ContractorHours = contractors.Sum(l => l.PlannedHours),
@@ -354,6 +357,28 @@ public static class WorkOrderEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { w.Id, w.Status });
         }).RequirePermission(Permissions.WorkOrdersExecute);
+
+        // Correcting the cost centre (0.20.0): any status, closed and cancelled included, without reopening; logged in each work
+        // order's history. Its labour, parts, contractors, other costs and purchase commitments move with it.
+        g.MapPost("/cost-centre", async (CostCentreChangeInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        {
+            var ids = Bulk.Ids(input.Ids, "work orders");
+            if (input.CostCentreId is { } cc && !await db.CostCentres.AnyAsync(c => c.Id == cc && c.IsActive, ct)) throw new DomainException("Choose an active cost centre.");
+            var orders = await db.WorkOrders.Where(w => ids.Contains(w.Id)).ToListAsync(ct);
+            var paths = await CostCentreEndpoints.PathsAsync(db, ct);
+            string Name(Guid? id) => id is { } x ? paths.GetValueOrDefault(x) ?? "No cost centre" : "No cost centre";
+            var changed = 0;
+            var now = DateTimeOffset.UtcNow;
+            foreach (var w in orders.Where(w => w.CostCentreId != input.CostCentreId))
+            {
+                // A note in the work order's activity says who moved it and from where (the audit keeps the field change too).
+                AddComment(db, ctx, w.Id, $"Cost centre: {Name(w.CostCentreId)} → {Name(input.CostCentreId)}", now);
+                w.CostCentreId = input.CostCentreId;
+                changed++;
+            }
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { Changed = changed });
+        }).RequirePermission(Permissions.WorkOrdersEdit);
 
         // Many work orders at once: one change (status, priority or more technicians), the same rules as one at a time.
         // Rows that can't change are skipped with the reason; the rest are saved together.
@@ -807,6 +832,7 @@ public static class WorkOrderEndpoints
         var who = (i.AssigneeIds ?? []).Distinct().ToList();
         if (who.Count > 0 && await db.Employees.CountAsync(e => who.Contains(e.Id), ct) != who.Count) v.Add("assigneeIds", "Unknown person.");
         if (i.TemplateId is { } tpl && !await db.PmTasks.AnyAsync(t => t.Id == tpl, ct)) v.Add("templateId", "Unknown work template.");
+        if (i.CostCentreId is { } cc && !await db.CostCentres.AnyAsync(c => c.Id == cc, ct)) v.Add("costCentreId", "Choose an active cost centre.");
         return v;
     }
 
@@ -826,6 +852,8 @@ public static class WorkOrderEndpoints
         // "Only while stopped" comes from the asset unless the form says otherwise (a request's or PM's own flag is set by the caller).
         if (input.OnlyWhenStopped is null && w.AssetId is { } stopAsset)
             w.OnlyWhenStopped = await db.Assets.AllSites().Where(a => a.Id == stopAsset).Select(a => a.OnlyWhenStopped).FirstOrDefaultAsync(ct);
+        // The cost centre (0.20.0): the one given (the form's, a request's or PM's), else the one in force for the asset, else the location.
+        w.CostCentreId = input.CostCentreId ?? await CostCentreQueries.InForceAsync(db, w.AssetId, w.LocationId, ct);
         Deadlines.OnCreate(w, input.DueAt, input.DueDate, settings, raisedAt ?? DateTimeOffset.UtcNow, requestId is not null, applyTargets);
         SyncAssignees(w, input.AssigneeIds);
         // From a work template (0.12.0): linked (its documents show on the work order), its parts planned, its recipients told.
@@ -872,6 +900,7 @@ public static class WorkOrderEndpoints
         if (i.AccessWindows is not null) w.AccessWindows = AccessWindows.Clean(i.AccessWindows);
         if (i.OnlyWhenStopped is { } stopped) w.OnlyWhenStopped = stopped;
         if (i.ManagesContract == true) w.ContractId = i.ContractId; // pages from before contracts (0.17.0) leave it as it is
+        if (i.ManagesCostCentre == true) w.CostCentreId = i.CostCentreId; // likewise before cost centres (0.20.0)
     }
 
     private static void SyncAssignees(WorkOrder w, List<Guid>? ids)

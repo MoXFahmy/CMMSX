@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActionIcon, Anchor, Badge, Button, Card, Center, Checkbox, Grid, Group, Loader, NumberInput, Radio, SegmentedControl, Select, SimpleGrid, Stack, Switch, Table, Text, TextInput, Textarea, Title, Tooltip } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
+import { CostCentrePicker } from '@/components/CostCentrePicker';
 import { useDebouncedValue } from '@mantine/hooks';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
@@ -40,6 +41,8 @@ export type V = {
   multiAssetMode: 'Round' | 'Group'; groupPlan: 'Copy' | 'Split'; spreadParts: number | ''; assetTemplates: Record<string, string | null>;
   /** The service contract it is done under (0.17.0); passed to the work orders it creates. */
   contractId: string | null;
+  /** 0.20.0: overrides the asset's or location's cost centre on the work orders it creates; empty follows them. */
+  costCentreId: string | null;
 };
 type Target = 'asset' | 'location' | 'several';
 const blank: V = {
@@ -48,7 +51,7 @@ const blank: V = {
   startDate: new Date(), nextDueDate: null, meterId: null, meterTrigger: 'Incremental', meterInterval: '', nextDueReading: '', lowerLimit: '', upperLimit: '', lowerTaskId: null,
   upperTaskId: null, timeBased: false, isActive: true, target: 'asset', roundAssets: [], onlyWhenStopped: null,
   calendarIds: [], extraMeters: [], recipientIds: [], useOrgRules: true, skipStatusesOverride: [], nonWorkingDaysOverride: [], noStackingOverride: false,
-  multiAssetMode: 'Round', groupPlan: 'Copy', spreadParts: '', assetTemplates: {}, contractId: null,
+  multiAssetMode: 'Round', groupPlan: 'Copy', spreadParts: '', assetTemplates: {}, contractId: null, costCentreId: null,
 };
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 const n = (v: number | '') => (v === '' ? null : v);
@@ -62,6 +65,7 @@ function toBody({ target, roundAssets, useOrgRules, assetTemplates, ...v }: V, r
     extraTasks: v.extraTasks.filter((x) => x.pmTaskId).map((x) => ({ pmTaskId: x.pmTaskId, everyNth: n(x.everyNth) ?? 2 })), rowVersion,
     managesTeam: true, // this form shows the team: an empty one clears it
     managesContract: true, // and the contract (0.17.0)
+    managesCostCentre: true, // and the cost centre (0.20.0)
     extraMeters: target === 'asset' ? v.extraMeters.filter((m) => m.meterId).map((m) => ({ meterId: m.meterId, interval: n(m.interval) ?? 0 })) : [],
     managesRules: true, skipStatusesOverride: useOrgRules ? null : v.skipStatusesOverride, nonWorkingDaysOverride: useOrgRules ? null : v.nonWorkingDaysOverride,
     noStackingOverride: useOrgRules ? null : v.noStackingOverride,
@@ -100,7 +104,7 @@ export function PmScheduleFormPage() {
         workPeriodDays: s.workPeriodDays, wholeMonth: s.wholeMonth, leadDays: s.leadDays, startDate: d(s.startDate), nextDueDate: d(s.nextDueDate), meterId: s.meterId ?? null,
         meterTrigger: s.meterTrigger ?? 'Incremental', meterInterval: s.meterInterval ?? '', nextDueReading: s.nextDueReading ?? '', lowerLimit: s.lowerLimit ?? '', upperLimit: s.upperLimit ?? '',
         lowerTaskId: s.lowerTaskId ?? null, upperTaskId: s.upperTaskId ?? null, timeBased: s.timeBased, isActive: s.isActive,
-        target: s.assets.length > 0 ? 'several' : s.assetId ? 'asset' : 'location', roundAssets: s.assets, onlyWhenStopped: s.onlyWhenStopped ?? false, contractId: s.contractId ?? null,
+        target: s.assets.length > 0 ? 'several' : s.assetId ? 'asset' : 'location', roundAssets: s.assets, onlyWhenStopped: s.onlyWhenStopped ?? false, contractId: s.contractId ?? null, costCentreId: s.costCentreId ?? null,
         calendarIds: s.calendarIds ?? [], extraMeters: (s.extraMeters ?? []).map((m) => ({ meterId: m.meterId, interval: m.interval })), recipientIds: s.recipientIds ?? [],
         useOrgRules: s.skipStatusesOverride == null && s.nonWorkingDaysOverride == null && s.noStackingOverride == null,
         skipStatusesOverride: s.skipStatusesOverride ?? [], nonWorkingDaysOverride: s.nonWorkingDaysOverride ?? [], noStackingOverride: !!s.noStackingOverride,
@@ -193,6 +197,8 @@ export function PmScheduleFormPage() {
               {v.target === 'asset' && <AssetPicker label={t('wo.asset')} value={v.assetId} onChange={(x) => form.setValues({ assetId: x, meterId: null })} error={err('assetId')} initial={s?.asset ?? (asset ? { id: asset.id, assetNumber: asset.assetNumber, name: asset.name } : null)} />}
               {v.target === 'several' && <AssetListEditor value={v.roundAssets} siteId={v.siteId} onChange={(x) => form.setFieldValue('roundAssets', x)} error={err('assetIds') ?? err('assetId')} />}
               {v.target === 'location' && err('assetId') && <Text c="red" fz="sm">{err('assetId')}</Text>}
+              <CostCentrePicker value={v.costCentreId} onChange={(x) => form.setFieldValue('costCentreId', x)} siteId={v.siteId}
+                description={t('costCentres.overrideHint')} error={err('costCentreId')} />
               <EmployeePicker label={t('wo.assignees')} value={v.assigneeIds} onChange={(x) => form.setFieldValue('assigneeIds', x)} siteId={v.siteId} tradeId={v.tradeId} />
             </Stack></Card>
             <Card><Stack gap="sm">

@@ -25,6 +25,7 @@ import { LookupTable } from '@/components/LookupTable';
 import { PurchasingSettings } from './PurchasingSettings';
 import { ContractorCategoriesSettings } from './ContractorCategoriesSettings';
 import { ContractSettings } from './ContractSettings';
+import { CostCentresSettings } from './CostCentresSettings';
 import { locationOptions } from '@/components/LocationPicker';
 import { confirmDelete } from '@/components/confirm';
 import { fromNow, handleFormError, notifyError, notifySuccess } from '@/components/utils';
@@ -45,6 +46,7 @@ export function SettingsPage() {
     { value: 'request-types', label: t('requestTypes.title'), show: can(P.settingsManage) },
     { value: 'cancel-reasons', label: t('settings.cancelReasons'), show: can(P.woView) },
     { value: 'availability-types', label: t('availability.types'), show: can(P.woView) },
+    { value: 'cost-centres', label: t('costCentres.title'), show: can(P.woView) || can(P.settingsManage) },
     { value: 'purchasing', label: t('settings.purchasingTab'), show: can(P.settingsManage) },
     { value: 'contractor-categories', label: t('contractorCategories.title'), show: can(P.purchasingView) || can(P.suppliersManage) },
     { value: 'contract-types', label: t('contracts.types'), show: can(P.contractsView) },
@@ -75,6 +77,7 @@ export function SettingsPage() {
         <Tabs.Panel value="roles"><RoleSettings /></Tabs.Panel>
         <Tabs.Panel value="import"><ImportSettings /></Tabs.Panel>
         <Tabs.Panel value="ai-usage"><AiUsageSettings /></Tabs.Panel>
+        <Tabs.Panel value="cost-centres"><CostCentresSettings editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="purchasing"><PurchasingSettings /></Tabs.Panel>
         <Tabs.Panel value="contractor-categories"><ContractorCategoriesSettings editable={can(P.suppliersManage)} /></Tabs.Panel>
         <Tabs.Panel value="contract-types"><LookupTable path="/contract-types" title={t('contracts.types')} newLabel={t('contracts.newType')} editable={can(P.contractsManage)} /></Tabs.Panel>

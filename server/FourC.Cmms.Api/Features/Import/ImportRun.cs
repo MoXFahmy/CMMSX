@@ -64,6 +64,7 @@ public sealed class ImportContext(CmmsDbContext db, ITenantContext tenant, Tenan
     public Dictionary<string, Guid> Causes { get; } = Codes();
     public Dictionary<string, Guid> Remedies { get; } = Codes();
     public Dictionary<string, Guid> Suppliers { get; } = Codes();
+    public Dictionary<string, Guid> CostCentres { get; } = Codes();
     public Dictionary<string, Guid> Stores { get; } = Codes();
     public Dictionary<string, Guid> Assets { get; } = Codes();
     public Dictionary<string, Guid> Employees { get; } = Codes();
@@ -324,6 +325,7 @@ public static class ImportRun
     {
         var db = c.Db;
         foreach (var x in await db.Sites.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.Sites, x.Code, x.Id);
+        foreach (var x in await db.CostCentres.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.CostCentres, x.Code, x.Id);
         foreach (var x in await db.Locations.AsNoTracking().Select(x => new { x.Id, x.SiteId, x.ParentId, x.Code }).ToListAsync(ct))
         {
             c.Locations[ImportContext.LocationKey(x.SiteId, x.Code)] = x.Id;

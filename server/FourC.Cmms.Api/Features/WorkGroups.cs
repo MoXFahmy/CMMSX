@@ -52,7 +52,7 @@ public static partial class WorkGroups
                 .Where(x => !string.IsNullOrWhiteSpace(x)));
             var input = new WorkOrderEndpoints.WorkOrderInput(childTitle.Length > 300 ? childTitle[..300] : childTitle, description.Length == 0 ? null : description,
                 task.WorkType, task.Priority ?? s.Priority, s.SiteId, asset.LocationId, asset.Id, s.TradeId ?? t.TradeId, assignees, start, group.DueDate,
-                t.EstimatedHours is { } h ? Math.Round(h / share, 2) : null, null, TeamId: s.TeamId);
+                t.EstimatedHours is { } h ? Math.Round(h / share, 2) : null, null, TeamId: s.TeamId, CostCentreId: s.CostCentreId);
             var planned = new List<WorkOrderPart>();
             foreach (var p in t.Parts)
                 planned.Add(new WorkOrderPart { PartId = p.PartId, Quantity = Math.Round(p.Quantity / share, 3), StoreId = await Planning.DefaultStoreAsync(db, p.PartId, s.SiteId, ct) });

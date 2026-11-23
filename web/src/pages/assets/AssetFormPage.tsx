@@ -2,6 +2,7 @@ import { useEffect, useMemo } from 'react';
 import { Button, Card, Center, Checkbox, Grid, Group, Loader, MultiSelect, NumberInput, Select, SimpleGrid, Stack, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
+import { CostCentrePicker } from '@/components/CostCentrePicker';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -19,14 +20,14 @@ type Values = {
   commissionedOn: Date | null; disposedOn: Date | null; purchasePrice: number | ''; currentValue: number | ''; salvageValue: number | '';
   expectedLifeYears: number | ''; downtimeCostPerHour: number | ''; warrantyType: string; warrantyExpiresOn: Date | null; warrantyNotes: string;
   notes: string; notesToTechnician: string; customFields: Record<string, string>; onlyWhenStopped: boolean;
-  runsHoursPerDay: number | ''; runsOn: DayName[];
+  runsHoursPerDay: number | ''; runsOn: DayName[]; costCentreId: string | null;
 };
 
 const empty: Values = {
   assetNumber: '', name: '', description: '', categoryId: null, siteId: null, locationId: null, parentAssetId: null, status: 'Active', criticality: 'Medium',
   manufacturer: '', model: '', serialNumber: '', barcode: '', operationNumber: '', commissionedOn: null, disposedOn: null, purchasePrice: '', currentValue: '',
   salvageValue: '', expectedLifeYears: '', downtimeCostPerHour: '', warrantyType: 'None', warrantyExpiresOn: null, warrantyNotes: '', notes: '', notesToTechnician: '', customFields: {}, onlyWhenStopped: false,
-  runsHoursPerDay: 24, runsOn: [...DAY_NAMES],
+  runsHoursPerDay: 24, runsOn: [...DAY_NAMES], costCentreId: null,
 };
 
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
@@ -63,7 +64,7 @@ export function AssetFormPage() {
         commissionedOn: d(asset.commissionedOn), disposedOn: d(asset.disposedOn), purchasePrice: n(asset.purchasePrice), currentValue: n(asset.currentValue),
         salvageValue: n(asset.salvageValue), expectedLifeYears: n(asset.expectedLifeYears), downtimeCostPerHour: n(asset.downtimeCostPerHour),
         warrantyType: asset.warrantyType, warrantyExpiresOn: d(asset.warrantyExpiresOn), warrantyNotes: asset.warrantyNotes ?? '', notes: asset.notes ?? '',
-        notesToTechnician: asset.notesToTechnician ?? '', onlyWhenStopped: asset.onlyWhenStopped ?? false, customFields: Object.fromEntries(Object.entries(asset.customFields ?? {}).map(([k, v]) => [k, v ?? ''])),
+        notesToTechnician: asset.notesToTechnician ?? '', onlyWhenStopped: asset.onlyWhenStopped ?? false, costCentreId: asset.costCentreId ?? null, customFields: Object.fromEntries(Object.entries(asset.customFields ?? {}).map(([k, v]) => [k, v ?? ''])),
         runsHoursPerDay: asset.runsHoursPerDay ?? 24, runsOn: asset.runsOn ?? [...DAY_NAMES],
       });
       form.resetDirty();
@@ -83,7 +84,7 @@ export function AssetFormPage() {
     const body = {
       ...v, commissionedOn: toIsoDate(v.commissionedOn), disposedOn: toIsoDate(v.disposedOn), warrantyExpiresOn: toIsoDate(v.warrantyExpiresOn),
       purchasePrice: num(v.purchasePrice), currentValue: num(v.currentValue), salvageValue: num(v.salvageValue), expectedLifeYears: num(v.expectedLifeYears),
-      downtimeCostPerHour: num(v.downtimeCostPerHour), assetNumber: v.assetNumber || null, rowVersion: asset?.rowVersion,
+      downtimeCostPerHour: num(v.downtimeCostPerHour), assetNumber: v.assetNumber || null, rowVersion: asset?.rowVersion, managesCostCentre: true,
       runsHoursPerDay: v.runsHoursPerDay === '' ? null : v.runsHoursPerDay,
     };
     try {
@@ -140,6 +141,8 @@ export function AssetFormPage() {
               <AssetPicker label={t('assets.parent')} description={t('assets.parentHint')} value={form.values.parentAssetId} excludeId={id}
                 onChange={(v) => form.setFieldValue('parentAssetId', v)} error={err('parentAssetId')}
                 initial={asset?.parentAsset ?? (parent ? { id: parent.id, assetNumber: parent.assetNumber, name: parent.name } : null)} />
+              <CostCentrePicker value={form.values.costCentreId} onChange={(v) => form.setFieldValue('costCentreId', v)} siteId={form.values.siteId}
+                description={t('costCentres.assetHint')} error={err('costCentreId')} />
             </Section>
             <Section title={t('assets.identification')}>
               <SimpleGrid cols={{ base: 1, sm: 3 }}>

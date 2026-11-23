@@ -80,6 +80,9 @@ public class WorkRequest : TenantEntity
     public List<AccessWindow> AccessWindows { get; set; } = [];
     /// <summary>Copied from the asset: the work can only be done while it is stopped.</summary>
     public bool OnlyWhenStopped { get; set; }
+    /// <summary>The cost centre (0.20.0). On a request: an override for its work order (none = the asset's or location's). On a work
+    /// order: whose cost its labour, parts, contractors, other costs and purchase commitments are.</summary>
+    public Guid? CostCentreId { get; set; }
     /// <summary>The work order was completed and the requester has not yet accepted or refused it.</summary>
     public DateTimeOffset? AwaitingFeedbackSince { get; set; }
     /// <summary>SHA-256 (hex) of the single-use link's token, for a requester without a login; null when no link is open.</summary>
@@ -155,6 +158,9 @@ public class WorkOrder : TenantEntity
     public List<AccessWindow> AccessWindows { get; set; } = [];
     /// <summary>The work can only be done while the asset is stopped (planners book a shutdown).</summary>
     public bool OnlyWhenStopped { get; set; }
+    /// <summary>The cost centre (0.20.0). On a request: an override for its work order (none = the asset's or location's). On a work
+    /// order: whose cost its labour, parts, contractors, other costs and purchase commitments are.</summary>
+    public Guid? CostCentreId { get; set; }
     /// <summary>The due time an overdue e-mail was already sent (or skipped) for; a new due time can be notified again.</summary>
     public DateTimeOffset? OverdueNotifiedFor { get; set; }
 

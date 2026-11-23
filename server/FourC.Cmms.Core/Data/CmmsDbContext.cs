@@ -72,6 +72,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<WorkOrderComment> WorkOrderComments => Set<WorkOrderComment>();
     public DbSet<RequestType> RequestTypes => Set<RequestType>();
     public DbSet<CancelReason> CancelReasons => Set<CancelReason>();
+    public DbSet<Costs.CostCentre> CostCentres => Set<Costs.CostCentre>();
+    public DbSet<Costs.Budget> Budgets => Set<Costs.Budget>();
     public DbSet<Planning.AvailabilityType> AvailabilityTypes => Set<Planning.AvailabilityType>();
     public DbSet<Planning.AvailabilityEntry> AvailabilityEntries => Set<Planning.AvailabilityEntry>();
     public DbSet<WorkRequestComment> WorkRequestComments => Set<WorkRequestComment>();
@@ -366,6 +368,29 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.WorkingHours).HasConversion(NullableJsonConverter<List<WorkingDay>>()).Metadata.SetValueComparer(NullableJsonComparer<List<WorkingDay>>());
             e.HasOne(x => x.CompanyRecord).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.NoAction);
         });
+        // Cost centres and budgets (0.20.0).
+        b.Entity<Costs.CostCentre>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.ParentId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne<Site>().WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.NoAction);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<Costs.Budget>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Amount).HasPrecision(18, 2);
+            e.HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
+            e.HasIndex(x => new { x.TenantId, x.CostCentreId, x.Year, x.Month }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        // What carries a cost centre (0.20.0).
+        b.Entity<Location>().HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
+        b.Entity<Asset>().HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
+        b.Entity<WorkRequest>().HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
+        b.Entity<WorkOrder>().HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
+        b.Entity<PmSchedule>().HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
+        b.Entity<StockTransaction>().HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
         b.Entity<Team>(e =>
         {
             ConfigureTenantEntity(e);
@@ -1056,6 +1081,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<WorkOrderGroup>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
         b.Entity<PurchaseOrder>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
         b.Entity<Team>().HasQueryFilter(SiteFilter, e => e.SiteId == null || CurrentSiteIds!.Contains(e.SiteId.Value));
+        b.Entity<Costs.CostCentre>().HasQueryFilter(SiteFilter, e => e.SiteId == null || CurrentSiteIds!.Contains(e.SiteId.Value));
 
         // Child rows: visible when their parent is.
         b.Entity<WorkOrderLabor>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));

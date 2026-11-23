@@ -15,6 +15,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { useHierarchy } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
+import { CostCentrePicker, useCostCentres } from '@/components/CostCentrePicker';
 import { PrintHeader } from '@/components/PrintHeader';
 import { printFilters } from './printFilters';
 import { isTree, PLAN_PARTS, planText, rowLink, treeRows, type PlanCell } from './reportCells';
@@ -81,7 +82,9 @@ export function ReportViewPage() {
   const p = (k: string) => params.get(k) ?? '';
   const set = (patch: Record<string, string | null>) => { const n = new URLSearchParams(params); for (const [k, v] of Object.entries(patch)) { if (v) n.set(k, v); else n.delete(k); } setParams(n, { replace: true }); };
   const has = (name: string) => !!def?.params.some((x) => x.name === name);
-  const preset = p('preset') || (p('from') ? '' : 'last12');
+  // Budget against actual (0.20.0) opens on this year to date; the others on the last 12 months.
+  const defaultPreset = key === 'budget-vs-actual' ? 'ytd' : 'last12';
+  const preset = p('preset') || (p('from') ? '' : defaultPreset);
   const [from, to] = preset ? PRESETS.find((x) => x.key === preset)!.range() : [p('from'), p('to')];
   const groupParam = def?.params.find((x) => x.name === 'groupBy');
   const daysParam = def?.params.find((x) => x.name === 'days');
@@ -89,10 +92,12 @@ export function ReportViewPage() {
   const assetParam = def?.params.find((x) => x.type === 'asset');
   const yearParam = def?.params.find((x) => x.type === 'year');
   const boolParam = def?.params.find((x) => x.type === 'bool');
+  const costCentreParam = def?.params.find((x) => x.type === 'costCentre');
   const q = { from: has('range') ? from : undefined, to: has('range') ? to : undefined, siteId: p('siteId') || undefined, groupBy: p('groupBy') || (groupParam?.default as string | undefined), days: p('days') || (daysParam?.default as number | undefined),
     assetId: assetParam ? p('assetId') || undefined : undefined, year: yearParam ? p('year') || String(dayjs().year()) : undefined,
-    components: boolParam ? p('components') || undefined : undefined };
+    components: boolParam ? p('components') || undefined : undefined, costCentreId: costCentreParam ? p('costCentreId') || undefined : undefined };
   const needsAsset = !!assetParam && !q.assetId;
+  const { data: centres } = useCostCentres();
   const { data: chosenAsset } = useQuery({ queryKey: ['asset', q.assetId], queryFn: () => get<{ assetNumber: string; name: string }>(`/assets/${q.assetId}`), enabled: !!q.assetId });
   const { data, isFetching, error } = useQuery({ queryKey: ['report', key, q], queryFn: () => get<ReportResult>(`/reports/${key}`, q), enabled: !!def && !needsAsset, placeholderData: (prev) => (prev?.key === key ? prev : undefined) });
   const NONE: DataTableSortStatus<Record<string, unknown>> = { columnAccessor: '__none', direction: 'asc' };
@@ -143,12 +148,14 @@ export function ReportViewPage() {
         <Card p="sm" mb="md" className="no-print">
           <Group gap="xs" wrap="wrap" align="flex-end">
             {has('range') && <>
-              <Select label={t('rep.period')} w={180} value={preset || 'custom'} onChange={(v) => v === 'custom' ? set({ preset: null, from, to }) : set({ preset: v === 'last12' ? null : v, from: null, to: null })}
+              <Select label={t('rep.period')} w={180} value={preset || 'custom'} onChange={(v) => v === 'custom' ? set({ preset: null, from, to }) : set({ preset: v === defaultPreset ? null : v, from: null, to: null })}
                 data={[...PRESETS.map((x) => ({ value: x.key, label: t(`rep.presets.${x.key}`) })), { value: 'custom', label: t('rep.presets.custom') }]} allowDeselect={false} />
               <DatePickerInput type="range" label={t('rep.dates')} w={260} valueFormat="DD MMM YYYY" value={[from || null, to || null]}
                 onChange={([a, b]) => { if (a && b) set({ preset: null, from: dayjs(a).format('YYYY-MM-DD'), to: dayjs(b).format('YYYY-MM-DD') }); }} />
             </>}
             {has('siteId') && <Select label={terms.site} placeholder={t('common.all')} w={200} clearable data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v })} />}
+            {costCentreParam && <CostCentrePicker w={240} placeholder={t('common.all')} value={q.costCentreId ?? null} onChange={(v) => set({ costCentreId: v })}
+              title={t('costCentres.withChildren')} />}
             {groupParam && <Select label={t('rep.groupBy')} w={180} allowDeselect={false} data={groupParam.options ?? []} value={q.groupBy ?? null} onChange={(v) => { setSort(NONE); set({ groupBy: v }); }} />}
             {assetParam && <AssetPicker label={t('wo.asset')} value={q.assetId ?? null} onChange={(v) => set({ assetId: v })}
               initial={chosenAsset && q.assetId ? { id: q.assetId, assetNumber: chosenAsset.assetNumber, name: chosenAsset.name } : null} />}
@@ -167,7 +174,8 @@ export function ReportViewPage() {
           <style media="print">{'@page { size: A4 landscape; margin: 12mm; }'}</style>
           <div className="print-only"><PrintHeader title={data.title}
             lines={[...(data.subtitle ? [data.subtitle] : []), ...printFilters(def!, q, { site: h?.sites.find((s) => s.id === q.siteId)?.name,
-              asset: chosenAsset ? `${chosenAsset.assetNumber} · ${chosenAsset.name}` : undefined }, t)]} /></div>
+              asset: chosenAsset ? `${chosenAsset.assetNumber} · ${chosenAsset.name}` : undefined,
+              costCentre: (centres ?? []).find((c) => c.id === q.costCentreId)?.path }, t)]} /></div>
           {data.summary.length > 0 && (
             <SimpleGrid cols={{ base: 2, md: data.summary.length }}>
               {data.summary.map((s) => <Card key={s.label} p="md"><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{s.label}</Text><Text fz={26} fw={700} lh={1.3}>{fmt(s.value, s.type)}</Text></Card>)}

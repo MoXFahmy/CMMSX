@@ -17,7 +17,7 @@ internal static class SheetImporters
 {
     public static IEnumerable<ISheetImporter> All(IReadOnlyList<CustomFieldDefinition> customFields) =>
     [
-        new SiteImporter(), new LocationImporter(), new CategoryImporter(), new TradeImporter(), new PartGroupImporter(),
+        new SiteImporter(), new CostCentreImporter(), new BudgetImporter(), new LocationImporter(), new CategoryImporter(), new TradeImporter(), new PartGroupImporter(),
         new SymptomImporter(), new CauseImporter(), new RemedyImporter(),
         new SupplierImporter(), new StoreImporter(), new AssetImporter(), new PeopleImporter(), new PartImporter(), new StockImporter(),
         new SupplierCatalogueImporter(), new AssetPartImporter(), new PmTaskImporter(), new MeasurementPointImporter(), new PmStepImporter(), new PmPartImporter(), new PmScheduleImporter(),
@@ -242,6 +242,7 @@ internal sealed class LocationImporter : RecordImporter<Location>
         ["siteCode"] = c.CodeOf.GetValueOrDefault(l.SiteId), ["code"] = l.Code, ["name"] = l.Name,
         ["parentCode"] = l.ParentId is { } p ? c.CodeOf.GetValueOrDefault(p) : null, ["type"] = l.Type, ["criticality"] = l.Criticality,
         ["description"] = l.Description, ["notesToTechnician"] = l.NotesToTechnician, ["active"] = l.IsActive,
+        ["costCentreCode"] = l.CostCentreId is { } lcc ? c.CodeOf.GetValueOrDefault(lcc) : null,
     };
 
     protected override Dictionary<string, object?> Defaults() => new() { ["type"] = LocationType.Space, ["criticality"] = Criticality.Medium, ["active"] = true };
@@ -272,7 +273,8 @@ internal sealed class LocationImporter : RecordImporter<Location>
         }
         if (row.HasProblems || siteId is null) return null;
         var input = new LocationEndpoints.LocationInput(siteId.Value, parentId, S(v, "code")!, S(v, "name") ?? "", E(v, "type", LocationType.Space),
-            E(v, "criticality", Criticality.Medium), S(v, "description"), S(v, "notesToTechnician"), existing?.Latitude, existing?.Longitude, B(v, "active", true));
+            E(v, "criticality", Criticality.Medium), S(v, "description"), S(v, "notesToTechnician"), existing?.Latitude, existing?.Longitude, B(v, "active", true),
+            CostCentreId: Ref(row, c.CostCentres, S(v, "costCentreCode"), "Cost centre"), ManagesCostCentre: true);
         if (!Accept(row, LocationEndpoints.LocationRules(input, existing?.Id))) return null;
         if (existing is not null)
         {
@@ -584,6 +586,7 @@ internal sealed class AssetImporter : RecordImporter<Asset>
             ["purchasePrice"] = a.PurchasePrice, ["currentValue"] = a.CurrentValue, ["salvageValue"] = a.SalvageValue, ["expectedLifeYears"] = a.ExpectedLifeYears,
             ["downtimeCostPerHour"] = a.DowntimeCostPerHour, ["warrantyType"] = a.WarrantyType, ["warrantyExpiresOn"] = a.WarrantyExpiresOn,
             ["warrantyNotes"] = a.WarrantyNotes, ["description"] = a.Description, ["notes"] = a.Notes, ["notesToTechnician"] = a.NotesToTechnician,
+            ["costCentreCode"] = a.CostCentreId is { } acc ? c.CodeOf.GetValueOrDefault(acc) : null,
             ["runsHoursPerDay"] = a.RunsHoursPerDay, ["runsOn"] = a.RunsOn.Cast<Enum>().ToList(),
         };
         foreach (var f in c.AssetFields) v["cf:" + f.Key] = a.CustomFields.GetValueOrDefault(f.Key);
@@ -645,7 +648,8 @@ internal sealed class AssetImporter : RecordImporter<Asset>
             S(v, "barcode"), S(v, "operationNumber"), D(v, "commissionedOn"), D(v, "disposedOn"), N(v, "purchasePrice"), N(v, "currentValue"),
             N(v, "salvageValue"), N(v, "expectedLifeYears"), N(v, "downtimeCostPerHour"), E(v, "warrantyType", WarrantyType.None),
             D(v, "warrantyExpiresOn"), S(v, "warrantyNotes"), S(v, "notes"), S(v, "notesToTechnician"), custom,
-            RunsHoursPerDay: N(v, "runsHoursPerDay"), RunsOn: (v.GetValueOrDefault("runsOn") as IEnumerable<Enum>)?.Cast<DayOfWeek>().ToList());
+            RunsHoursPerDay: N(v, "runsHoursPerDay"), RunsOn: (v.GetValueOrDefault("runsOn") as IEnumerable<Enum>)?.Cast<DayOfWeek>().ToList(),
+            CostCentreId: Ref(row, c.CostCentres, S(v, "costCentreCode"), "Cost centre"), ManagesCostCentre: true);
         var rules = AssetEndpoints.AssetRules(input, existing?.Id, requireNumber);
         var values = AssetEndpoints.CustomFieldValues(rules, c.AssetFields, input);
         if (!Accept(row, rules)) return null;
@@ -1361,6 +1365,7 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
         ["weekOfMonth"] = s.WeekOfMonth is { } w ? (WeekOfMonth)w : null, ["weekday"] = s.DayOfWeek, ["dayOfMonth"] = s.DayOfMonth,
         ["startDate"] = s.StartDate, ["leadDays"] = s.LeadDays, ["workPeriodDays"] = s.WorkPeriodDays,
         ["assignees"] = s.AssigneeIds.Select(id => c.CodeOf.GetValueOrDefault(id)).OfType<string>().ToList(), ["description"] = s.Description, ["active"] = s.IsActive,
+        ["costCentreCode"] = s.CostCentreId is { } scc ? c.CodeOf.GetValueOrDefault(scc) : null,
         ["multiAssetMode"] = s.Assets.Count > 0 ? s.MultiAssetMode : null,
     };
 
@@ -1404,7 +1409,8 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
             existing?.LowerTaskId, existing?.UpperTaskId, existing?.TimeBased ?? false, B(v, "active", true), null, round is { Count: > 0 } ? round : null,
             existing?.TeamId, // the sheet has no team column: the schedule keeps its team
             // 0.12.0: the sheet doesn't hold calendars, so a PM keeps its own; its multi-asset mode follows the screen's rules.
-            CalendarIds: existing?.Calendars.Select(x => x.ScheduleCalendarId).ToList(), MultiAssetMode: v.GetValueOrDefault("multiAssetMode") as MultiAssetMode?);
+            CalendarIds: existing?.Calendars.Select(x => x.ScheduleCalendarId).ToList(), MultiAssetMode: v.GetValueOrDefault("multiAssetMode") as MultiAssetMode?,
+            CostCentreId: Ref(row, c.CostCentres, S(v, "costCentreCode"), "Cost centre"), ManagesCostCentre: true);
         var rules = PmEndpoints.PmScheduleRules(input, existing?.Id);
         if (existing is not null) rules.Merge(PmEndpoints.ScheduleChangeRules(existing, input));
         if (!Accept(row, rules)) return Task.FromResult<PmSchedule?>(null);
@@ -1412,4 +1418,101 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
         if (existing is not null) { PmEndpoints.UpdateSchedule(existing, input); return Task.FromResult<PmSchedule?>(null); }
         return Task.FromResult<PmSchedule?>(PmEndpoints.CreateSchedule(c.Db, input, input.Code!.Trim()));
     }
+}
+
+/// <summary>The cost-centre tree (0.20.0): added and updated by code, parents before children.</summary>
+internal sealed class CostCentreImporter : RecordImporter<FourC.Cmms.Core.Costs.CostCentre>
+{
+    public override string Sheet => "CostCentres";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override IReadOnlyList<ImportRow> Order(IReadOnlyList<ImportRow> rows, ImportContext c) =>
+        ParentsFirst(rows, KeyOf, r => r.Get<string>("parentCode")?.Trim(), "code");
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.CostCentres.Where(x => codes.Contains(x.Code)), x => x.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, FourC.Cmms.Core.Costs.CostCentre x) => new()
+    {
+        ["code"] = x.Code, ["name"] = x.Name, ["parentCode"] = x.ParentId is { } p ? c.CodeOf.GetValueOrDefault(p) : null,
+        ["siteCode"] = x.SiteId is { } s ? c.CodeOf.GetValueOrDefault(s) : null, ["active"] = x.IsActive,
+    };
+
+    protected override Dictionary<string, object?> Defaults() => new() { ["active"] = true };
+
+    protected override Task<FourC.Cmms.Core.Costs.CostCentre?> SaveAsync(ImportContext c, ImportRow row, FourC.Cmms.Core.Costs.CostCentre? existing,
+        Dictionary<string, object?> v, CancellationToken ct)
+    {
+        var code = S(v, "code");
+        if (S(v, "name") is null) row.Problem(Translator.T($"{row.Sheet.Column("name").Heading} is required."));
+        var parentId = Ref(row, c.CostCentres, S(v, "parentCode"), "Cost centre");
+        var siteId = Ref(row, c.Sites, S(v, "siteCode"), "Site");
+        if (existing is not null && parentId == existing.Id) row.Problem(Translator.T("A cost centre can't be its own parent or under one of its own."));
+        if (row.HasProblems) return Task.FromResult<FourC.Cmms.Core.Costs.CostCentre?>(null);
+        var item = existing ?? new FourC.Cmms.Core.Costs.CostCentre { Code = "", Name = "" };
+        item.Code = code!.Trim(); item.Name = S(v, "name")!.Trim(); item.ParentId = parentId; item.SiteId = siteId; item.IsActive = B(v, "active", true);
+        if (existing is not null) return Task.FromResult<FourC.Cmms.Core.Costs.CostCentre?>(null);
+        c.Db.CostCentres.Add(item);
+        return Task.FromResult<FourC.Cmms.Core.Costs.CostCentre?>(item);
+    }
+
+    protected override void Remember(ImportContext c, FourC.Cmms.Core.Costs.CostCentre x, Dictionary<string, object?> v) => c.Remember(c.CostCentres, x.Code, x.Id);
+}
+
+/// <summary>Budgets (0.20.0): one row per cost centre and month; a row replaces that month's amount (0 or blank removes it).</summary>
+internal sealed class BudgetImporter : ISheetImporter
+{
+    private readonly Dictionary<(Guid CostCentre, int Year, int Month), decimal> _before = [];
+    private readonly Dictionary<(Guid CostCentre, int Year, int Month), decimal> _wanted = [];
+
+    public string Sheet => "Budgets";
+    public IReadOnlyList<string> KeyColumns => ["costCentreCode", "year", "month"];
+    public string KeyOf(ImportRow row) => string.Join('|', KeyColumns.Select(k => ImportValues.Show(row.Value(k))?.Trim() ?? ""));
+
+    public async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        foreach (var b in await c.Db.Budgets.AsNoTracking().ToListAsync(ct)) _before[(b.CostCentreId, b.Year, b.Month)] = b.Amount;
+    }
+
+    public Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        var code = row.Get<string>("costCentreCode")?.Trim();
+        var year = row.Get<int?>("year");
+        var month = row.Get<int?>("month");
+        var shown = $"{code} · {year}-{month:00}";
+        Guid id = Guid.Empty;
+        if (code is null) row.Problem(Translator.T($"{row.Sheet.Column("costCentreCode").Heading} is required."));
+        else if (!c.CostCentres.TryGetValue(code, out id)) row.Problem(Translator.T($"Cost centre {code} not found."));
+        if (year is not (>= 2000 and <= 2100)) row.Problem(Translator.T("Choose a year from 2000 to 2100."));
+        if (month is not (>= 1 and <= 12)) row.Problem(Translator.T("Choose a month from 1 to 12."));
+        var amount = row.Get<decimal?>("amount") ?? 0;
+        if (amount < 0) row.Problem(Translator.T("A budget can't be below 0."));
+        if (row.HasProblems) return Task.FromResult(Result(row, shown, RowOutcome.Problem));
+        var key = (id, year!.Value, month!.Value);
+        _wanted[key] = Math.Round(amount, 2);
+        var had = _before.TryGetValue(key, out var old);
+        if (!had) return Task.FromResult(Result(row, shown, amount == 0 ? RowOutcome.Unchanged : RowOutcome.New));
+        return Task.FromResult(old == Math.Round(amount, 2) ? Result(row, shown, RowOutcome.Unchanged)
+            : Result(row, shown, RowOutcome.Changed, [new(row.Sheet.Column("amount").Heading, ImportValues.Show(old), ImportValues.Show(amount))]));
+    }
+
+    public async Task FinishAsync(ImportContext c, CancellationToken ct)
+    {
+        if (_wanted.Count == 0) return;
+        var ids = _wanted.Keys.Select(k => k.CostCentre).Distinct().ToList();
+        var tracked = await c.Db.Budgets.Where(b => ids.Contains(b.CostCentreId)).ToListAsync(ct);
+        foreach (var ((cc, y, m), amount) in _wanted)
+        {
+            var row = tracked.FirstOrDefault(b => b.CostCentreId == cc && b.Year == y && b.Month == m);
+            if (amount == 0) { if (row is not null) c.Db.Budgets.Remove(row); continue; }
+            if (row is null) c.Db.Budgets.Add(new FourC.Cmms.Core.Costs.Budget { CostCentreId = cc, Year = y, Month = m, Amount = amount });
+            else row.Amount = amount;
+        }
+    }
+
+    private static RowResult Result(ImportRow row, string key, RowOutcome outcome, List<FieldChange>? changes = null) =>
+        row.HasProblems ? ImportRun.Problem(row, key) : new RowResult(row.Number, key, outcome, changes ?? [], []);
 }

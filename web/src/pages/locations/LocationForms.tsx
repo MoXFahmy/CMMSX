@@ -1,5 +1,6 @@
 import { Accordion, Button, Checkbox, Group, Modal, MultiSelect, NumberInput, Select, SimpleGrid, Stack, Text, TextInput, Textarea } from '@mantine/core';
 import { useForm } from '@mantine/form';
+import { CostCentrePicker } from '@/components/CostCentrePicker';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { useEffect, useMemo } from 'react';
@@ -121,7 +122,7 @@ export function LocationFormModal({ opened, onClose, location, init, onSaved }: 
   const form = useForm({
     initialValues: {
       siteId: '' as string | null, parentId: null as string | null, code: '', name: '', type: 'Space' as string | null, criticality: 'Medium' as string | null,
-      description: '', notesToTechnician: '', latitude: '' as number | '', longitude: '' as number | '', isActive: true,
+      description: '', notesToTechnician: '', latitude: '' as number | '', longitude: '' as number | '', isActive: true, costCentreId: null as string | null,
     },
   });
   useEffect(() => {
@@ -129,14 +130,15 @@ export function LocationFormModal({ opened, onClose, location, init, onSaved }: 
     form.setValues(location ? {
       siteId: location.siteId, parentId: location.parentId ?? null, code: location.code, name: location.name, type: location.type, criticality: location.criticality,
       description: location.description ?? '', notesToTechnician: location.notesToTechnician ?? '', latitude: location.latitude ?? '', longitude: location.longitude ?? '', isActive: location.isActive,
-    } : { siteId: init?.siteId ?? null, parentId: init?.parentId ?? null, code: '', name: '', type: init?.parentId ? 'Room' : 'Building', criticality: 'Medium', description: '', notesToTechnician: '', latitude: '', longitude: '', isActive: true });
+      costCentreId: location.costCentreId ?? null,
+    } : { siteId: init?.siteId ?? null, parentId: init?.parentId ?? null, code: '', name: '', type: init?.parentId ? 'Room' : 'Building', criticality: 'Medium', description: '', notesToTechnician: '', latitude: '', longitude: '', isActive: true, costCentreId: null });
     form.resetDirty();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened, location, init?.siteId, init?.parentId]);
   const siteId = form.values.siteId;
   const parentOpts = useMemo(() => locationOptions(h?.locations ?? [], siteId, location?.id), [h, siteId, location?.id]);
   const submit = form.onSubmit(async (v) => {
-    const body = { ...v, latitude: v.latitude === '' ? null : v.latitude, longitude: v.longitude === '' ? null : v.longitude, rowVersion: location?.rowVersion };
+    const body = { ...v, latitude: v.latitude === '' ? null : v.latitude, longitude: v.longitude === '' ? null : v.longitude, managesCostCentre: true, rowVersion: location?.rowVersion };
     try {
       const r = location ? await put<{ id: string }>(`/locations/${location.id}`, body) : await post<{ id: string }>('/locations', body);
       notifySuccess(t('common.saved'));
@@ -164,6 +166,8 @@ export function LocationFormModal({ opened, onClose, location, init, onSaved }: 
             <Select label={t('common.type')} required data={LOCATION_TYPES.map((x) => ({ value: x, label: t(`locationType.${x}`) }))} {...form.getInputProps('type')} />
             <Select label={t('criticality.label')} required data={CRITICALITIES.map((x) => ({ value: x, label: t(`criticality.${x}`) }))} {...form.getInputProps('criticality')} />
           </SimpleGrid>
+          <CostCentrePicker value={form.values.costCentreId} onChange={(v) => form.setFieldValue('costCentreId', v)} siteId={siteId}
+            description={t('costCentres.locationHint')} error={form.errors.costCentreId} />
           <Textarea label={t('common.description')} autosize minRows={2} {...form.getInputProps('description')} />
           <Textarea label={t('locations.notesToTechnician')} description={t('locations.notesToTechnicianHint')} autosize minRows={2} {...form.getInputProps('notesToTechnician')} />
           <SimpleGrid cols={2}>

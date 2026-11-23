@@ -88,7 +88,7 @@ export type LocationDetail = {
   id: string; siteId: string; site: { id: string; code: string; name: string }; parentId?: string | null; code: string; name: string;
   type: LocationType; criticality: Criticality; description?: string; notesToTechnician?: string; latitude?: number; longitude?: number;
   isActive: boolean; depth: number; createdAt: string; updatedAt?: string; ancestors: { id: string; code: string; name: string }[];
-  childCount: number; assetCount: number; subtreeAssetCount: number; rowVersion: string;
+  childCount: number; assetCount: number; subtreeAssetCount: number; rowVersion: string; costCentreId?: string | null;
 };
 
 export type AssetListItem = {
@@ -101,7 +101,7 @@ export type AssetListItem = {
   downSince?: string | null;
 };
 export type AssetDetail = {
-  onlyWhenStopped?: boolean;
+  onlyWhenStopped?: boolean; costCentreId?: string | null;
   id: string; assetNumber: string; name: string; description?: string; categoryId?: string;
   category?: { id: string; code: string; name: string; color?: string; downtimeCostPerHour?: number | null }; siteId: string; site: { id: string; code: string; name: string };
   locationId?: string; locationTrail: { id: string; code: string; name: string }[]; parentAssetId?: string;
@@ -198,6 +198,8 @@ export type WorkOrderStep = { id: string; sequence: number; description: string;
   answer?: import('@/components/measure').StepAnswer | null; value?: number | null; textValue?: string | null; level?: import('@/components/measure').MeasureLevel | null;
   photos: { id: string; fileName: string; contentType: string }[]; followUp?: FollowUpLink | null };
 export type WorkOrderDetail = {
+  /** 0.20.0: its cost centre and the path "Production › Line 1". */
+  costCentreId?: string | null; costCentrePath?: string | null;
   id: string; number: string; title: string; description?: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
   siteId: string; site: { id: string; name: string }; locationId?: string; locationTrail: { id: string; name: string }[];
   assetId?: string; asset?: { id: string; assetNumber: string; name: string; serialNumber?: string; status: AssetStatus; criticality: Criticality; notesToTechnician?: string; warrantyType: WarrantyType; warrantyExpiresOn?: string; underWarranty: boolean };
@@ -339,7 +341,7 @@ export type PmScheduleListItem = {
   onlyWhenStopped?: boolean;
 };
 export type PmScheduleDetail = {
-  onlyWhenStopped?: boolean;
+  onlyWhenStopped?: boolean; costCentreId?: string | null;
   /** The service contract it is done under (0.17.0). */
   contractId?: string | null;
   id: string; code: string; name: string; description?: string; siteId: string; locationId?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
@@ -420,6 +422,8 @@ export type StockTransactionItem = {
   id: string; type: StockTransactionType; date: string; partId: string; partNumber: string; partName: string; unit: string; storeId: string; storeCode: string;
   quantity: number; unitCost: number; total: number; workOrderId?: string; workOrderNumber?: string; purchaseOrderId?: string; reference?: string; batchNumber?: string;
   expiryDate?: string; notes?: string; createdByName?: string; createdAt: string;
+  /** 0.20.0: parts issued to (or returned from) a location without a work order carry their own cost centre. */
+  locationId?: string | null; costCentreId?: string | null;
 };
 export type ProposalItem = {
   partId: string; partNumber: string; partName: string; unitOfMeasure: string; isCritical: boolean; storeId: string; storeCode: string; siteId: string; quantityOnHand: number;
@@ -465,7 +469,7 @@ export type PoDetail = {
 };
 
 // ---------------- Reports ----------------
-export type ReportParam = { name: string; type: 'dateRange' | 'site' | 'select' | 'number' | 'asset' | 'year' | 'bool'; options?: { value: string; label: string }[]; default?: string | number };
+export type ReportParam = { name: string; type: 'dateRange' | 'site' | 'select' | 'number' | 'asset' | 'year' | 'bool' | 'costCentre'; options?: { value: string; label: string }[]; default?: string | number };
 export type ReportDef = { key: string; category: string; title: string; description: string; permission: string; params: ReportParam[] };
 export type ReportColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date' | 'datetime' | 'hours' | 'plan';
 export type ReportResult = {
@@ -523,3 +527,8 @@ export type SupplierPartRow = {
 };
 /** An order line as the catalogue fills it (0.18.0). */
 export type FilledLine = { partId: string; unitOfMeasure: string; packSize: number; quantity: number; unitPrice: number; discountPercent: number; supplierPartNumber?: string | null; leadTimeDays?: number | null; cataloguePrice: boolean };
+
+/** 0.20.0: a cost centre in the tree; `path` is "Production › Line 1" with hidden parents' names included. */
+export type CostCentre = { id: string; code: string; name: string; parentId?: string | null; siteId?: string | null; siteName?: string | null; isActive: boolean; path: string };
+export type BudgetRow = { costCentreId: string; path: string; isActive: boolean; months: number[]; total: number };
+export type BudgetYear = { year: number; rows: BudgetRow[] };

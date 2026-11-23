@@ -157,7 +157,8 @@ public static class SiteEndpoints
 public static class LocationEndpoints
 {
     public sealed record LocationInput(Guid SiteId, Guid? ParentId, string Code, string Name, LocationType Type, Criticality Criticality,
-        string? Description, string? NotesToTechnician, double? Latitude, double? Longitude, bool IsActive = true, string? RowVersion = null);
+        string? Description, string? NotesToTechnician, double? Latitude, double? Longitude, bool IsActive = true, string? RowVersion = null,
+        Guid? CostCentreId = null, bool? ManagesCostCentre = null);
 
     public sealed record LocationListItem(Guid Id, Guid SiteId, string SiteName, Guid? ParentId, string Code, string Name, LocationType Type,
         Criticality Criticality, bool IsActive, string PathName);
@@ -209,7 +210,7 @@ public static class LocationEndpoints
             return Results.Ok(new
             {
                 l.Id, l.SiteId, Site = new { l.Site!.Id, l.Site.Code, l.Site.Name }, l.ParentId, l.Code, l.Name, l.Type, l.Criticality,
-                l.Description, l.NotesToTechnician, l.Latitude, l.Longitude, l.IsActive, l.Depth, l.CreatedAt, l.UpdatedAt,
+                l.Description, l.NotesToTechnician, l.Latitude, l.Longitude, l.IsActive, l.Depth, l.CreatedAt, l.UpdatedAt, l.CostCentreId,
                 Ancestors = ancestors.OrderBy(a => a.Depth).Select(a => new { a.Id, a.Code, a.Name }),
                 ChildCount = await db.Locations.CountAsync(x => x.ParentId == id, ct),
                 AssetCount = await db.Assets.CountAsync(a => a.LocationId == id, ct),
@@ -314,6 +315,8 @@ public static class LocationEndpoints
     internal static void Apply(Location l, LocationInput i)
     {
         l.Type = i.Type; l.Criticality = i.Criticality; l.Description = i.Description.Clean(); l.NotesToTechnician = i.NotesToTechnician.Clean();
+        // Pages and sheets from before cost centres (0.20.0) leave it as it is; a new location takes what was sent.
+        if (i.ManagesCostCentre == true || l.CreatedAt == default) l.CostCentreId = i.CostCentreId;
         l.Latitude = i.Latitude; l.Longitude = i.Longitude; l.IsActive = i.IsActive;
     }
 
