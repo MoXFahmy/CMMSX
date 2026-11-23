@@ -1081,5 +1081,7 @@
  "This cost centre is in use. Make it inactive instead.": "مركز التكلفة هذا مستخدم. اجعله غير نشط بدلًا من ذلك.",
  "A site's cost centre can only sit under a cost centre of the same site or for all sites.": "مركز تكلفة الموقع يمكن أن يكون فقط تحت مركز تكلفة للموقع نفسه أو لكل المواقع.",
  "Choose an active cost centre.": "اختر مركز تكلفة نشطًا.",
- "Only parts issued to a location have their own cost centre.": "فقط القطع المصروفة إلى مكان لها مركز تكلفة خاص بها."
+ "Only parts issued to a location have their own cost centre.": "فقط القطع المصروفة إلى مكان لها مركز تكلفة خاص بها.",
+ "A budget can't be below 0.": "لا يمكن أن تكون الموازنة أقل من 0.",
+ "Give twelve months for each cost centre.": "أدخل اثني عشر شهرًا لكل مركز تكلفة."
 }
