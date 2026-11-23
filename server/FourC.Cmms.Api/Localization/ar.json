@@ -1072,5 +1072,8 @@
  "Choose an active type.": "اختر نوعًا نشطًا.",
  "Choose an active team.": "اختر فريقًا نشطًا.",
  "This type is in use. Make it inactive instead.": "هذا النوع مستخدم. اجعله غير نشط بدلًا من ذلك.",
- "Choose time away or extra time.": "اختر وقت غياب أو وقتًا إضافيًا."
+ "Choose time away or extra time.": "اختر وقت غياب أو وقتًا إضافيًا.",
+ "{0} is away on that day ({1}).": "{0} غائب في ذلك اليوم ({1}).",
+ "This takes {0} to {1} of {2} hours on {3}.": "هذا يجعل {0} عند {1} من {2} ساعة في {3}.",
+ "Someone was assigned meanwhile. Refresh the board.": "تم تعيين شخص آخر في الأثناء. حدّث اللوحة."
 }
