@@ -272,7 +272,7 @@ public static class PurchaseRequestEndpoints
                 if (qty <= 0) throw new DomainException($"{r.Number} line {line.LineNumber}: quantity must be more than 0.");
                 var price = w.UnitPrice ?? line.EstimatedUnitPrice ?? line.Part?.LastPurchasePrice ?? line.Part?.AverageCost ?? 0m;
                 if (price < 0) throw new DomainException($"{r.Number} line {line.LineNumber}: the price can't be below 0.");
-                return (Line: line, Request: r, SupplierId: supplier, Quantity: qty, Price: price);
+                return (Line: line, Request: r, SupplierId: supplier, Quantity: qty, Price: price, Typed: w.UnitPrice);
             }).ToList();
             var supplierIds = resolved.Select(x => x.SupplierId).Distinct().ToList();
             var suppliers = await db.Suppliers.AsNoTracking().Where(s => supplierIds.Contains(s.Id) && s.IsActive).ToDictionaryAsync(s => s.Id, ct);
@@ -286,10 +286,23 @@ public static class PurchaseRequestEndpoints
                     var sup = suppliers[grp.Key.SupplierId];
                     var numbers = grp.Select(x => x.Request.Number).Distinct().OrderBy(n => n).ToList();
                     var who = string.Join(", ", grp.Select(x => x.Request.RequestedByName).OfType<string>().Distinct());
-                    var input = new PurchasingEndpoints.PoInput(grp.Key.SiteId, sup.Id, Today, null, who.Length > 0 ? who[..Math.Min(who.Length, 200)] : null, sup.Currency, null,
-                        sup.PaymentTerms, null, null, null, null, 0, $"From {string.Join(", ", numbers)}",
-                        grp.OrderBy(x => x.Request.Number).ThenBy(x => x.Line.LineNumber).Select(x => new PurchasingEndpoints.LineInput(null, x.Line.PartId, x.Line.Description,
-                            x.Line.UnitOfMeasure, x.Quantity, x.Price, 0, x.Line.StoreId, x.Line.WorkOrderId, null, x.Line.Id)).ToList(),
+                    // Requested quantities are pieces: a part line becomes the supplier's whole packs at the catalogue price (0.18.0); free text as before.
+                    var currency = sup.Currency.Clean()?.ToUpperInvariant() ?? await CatalogueEndpoints.BaseCurrencyAsync(db, tk);
+                    var lines = new List<(PurchasingEndpoints.LineInput Line, int? Lead)>();
+                    foreach (var x in grp.OrderBy(x => x.Request.Number).ThenBy(x => x.Line.LineNumber))
+                    {
+                        if (x.Line.Part is { } part)
+                        {
+                            var f = await CatalogueEndpoints.FillAsync(db, part, sup.Id, currency, x.Quantity, x.Typed, tk, x.Line.EstimatedUnitPrice);
+                            lines.Add((new PurchasingEndpoints.LineInput(null, x.Line.PartId, x.Line.Description, f.UnitOfMeasure, f.Quantity, f.UnitPrice, f.DiscountPercent,
+                                x.Line.StoreId, x.Line.WorkOrderId, null, x.Line.Id, f.PackSize, f.SupplierPartNumber), f.LeadTimeDays));
+                        }
+                        else lines.Add((new PurchasingEndpoints.LineInput(null, x.Line.PartId, x.Line.Description, x.Line.UnitOfMeasure, x.Quantity, x.Price, 0,
+                            x.Line.StoreId, x.Line.WorkOrderId, null, x.Line.Id), null));
+                    }
+                    var input = new PurchasingEndpoints.PoInput(grp.Key.SiteId, sup.Id, Today, CatalogueEndpoints.ExpectedFrom(Today, lines.Select(l => l.Lead)),
+                        who.Length > 0 ? who[..Math.Min(who.Length, 200)] : null, currency, null,
+                        sup.PaymentTerms, null, null, null, null, 0, $"From {string.Join(", ", numbers)}", lines.Select(l => l.Line).ToList(),
                         // Parts orders when any part is on it, else services.
                         await PurchasingEndpoints.DefaultTypeAsync(db, grp.Any(x => x.Line.PartId is not null) ? "PARTS" : "SERVICES", tk));
                     var o = await PurchasingEndpoints.CreateDraftAsync(db, ctx, input, tk);
@@ -445,7 +458,8 @@ public static class PurchaseRequestEndpoints
             .Where(l => l.PurchaseRequestLineId != null && lineIds.Contains(l.PurchaseRequestLineId.Value))
             .Select(l => new
             {
-                RequestLineId = l.PurchaseRequestLineId!.Value, l.Id, l.PurchaseOrderId, l.Quantity, l.QuantityReceived,
+                // In the request's unit (pieces): an order line in packs counts its pieces (0.18.0).
+                RequestLineId = l.PurchaseRequestLineId!.Value, l.Id, l.PurchaseOrderId, Quantity = l.Quantity * l.PackSize, QuantityReceived = l.QuantityReceived * l.PackSize,
                 Order = db.PurchaseOrders.AllSites().Where(o => o.Id == l.PurchaseOrderId).Select(o => new { o.Number, o.Status }).FirstOrDefault(),
             }).ToListAsync(ct);
         var live = orderLines.Where(o => o.Order is not null && o.Order.Status != PurchaseOrderStatus.Cancelled).ToLookup(o => o.RequestLineId);

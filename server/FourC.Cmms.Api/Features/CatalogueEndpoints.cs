@@ -15,6 +15,12 @@ public static class CatalogueEndpoints
     public sealed record SupplierPartInput(Guid SupplierId, string? SupplierPartNumber, string? PackName, decimal PackSize, decimal? PackPrice, string? Currency,
         decimal DiscountPercent, int? LeadTimeDays, int MinPacks, string? Notes, bool IsActive = true, bool IsPreferred = false);
 
+    public sealed record FillRequest(Guid PartId, decimal Pieces);
+    public sealed record FillInput(Guid SupplierId, string? Currency, List<FillRequest> Lines);
+    /// <summary>An order line as the catalogue fills it: its order unit and pieces per unit, whole packs, price and discount.</summary>
+    public sealed record FilledLine(Guid PartId, string UnitOfMeasure, decimal PackSize, decimal Quantity, decimal UnitPrice, decimal DiscountPercent,
+        string? SupplierPartNumber, int? LeadTimeDays, bool CataloguePrice);
+
     private static Guid UserId(HttpContext http) => Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
 
     /// <summary>Catalogue rows change with either Manage parts or Manage suppliers.</summary>
@@ -100,6 +106,20 @@ public static class CatalogueEndpoints
             return Results.Ok(new { row.Id, row.PackPrice, row.DiscountPercent });
         }).RequireAuthorization();
 
+        // The order form's lines from the catalogue: a part and the pieces needed become the supplier's whole packs at their price.
+        api.MapPost("/purchase-orders/fill", async (FillInput i, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var company = await db.Suppliers.AsNoTracking().Where(s => s.Id == i.SupplierId).Select(s => new { s.Currency }).FirstOrDefaultAsync(ct);
+            if (company is null) return Results.NotFound();
+            var currency = i.Currency.Clean()?.ToUpperInvariant() ?? company.Currency.Clean()?.ToUpperInvariant() ?? await BaseCurrencyAsync(db, ct);
+            var ids = i.Lines.Select(l => l.PartId).Distinct().ToList();
+            var parts = await db.Parts.AsNoTracking().Where(p => ids.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
+            var filled = new List<FilledLine>();
+            foreach (var l in i.Lines)
+                if (parts.GetValueOrDefault(l.PartId) is { } part) filled.Add(await FillAsync(db, part, i.SupplierId, currency, l.Pieces, null, ct));
+            return Results.Ok(filled);
+        }).WithTags("Supplier catalogue").RequirePermission(Permissions.PurchasingCreate);
+
         // The parts a company supplies (its catalogue rows), read-only on the company.
         api.MapGet("/suppliers/{id:guid}/parts", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
             await db.SupplierParts.AsNoTracking().Where(r => r.SupplierId == id).OrderBy(r => r.Part!.PartNumber)
@@ -128,6 +148,33 @@ public static class CatalogueEndpoints
         };
         db.SupplierParts.Add(row);
         return row;
+    }
+
+    /// <summary>
+    /// An order line for <paramref name="pieces"/> of a part from a supplier. With an active catalogue row: its pack, whole packs (rounded up, at
+    /// least the minimum) and supplier part number, at the catalogue price and discount when the row has a price in the order's currency and no
+    /// price was typed; otherwise priced per piece (typed, else <paramref name="fallbackPerPiece"/>, else last purchase price, else average cost) ×
+    /// pieces per pack, without discount. No row: the part's own unit as before.
+    /// </summary>
+    internal static async Task<FilledLine> FillAsync(CmmsDbContext db, Part part, Guid supplierId, string orderCurrency, decimal pieces, decimal? typedPerPiece,
+        CancellationToken ct, decimal? fallbackPerPiece = null)
+    {
+        var row = await db.SupplierParts.AsNoTracking().FirstOrDefaultAsync(r => r.PartId == part.Id && r.SupplierId == supplierId && r.IsActive, ct);
+        var perPiece = typedPerPiece ?? fallbackPerPiece ?? part.LastPurchasePrice ?? part.AverageCost;
+        if (row is null)
+            return new FilledLine(part.Id, part.UnitOfMeasure, 1, pieces, perPiece, 0, null, part.LeadTimeDays, false);
+        var packs = PackMath.Packs(pieces, row.PackSize, row.MinPacks);
+        var catalogue = typedPerPiece is null && row.PackPrice is { } price && string.Equals(row.Currency, orderCurrency, StringComparison.OrdinalIgnoreCase);
+        return catalogue
+            ? new FilledLine(part.Id, row.PackName, row.PackSize, packs, row.PackPrice!.Value, row.DiscountPercent, row.SupplierPartNumber, row.LeadTimeDays ?? part.LeadTimeDays, true)
+            : new FilledLine(part.Id, row.PackName, row.PackSize, packs, Math.Round(perPiece * row.PackSize, 4), 0, row.SupplierPartNumber, row.LeadTimeDays ?? part.LeadTimeDays, false);
+    }
+
+    /// <summary>The order date plus the longest lead time of its lines; none without lead times.</summary>
+    internal static DateOnly? ExpectedFrom(DateOnly orderDate, IEnumerable<int?> leadTimes)
+    {
+        var longest = leadTimes.Where(d => d is > 0).Select(d => d!.Value).DefaultIfEmpty(0).Max();
+        return longest > 0 ? orderDate.AddDays(longest) : null;
     }
 
     private static void Prefer(Part part, SupplierPart row, bool preferred)

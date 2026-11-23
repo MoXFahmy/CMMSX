@@ -22,7 +22,9 @@ public static class PurchasingEndpoints
     public sealed record SupplierAddressInput(Guid? Id, string? Label, string Address, string? City, string? Country);
     public sealed record SupplierRateInput(Guid CategoryId, decimal Rate);
     public sealed record LineInput(Guid? Id, Guid? PartId, string? Description, string? UnitOfMeasure, decimal Quantity, decimal UnitPrice, decimal DiscountPercent,
-        Guid? StoreId, Guid? WorkOrderId, string? AccountCode, Guid? PurchaseRequestLineId = null);
+        Guid? StoreId, Guid? WorkOrderId, string? AccountCode, Guid? PurchaseRequestLineId = null,
+        // The pack (0.18.0): pieces per ordered unit and the supplier's part number; left out (older pages) keeps the line's, 1 on a new line.
+        decimal? PackSize = null, string? SupplierPartNumber = null);
     public sealed record PoInput(Guid? SiteId, Guid? SupplierId, DateOnly? OrderDate, DateOnly? ExpectedDate, string? RequestedBy, string? Currency, decimal? ExchangeRate,
         string? PaymentTerms, string? ShippingMethod, string? DeliverTo, string? SupplierQuoteRef, decimal? TaxPercent, decimal ShippingCost, string? Notes,
         List<LineInput> Lines, Guid? OrderTypeId = null, string? RowVersion = null);
@@ -441,7 +443,7 @@ public static class PurchasingEndpoints
                 var store = stores.GetValueOrDefault(l.StoreId) ?? throw new DomainException("Unknown store.");
                 var supplier = l.SupplierId ?? part.PreferredSupplierId ?? throw new DomainException($"Choose a supplier for {part.PartNumber}.");
                 if (l.Quantity <= 0) throw new DomainException($"Enter a quantity for {part.PartNumber}.");
-                return (Part: part, Store: store, SupplierId: supplier, l.Quantity, Price: l.UnitPrice ?? part.LastPurchasePrice ?? part.AverageCost);
+                return (Part: part, Store: store, SupplierId: supplier, l.Quantity, l.UnitPrice);
             }).ToList();
             var supplierIds = resolved.Select(r => r.SupplierId).Distinct().ToList();
             var suppliers = await db.Suppliers.AsNoTracking().Where(x => supplierIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
@@ -452,8 +454,17 @@ public static class PurchasingEndpoints
                 foreach (var grp in resolved.GroupBy(r => (r.SupplierId, r.Store.SiteId)))
                 {
                     var sup = suppliers[grp.Key.SupplierId];
-                    var input = new PoInput(grp.Key.SiteId, sup.Id, Today, null, ctx.UserName, sup.Currency, null, sup.PaymentTerms, null, null, null, null, 0,
-                        "Created from the purchase proposal.", grp.Select(r => new LineInput(null, r.Part.Id, r.Part.Name, r.Part.UnitOfMeasure, r.Quantity, r.Price, 0, r.Store.Id, null, null)).ToList(),
+                    // The proposal's quantities are pieces: the catalogue turns them into the supplier's whole packs at its price (0.18.0).
+                    var currency = sup.Currency.Clean()?.ToUpperInvariant() ?? await CatalogueEndpoints.BaseCurrencyAsync(db, tk);
+                    var lines = new List<(LineInput Line, int? Lead)>();
+                    foreach (var r in grp)
+                    {
+                        var f = await CatalogueEndpoints.FillAsync(db, r.Part, sup.Id, currency, r.Quantity, r.UnitPrice, tk);
+                        lines.Add((new LineInput(null, r.Part.Id, r.Part.Name, f.UnitOfMeasure, f.Quantity, f.UnitPrice, f.DiscountPercent, r.Store.Id, null, null,
+                            PackSize: f.PackSize, SupplierPartNumber: f.SupplierPartNumber), f.LeadTimeDays));
+                    }
+                    var input = new PoInput(grp.Key.SiteId, sup.Id, Today, CatalogueEndpoints.ExpectedFrom(Today, lines.Select(l => l.Lead)), ctx.UserName, currency, null,
+                        sup.PaymentTerms, null, null, null, null, 0, "Created from the purchase proposal.", lines.Select(l => l.Line).ToList(),
                         await DefaultTypeAsync(db, "PARTS", tk));
                     var o = await CreateDraftAsync(db, ctx, input, tk);
                     list.Add(new { o.Id, o.Number, Supplier = sup.Name, Lines = o.Lines.Count });
@@ -506,6 +517,8 @@ public static class PurchasingEndpoints
             line.UnitOfMeasure = x.UnitOfMeasure.Clean() ?? part?.UnitOfMeasure; line.Quantity = x.Quantity; line.UnitPrice = x.UnitPrice; line.DiscountPercent = x.DiscountPercent;
             line.StoreId = x.StoreId; line.WorkOrderId = x.WorkOrderId; line.AccountCode = x.AccountCode.Clean();
             if (x.PurchaseRequestLineId is not null) line.PurchaseRequestLineId = x.PurchaseRequestLineId; // edits keep the line's request (0.16.0)
+            if (x.PackSize is { } pack) line.PackSize = pack;
+            if (x.SupplierPartNumber is not null || x.PackSize is not null) line.SupplierPartNumber = x.SupplierPartNumber.Clean();
         }
     }
 
@@ -528,6 +541,7 @@ public static class PurchasingEndpoints
             if (l.UnitPrice < 0) v.Add($"lines[{k}].unitPrice", "Price cannot be negative.");
             if (l.DiscountPercent is < 0 or > 100) v.Add($"lines[{k}].discountPercent", "Discount must be between 0 and 100%.");
             if (l.PartId is not null && l.StoreId is null) v.Add($"lines[{k}].storeId", "Choose the receiving store.");
+            if (l.PackSize is <= 0) v.Add($"lines[{k}].packSize", "Pieces per pack must be more than 0.");
         }
         var partIds = lines.Where(l => l.PartId is not null).Select(l => l.PartId!.Value).Distinct().ToList();
         if (partIds.Count > 0 && await db.Parts.CountAsync(p => partIds.Contains(p.Id), ct) != partIds.Count) v.Add("lines", "Unknown part.");
