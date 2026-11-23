@@ -37,6 +37,9 @@ public class Asset : TenantEntity
 
     public string? Manufacturer { get; set; }
     public string? Model { get; set; }
+    /// <summary>0.21.0: the brand and model picked from the lists; <see cref="Manufacturer"/> and <see cref="Model"/> keep their names.</summary>
+    public Guid? BrandId { get; set; }
+    public Guid? ModelId { get; set; }
     /// <summary>The asset's cost centre (0.20.0); none = its parent asset's, else its location's.</summary>
     public Guid? CostCentreId { get; set; }
     public string? SerialNumber { get; set; }

@@ -176,6 +176,7 @@ api.MapAvailabilityEndpoints();
 api.MapTimesheetEndpoints();
 api.MapCostCentreEndpoints();
 api.MapBudgetEndpoints();
+api.MapBrandEndpoints();
 api.MapPmEndpoints();
 api.MapPmCalendarEndpoints();
 api.MapMeasurementPointEndpoints();

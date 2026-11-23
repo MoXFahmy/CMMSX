@@ -78,6 +78,8 @@ public class PmSchedule : TenantEntity
     public required string Code { get; set; }
     public required string Name { get; set; }
     public string? Description { get; set; }
+    /// <summary>0.21.0: aimed at an asset group; each generation covers its current members at the PM's site.</summary>
+    public Guid? AssetGroupId { get; set; }
     public Guid SiteId { get; set; }
     public Site? Site { get; set; }
     public Guid? LocationId { get; set; }

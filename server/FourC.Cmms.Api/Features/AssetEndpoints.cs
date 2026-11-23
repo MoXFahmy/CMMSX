@@ -20,7 +20,8 @@ public static class AssetEndpoints
         DateOnly? CommissionedOn, DateOnly? DisposedOn, decimal? PurchasePrice, decimal? CurrentValue, decimal? SalvageValue,
         decimal? ExpectedLifeYears, decimal? DowntimeCostPerHour, WarrantyType WarrantyType, DateOnly? WarrantyExpiresOn, string? WarrantyNotes,
         string? Notes, string? NotesToTechnician, Dictionary<string, string?>? CustomFields, string? RowVersion = null,
-        decimal? RunsHoursPerDay = null, List<DayOfWeek>? RunsOn = null, bool? OnlyWhenStopped = null, Guid? CostCentreId = null, bool? ManagesCostCentre = null);
+        decimal? RunsHoursPerDay = null, List<DayOfWeek>? RunsOn = null, bool? OnlyWhenStopped = null, Guid? CostCentreId = null, bool? ManagesCostCentre = null,
+        Guid? BrandId = null, Guid? ModelId = null, bool? ManagesBrand = null);
 
     public sealed record TransferInput(Guid SiteId, Guid? LocationId, string? Reason, bool IncludeChildren = true);
     public sealed record BulkInput(Guid[] Ids, AssetStatus? Status, Criticality? Criticality, Guid? CategoryId);
@@ -39,6 +40,9 @@ public static class AssetEndpoints
         public int? WarrantyExpiringDays { get; set; }
         /// <summary>Only assets with an open stop.</summary>
         public bool? DownNow { get; set; }
+        /// <summary>0.21.0: by brand or model from the lists.</summary>
+        public Guid? BrandId { get; set; }
+        public Guid? ModelId { get; set; }
         public string? Sort { get; set; }
         public string? Dir { get; set; }
         public int? Page { get; set; }
@@ -141,7 +145,7 @@ public static class AssetEndpoints
                 a.ParentAssetId, ParentAsset = a.ParentAsset is null ? null : new { a.ParentAsset.Id, a.ParentAsset.AssetNumber, a.ParentAsset.Name },
                 a.Status, a.Criticality, a.Manufacturer, a.Model, a.SerialNumber, a.Barcode, a.OperationNumber,
                 a.CommissionedOn, a.DisposedOn, a.PurchasePrice, a.CurrentValue, a.SalvageValue, a.ExpectedLifeYears, a.DowntimeCostPerHour,
-                a.WarrantyType, a.WarrantyExpiresOn, a.WarrantyNotes, a.Notes, a.NotesToTechnician, a.CustomFields, a.OnlyWhenStopped, a.CostCentreId,
+                a.WarrantyType, a.WarrantyExpiresOn, a.WarrantyNotes, a.Notes, a.NotesToTechnician, a.CustomFields, a.OnlyWhenStopped, a.CostCentreId, a.BrandId, a.ModelId,
                 a.RunsHoursPerDay, a.RunsOn,
                 DownSince = await db.DowntimeEvents.Where(e => e.AssetId == id && e.EndedAt == null).Select(e => (DateTimeOffset?)e.StartedAt).FirstOrDefaultAsync(ct),
                 ChildCount = await db.Assets.CountAsync(x => x.ParentAssetId == id, ct),
@@ -181,6 +185,7 @@ public static class AssetEndpoints
             var (v, custom) = await ValidateAsync(input, null, db, requireNumber: !auto, ct);
             if (!v.IsValid) return v.Problem();
             var asset = await CreateAssetAsync(db, input, custom, tenant.Settings, ct);
+            if (input.ManagesBrand == true) await BrandEndpoints.SetAsync(db, asset, input.BrandId, input.ModelId, ct);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/assets/{asset.Id}", new { asset.Id, asset.AssetNumber });
         }).RequirePermission(Permissions.AssetsCreate);
@@ -193,6 +198,7 @@ public static class AssetEndpoints
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(asset).Property(a => a.RowVersion).OriginalValue = input.RowVersion.ToVersion();
             UpdateAsset(db, asset, input, custom, ctx);
+            if (input.ManagesBrand == true) await BrandEndpoints.SetAsync(db, asset, input.BrandId, input.ModelId, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { asset.Id, RowVersion = Convert.ToBase64String(asset.RowVersion) });
         }).RequirePermission(Permissions.AssetsEdit);
@@ -313,6 +319,8 @@ public static class AssetEndpoints
             else q = q.Where(a => a.LocationId == f.LocationId);
         }
         if (f.CategoryId is not null) q = q.Where(a => a.CategoryId == f.CategoryId);
+        if (f.BrandId is { } brand) q = q.Where(a => a.BrandId == brand);
+        if (f.ModelId is { } model) q = q.Where(a => a.ModelId == model);
         if (ParseEnums<AssetStatus>(f.Status) is { Count: > 0 } st) q = q.Where(a => st.Contains(a.Status));
         if (ParseEnums<Criticality>(f.Criticality) is { Count: > 0 } cr) q = q.Where(a => cr.Contains(a.Criticality));
         if (f.ParentAssetId is not null) q = q.Where(a => a.ParentAssetId == f.ParentAssetId);
@@ -403,6 +411,11 @@ public static class AssetEndpoints
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct))
             v.Add("locationId", "Location must belong to the selected site.");
         if (i.CategoryId is not null && !await db.AssetCategories.AnyAsync(c => c.Id == i.CategoryId, ct)) v.Add("categoryId", "Category not found.");
+        if (i.ManagesBrand == true)
+        {
+            var current = id is { } existing ? await db.Assets.AsNoTracking().Where(a => a.Id == existing).Select(a => new { a.BrandId, a.ModelId }).FirstOrDefaultAsync(ct) : null;
+            await BrandEndpoints.CheckAsync(db, v, i.BrandId, i.ModelId, current?.BrandId, current?.ModelId, ct);
+        }
         if (i.ParentAssetId is not null && i.ParentAssetId != id) // its own parent: AssetRules says so
         {
             // Walk up from the proposed parent; reaching this asset would create a cycle.
@@ -424,7 +437,16 @@ public static class AssetEndpoints
     internal static void Apply(Asset a, AssetInput i, Dictionary<string, string?> custom)
     {
         a.Description = i.Description.Clean(); a.CategoryId = i.CategoryId; a.LocationId = i.LocationId; a.ParentAssetId = i.ParentAssetId;
-        a.Status = i.Status; a.Criticality = i.Criticality; a.Manufacturer = i.Manufacturer.Clean(); a.Model = i.Model.Clean();
+        a.Status = i.Status; a.Criticality = i.Criticality;
+        // 0.21.0: a page that manages the brand sets ids and names afterwards (BrandEndpoints.SetAsync); text from anywhere else
+        // (older pages, the import) that changes the names unlinks them, and the reconcile links them again.
+        var maker = i.Manufacturer.Clean(); var model = i.Model.Clean();
+        if (i.ManagesBrand != true)
+        {
+            if (!string.Equals(maker, a.Manufacturer, StringComparison.Ordinal)) { a.BrandId = null; a.ModelId = null; }
+            else if (!string.Equals(model, a.Model, StringComparison.Ordinal)) a.ModelId = null;
+        }
+        a.Manufacturer = maker; a.Model = model;
         a.SerialNumber = i.SerialNumber.Clean(); a.Barcode = i.Barcode.Clean(); a.OperationNumber = i.OperationNumber.Clean();
         a.CommissionedOn = i.CommissionedOn; a.DisposedOn = i.DisposedOn; a.PurchasePrice = i.PurchasePrice; a.CurrentValue = i.CurrentValue;
         a.SalvageValue = i.SalvageValue; a.ExpectedLifeYears = i.ExpectedLifeYears; a.DowntimeCostPerHour = i.DowntimeCostPerHour;

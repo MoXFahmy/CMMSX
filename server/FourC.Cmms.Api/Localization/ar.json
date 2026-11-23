@@ -1100,5 +1100,16 @@
  "Leave at least one criticality level showing.": "اترك مستوى أهمية واحدًا على الأقل ظاهرًا.",
  "Choose a colour from the list.": "اختر لونًا من القائمة.",
  "A name can be at most 50 characters.": "يمكن أن يكون الاسم 50 حرفًا على الأكثر.",
- "This name is already used by {0}.": "هذا الاسم مستخدم بالفعل لـ {0}."
+ "This name is already used by {0}.": "هذا الاسم مستخدم بالفعل لـ {0}.",
+ "This brand already exists.": "هذه العلامة التجارية موجودة بالفعل.",
+ "Another brand has this name. Merge the two?": "توجد علامة تجارية أخرى بهذا الاسم. هل تريد دمجهما؟",
+ "This brand is in use. Make it inactive instead.": "هذه العلامة التجارية مستخدمة. اجعلها غير نشطة بدلًا من ذلك.",
+ "This brand already has this model.": "هذه العلامة التجارية لديها هذا الطراز بالفعل.",
+ "Another model of this brand has this name. Merge the two?": "يوجد طراز آخر لهذه العلامة التجارية بهذا الاسم. هل تريد دمجهما؟",
+ "This model is in use. Make it inactive instead.": "هذا الطراز مستخدم. اجعله غير نشط بدلًا من ذلك.",
+ "A name can be at most 100 characters.": "يمكن أن يكون الاسم 100 حرف على الأكثر.",
+ "Choose a brand for this model.": "اختر علامة تجارية لهذا الطراز.",
+ "Choose an active brand.": "اختر علامة تجارية نشطة.",
+ "Choose a model of the chosen brand.": "اختر طرازًا من العلامة التجارية المختارة.",
+ "Choose an active model.": "اختر طرازًا نشطًا."
 }
