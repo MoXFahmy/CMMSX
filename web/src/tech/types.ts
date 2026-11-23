@@ -72,6 +72,8 @@ export type TechBundle = {
   points?: TechPoint[];
   /** What this person may do on the phone (0.11.0). */
   can?: { logForOthers: boolean; cancel: boolean; createWorkOrders: boolean; issueStock?: boolean };
+  /** The AI assistant (0.15.0): "Fill with AI" on the completion sheet; missing from 0.14 servers. */
+  ai?: { enabled: boolean };
 };
 
 /** The assets, locations and meters of my sites (GET /api/tech/places), for scanning offline. */

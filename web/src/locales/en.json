@@ -1452,7 +1452,11 @@
     "inGroup": "Group {{number}}",
     "groupComments": "Group {{number}} comments",
     "templateDocs": "From the work template",
-    "templateDocsOffline": "From the work template (open them when online)"
+    "templateDocsOffline": "From the work template (open them when online)",
+    "dictate": "Dictate",
+    "fillWithAi": "Fill with AI",
+    "aiNeedsConnection": "Fill with AI needs a connection. Your notes stay here; you can complete without it.",
+    "logHoursForMe": "Log {{hours}} h for me"
   },
   "labels": {
     "title": "QR labels",

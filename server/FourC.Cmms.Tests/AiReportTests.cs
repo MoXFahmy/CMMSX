@@ -161,4 +161,23 @@ public class AiReportTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Ok(await j.Org.Admin.PostAsJsonAsync($"/api/work-orders/{wo}/status", new { status = "Completed", completionNotes = "Done" }));
         Assert.Equal(other, (await Ok(await j.Org.Admin.GetAsync($"/api/work-orders/{wo}"))).GetProperty("symptomId").GetGuid());
     }
+
+    [SkippableFact]
+    public async Task Bundle_says_when_ai_is_on()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        fx.Ai.Reset();
+        var org = await OrgAsync(fx, emailOn: false);
+        await EmployeeAsync(org.Admin, $"B{Guid.NewGuid():N}"[..8], userId: org.AdminId);
+        async Task<bool> Enabled() => (await Ok(await org.Admin.GetAsync("/api/tech/bundle"))).GetProperty("ai").GetProperty("enabled").GetBoolean();
+        Assert.False(await Enabled());
+        await Ok(await AiSettingsTests.PutSettingsAsync(org.Admin, s => s["aiEnabled"] = true));
+        Assert.True(await Enabled());
+        try
+        {
+            fx.Ai.Configured = false;
+            Assert.False(await Enabled());
+        }
+        finally { fx.Ai.Configured = true; }
+    }
 }

@@ -37,4 +37,13 @@
     <!-- QR scanning and photos in the technician view; asked the first time it's used. -->
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-feature android:name="android.hardware.camera" android:required="false" />
+    <!-- Dictating the work done (0.15.0) with the phone's own speech recognition; asked the first time the microphone is pressed. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO" />
+    <uses-feature android:name="android.hardware.microphone" android:required="false" />
+    <!-- Android 11+: lets the app see that the phone has a speech recognition service. -->
+    <queries>
+        <intent>
+            <action android:name="android.speech.RecognitionService" />
+        </intent>
+    </queries>
 </manifest>

@@ -38,7 +38,7 @@ public static partial class TechEndpoints
         var g = api.MapGroup("/tech").WithTags("Technician app");
 
         // My open jobs. Answers 304 when the phone already has this version (it asks every 15 minutes).
-        g.MapGet("/bundle", async (HttpContext http, CmmsDbContext db, ITenantContext ctx, PermissionService perms, IOptions<JsonOptions> json, CancellationToken ct) =>
+        g.MapGet("/bundle", async (HttpContext http, CmmsDbContext db, ITenantContext ctx, PermissionService perms, IOptions<JsonOptions> json, Ai.IAiClient ai, CancellationToken ct) =>
         {
             var me = await EmployeeAsync(db, ctx, ct);
             if (me is null) return NotLinked();
@@ -145,6 +145,8 @@ public static partial class TechEndpoints
                     LogForOthers = allowed.Contains(Permissions.WorkOrdersLogForOthers), Cancel = allowed.Contains(Permissions.WorkOrdersClose),
                     CreateWorkOrders = allowed.Contains(Permissions.WorkOrdersCreate), IssueStock = allowed.Contains(Permissions.InventoryTransact),
                 },
+                // The AI assistant (0.15.0): "Fill with AI" shows when the server has a key, the organization switched it on and the person may report work.
+                Ai = new { Enabled = ai.Configured && settings.AiEnabled && allowed.Contains(Permissions.WorkOrdersExecute) },
                 // The measurement points the jobs' steps use (0.13.0): the phone judges a reading as it is typed.
                 Points = await Checklists.PointsAsync(db, tasks.SelectMany(g => g).Select(t => t.MeasurementPointId), ct),
                 FailureCodes = await db.FailureCodes.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
