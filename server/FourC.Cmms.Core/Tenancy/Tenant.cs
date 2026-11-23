@@ -56,6 +56,8 @@ public class TenantSettings
     public string PurchaseRequestNumberPrefix { get; set; } = "PR-";
     /// <summary>Users told about new purchase requests (0.16.0); empty = everyone who may approve requests at the site.</summary>
     public List<Guid> PurchaseRequestRecipientIds { get; set; } = [];
+    /// <summary>Users told when a contract needs attention, besides its manager (0.17.0); with no manager either, everyone who may manage contracts.</summary>
+    public List<Guid> ContractAlertRecipientIds { get; set; } = [];
     /// <summary>Default sales tax / VAT applied to new purchase orders.</summary>
     public decimal DefaultTaxPercent { get; set; }
     public string Currency { get; set; } = "USD";

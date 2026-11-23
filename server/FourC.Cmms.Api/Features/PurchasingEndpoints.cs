@@ -14,7 +14,13 @@ namespace FourC.Cmms.Api.Features;
 public static class PurchasingEndpoints
 {
     public sealed record SupplierInput(string Code, string Name, string? ContactName, string? Email, string? Phone, string? Address, string? City, string? Country,
-        string? TaxNumber, string? PaymentTerms, string? Currency, bool IsContractor, string? Notes, bool IsActive = true);
+        string? TaxNumber, string? PaymentTerms, string? Currency, bool IsContractor, string? Notes, bool IsActive = true,
+        // Companies (0.17.0): roles and lists; a role or list left out (null) stays as it is — the import has none of them.
+        bool? IsSupplier = null, bool? IsManufacturer = null, List<SupplierContactInput>? Contacts = null, List<SupplierAddressInput>? Addresses = null,
+        List<SupplierRateInput>? Rates = null);
+    public sealed record SupplierContactInput(Guid? Id, string Name, string? Role, string? Phone, string? Email);
+    public sealed record SupplierAddressInput(Guid? Id, string? Label, string Address, string? City, string? Country);
+    public sealed record SupplierRateInput(Guid CategoryId, decimal Rate);
     public sealed record LineInput(Guid? Id, Guid? PartId, string? Description, string? UnitOfMeasure, decimal Quantity, decimal UnitPrice, decimal DiscountPercent,
         Guid? StoreId, Guid? WorkOrderId, string? AccountCode, Guid? PurchaseRequestLineId = null);
     public sealed record PoInput(Guid? SiteId, Guid? SupplierId, DateOnly? OrderDate, DateOnly? ExpectedDate, string? RequestedBy, string? Currency, decimal? ExchangeRate,
@@ -129,25 +135,47 @@ public static class PurchasingEndpoints
     {
         // ---------------- Suppliers ----------------
         var s = api.MapGroup("/suppliers").WithTags("Suppliers");
-        s.MapGet("/", async (CmmsDbContext db, string? search, bool? activeOnly, bool? contractors, int? page, int? pageSize, CancellationToken ct) =>
+        s.MapGet("/", async (CmmsDbContext db, string? search, bool? activeOnly, bool? contractors, string? role, int? page, int? pageSize, CancellationToken ct) =>
         {
             var q = db.Suppliers.AsNoTracking();
             if (search.Clean() is { } t) q = q.Where(x => x.Code.Contains(t) || x.Name.Contains(t) || x.ContactName!.Contains(t) || x.Email!.Contains(t) || x.City!.Contains(t));
             if (activeOnly == true) q = q.Where(x => x.IsActive);
-            if (contractors == true) q = q.Where(x => x.IsContractor);
+            q = WithRole(q, contractors == true ? "contractor" : role);
             var since = new DateOnly(Today.Year, 1, 1);
             return await q.OrderBy(x => x.Name).Select(x => new
             {
-                x.Id, x.Code, x.Name, x.ContactName, x.Email, x.Phone, x.City, x.Country, x.Currency, x.PaymentTerms, x.IsContractor, x.IsActive,
+                x.Id, x.Code, x.Name, x.ContactName, x.Email, x.Phone, x.City, x.Country, x.Currency, x.PaymentTerms, x.IsSupplier, x.IsContractor, x.IsManufacturer, x.IsActive,
                 OpenOrders = db.PurchaseOrders.Count(o => o.SupplierId == x.Id && o.Status >= PurchaseOrderStatus.Submitted && o.Status <= PurchaseOrderStatus.PartiallyReceived),
                 ReceivedYtd = db.StockTransactions.Where(r => r.SupplierId == x.Id && r.Type == StockTransactionType.Receipt && r.Date >= since).Sum(r => (decimal?)(r.Quantity * r.UnitCost)) ?? 0,
             }).ToPagedAsync(page ?? 1, pageSize ?? 50, ct);
         }).RequirePermission(Permissions.PurchasingView);
-        s.MapGet("/lookup", async (CmmsDbContext db, CancellationToken ct) =>
-            await db.Suppliers.AsNoTracking().Where(x => x.IsActive).OrderBy(x => x.Name).Select(x => new { x.Id, x.Code, x.Name, x.Currency, x.PaymentTerms }).ToListAsync(ct))
-            .RequireAuthorization();
+        // Pickers (0.17.0): active companies with the role asked for; orders and requests ask for suppliers (the default).
+        s.MapGet("/lookup", async (CmmsDbContext db, string? role, HttpContext http, PermissionService perms, CancellationToken ct) =>
+        {
+            // Contacts and contractor rates only for people who work with them (work orders, people, contracts, purchasing).
+            var mine = await perms.GetAsync(UserId(http));
+            var details = new[] { Permissions.WorkOrdersView, Permissions.PeopleView, Permissions.ContractsView, Permissions.PurchasingView, Permissions.SuppliersManage }.Any(mine.Contains);
+            var rows = await WithRole(db.Suppliers.AsNoTracking().Where(x => x.IsActive), role ?? "supplier").OrderBy(x => x.Name).Select(x => new
+            {
+                x.Id, x.Code, x.Name, x.Currency, x.PaymentTerms,
+                Contacts = x.Contacts.OrderBy(c => c.Sort).Select(c => new { c.Id, c.Name, c.Role }).ToList(),
+                Rates = x.CategoryRates.Select(r => new { CategoryId = r.ContractorCategoryId, r.Rate }).ToList(),
+            }).ToListAsync(ct);
+            return Results.Ok(details ? rows : rows.Select(x => x with { Contacts = [], Rates = [] }).ToList());
+        }).RequireAuthorization();
         s.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
-            await db.Suppliers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct) is { } x ? Results.Ok(x) : Results.NotFound())
+            await db.Suppliers.AsNoTracking().Where(x => x.Id == id).Select(x => new
+            {
+                x.Id, x.Code, x.Name, x.ContactName, x.Email, x.Phone, x.Address, x.City, x.Country, x.TaxNumber, x.PaymentTerms, x.Currency,
+                x.IsSupplier, x.IsContractor, x.IsManufacturer, x.Notes, x.IsActive, x.CreatedAt, x.UpdatedAt,
+                Contacts = x.Contacts.OrderBy(c => c.Sort).Select(c => new { c.Id, c.Name, c.Role, c.Phone, c.Email }).ToList(),
+                Addresses = x.Addresses.OrderBy(a => a.Sort).Select(a => new { a.Id, a.Label, a.Address, a.City, a.Country }).ToList(),
+                Rates = x.CategoryRates.Select(r => new
+                {
+                    CategoryId = r.ContractorCategoryId, r.Rate,
+                    CategoryName = db.ContractorCategories.Where(c => c.Id == r.ContractorCategoryId).Select(c => c.Name).FirstOrDefault(),
+                }).ToList(),
+            }).FirstOrDefaultAsync(ct) is { } x ? Results.Ok(x) : Results.NotFound())
             .RequirePermission(Permissions.PurchasingView);
         s.MapPost("/", async (SupplierInput i, CmmsDbContext db, CancellationToken ct) =>
         {
@@ -159,11 +187,13 @@ public static class PurchasingEndpoints
         }).RequirePermission(Permissions.SuppliersManage);
         s.MapPut("/{id:guid}", async (Guid id, SupplierInput i, CmmsDbContext db, CancellationToken ct) =>
         {
-            var x = await db.Suppliers.FirstOrDefaultAsync(y => y.Id == id, ct);
+            var x = await db.Suppliers.Include(y => y.Contacts).Include(y => y.Addresses).Include(y => y.CategoryRates).FirstOrDefaultAsync(y => y.Id == id, ct);
             if (x is null) return Results.NotFound();
             var v = await ValidateSupplierAsync(i, id, db, ct);
             if (!v.IsValid) return v.Problem();
+            var known = x.Contacts.Select(c => c.Id).Concat(x.Addresses.Select(a => a.Id)).Concat(x.CategoryRates.Select(r => r.Id)).ToHashSet();
             UpdateSupplier(x, i);
+            MarkNewChildren(db, x, known);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { x.Id });
         }).RequirePermission(Permissions.SuppliersManage);
@@ -173,6 +203,9 @@ public static class PurchasingEndpoints
             if (x is null) return Results.NotFound();
             if (await db.PurchaseOrders.AllSites().AnyAsync(o => o.SupplierId == id, ct) || await db.StockTransactions.AllSites().AnyAsync(t => t.SupplierId == id, ct))
                 throw new DomainException("This supplier has purchasing history. Mark it inactive instead.");
+            if (await db.WorkOrderContractors.IgnoreQueryFilters([CmmsDbContext.SiteFilter]).AnyAsync(l => l.SupplierId == id, ct)
+                || await db.Contracts.AllSites().AnyAsync(c => c.SupplierId == id, ct) || await db.Employees.AnyAsync(e => e.CompanyId == id, ct))
+                throw new DomainException("This company is used on work orders, contracts or employees. Mark it inactive instead.");
             await db.Parts.Where(p => p.PreferredSupplierId == id).ExecuteUpdateAsync(u => u.SetProperty(p => p.PreferredSupplierId, (Guid?)null), ct);
             db.Suppliers.Remove(x);
             await db.SaveChangesAsync(ct);
@@ -254,7 +287,7 @@ public static class PurchasingEndpoints
 
         g.MapPost("/", async (PoInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
-            var v = await ValidatePoAsync(i, db, ct);
+            var v = await ValidatePoAsync(i, db, ct, null);
             if (!v.IsValid) return v.Problem();
             var o = await CreateDraftAsync(db, ctx, i, ct);
             return Results.Created($"/api/purchase-orders/{o.Id}", new { o.Id, o.Number });
@@ -265,7 +298,7 @@ public static class PurchasingEndpoints
             var o = await db.PurchaseOrders.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (o is null) return Results.NotFound();
             if (o.Status != PurchaseOrderStatus.Draft) throw new DomainException("Only draft purchase orders can be edited. Return it to draft first.");
-            var v = await ValidatePoAsync(i, db, ct);
+            var v = await ValidatePoAsync(i, db, ct, o.SupplierId);
             if (!v.IsValid) return v.Problem();
             if (i.RowVersion is not null) db.Entry(o).Property(x => x.RowVersion).OriginalValue = i.RowVersion.ToVersion();
             var before = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
@@ -475,13 +508,15 @@ public static class PurchasingEndpoints
         }
     }
 
-    private static async Task<Validator> ValidatePoAsync(PoInput i, CmmsDbContext db, CancellationToken ct)
+    private static async Task<Validator> ValidatePoAsync(PoInput i, CmmsDbContext db, CancellationToken ct, Guid? currentSupplierId)
     {
         var v = new Validator().MaxLength("supplierQuoteRef", i.SupplierQuoteRef, "Quote ref.", 100).MaxLength("notes", i.Notes, "Notes", 4000)
             .When(i.ShippingCost < 0, "shippingCost", "Shipping cannot be negative.").When(i.TaxPercent is < 0 or > 100, "taxPercent", "Tax must be between 0 and 100%.")
             .When(i.ExchangeRate is <= 0, "exchangeRate", "Exchange rate must be positive.").When(i.ExpectedDate < i.OrderDate, "expectedDate", "Expected date is before the order date.");
         if (i.SiteId is null || !await db.Sites.AnyAsync(x => x.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         if (i.SupplierId is null || !await db.Suppliers.AnyAsync(x => x.Id == i.SupplierId && x.IsActive, ct)) v.Add("supplierId", "Choose an active supplier.");
+        // A newly chosen company must sell to us (0.17.0); an order keeps a supplier that later lost the role.
+        else if (i.SupplierId != currentSupplierId && !await db.Suppliers.AnyAsync(x => x.Id == i.SupplierId && x.IsSupplier, ct)) v.Add("supplierId", "Choose a company with the Supplier role.");
         if (i.OrderTypeId is { } type && !await db.OrderTypes.AnyAsync(t => t.Id == type && t.IsActive, ct)) v.Add("orderTypeId", "Choose an active order type.");
         var lines = i.Lines ?? [];
         for (var k = 0; k < lines.Count; k++)
@@ -518,8 +553,25 @@ public static class PurchasingEndpoints
     }
 
     /// <summary>The checks that need no database (shared with the import).</summary>
-    internal static Validator SupplierRules(SupplierInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200).MaxLength("email", i.Email, "Email", 200)
-        .When(i.Email.Clean() is { } e && !e.Contains('@'), "email", "Enter a valid email address.").When(i.Currency.Clean() is { Length: not 3 }, "currency", "Use a 3-letter currency code.");
+    internal static Validator SupplierRules(SupplierInput i)
+    {
+        var v = new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200).MaxLength("email", i.Email, "Email", 200)
+            .When(i.Email.Clean() is { } e && !e.Contains('@'), "email", "Enter a valid email address.").When(i.Currency.Clean() is { Length: not 3 }, "currency", "Use a 3-letter currency code.")
+            .When(i.IsSupplier == false && !i.IsContractor && i.IsManufacturer != true, "roles", "Choose at least one role.");
+        var contacts = i.Contacts ?? [];
+        for (var k = 0; k < contacts.Count; k++)
+        {
+            if (string.IsNullOrWhiteSpace(contacts[k].Name)) v.Add($"contacts[{k}].name", $"Contact {k + 1}: enter a name.");
+            if (contacts[k].Email.Clean() is { } ce && !ce.Contains('@')) v.Add($"contacts[{k}].email", $"Contact {k + 1}: enter a valid email address.");
+        }
+        var addresses = i.Addresses ?? [];
+        for (var k = 0; k < addresses.Count; k++)
+            if (string.IsNullOrWhiteSpace(addresses[k].Address)) v.Add($"addresses[{k}].address", $"Address {k + 1}: enter the address.");
+        var rates = i.Rates ?? [];
+        if (rates.Any(r => r.Rate < 0)) v.Add("rates", "Rates cannot be negative.");
+        if (rates.Select(r => r.CategoryId).Distinct().Count() != rates.Count) v.Add("rates", "Each category can have one rate.");
+        return v;
+    }
 
     internal static Supplier CreateSupplier(CmmsDbContext db, SupplierInput i)
     {
@@ -539,6 +591,8 @@ public static class PurchasingEndpoints
     {
         var v = SupplierRules(i);
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.Suppliers.AnyAsync(x => x.Code == i.Code.Trim() && x.Id != id, ct)) v.Add("code", "Another supplier uses this code.");
+        var cats = (i.Rates ?? []).Select(r => r.CategoryId).Distinct().ToList();
+        if (cats.Count > 0 && await db.ContractorCategories.CountAsync(c => cats.Contains(c.Id), ct) != cats.Count) v.Add("rates", "Unknown contractor category.");
         return v;
     }
 
@@ -547,5 +601,56 @@ public static class PurchasingEndpoints
         x.ContactName = i.ContactName.Clean(); x.Email = i.Email.Clean(); x.Phone = i.Phone.Clean(); x.Address = i.Address.Clean(); x.City = i.City.Clean(); x.Country = i.Country.Clean();
         x.TaxNumber = i.TaxNumber.Clean(); x.PaymentTerms = i.PaymentTerms.Clean(); x.Currency = i.Currency.Clean()?.ToUpperInvariant(); x.IsContractor = i.IsContractor;
         x.Notes = i.Notes.Clean(); x.IsActive = i.IsActive;
+        if (i.IsSupplier is { } supplier) x.IsSupplier = supplier;
+        if (i.IsManufacturer is { } maker) x.IsManufacturer = maker;
+        if (i.Contacts is { } contacts)
+        {
+            x.Contacts.RemoveAll(c => !contacts.Any(n => n.Id == c.Id));
+            for (var k = 0; k < contacts.Count; k++)
+            {
+                var n = contacts[k];
+                var c = x.Contacts.FirstOrDefault(y => n.Id is not null && y.Id == n.Id);
+                if (c is null) { c = new SupplierContact { SupplierId = x.Id, Name = "" }; x.Contacts.Add(c); }
+                c.Name = n.Name.Trim(); c.Role = n.Role.Clean(); c.Phone = n.Phone.Clean(); c.Email = n.Email.Clean(); c.Sort = k;
+            }
+        }
+        if (i.Addresses is { } addresses)
+        {
+            x.Addresses.RemoveAll(a => !addresses.Any(n => n.Id == a.Id));
+            for (var k = 0; k < addresses.Count; k++)
+            {
+                var n = addresses[k];
+                var a = x.Addresses.FirstOrDefault(y => n.Id is not null && y.Id == n.Id);
+                if (a is null) { a = new SupplierAddress { SupplierId = x.Id, Address = "" }; x.Addresses.Add(a); }
+                a.Label = n.Label.Clean(); a.Address = n.Address.Trim(); a.City = n.City.Clean(); a.Country = n.Country.Clean(); a.Sort = k;
+            }
+        }
+        if (i.Rates is { } rates)
+        {
+            x.CategoryRates.RemoveAll(r => !rates.Any(n => n.CategoryId == r.ContractorCategoryId));
+            foreach (var n in rates)
+            {
+                var r = x.CategoryRates.FirstOrDefault(y => y.ContractorCategoryId == n.CategoryId);
+                if (r is null) { r = new SupplierCategoryRate { SupplierId = x.Id, ContractorCategoryId = n.CategoryId }; x.CategoryRates.Add(r); }
+                r.Rate = n.Rate;
+            }
+        }
     }
+
+    /// <summary>Children added to a tracked company carry their own ids, so EF must be told they are new (the 0.12.1 lesson).</summary>
+    private static void MarkNewChildren(CmmsDbContext db, Supplier x, HashSet<Guid> known)
+    {
+        foreach (var c in x.Contacts.Where(c => !known.Contains(c.Id))) db.Entry(c).State = EntityState.Added;
+        foreach (var a in x.Addresses.Where(a => !known.Contains(a.Id))) db.Entry(a).State = EntityState.Added;
+        foreach (var r in x.CategoryRates.Where(r => !known.Contains(r.Id))) db.Entry(r).State = EntityState.Added;
+    }
+
+    /// <summary>Companies with a role: "supplier", "contractor" or "manufacturer"; anything else is every company.</summary>
+    internal static IQueryable<Supplier> WithRole(IQueryable<Supplier> q, string? role) => role?.ToLowerInvariant() switch
+    {
+        "supplier" => q.Where(x => x.IsSupplier),
+        "contractor" => q.Where(x => x.IsContractor),
+        "manufacturer" => q.Where(x => x.IsManufacturer),
+        _ => q,
+    };
 }

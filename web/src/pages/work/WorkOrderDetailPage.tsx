@@ -32,6 +32,9 @@ import { PlannedHoursCard, PlannedPartsCard, PlanVsActualCard } from './WorkOrde
 import { GroupCard, TemplateCard } from './WorkOrderGroupBits';
 import { ChecklistPanel } from './ChecklistPanel';
 import { SourceBanner } from './SourceBanner';
+import { ContractorsPanel } from './ContractorsPanel';
+import { costLines } from './woTotals';
+import { CoveredBanner } from '@/components/CoveredBanner';
 import { BackRunningButton } from '@/pages/assets/AssetDowntime';
 import { downFor } from '@/components/downtime';
 
@@ -121,6 +124,7 @@ export function WorkOrderDetailPage() {
           <Tabs.Tab value="details">{t('wo.details')}</Tabs.Tab>
           <Tabs.Tab value="tasks" rightSection={w.tasks.length ? <Badge size="xs" variant="default">{doneTasks}/{w.tasks.length}</Badge> : null}>{t('wo.tasks')}</Tabs.Tab>
           <Tabs.Tab value="labor" rightSection={w.labor.length ? <Badge size="xs" variant="default">{hoursText(w.totals.laborHours)}</Badge> : null}>{t('wo.labor')}</Tabs.Tab>
+          <Tabs.Tab value="contractors" rightSection={(w.contractors?.length ?? 0) > 0 ? <Badge size="xs" variant="default">{w.contractors.length}</Badge> : null}>{t('contractors.title')}</Tabs.Tab>
           {can(P.inventoryView) && <Tabs.Tab value="parts" rightSection={w.parts.length ? <Badge size="xs" variant="default">{w.parts.length}</Badge> : null}>{t('wo.parts')}</Tabs.Tab>}
           <Tabs.Tab value="costs">{t('wo.costs')}</Tabs.Tab>
           <Tabs.Tab value="activity">{t('wo.activity')}</Tabs.Tab>
@@ -134,6 +138,7 @@ export function WorkOrderDetailPage() {
                 <DiagnosisPanel kind="work-order" id={w.id} hasAsset={!!w.assetId} canRun={can(P.woExecute)} canPlan={canPlan}
                   plannedPartIds={w.plannedParts.map((p) => p.partId)} onPlanned={refresh} />
                 {w.source && <SourceBanner source={w.source} />}
+                <CoveredBanner covered={w.coveredBy} />
                 {w.asset?.underWarranty && !locked && (
                   <Alert variant="light" color="teal" icon={<IconShieldCheck size={18} />} title={t('wo.underWarrantyTitle', { type: t(`warrantyType.${w.asset.warrantyType}`) })}>
                     {t('wo.underWarrantyBody', { date: fmtDate(w.asset.warrantyExpiresOn) })}
@@ -204,6 +209,9 @@ export function WorkOrderDetailPage() {
                   <Field label={t('wo.assignees')}>{w.assignees.map((a) => a.fullName).join(', ') || t('wo.noAssignees')}</Field>
                   {(w.recipients?.length ?? 0) > 0 && <Field label={t('pm12.recipients')}>{w.recipients!.map((r) => r.fullName).join(', ')}</Field>}
                   <Field label={t('wo.trade')}>{w.tradeName}</Field>
+                  {w.contract && <Field label={t('contracts.contract')}>{can(P.contractsView)
+                    ? <Anchor component={Link} to={`/contracts/${w.contract.id}`} fz="sm">{w.contract.number} · {w.contract.companyName}</Anchor>
+                    : `${w.contract.number} · ${w.contract.companyName}`}</Field>}
                   {w.team && <Field label={t('teams.team')}>{w.team.name}</Field>}
                   <Field label={t('codes.symptom')}>{w.symptom ? `${w.symptom.code} · ${w.symptom.name}` : null}</Field>
                   <Field label={t('wo.requestedBy')}>{w.requestedBy ?? w.request?.requesterName}</Field>
@@ -236,9 +244,7 @@ export function WorkOrderDetailPage() {
                   <Text fw={600} mb="sm">{t('wo.totals')}</Text>
                   <Table verticalSpacing={4}><Table.Tbody>
                     <Table.Tr><Table.Td>{t('wo.laborHours')}</Table.Td><Table.Td ta="right">{w.totals.laborHours}</Table.Td></Table.Tr>
-                    <Table.Tr><Table.Td>{t('wo.laborCost')}</Table.Td><Table.Td ta="right">{fmtMoney(w.totals.laborCost, currency)}</Table.Td></Table.Tr>
-                    <Table.Tr><Table.Td>{t('wo.partsCost')}</Table.Td><Table.Td ta="right">{fmtMoney(w.totals.partsCost, currency)}</Table.Td></Table.Tr>
-                    <Table.Tr><Table.Td>{t('wo.otherCost')}</Table.Td><Table.Td ta="right">{fmtMoney(w.totals.otherCost, currency)}</Table.Td></Table.Tr>
+                    {costLines(w.totals).map((l) => <Table.Tr key={l.key}><Table.Td>{t(l.key)}</Table.Td><Table.Td ta="right">{fmtMoney(l.value, currency)}</Table.Td></Table.Tr>)}
                     <Table.Tr><Table.Td fw={700}>{t('wo.totalCost')}</Table.Td><Table.Td ta="right" fw={700}>{fmtMoney(w.totals.totalCost, currency)}</Table.Td></Table.Tr>
                   </Table.Tbody></Table>
                 </Card>
@@ -248,6 +254,7 @@ export function WorkOrderDetailPage() {
         </Tabs.Panel>
         <Tabs.Panel value="tasks"><ChecklistPanel w={w} canExec={canExec} onChange={refresh} /></Tabs.Panel>
         <Tabs.Panel value="labor"><Stack><PlannedHoursCard w={w} canPlan={canPlanHours} onChange={refresh} currency={currency} /><LaborPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Stack></Tabs.Panel>
+        <Tabs.Panel value="contractors"><ContractorsPanel w={w} canPlan={canPlanHours} canExec={canExec} onChange={refresh} currency={currency} /></Tabs.Panel>
         <Tabs.Panel value="parts"><WoPartsPanel w={w} canPlan={canPlan} canIssue={can(P.inventoryTransact) && !locked} canOrder={can(P.purchasingCreate) && !locked} onChange={refresh} currency={currency} /></Tabs.Panel>
         <Tabs.Panel value="costs"><Stack><PlanVsActualCard w={w} currency={currency} /><CostsPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Stack></Tabs.Panel>
         <Tabs.Panel value="activity"><ActivityPanel id={w.id} /></Tabs.Panel>
@@ -282,7 +289,7 @@ function LaborPanel({ w, canExec, onChange, currency }: { w: WorkOrderDetail; ca
           <Table.Tbody>
             {w.labor.length === 0 && <Table.Tr><Table.Td colSpan={7}><Text c="dimmed" fz="sm" ta="center">{t('common.noRecords')}</Text></Table.Td></Table.Tr>}
             {w.labor.map((l) => (
-              <Table.Tr key={l.id}><Table.Td>{fmtDate(l.workDate)}</Table.Td><Table.Td>{l.employeeName}</Table.Td><Table.Td ta="right">{l.hours}</Table.Td><Table.Td ta="right">{l.overtimeHours || '—'}</Table.Td>
+              <Table.Tr key={l.id}><Table.Td>{fmtDate(l.workDate)}</Table.Td><Table.Td>{l.employeeName}{l.companyName && <Badge size="xs" variant="light" color="grape" ms={6}>{l.companyName}</Badge>}</Table.Td><Table.Td ta="right">{l.hours}</Table.Td><Table.Td ta="right">{l.overtimeHours || '—'}</Table.Td>
                 <Table.Td ta="right">{fmtMoney(l.cost, currency)}</Table.Td><Table.Td><Text fz="sm" lineClamp={2}>{l.notes}</Text></Table.Td>
                 <Table.Td>{canExec && <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('common.delete')} onClick={() => confirmDelete(`${l.employeeName} · ${hoursText(l.hours)}`, async () => { try { await del(`/work-orders/${w.id}/labor/${l.id}`); await onChange(); } catch (e) { notifyError(e); } })}><IconTrash size={14} /></ActionIcon>}</Table.Td></Table.Tr>
             ))}

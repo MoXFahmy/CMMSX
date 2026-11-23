@@ -25,7 +25,8 @@
     "insights": "Insights",
     "planning": "Planning",
     "workGroups": "Work groups",
-    "myApprovals": "My approvals"
+    "myApprovals": "My approvals",
+    "contracts": "Contracts"
   },
   "unit": {
     "overtime": "overtime",
@@ -488,7 +489,9 @@
     "openWork": "Open work",
     "newTrade": "New trade",
     "tradesTab": "Trades",
-    "peopleTab": "People"
+    "peopleTab": "People",
+    "companyLink": "Contractor company",
+    "companyLinkHint": "Their logged hours count as this company's contractor cost."
   },
   "wo": {
     "title": "Work orders",
@@ -942,7 +945,8 @@
       "orders": "Purchase orders",
       "proposal": "Re-order proposal",
       "suppliers": "Suppliers",
-      "requests": "Purchase requests"
+      "requests": "Purchase requests",
+      "companies": "Companies"
     },
     "views": {
       "open": "Open",
@@ -1118,7 +1122,9 @@
     "lowStock_other": "{{count}} parts at or below re-order level",
     "none": "Nothing needs attention",
     "approvals_one": "{{count}} item waiting for your approval",
-    "approvals_other": "{{count}} items waiting for your approval"
+    "approvals_other": "{{count}} items waiting for your approval",
+    "contracts_one": "{{count}} contract needs attention",
+    "contracts_other": "{{count}} contracts need attention"
   },
   "jobCard": {
     "title": "Job card",
@@ -1248,6 +1254,10 @@
       "po_approvalWaiting": {
         "label": "Order waiting for my signature",
         "description": "With approval levels: to the approvers of the level whose turn it is."
+      },
+      "contract_alert": {
+        "label": "Contract needs attention",
+        "description": "A contract's last day to stop its renewal, or its end, is near."
       }
     },
     "notAllowedTitle": "E-mail isn't available for this organization yet",
@@ -2355,5 +2365,138 @@
     "order": "Order",
     "request": "Request",
     "returnTitle": "Return {{number}}"
+  },
+  "companies": {
+    "all": "All",
+    "new": "New company",
+    "edit": "Edit company",
+    "none": "No companies",
+    "roles": "Roles",
+    "role": {
+      "supplier": "Supplier",
+      "contractor": "Contractor",
+      "manufacturer": "Manufacturer"
+    },
+    "chooseRole": "Choose at least one role.",
+    "contacts": "Other contacts",
+    "addContact": "Add contact",
+    "noContacts": "No other contacts.",
+    "contactRole": "Role",
+    "addresses": "Other addresses",
+    "addAddress": "Add address",
+    "noAddresses": "No other addresses.",
+    "addressLabel": "Label (e.g. Workshop)",
+    "rates": "Hourly rates by category",
+    "addRate": "Add rate",
+    "ratesHint": "The company's own rate; categories without one use the category's default.",
+    "noCategories": "Add contractor categories in Settings first.",
+    "category": "Category",
+    "hourlyRate": "Hourly rate"
+  },
+  "contractorCategories": {
+    "title": "Contractor categories",
+    "hint": "Kinds of contractor work with a default hourly rate. A company can have its own rate per category.",
+    "new": "New category",
+    "edit": "Edit category",
+    "none": "No contractor categories yet.",
+    "defaultRate": "Default hourly rate",
+    "rateHint": "In {{currency}}; used when the company has no rate of its own."
+  },
+  "contracts": {
+    "title": "Contracts",
+    "types": "Contract types",
+    "newType": "New contract type",
+    "alertRecipients": "Contract alert recipients",
+    "alertRecipientsHint": "Told when a contract's notice deadline or end is near, besides its manager. With nobody named and no manager, everyone who may manage contracts is told.",
+    "subtitle": "Service contracts with their terms, renewals and alerts",
+    "new": "New contract",
+    "edit": "Edit contract {{number}}",
+    "none": "No contracts",
+    "search": "Search contracts",
+    "number": "Number",
+    "contractTitle": "Title",
+    "company": "Company",
+    "manager": "Contract manager",
+    "trade": "Trade",
+    "allSites": "All sites",
+    "siteHint": "Leave empty for a contract covering the whole organization.",
+    "start": "Start",
+    "end": "End",
+    "value": "Value",
+    "deadline": "Alert date",
+    "needingAttention": "Needing attention",
+    "daysLeft_one": "{{count}} day left",
+    "daysLeft_other": "{{count}} days left",
+    "status": {
+      "Upcoming": "Upcoming",
+      "Active": "Active",
+      "Expired": "Expired",
+      "Terminated": "Terminated"
+    },
+    "per": {
+      "Year": "year",
+      "Quarter": "quarter",
+      "Month": "month"
+    },
+    "terms": "Terms",
+    "expected": "Expected work orders",
+    "expectedHint": "How many work orders the contract should bring.",
+    "expectedPer": "Per",
+    "autoRenew": "Renews automatically",
+    "autoRenewHint": "A new period starts the day after the end, for the renewal length, unless it is stopped in time.",
+    "renewalMonths": "Renewal length (months)",
+    "noticeDays": "Notice period",
+    "noticeDaysHint": "Days before the end by which the renewal must be stopped.",
+    "alertDays": "Alert",
+    "alertDaysHint": "Days before the notice deadline (or the end) that the contract needs attention.",
+    "coveredAssets": "Covered assets",
+    "addAsset": "Add an asset",
+    "noAssets": "No assets covered.",
+    "yearlyCost": "Yearly cost",
+    "noticeDeadline": "Last day to stop the renewal",
+    "endsOn": "Ends on",
+    "renewsEvery_one": "Every {{count}} month",
+    "renewsEvery_other": "Every {{count}} months",
+    "days_one": "{{count}} day",
+    "days_other": "{{count}} days",
+    "periods": "Periods",
+    "renewal": "Renewal",
+    "amendments": "Amendments",
+    "noAmendments": "No amendments.",
+    "addAmendment": "Add amendment",
+    "date": "Date",
+    "newValue": "New value",
+    "newValueHint": "In {{currency}}; applies to the current period and later renewals.",
+    "workOrders_one": "{{count}} work order",
+    "workOrders_other": "{{count}} work orders",
+    "noWork": "No work orders name this contract.",
+    "terminate": "Terminate",
+    "terminateHint": "Renewal and alerts stop now; the contract shows as terminated from the date you give.",
+    "terminationDate": "Termination date",
+    "reason": "Reason",
+    "terminatedOn": "Terminated on {{date}}",
+    "attentionRenewal": "Last day to stop the renewal: {{date}}",
+    "attentionEnd": "The contract ends on {{date}}",
+    "spendNote": "Spend on the contract's work is in {{currency}} (Reports › Contracts).",
+    "contract": "Contract",
+    "pickHint": "Active and upcoming contracts here; ✓ covers this asset.",
+    "coveredBy": "Covered by"
+  },
+  "contractors": {
+    "title": "Contractors",
+    "add": "Add contractor",
+    "edit": "Contractor line",
+    "none": "No contractor work on this order.",
+    "cost": "Contractor",
+    "person": "Person",
+    "personName": "Person (if not listed)",
+    "planned": "Planned h",
+    "done": "Done h",
+    "plannedHours": "Planned hours",
+    "hoursDone": "Hours done",
+    "rate": "Hourly rate",
+    "doneOn": "Date done",
+    "doneOnHint": "Today when left empty.",
+    "techHint": "You can record the hours done, the date and the person. A planner changes the rest."
   }
 }

@@ -20,6 +20,7 @@ import { WoStatusBadge } from '@/components/WorkBadges';
 import { confirmAction, confirmDelete } from '@/components/confirm';
 import { MultiAssetCard, PeopleRulesCard, TriggersCard } from './PmScheduleExtras';
 import { OccurrencesDrawer } from './OccurrencesDrawer';
+import { ContractSelect } from '@/components/ContractSelect';
 import { generateNow } from './generateNow';
 import { fmtDate, fmtDateTime, fmtMoney, handleFormError, notifyError, notifySuccess, notifyWarning, toIsoDate } from '@/components/utils';
 
@@ -37,6 +38,8 @@ export type V = {
   calendarIds: string[]; extraMeters: { meterId: string | null; interval: number | '' }[]; recipientIds: string[];
   useOrgRules: boolean; skipStatusesOverride: string[]; nonWorkingDaysOverride: string[]; noStackingOverride: boolean;
   multiAssetMode: 'Round' | 'Group'; groupPlan: 'Copy' | 'Split'; spreadParts: number | ''; assetTemplates: Record<string, string | null>;
+  /** The service contract it is done under (0.17.0); passed to the work orders it creates. */
+  contractId: string | null;
 };
 type Target = 'asset' | 'location' | 'several';
 const blank: V = {
@@ -45,7 +48,7 @@ const blank: V = {
   startDate: new Date(), nextDueDate: null, meterId: null, meterTrigger: 'Incremental', meterInterval: '', nextDueReading: '', lowerLimit: '', upperLimit: '', lowerTaskId: null,
   upperTaskId: null, timeBased: false, isActive: true, target: 'asset', roundAssets: [], onlyWhenStopped: null,
   calendarIds: [], extraMeters: [], recipientIds: [], useOrgRules: true, skipStatusesOverride: [], nonWorkingDaysOverride: [], noStackingOverride: false,
-  multiAssetMode: 'Round', groupPlan: 'Copy', spreadParts: '', assetTemplates: {},
+  multiAssetMode: 'Round', groupPlan: 'Copy', spreadParts: '', assetTemplates: {}, contractId: null,
 };
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 const n = (v: number | '') => (v === '' ? null : v);
@@ -58,6 +61,7 @@ function toBody({ target, roundAssets, useOrgRules, assetTemplates, ...v }: V, r
     meterInterval: n(v.meterInterval), nextDueReading: n(v.nextDueReading), lowerLimit: n(v.lowerLimit), upperLimit: n(v.upperLimit),
     extraTasks: v.extraTasks.filter((x) => x.pmTaskId).map((x) => ({ pmTaskId: x.pmTaskId, everyNth: n(x.everyNth) ?? 2 })), rowVersion,
     managesTeam: true, // this form shows the team: an empty one clears it
+    managesContract: true, // and the contract (0.17.0)
     extraMeters: target === 'asset' ? v.extraMeters.filter((m) => m.meterId).map((m) => ({ meterId: m.meterId, interval: n(m.interval) ?? 0 })) : [],
     managesRules: true, skipStatusesOverride: useOrgRules ? null : v.skipStatusesOverride, nonWorkingDaysOverride: useOrgRules ? null : v.nonWorkingDaysOverride,
     noStackingOverride: useOrgRules ? null : v.noStackingOverride,
@@ -96,7 +100,7 @@ export function PmScheduleFormPage() {
         workPeriodDays: s.workPeriodDays, wholeMonth: s.wholeMonth, leadDays: s.leadDays, startDate: d(s.startDate), nextDueDate: d(s.nextDueDate), meterId: s.meterId ?? null,
         meterTrigger: s.meterTrigger ?? 'Incremental', meterInterval: s.meterInterval ?? '', nextDueReading: s.nextDueReading ?? '', lowerLimit: s.lowerLimit ?? '', upperLimit: s.upperLimit ?? '',
         lowerTaskId: s.lowerTaskId ?? null, upperTaskId: s.upperTaskId ?? null, timeBased: s.timeBased, isActive: s.isActive,
-        target: s.assets.length > 0 ? 'several' : s.assetId ? 'asset' : 'location', roundAssets: s.assets, onlyWhenStopped: s.onlyWhenStopped ?? false,
+        target: s.assets.length > 0 ? 'several' : s.assetId ? 'asset' : 'location', roundAssets: s.assets, onlyWhenStopped: s.onlyWhenStopped ?? false, contractId: s.contractId ?? null,
         calendarIds: s.calendarIds ?? [], extraMeters: (s.extraMeters ?? []).map((m) => ({ meterId: m.meterId, interval: m.interval })), recipientIds: s.recipientIds ?? [],
         useOrgRules: s.skipStatusesOverride == null && s.nonWorkingDaysOverride == null && s.noStackingOverride == null,
         skipStatusesOverride: s.skipStatusesOverride ?? [], nonWorkingDaysOverride: s.nonWorkingDaysOverride ?? [], noStackingOverride: !!s.noStackingOverride,
@@ -171,6 +175,8 @@ export function PmScheduleFormPage() {
                 <Select label={t('pm.task')} required searchable data={taskOpts} {...form.getInputProps('pmTaskId')} />
                 <Select label={t('wo.trade')} clearable data={(trades ?? []).map((x) => ({ value: x.id, label: x.name }))} {...form.getInputProps('tradeId')} />
                 {(teams?.length ?? 0) > 0 && <Select label={t('teams.team')} clearable data={teamOptions(teams, form.values.teamId)} {...form.getInputProps('teamId')} />}
+                <ContractSelect siteId={form.values.siteId} assetId={form.values.target === 'asset' ? form.values.assetId : null} value={form.values.contractId}
+                  onChange={(v) => form.setFieldValue('contractId', v)} error={form.errors.contractId} />
                 <Select label={t('priority.label')} data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))} {...form.getInputProps('priority')} />
                 <Checkbox label={t('accessWindows.onlyWhenStopped')} description={v.onlyWhenStopped === null ? t('accessWindows.fromAsset') : undefined} mt="sm"
                   checked={!!v.onlyWhenStopped} onChange={(e) => form.setFieldValue('onlyWhenStopped', e.currentTarget.checked)} />

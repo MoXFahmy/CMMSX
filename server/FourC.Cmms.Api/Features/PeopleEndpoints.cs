@@ -13,7 +13,7 @@ public static class PeopleEndpoints
     public sealed record LookupInput(string Code, string Name, string? Color, bool IsActive = true);
     public sealed record EmployeeInput(string Code, string FullName, string? JobTitle, string? Email, string? Phone, List<Guid>? TradeIds, List<Guid>? SiteIds,
         decimal? HourlyRate, decimal? OvertimeRate, bool IsContractor, string? Company, Guid? UserId, string? Notes, bool IsActive = true, string? RowVersion = null,
-        List<WorkingDay>? WorkingHours = null);
+        List<WorkingDay>? WorkingHours = null, Guid? CompanyId = null);
 
     public static void MapPeopleEndpoints(this RouteGroupBuilder api)
     {
@@ -32,6 +32,9 @@ public static class PeopleEndpoints
         // Kinds of purchase order (0.16.0): approval levels can differ by type.
         MapLookup(api, "/order-types", "Order types", db => db.OrderTypes, () => new FourC.Cmms.Core.Purchasing.OrderType { Code = "", Name = "" }, Permissions.SettingsManage,
             async (db, id, ct) => await db.PurchaseOrders.AllSites().AnyAsync(o => o.OrderTypeId == id, ct) || await db.ApprovalLevels.AnyAsync(l => l.OrderTypeId == id, ct), null, null);
+        // Kinds of service contract (0.17.0).
+        MapLookup(api, "/contract-types", "Contract types", db => db.ContractTypes, () => new FourC.Cmms.Core.Contracts.ContractType { Code = "", Name = "" }, Permissions.ContractsManage,
+            async (db, id, ct) => await db.Contracts.AllSites().AnyAsync(c => c.ContractTypeId == id, ct), null, null);
 
         var g = api.MapGroup("/employees").WithTags("Employees");
         g.MapGet("/", async (CmmsDbContext db, string? search, Guid? tradeId, bool? activeOnly, CancellationToken ct) =>
@@ -40,7 +43,7 @@ public static class PeopleEndpoints
             if (search.Clean() is { } s) q = q.Where(e => e.FullName.Contains(s) || e.Code.Contains(s) || e.Email!.Contains(s) || e.Company!.Contains(s));
             if (tradeId is not null) q = q.Where(e => e.TradeIds.Contains(tradeId.Value));
             if (activeOnly == true) q = q.Where(e => e.IsActive);
-            var list = await q.OrderBy(e => e.FullName).ToListAsync(ct);
+            var list = await q.OrderBy(e => e.FullName).Include(e => e.CompanyRecord).ToListAsync(ct);
             var open = await db.WorkOrderAssignees.Where(a => db.WorkOrders.Any(w => w.Id == a.WorkOrderId && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold)))
                 .GroupBy(a => a.EmployeeId).Select(x => new { x.Key, C = x.Count() }).ToDictionaryAsync(x => x.Key, x => x.C, ct);
             return list.Select(e => ToDto(e, open.GetValueOrDefault(e.Id)));
@@ -53,7 +56,7 @@ public static class PeopleEndpoints
             .RequireAuthorization();
 
         g.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
-            await db.Employees.AsNoTracking().FirstOrDefaultAsync(e => e.Id == id, ct) is { } e ? Results.Ok(ToDto(e, 0)) : Results.NotFound())
+            await db.Employees.AsNoTracking().Include(e => e.CompanyRecord).FirstOrDefaultAsync(e => e.Id == id, ct) is { } e ? Results.Ok(ToDto(e, 0)) : Results.NotFound())
             .RequirePermission(Permissions.PeopleView);
 
         g.MapPost("/", async (EmployeeInput input, CmmsDbContext db, CancellationToken ct) =>
@@ -61,6 +64,7 @@ public static class PeopleEndpoints
             var v = await ValidateAsync(input, null, db, ct);
             if (!v.IsValid) return v.Problem();
             var e = CreateEmployee(db, input);
+            e.CompanyId = input.CompanyId; // set here, not in Apply: the import has no company and must not clear it
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/employees/{e.Id}", new { e.Id });
         }).RequirePermission(Permissions.PeopleManage);
@@ -73,6 +77,7 @@ public static class PeopleEndpoints
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(e).Property(x => x.RowVersion).OriginalValue = input.RowVersion.ToVersion();
             UpdateEmployee(e, input);
+            e.CompanyId = input.CompanyId;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { e.Id });
         }).RequirePermission(Permissions.PeopleManage);
@@ -92,7 +97,7 @@ public static class PeopleEndpoints
     private static object ToDto(Employee e, int openWork) => new
     {
         e.Id, e.Code, e.FullName, e.JobTitle, e.Email, e.Phone, e.TradeIds, e.SiteIds, e.HourlyRate, e.OvertimeRate, e.IsContractor, e.Company,
-        e.UserId, e.Notes, e.IsActive, e.WorkingHours, OpenWorkOrders = openWork, RowVersion = Convert.ToBase64String(e.RowVersion),
+        e.CompanyId, CompanyName = e.CompanyRecord?.Name, e.UserId, e.Notes, e.IsActive, e.WorkingHours, OpenWorkOrders = openWork, RowVersion = Convert.ToBase64String(e.RowVersion),
     };
 
     /// <summary>The checks that need no database (shared with the import).</summary>
@@ -119,6 +124,13 @@ public static class PeopleEndpoints
     private static async Task<Validator> ValidateAsync(EmployeeInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
         var v = EmployeeRules(i);
+        // The contractor company (0.17.0): a newly chosen one must be an active contractor; a linked one that lost the role stays.
+        if (i.CompanyId is { } company)
+        {
+            var current = id is null ? null : await db.Employees.Where(e => e.Id == id).Select(e => e.CompanyId).FirstOrDefaultAsync(ct);
+            var s = await db.Suppliers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == company, ct);
+            v.Merge(ContractorEndpoints.ValidateContractorCompany(s, current != company, "companyId"));
+        }
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.Employees.AnyAsync(e => e.Code == i.Code.Trim() && e.Id != id, ct)) v.Add("code", "Another person already uses this number.");
         var trades = i.TradeIds ?? [];
         if (trades.Count > 0 && await db.Trades.CountAsync(t => trades.Contains(t.Id), ct) != trades.Distinct().Count()) v.Add("tradeIds", "Unknown trade.");

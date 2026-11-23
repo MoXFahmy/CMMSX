@@ -146,6 +146,7 @@ export function WorkGroupDetailPage() {
                 <Table.Tr><Table.Td>{t('wo.laborCost')}</Table.Td><Table.Td ta="right">{fmtMoney(g.totals.laborCost, currency)}</Table.Td></Table.Tr>
                 <Table.Tr><Table.Td>{t('wo.partsCost')}</Table.Td><Table.Td ta="right">{fmtMoney(g.totals.partsCost, currency)}</Table.Td></Table.Tr>
                 <Table.Tr><Table.Td>{t('wo.otherCost')}</Table.Td><Table.Td ta="right">{fmtMoney(g.totals.otherCost, currency)}</Table.Td></Table.Tr>
+                {(g.totals.contractorCost ?? 0) > 0 && <Table.Tr><Table.Td>{t('contractors.cost')}</Table.Td><Table.Td ta="right">{fmtMoney(g.totals.contractorCost ?? 0, currency)}</Table.Td></Table.Tr>}
                 <Table.Tr><Table.Td fw={700}>{t('wo.totalCost')}</Table.Td><Table.Td ta="right" fw={700}>{fmtMoney(g.totals.totalCost, currency)}</Table.Td></Table.Tr>
               </Table.Tbody></Table>
             </Card>

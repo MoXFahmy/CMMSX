@@ -102,6 +102,8 @@ services.AddSingleton<PushOutbox>();
 services.AddSingleton<PushSenderService>();
 services.AddHostedService(sp => sp.GetRequiredService<PushSenderService>());
 services.AddHostedService(sp => sp.GetRequiredService<OverdueNotifier>());
+services.AddSingleton<ContractNotifier>();
+services.AddHostedService(sp => sp.GetRequiredService<ContractNotifier>());
 services.AddExceptionHandler<ApiExceptionHandler>();
 services.AddProblemDetails();
 services.ConfigureHttpJsonOptions(o =>
@@ -178,6 +180,8 @@ api.MapAssetChecklistEndpoints();
 api.MapInventoryEndpoints();
 api.MapPurchasingEndpoints();
 api.MapPurchaseRequestEndpoints();
+api.MapContractorEndpoints();
+api.MapContractEndpoints();
 api.MapApprovalLevelEndpoints();
 api.MapMyApprovalsEndpoints();
 api.MapReportEndpoints();

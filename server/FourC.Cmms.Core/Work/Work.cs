@@ -165,6 +165,8 @@ public class WorkOrder : TenantEntity
     /// <summary>Follow-up work (0.13.0): the work order and checklist step that raised it.</summary>
     public Guid? SourceWorkOrderId { get; set; }
     public Guid? SourceTaskId { get; set; }
+    /// <summary>The service contract the work is done under (0.17.0).</summary>
+    public Guid? ContractId { get; set; }
 
     public List<WorkOrderAssignee> Assignees { get; set; } = [];
     /// <summary>Assets a PM round work order covers, in round order. Empty for all other work orders (they use <see cref="AssetId"/>).</summary>
@@ -265,6 +267,33 @@ public class WorkOrderLabor : Entity, ITenantOwned, IAuditable
     public DateTimeOffset? UpdatedAt { get; set; }
     public Guid? UpdatedById { get; set; }
     public string? LegacyRef { get; set; }
+}
+
+/// <summary>
+/// Work done by a contractor company (0.17.0): planned hours set by planners, hours done recorded by technicians. The rate is copied
+/// from the company's rate for the category (else the category's default) when the line is added, so later rate changes never alter it.
+/// </summary>
+public class WorkOrderContractor : Entity, ITenantOwned, IAuditable
+{
+    public Guid TenantId { get; set; }
+    public Guid WorkOrderId { get; set; }
+    public Guid SupplierId { get; set; }
+    public FourC.Cmms.Core.Purchasing.Supplier? Supplier { get; set; }
+    public Guid? ContractorCategoryId { get; set; }
+    public FourC.Cmms.Core.Purchasing.ContractorCategory? Category { get; set; }
+    /// <summary>A contact of the company, or <see cref="PersonName"/> as free text.</summary>
+    public Guid? ContactId { get; set; }
+    public string? PersonName { get; set; }
+    public decimal PlannedHours { get; set; }
+    public decimal HoursDone { get; set; }
+    /// <summary>When the hours were done; cost is dated by it (set to the day of recording when not given).</summary>
+    public DateOnly? DoneOn { get; set; }
+    public decimal Rate { get; set; }
+    public string? Notes { get; set; }
+    public DateTimeOffset CreatedAt { get; set; }
+    public Guid? CreatedById { get; set; }
+    public DateTimeOffset? UpdatedAt { get; set; }
+    public Guid? UpdatedById { get; set; }
 }
 
 /// <summary>Non-inventory costs: contractor invoices, rentals, purchases (legacy "direct").</summary>

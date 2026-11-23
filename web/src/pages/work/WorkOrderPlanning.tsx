@@ -178,6 +178,8 @@ export function PlanVsActualCard({ w, currency }: { w: WorkOrderDetail; currency
     { label: t('plan.laborCost'), planned: w.planned.laborCost, actual: w.totals.laborCost, fmt: money },
     { label: t('plan.parts'), planned: w.planned.partsCost, actual: w.totals.partsCost, fmt: money },
     { label: t('plan.other'), planned: null, actual: w.totals.otherCost, fmt: money },
+    // Contractors (0.17.0): shown once there is something to show.
+    ...(w.planned.contractorCost || w.totals.contractorCost ? [{ label: t('contractors.cost'), planned: w.planned.contractorCost, actual: w.totals.contractorCost, fmt: money }] : []),
     { label: t('plan.total'), planned: w.planned.totalCost, actual: w.totals.totalCost, fmt: money, bold: true },
   ];
   return (

@@ -118,6 +118,17 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<ApprovalLevel> ApprovalLevels => Set<ApprovalLevel>();
     public DbSet<PurchaseOrderApprovalStep> PurchaseOrderApprovalSteps => Set<PurchaseOrderApprovalStep>();
     public DbSet<PurchaseOrderSignature> PurchaseOrderSignatures => Set<PurchaseOrderSignature>();
+    // Contracts and contractors (0.17.0)
+    public DbSet<SupplierContact> SupplierContacts => Set<SupplierContact>();
+    public DbSet<SupplierAddress> SupplierAddresses => Set<SupplierAddress>();
+    public DbSet<ContractorCategory> ContractorCategories => Set<ContractorCategory>();
+    public DbSet<SupplierCategoryRate> SupplierCategoryRates => Set<SupplierCategoryRate>();
+    public DbSet<WorkOrderContractor> WorkOrderContractors => Set<WorkOrderContractor>();
+    public DbSet<FourC.Cmms.Core.Contracts.Contract> Contracts => Set<FourC.Cmms.Core.Contracts.Contract>();
+    public DbSet<FourC.Cmms.Core.Contracts.ContractPeriod> ContractPeriods => Set<FourC.Cmms.Core.Contracts.ContractPeriod>();
+    public DbSet<FourC.Cmms.Core.Contracts.ContractAmendment> ContractAmendments => Set<FourC.Cmms.Core.Contracts.ContractAmendment>();
+    public DbSet<FourC.Cmms.Core.Contracts.ContractAsset> ContractAssets => Set<FourC.Cmms.Core.Contracts.ContractAsset>();
+    public DbSet<FourC.Cmms.Core.Contracts.ContractType> ContractTypes => Set<FourC.Cmms.Core.Contracts.ContractType>();
 
     /// <summary>ASP.NET Core data-protection key ring (sign-in cookies), shared by every app instance.</summary>
     public DbSet<DataProtectionKey> DataProtectionKeys => Set<DataProtectionKey>();
@@ -350,6 +361,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
             e.HasIndex(x => new { x.TenantId, x.UserId });
             e.Property(x => x.WorkingHours).HasConversion(NullableJsonConverter<List<WorkingDay>>()).Metadata.SetValueComparer(NullableJsonComparer<List<WorkingDay>>());
+            e.HasOne(x => x.CompanyRecord).WithMany().HasForeignKey(x => x.CompanyId).OnDelete(DeleteBehavior.NoAction);
         });
         b.Entity<Team>(e =>
         {
@@ -772,6 +784,88 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
+        // Contracts and contractors (0.17.0)
+        b.Entity<Supplier>(e =>
+        {
+            e.Property(x => x.IsSupplier).HasDefaultValue(true);
+            e.HasMany(x => x.Contacts).WithOne().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Addresses).WithOne().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.CategoryRates).WithOne().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.Cascade);
+        });
+        b.Entity<SupplierContact>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.Role).HasMaxLength(200);
+            e.Property(x => x.Phone).HasMaxLength(50); e.Property(x => x.Email).HasMaxLength(256);
+        });
+        b.Entity<SupplierAddress>(e =>
+        {
+            e.Property(x => x.Label).HasMaxLength(100); e.Property(x => x.Address).HasMaxLength(500);
+            e.Property(x => x.City).HasMaxLength(100); e.Property(x => x.Country).HasMaxLength(100);
+        });
+        b.Entity<ContractorCategory>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.DefaultRate).HasPrecision(18, 2);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<SupplierCategoryRate>(e =>
+        {
+            e.Property(x => x.Rate).HasPrecision(18, 2);
+            e.HasOne<ContractorCategory>().WithMany().HasForeignKey(x => x.ContractorCategoryId).OnDelete(DeleteBehavior.NoAction);
+            e.HasIndex(x => new { x.SupplierId, x.ContractorCategoryId }).IsUnique();
+        });
+        b.Entity<WorkOrderContractor>(e =>
+        {
+            e.Property(x => x.PersonName).HasMaxLength(200); e.Property(x => x.Notes).HasMaxLength(2000);
+            e.Property(x => x.PlannedHours).HasPrecision(9, 2); e.Property(x => x.HoursDone).HasPrecision(9, 2); e.Property(x => x.Rate).HasPrecision(18, 2);
+            e.HasOne<WorkOrder>().WithMany().HasForeignKey(x => x.WorkOrderId).OnDelete(DeleteBehavior.Cascade);
+            e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.Category).WithMany().HasForeignKey(x => x.ContractorCategoryId).OnDelete(DeleteBehavior.NoAction);
+            e.HasIndex(x => new { x.TenantId, x.WorkOrderId });
+            e.HasIndex(x => x.SupplierId);
+        });
+        b.Entity<FourC.Cmms.Core.Contracts.ContractType>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+        b.Entity<FourC.Cmms.Core.Contracts.Contract>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Number).HasMaxLength(50); e.Property(x => x.Title).HasMaxLength(300); e.Property(x => x.Notes).HasMaxLength(4000);
+            e.Property(x => x.Value).HasPrecision(18, 2); e.Property(x => x.Currency).HasMaxLength(3); e.Property(x => x.PaymentTerms).HasMaxLength(200);
+            e.Property(x => x.ExpectedPer).HasConversion<string>().HasMaxLength(10); e.Property(x => x.TerminationReason).HasMaxLength(1000);
+            e.HasOne(x => x.Supplier).WithMany().HasForeignKey(x => x.SupplierId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.ContractType).WithMany().HasForeignKey(x => x.ContractTypeId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.NoAction);
+            e.HasOne<Trade>().WithMany().HasForeignKey(x => x.TradeId).OnDelete(DeleteBehavior.NoAction);
+            e.HasMany(x => x.Periods).WithOne().HasForeignKey(x => x.ContractId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Amendments).WithOne().HasForeignKey(x => x.ContractId).OnDelete(DeleteBehavior.Cascade);
+            e.HasMany(x => x.Assets).WithOne().HasForeignKey(x => x.ContractId).OnDelete(DeleteBehavior.Cascade);
+            e.HasIndex(x => new { x.TenantId, x.Number }).IsUnique().HasFilter("[IsDeleted] = 0");
+            e.HasIndex(x => new { x.TenantId, x.EndDate });
+            e.HasIndex(x => x.SupplierId);
+        });
+        b.Entity<FourC.Cmms.Core.Contracts.ContractPeriod>(e =>
+        {
+            e.Property(x => x.Value).HasPrecision(18, 2);
+            e.HasIndex(x => new { x.ContractId, x.Number }).IsUnique();
+        });
+        b.Entity<FourC.Cmms.Core.Contracts.ContractAmendment>(e =>
+        {
+            e.Property(x => x.Description).HasMaxLength(2000); e.Property(x => x.NewValue).HasPrecision(18, 2); e.Property(x => x.CreatedByName).HasMaxLength(200);
+            e.HasIndex(x => x.ContractId);
+        });
+        b.Entity<FourC.Cmms.Core.Contracts.ContractAsset>(e =>
+        {
+            e.Property(x => x.YearlyCost).HasPrecision(18, 2);
+            e.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.NoAction);
+            e.HasIndex(x => new { x.ContractId, x.AssetId }).IsUnique();
+            e.HasIndex(x => new { x.TenantId, x.AssetId });
+        });
+        b.Entity<WorkOrder>(e => e.HasOne<FourC.Cmms.Core.Contracts.Contract>().WithMany().HasForeignKey(x => x.ContractId).OnDelete(DeleteBehavior.NoAction));
+        b.Entity<PmSchedule>(e => e.HasOne<FourC.Cmms.Core.Contracts.Contract>().WithMany().HasForeignKey(x => x.ContractId).OnDelete(DeleteBehavior.NoAction));
         b.Entity<ApprovalLevel>(e =>
         {
             ConfigureTenantEntity(e);
@@ -963,6 +1057,13 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<PurchaseRequestComment>().HasQueryFilter(SiteFilter, x => PurchaseRequests.Any(r => r.Id == x.PurchaseRequestId));
         b.Entity<PurchaseOrderApprovalStep>().HasQueryFilter(SiteFilter, x => PurchaseOrders.Any(p => p.Id == x.PurchaseOrderId));
         b.Entity<PurchaseOrderSignature>().HasQueryFilter(SiteFilter, x => PurchaseOrders.Any(p => p.Id == x.PurchaseOrderId));
+        // Contracts (0.17.0): organization-wide ones are seen everywhere; a site's only at that site. Their rows follow them;
+        // covered assets are read through Assets, whose own filter hides other sites.
+        b.Entity<WorkOrderContractor>().HasQueryFilter(SiteFilter, x => WorkOrders.Any(w => w.Id == x.WorkOrderId));
+        b.Entity<FourC.Cmms.Core.Contracts.Contract>().HasQueryFilter(SiteFilter, e => e.SiteId == null || CurrentSiteIds!.Contains(e.SiteId.Value));
+        b.Entity<FourC.Cmms.Core.Contracts.ContractPeriod>().HasQueryFilter(SiteFilter, x => Contracts.Any(c => c.Id == x.ContractId));
+        b.Entity<FourC.Cmms.Core.Contracts.ContractAmendment>().HasQueryFilter(SiteFilter, x => Contracts.Any(c => c.Id == x.ContractId));
+        b.Entity<FourC.Cmms.Core.Contracts.ContractAsset>().HasQueryFilter(SiteFilter, x => Contracts.Any(c => c.Id == x.ContractId));
         b.Entity<StockReservation>().HasQueryFilter(SiteFilter, x => Stores.Any(s => s.Id == x.StoreId));
     }
 

@@ -13,7 +13,7 @@ import { SiteSwitch } from '@/components/SiteSwitch';
 import { EmailPreferences } from '@/components/EmailPreferences';
 import {
   IconLayoutDashboard, IconMapPin, IconBox, IconClipboardText, IconTool, IconCalendarRepeat, IconPackage, IconShoppingCart,
-  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices, IconCloudOff, IconCalendarWeek, IconStack2, IconSignature } from '@tabler/icons-react';
+  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices, IconCloudOff, IconCalendarWeek, IconStack2, IconSignature, IconFileCertificate } from '@tabler/icons-react';
 import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { handleFormError, notifySuccess } from './utils';
@@ -45,6 +45,7 @@ export function AppLayout() {
       { label: t('nav.workGroups'), to: '/work-groups', icon: IconStack2, perm: P.woView },
       { label: t('nav.planning'), to: '/planning', icon: IconCalendarWeek, perm: P.woView },
       { label: t('nav.preventive'), to: '/pm', icon: IconCalendarRepeat, perm: P.pmView },
+      { label: t('nav.contracts'), to: '/contracts', icon: IconFileCertificate, perm: P.contractsView },
     ] },
     { title: t('nav.materials'), items: [
       { label: t('nav.inventory'), to: '/inventory', icon: IconPackage, perm: P.inventoryView },

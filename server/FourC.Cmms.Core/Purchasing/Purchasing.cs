@@ -19,9 +19,59 @@ public class Supplier : TenantEntity
     public string? TaxNumber { get; set; }
     public string? PaymentTerms { get; set; }
     public string? Currency { get; set; }
+    /// <summary>The company sells to us: purchase orders and requests may pick it (0.17.0; existing records are suppliers).</summary>
+    public bool IsSupplier { get; set; } = true;
+    /// <summary>The Contractor role: contractor lines, contracts and employees may name it.</summary>
     public bool IsContractor { get; set; }
+    /// <summary>The company makes equipment or parts (0.17.0).</summary>
+    public bool IsManufacturer { get; set; }
     public string? Notes { get; set; }
     public bool IsActive { get; set; } = true;
+    /// <summary>People beyond the main contact (0.17.0).</summary>
+    public List<SupplierContact> Contacts { get; set; } = [];
+    /// <summary>Addresses beyond the main one (0.17.0).</summary>
+    public List<SupplierAddress> Addresses { get; set; } = [];
+    /// <summary>The company's own hourly rate per contractor category (0.17.0).</summary>
+    public List<SupplierCategoryRate> CategoryRates { get; set; } = [];
+}
+
+/// <summary>A person at a company (0.17.0).</summary>
+public class SupplierContact : Entity
+{
+    public Guid SupplierId { get; set; }
+    public required string Name { get; set; }
+    public string? Role { get; set; }
+    public string? Phone { get; set; }
+    public string? Email { get; set; }
+    public int Sort { get; set; }
+}
+
+/// <summary>A further address of a company (0.17.0).</summary>
+public class SupplierAddress : Entity
+{
+    public Guid SupplierId { get; set; }
+    public string? Label { get; set; }
+    public required string Address { get; set; }
+    public string? City { get; set; }
+    public string? Country { get; set; }
+    public int Sort { get; set; }
+}
+
+/// <summary>A kind of contractor work (electrician, lift engineer…) with a default hourly rate in base currency (0.17.0).</summary>
+public class ContractorCategory : TenantEntity, ICodeLookup
+{
+    public required string Code { get; set; }
+    public required string Name { get; set; }
+    public decimal DefaultRate { get; set; }
+    public bool IsActive { get; set; } = true;
+}
+
+/// <summary>A contractor company's own hourly rate for a category (0.17.0).</summary>
+public class SupplierCategoryRate : Entity
+{
+    public Guid SupplierId { get; set; }
+    public Guid ContractorCategoryId { get; set; }
+    public decimal Rate { get; set; }
 }
 
 public class PurchaseOrder : TenantEntity

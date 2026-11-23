@@ -309,6 +309,26 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             "PurchaseRequest", r.Id, ct, siteId: r.SiteId, siteLevel: true);
     }
 
+    /// <summary>
+    /// A contract needs attention (0.17.0): its manager and the organization's contract-alert recipients hear; with neither, everyone who may
+    /// manage contracts. A site's contract only reaches people who may see that site.
+    /// </summary>
+    public async Task ContractAlertAsync(CmmsDbContext db, ITenantContext ctx, FourC.Cmms.Core.Contracts.Contract c, DateOnly deadline, CancellationToken ct)
+    {
+        if (!Available) return;
+        var settings = (await db.Tenants.AsNoTracking().Where(t => t.Id == db.CurrentTenantId).Select(t => t.Settings).FirstAsync(ct));
+        var named = (settings.ContractAlertRecipientIds ?? []).Concat(c.ManagerId is { } m ? [m] : []).Distinct().ToList();
+        // Only the named people who can still get it (active, and able to see a site's contract) count; with none of them left —
+        // the manager left, or works at another site — everyone who may manage contracts is told, so a deadline never passes unannounced.
+        var to = await ReachingSiteAsync(await UsersAsync(db, named, ct), c.SiteId, ct);
+        if (to.Count == 0) to = await UsersWithPermissionAsync(db, Permissions.ContractsManage, ct);
+        var company = await db.Suppliers.AsNoTracking().Where(s => s.Id == c.SupplierId).Select(s => s.Name).FirstOrDefaultAsync(ct) ?? "";
+        var site = c.SiteId is { } sid ? await db.Sites.AllSites().AsNoTracking().Where(s => s.Id == sid).Select(s => s.Name).FirstOrDefaultAsync(ct) : null;
+        var facts = new ContractFacts(c.Number, c.Title, company, site, c.EndDate, deadline, c.AutoRenew);
+        await QueueAsync(db, ctx, EmailEvents.ContractAlert, to, o => EmailTemplates.ContractAlert(o, facts, Link($"/contracts/{c.Id}")), "Contract", c.Id, ct,
+            siteId: c.SiteId, siteLevel: true);
+    }
+
     /// <summary>Approved or returned: the requester hears.</summary>
     public async Task PrDecidedAsync(CmmsDbContext db, ITenantContext ctx, PurchaseRequest r, bool approved, string? reason, CancellationToken ct)
     {
@@ -467,6 +487,16 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         (await db.Employees.AsNoTracking().Where(e => ids.Contains(e.Id))
             .Select(e => new { e.Email, e.FullName, e.UserId, UserEmail = db.Users.Where(u => u.Id == e.UserId).Select(u => u.Email).FirstOrDefault() })
             .ToListAsync(ct)).Select(e => new EmailRecipient(e.Email ?? e.UserEmail, e.FullName, e.UserId)).ToList();
+
+    /// <summary>The people who may see <paramref name="siteId"/> (everyone when there is no site).</summary>
+    private async Task<List<EmailRecipient>> ReachingSiteAsync(List<EmailRecipient> people, Guid? siteId, CancellationToken ct)
+    {
+        if (siteId is not { } site) return people;
+        var kept = new List<EmailRecipient>();
+        foreach (var p in people)
+            if (p.UserId is { } id && Access.CoversSite(await access.GetAsync(id, ct), site)) kept.Add(p);
+        return kept;
+    }
 
     internal static async Task<List<EmailRecipient>> UsersAsync(CmmsDbContext db, IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
         await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId)

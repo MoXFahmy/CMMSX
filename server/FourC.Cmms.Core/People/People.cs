@@ -28,7 +28,11 @@ public class Employee : TenantEntity
     public decimal? HourlyRate { get; set; }
     public decimal? OvertimeRate { get; set; }
     public bool IsContractor { get; set; }
+    /// <summary>Free-text company name (before 0.17.0); shown when no company is linked.</summary>
     public string? Company { get; set; }
+    /// <summary>The contractor company this person works for (0.17.0): their logged hours count as contractor cost.</summary>
+    public Guid? CompanyId { get; set; }
+    public FourC.Cmms.Core.Purchasing.Supplier? CompanyRecord { get; set; }
     public Guid? UserId { get; set; }
     public string? Notes { get; set; }
     public bool IsActive { get; set; } = true;

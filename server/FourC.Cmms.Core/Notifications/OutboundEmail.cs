@@ -31,6 +31,8 @@ public static class EmailEvents
     public const string PrOrdered = "pr.ordered";
     public const string PrReceived = "pr.received";
     public const string PoApprovalWaiting = "po.approvalWaiting";
+    /// <summary>A contract's notice deadline or end is near (0.17.0).</summary>
+    public const string ContractAlert = "contract.alert";
     /// <summary>"Send me a test e-mail" from Settings; not a notification anyone can switch off.</summary>
     public const string Test = "test";
 
@@ -40,6 +42,7 @@ public static class EmailEvents
         RequestRefused, WorkOrderCancelled, WorkOrderOverdue, PartsReceived,
         PoSubmitted, PoApproved, PoRejected, PoSent,
         PrSubmitted, PrApproved, PrRejected, PrOrdered, PrReceived, PoApprovalWaiting,
+        ContractAlert,
     ];
 
     /// <summary>

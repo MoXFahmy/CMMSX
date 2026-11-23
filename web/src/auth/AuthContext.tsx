@@ -63,4 +63,5 @@ export const P = {
   purchasingView: 'purchasing.view', purchasingCreate: 'purchasing.create', purchasingApprove: 'purchasing.approve', purchasingReceive: 'purchasing.receive',
   purchasingRequest: 'purchasing.request', purchasingApproveRequests: 'purchasing.approveRequests',
   suppliersManage: 'suppliers.manage', reportsView: 'reports.view',
+  contractsView: 'contracts.view', contractsManage: 'contracts.manage',
 } as const;

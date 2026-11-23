@@ -14,6 +14,7 @@ import type { AccessWindow } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { LocationPicker } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
+import { ContractSelect } from '@/components/ContractSelect';
 import { CodeSelect } from '@/components/CodeSelect';
 import { EmployeePicker } from '@/components/EmployeePicker';
 import { AssetCheck } from '@/components/AssetCheck';
@@ -35,10 +36,12 @@ type Values = {
   templateId: string | null;
   /** What was seen (0.14.0). */
   symptomId: string | null;
+  /** The service contract the work is done under (0.17.0). */
+  contractId: string | null;
 };
 const empty: Values = { title: '', description: '', type: 'Corrective', priority: 'Medium', siteId: null, locationId: null, assetId: null, tradeId: null, teamId: null,
   assigneeIds: [], plannedStart: null, dueAt: null, estimatedHours: '', tasks: [], requestedBy: '', assetIsDown: false, accessWindows: [], onlyWhenStopped: null, templateId: null,
-  symptomId: null };
+  symptomId: null, contractId: null };
 const local = (v?: string | null) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : null);
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 
@@ -83,7 +86,7 @@ export function WorkOrderFormPage() {
         title: wo.title, description: wo.description ?? '', type: wo.type, priority: wo.priority, siteId: wo.siteId, locationId: wo.locationId ?? null,
         assetId: wo.assetId ?? null, tradeId: wo.tradeId ?? null, teamId: wo.teamId ?? null, assigneeIds: wo.assignees.map((a) => a.employeeId), plannedStart: d(wo.plannedStart),
         dueAt: local(wo.dueAt), estimatedHours: wo.estimatedHours ?? '', tasks: [], requestedBy: wo.requestedBy ?? '', assetIsDown: !!wo.downtime,
-        accessWindows: wo.accessWindows ?? [], onlyWhenStopped: wo.onlyWhenStopped ?? false, symptomId: wo.symptomId ?? null,
+        accessWindows: wo.accessWindows ?? [], onlyWhenStopped: wo.onlyWhenStopped ?? false, symptomId: wo.symptomId ?? null, contractId: wo.contractId ?? null,
       });
       form.resetDirty();
     } else if (source) {
@@ -93,7 +96,7 @@ export function WorkOrderFormPage() {
         locationId: source.locationId ?? null, assetId: source.assetId ?? null, tradeId: source.tradeId ?? null, teamId: source.teamId ?? null,
         assigneeIds: source.assignees.map((a) => a.employeeId), estimatedHours: source.estimatedHours ?? '',
         tasks: [...source.tasks].sort((a, b) => a.sequence - b.sequence).map((x) => x.description),
-        accessWindows: source.accessWindows ?? [], onlyWhenStopped: source.onlyWhenStopped ?? null, symptomId: source.symptomId ?? null,
+        accessWindows: source.accessWindows ?? [], onlyWhenStopped: source.onlyWhenStopped ?? null, symptomId: source.symptomId ?? null, contractId: source.contractId ?? null,
       });
     } else if (asset) {
       form.setValues({ ...empty, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id, priority: asset.criticality === 'Critical' ? 'High' : 'Medium' });
@@ -113,6 +116,7 @@ export function WorkOrderFormPage() {
       templateId: !editing ? v.templateId : undefined,
       managesTeam: true, // this form shows the team: an empty one clears it
       managesSymptom: true, // and the symptom (0.14.0)
+      managesContract: true, // and the contract (0.17.0)
     };
     try {
       const r = editing ? await put<{ id: string }>(`/work-orders/${id}`, body) : await post<{ id: string; number: string }>('/work-orders', body);
@@ -157,6 +161,8 @@ export function WorkOrderFormPage() {
               <AssetCheck assetId={form.values.assetId} excludeWorkOrderId={id} />
               <CodeSelect path="/symptoms" label={t('codes.symptom')} value={form.values.symptomId} onChange={(v) => form.setFieldValue('symptomId', v)}
                 current={wo?.symptom ?? source?.symptom ?? null} error={err('symptomId')} />
+              <ContractSelect siteId={form.values.siteId} assetId={form.values.assetId} value={form.values.contractId} onChange={(v) => form.setFieldValue('contractId', v)}
+                current={wo?.contract ?? source?.contract ?? null} error={err('contractId')} />
               {form.values.assetId && <Checkbox label={t('downtime.assetIsDown')} color="red"
                 description={editing && wo?.downtime && form.values.assetId !== wo.assetId
                   ? (wo.downtime.source === 'WorkOrder' && wo.downtime.sourceNumber === wo.number && !wo.downtime.endedAt ? t('downtime.assetMovesHint') : t('downtime.assetChangedHint'))

@@ -126,6 +126,7 @@ public static class WorkRequestEndpoints
                 r.CreatedAt, CreatedBy = r.CreatedById is { } c ? users.GetValueOrDefault(c) : null, CanCancel = r.Status == WorkRequestStatus.New && r.CreatedById == ctx.UserId,
                 r.RequestTypeId, RequestType = r.RequestType is null ? null : new { r.RequestType.Id, r.RequestType.Name, r.RequestType.DefaultTradeId },
                 ExtraRecipients = extra, r.AccessWindows, r.OnlyWhenStopped,
+                CoveredBy = await ContractEndpoints.CoveredByAsync(db, r.AssetId, null, ct),
                 r.SymptomId, Symptom = r.Symptom is null ? null : new { r.Symptom.Id, r.Symptom.Code, r.Symptom.Name },
                 AwaitingFeedback = r.AwaitingFeedbackSince != null, r.AwaitingFeedbackSince, CanAnswer = canAnswer,
                 Feedback = feedback, Source = await Checklists.SourceAsync(db, r.SourceWorkOrderId, r.SourceTaskId, ct),

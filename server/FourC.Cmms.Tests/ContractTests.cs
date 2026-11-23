@@ -1,0 +1,218 @@
+using System.Net;
+using System.Net.Http.Headers;
+using System.Net.Http.Json;
+using System.Text.Json;
+using FourC.Cmms.Core.Contracts;
+using FourC.Cmms.Core.Identity;
+using Microsoft.EntityFrameworkCore;
+using static FourC.Cmms.Tests.CompanyTests;
+using static FourC.Cmms.Tests.PurchaseRequestTests;
+
+namespace FourC.Cmms.Tests;
+
+/// <summary>0.17.0: the contract record — numbering, periods, status, covered assets, site access, amendments, termination and files.</summary>
+public class ContractTests(ApiFixture fx) : IClassFixture<ApiFixture>
+{
+    internal static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
+
+    /// <summary>Sites A (the org's first) and B, contractor company C, asset a1 at A and b1 at B.</summary>
+    internal sealed record World(PurchaseRequestTests.Org O, Guid SiteB, Guid C, Guid A1, Guid B1);
+
+    internal static async Task<World> WorldAsync(ApiFixture fx)
+    {
+        var o = await OrgAsync(fx);
+        var siteB = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/sites", new { code = "S2", name = "Alex Plant", isActive = true })));
+        var c = await ContractorAsync(o.Admin, "LIFT");
+        var a1 = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/assets", new { name = "Lift A1", siteId = o.Site, status = "Active", criticality = "Medium", warrantyType = "None" })));
+        var b1 = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/assets", new { name = "Lift B1", siteId = siteB, status = "Active", criticality = "Medium", warrantyType = "None" })));
+        return new World(o, siteB, c, a1, b1);
+    }
+
+    internal static Dictionary<string, object?> Body(Guid company, DateOnly start, DateOnly end, Guid? site = null, decimal? value = 12000, Guid[]? assets = null,
+        bool autoRenew = false, int? renewalMonths = null, int noticeDays = 0, int alertDays = 60, Guid? manager = null, string title = "Lift service") => new()
+    {
+        ["title"] = title, ["supplierId"] = company, ["siteId"] = site, ["startDate"] = start, ["endDate"] = end, ["value"] = value, ["currency"] = "EGP",
+        ["autoRenew"] = autoRenew, ["renewalMonths"] = renewalMonths, ["noticeDays"] = noticeDays, ["alertDays"] = alertDays, ["managerId"] = manager,
+        ["expectedWorkOrders"] = 12, ["expectedPer"] = "Year",
+        ["assets"] = (assets ?? []).Select(a => new { assetId = a, yearlyCost = 1000m }).ToArray(),
+    };
+
+    internal static async Task<Guid> ContractAsync(HttpClient c, Dictionary<string, object?> body) => Id(await Ok(await c.PostAsJsonAsync("/api/contracts", body)));
+    private static async Task<JsonElement> GetAsync(HttpClient c, Guid id) => await Ok(await c.GetAsync($"/api/contracts/{id}"));
+
+    private static Dictionary<string, object?> WithVersion(Dictionary<string, object?> body, JsonElement current)
+    {
+        body["rowVersion"] = current.GetProperty("rowVersion").GetString();
+        return body;
+    }
+
+    [SkippableFact]
+    public async Task Contract_is_numbered_CON_with_a_first_period_and_a_status()
+    {
+        Skip.IfNot(fx.Enabled);
+        var w = await WorldAsync(fx);
+        var id = await ContractAsync(w.O.Admin, Body(w.C, Today.AddDays(-10), Today.AddDays(355)));
+        var k = await GetAsync(w.O.Admin, id);
+        Assert.Equal("CON-00001", k.GetProperty("number").GetString());
+        Assert.Equal("Active", k.GetProperty("status").GetString());
+        var period = Assert.Single(k.GetProperty("periods").EnumerateArray());
+        Assert.Equal(1, period.GetProperty("number").GetInt32());
+        Assert.Equal(Today.AddDays(-10), DateOnly.Parse(period.GetProperty("startDate").GetString()!));
+        Assert.Equal(Today.AddDays(355), DateOnly.Parse(period.GetProperty("endDate").GetString()!));
+        Assert.Equal(12000m, period.GetProperty("value").GetDecimal());
+        Assert.Equal("LIFT Co", k.GetProperty("company").GetProperty("name").GetString());
+
+        var upcoming = await ContractAsync(w.O.Admin, Body(w.C, Today.AddDays(1), Today.AddDays(100)));
+        Assert.Equal("Upcoming", (await GetAsync(w.O.Admin, upcoming)).GetProperty("status").GetString());
+        var expired = await ContractAsync(w.O.Admin, Body(w.C, Today.AddDays(-100), Today.AddDays(-1)));
+        Assert.Equal("Expired", (await GetAsync(w.O.Admin, expired)).GetProperty("status").GetString());
+        var list = (await Ok(await w.O.Admin.GetAsync("/api/contracts?status=Active"))).GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal([id], list.Select(x => x.GetProperty("id").GetGuid()));
+    }
+
+    [SkippableFact]
+    public async Task Only_active_contractor_companies_can_be_chosen()
+    {
+        Skip.IfNot(fx.Enabled);
+        var w = await WorldAsync(fx);
+        var c = w.O.Admin;
+        Assert.Contains("Choose an active company with the Contractor role.", await Problem(await c.PostAsJsonAsync("/api/contracts", Body(w.O.Supplier, Today, Today.AddDays(30)))));
+        Assert.Contains("The end date must be on or after the start date.", await Problem(await c.PostAsJsonAsync("/api/contracts", Body(w.C, Today, Today.AddDays(-1)))));
+        Assert.Contains("Give the renewal length in months (1–120).", await Problem(await c.PostAsJsonAsync("/api/contracts", Body(w.C, Today, Today.AddDays(30), autoRenew: true))));
+        var noTitle = Body(w.C, Today, Today.AddDays(30));
+        noTitle["title"] = " ";
+        Assert.Contains("Enter a title.", await Problem(await c.PostAsJsonAsync("/api/contracts", noTitle)));
+    }
+
+    [SkippableFact]
+    public async Task Site_contract_covers_only_its_site_assets()
+    {
+        Skip.IfNot(fx.Enabled);
+        var w = await WorldAsync(fx);
+        Assert.Contains("is at another site than the contract.", await Problem(await w.O.Admin.PostAsJsonAsync("/api/contracts",
+            Body(w.C, Today, Today.AddDays(30), site: w.O.Site, assets: [w.A1, w.B1]))));
+        var id = await ContractAsync(w.O.Admin, Body(w.C, Today, Today.AddDays(30), assets: [w.A1, w.B1]));
+        Assert.Equal(2, (await GetAsync(w.O.Admin, id)).GetProperty("assets").GetArrayLength());
+        // Giving it a site later is checked the same way.
+        var current = await GetAsync(w.O.Admin, id);
+        Assert.Contains("is at another site than the contract.", await Problem(await w.O.Admin.PutAsJsonAsync($"/api/contracts/{id}",
+            WithVersion(Body(w.C, Today, Today.AddDays(30), site: w.O.Site, assets: [w.A1, w.B1]), current))));
+    }
+
+    [SkippableFact]
+    public async Task Site_limited_user_sees_organization_wide_and_own_site_contracts_only()
+    {
+        Skip.IfNot(fx.Enabled);
+        var w = await WorldAsync(fx);
+        var orgWide = await ContractAsync(w.O.Admin, Body(w.C, Today, Today.AddDays(300), assets: [w.A1, w.B1], title: "Org wide"));
+        var atA = await ContractAsync(w.O.Admin, Body(w.C, Today, Today.AddDays(300), site: w.O.Site, assets: [w.A1], title: "At A"));
+        var atB = await ContractAsync(w.O.Admin, Body(w.C, Today, Today.AddDays(300), site: w.SiteB, assets: [w.B1], title: "At B"));
+        var (user, _, _) = await UserAsync(fx, w.O.Admin, "Site A", [Permissions.ContractsView, Permissions.ContractsManage, Permissions.AssetsView], siteIds: [w.O.Site]);
+
+        var seen = (await Ok(await user.GetAsync("/api/contracts"))).GetProperty("items").EnumerateArray().Select(x => x.GetProperty("id").GetGuid()).ToHashSet();
+        Assert.Equal(new HashSet<Guid> { orgWide, atA }, seen);
+        Assert.Equal(HttpStatusCode.NotFound, (await user.GetAsync($"/api/contracts/{atB}")).StatusCode);
+        var mine = await GetAsync(user, orgWide);
+        Assert.Equal([w.A1], mine.GetProperty("assets").EnumerateArray().Select(a => a.GetProperty("assetId").GetGuid()));
+
+        // Saving it with the assets they can see keeps the one they can't.
+        await Ok(await user.PutAsJsonAsync($"/api/contracts/{orgWide}", WithVersion(Body(w.C, Today, Today.AddDays(300), assets: [w.A1], title: "Org wide"), mine)));
+        var all = (await GetAsync(w.O.Admin, orgWide)).GetProperty("assets").EnumerateArray().Select(a => a.GetProperty("assetId").GetGuid()).ToHashSet();
+        Assert.Equal(new HashSet<Guid> { w.A1, w.B1 }, all);
+    }
+
+    [SkippableFact]
+    public async Task Amendment_changes_the_current_value_and_termination_needs_a_reason()
+    {
+        Skip.IfNot(fx.Enabled);
+        var w = await WorldAsync(fx);
+        var id = await ContractAsync(w.O.Admin, Body(w.C, Today.AddDays(-10), Today.AddDays(300), autoRenew: true, renewalMonths: 12, noticeDays: 30));
+        Assert.Contains("Describe the amendment.", await Problem(await w.O.Admin.PostAsJsonAsync($"/api/contracts/{id}/amendments", new { date = Today, description = "", newValue = 15000m })));
+        await Ok(await w.O.Admin.PostAsJsonAsync($"/api/contracts/{id}/amendments", new { date = Today, description = "Price review", newValue = 15000m }));
+        var k = await GetAsync(w.O.Admin, id);
+        Assert.Equal(15000m, k.GetProperty("periods")[0].GetProperty("value").GetDecimal());
+        Assert.Equal("Price review", k.GetProperty("amendments")[0].GetProperty("description").GetString());
+        Assert.Equal(Today.AddDays(270), DateOnly.Parse(k.GetProperty("deadline").GetString()!));
+
+        Assert.Contains("Give a reason.", await Problem(await w.O.Admin.PostAsJsonAsync($"/api/contracts/{id}/terminate", new { date = Today, reason = "" })));
+        await Ok(await w.O.Admin.PostAsJsonAsync($"/api/contracts/{id}/terminate", new { date = Today, reason = "Closed site" }));
+        k = await GetAsync(w.O.Admin, id);
+        Assert.Equal("Terminated", k.GetProperty("status").GetString());
+        Assert.Equal(JsonValueKind.Null, k.GetProperty("deadline").ValueKind);
+        Assert.Equal("Closed site", k.GetProperty("terminationReason").GetString());
+    }
+
+    [SkippableFact]
+    public async Task Value_and_start_change_only_before_the_first_renewal()
+    {
+        Skip.IfNot(fx.Enabled);
+        var w = await WorldAsync(fx);
+        var start = Today.AddDays(-400);
+        var id = await ContractAsync(w.O.Admin, Body(w.C, start, start.AddDays(364), autoRenew: true, renewalMonths: 12));
+        await Loop.DbAsync(fx, async db =>
+        {
+            var k = await db.Contracts.IgnoreQueryFilters().Include(x => x.Periods).FirstAsync(x => x.Id == id);
+            var end = ContractTerms.PeriodEnd(k.EndDate.AddDays(1), 12);
+            db.ContractPeriods.Add(new ContractPeriod { TenantId = k.TenantId, ContractId = id, Number = 2, StartDate = k.EndDate.AddDays(1), EndDate = end, Value = 12000, IsRenewal = true });
+            k.EndDate = end;
+            await db.SaveChangesAsync();
+            return 0;
+        });
+        var current = await GetAsync(w.O.Admin, id);
+        var end = DateOnly.Parse(current.GetProperty("endDate").GetString()!);
+        Assert.Contains("Record the new value as an amendment.", await Problem(await w.O.Admin.PutAsJsonAsync($"/api/contracts/{id}",
+            WithVersion(Body(w.C, start, end, value: 13000, autoRenew: true, renewalMonths: 12), current))));
+        Assert.Contains("The start date can't change after a renewal.", await Problem(await w.O.Admin.PutAsJsonAsync($"/api/contracts/{id}",
+            WithVersion(Body(w.C, start.AddDays(1), end, autoRenew: true, renewalMonths: 12), current))));
+        // Moving the end moves the latest period's end.
+        await Ok(await w.O.Admin.PutAsJsonAsync($"/api/contracts/{id}", WithVersion(Body(w.C, start, end.AddDays(5), autoRenew: true, renewalMonths: 12), current)));
+        var periods = (await GetAsync(w.O.Admin, id)).GetProperty("periods").EnumerateArray().ToList();
+        Assert.Equal(end.AddDays(5), DateOnly.Parse(periods.Single(p => p.GetProperty("number").GetInt32() == 2).GetProperty("endDate").GetString()!));
+    }
+
+    [SkippableFact]
+    public async Task Company_losing_contractor_role_keeps_existing_contracts()
+    {
+        Skip.IfNot(fx.Enabled);
+        var w = await WorldAsync(fx);
+        var id = await ContractAsync(w.O.Admin, Body(w.C, Today, Today.AddDays(300)));
+        await Ok(await w.O.Admin.PutAsJsonAsync($"/api/suppliers/{w.C}", new { code = "LIFT", name = "LIFT Co", isSupplier = true, isContractor = false, isManufacturer = false, isActive = false }));
+        var current = await GetAsync(w.O.Admin, id);
+        await Ok(await w.O.Admin.PutAsJsonAsync($"/api/contracts/{id}", WithVersion(Body(w.C, Today, Today.AddDays(300), title: "Renamed"), current)));
+        Assert.Contains("Choose an active company with the Contractor role.", await Problem(await w.O.Admin.PostAsJsonAsync("/api/contracts", Body(w.C, Today, Today.AddDays(30)))));
+    }
+
+    [SkippableFact]
+    public async Task Contract_named_on_work_cannot_be_deleted()
+    {
+        Skip.IfNot(fx.Enabled);
+        var w = await WorldAsync(fx);
+        var used = await ContractAsync(w.O.Admin, Body(w.C, Today, Today.AddDays(300)));
+        var unused = await ContractAsync(w.O.Admin, Body(w.C, Today, Today.AddDays(300)));
+        var wo = Id(await Ok(await w.O.Admin.PostAsJsonAsync("/api/work-orders", new { title = "Lift check", siteId = w.O.Site, type = "Corrective", priority = "Medium" })));
+        await Loop.DbAsync(fx, db => db.WorkOrders.IgnoreQueryFilters().Where(x => x.Id == wo).ExecuteUpdateAsync(s => s.SetProperty(x => x.ContractId, used)));
+        Assert.Contains("This contract is named on work orders or PMs. Terminate it instead.", await Problem(await w.O.Admin.DeleteAsync($"/api/contracts/{used}")));
+        Assert.Equal(HttpStatusCode.NoContent, (await w.O.Admin.DeleteAsync($"/api/contracts/{unused}")).StatusCode);
+    }
+
+    [SkippableFact]
+    public async Task Contract_files_need_contract_permissions()
+    {
+        Skip.IfNot(fx.Enabled);
+        var w = await WorldAsync(fx);
+        var id = await ContractAsync(w.O.Admin, Body(w.C, Today, Today.AddDays(300)));
+        await Ok(await UploadAsync(w.O.Admin, id));
+        var (viewer, _, _) = await UserAsync(fx, w.O.Admin, "Viewer");
+        Assert.Equal(1, (await Ok(await viewer.GetAsync($"/api/attachments?entityType=Contract&entityId={id}"))).GetArrayLength());
+        Assert.Equal(HttpStatusCode.Forbidden, (await UploadAsync(viewer, id)).StatusCode);
+    }
+
+    private static async Task<HttpResponseMessage> UploadAsync(HttpClient c, Guid id)
+    {
+        using var form = new MultipartFormDataContent { { new StringContent("Contract"), "entityType" }, { new StringContent(id.ToString()), "entityId" } };
+        var file = new ByteArrayContent("%PDF-1.4\n%%EOF"u8.ToArray());
+        file.Headers.ContentType = new MediaTypeHeaderValue("application/pdf");
+        form.Add(file, "files", "contract.pdf");
+        return await c.PostAsync("/api/attachments", form);
+    }
+}

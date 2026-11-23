@@ -112,6 +112,20 @@ export function WorkOrderPrintPage() {
         </Table.Tbody>
       </Table>
 
+      {(w.contractors?.length ?? 0) > 0 && (
+        <div style={{ marginBottom: 16 }}>
+          <Title order={5} mb={6}>{t('contractors.title')}</Title>
+          <Table withTableBorder withColumnBorders verticalSpacing={4}>
+            <Table.Thead><Table.Tr><Table.Th>{t('contracts.company')}</Table.Th><Table.Th>{t('companies.category')}</Table.Th><Table.Th>{t('contractors.person')}</Table.Th>
+              <Table.Th ta="right">{t('contractors.planned')}</Table.Th><Table.Th ta="right">{t('contractors.done')}</Table.Th><Table.Th>{t('wo.date')}</Table.Th></Table.Tr></Table.Thead>
+            <Table.Tbody>
+              {w.contractors.map((l) => <Table.Tr key={l.id}><Table.Td>{l.companyName}</Table.Td><Table.Td>{l.categoryName ?? ''}</Table.Td><Table.Td>{l.personName ?? ''}</Table.Td>
+                <Table.Td ta="right">{l.plannedHours ? fmtQty(l.plannedHours) : ''}</Table.Td><Table.Td ta="right">{l.hoursDone ? fmtQty(l.hoursDone) : ''}</Table.Td><Table.Td>{l.doneOn ? fmtDate(l.doneOn) : ''}</Table.Td></Table.Tr>)}
+            </Table.Tbody>
+          </Table>
+        </div>
+      )}
+
       <SimpleGrid cols={2} spacing="md" mb="md">
         <div>
           <Title order={5} mb={6}>{t('wo.labor')}</Title>

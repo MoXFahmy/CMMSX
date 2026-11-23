@@ -85,6 +85,10 @@ public static class Permissions
     /// <summary>Approve or reject purchase requests (0.16.0).</summary>
     public const string PurchasingApproveRequests = "purchasing.approveRequests";
     public const string SuppliersManage = "suppliers.manage";
+    /// <summary>See service contracts (0.17.0).</summary>
+    public const string ContractsView = "contracts.view";
+    /// <summary>Create, edit, amend and terminate service contracts (0.17.0).</summary>
+    public const string ContractsManage = "contracts.manage";
     public const string ReportsView = "reports.view";
     public const string UsersManage = "users.manage";
     public const string SettingsManage = "settings.manage";
@@ -127,6 +131,8 @@ public static class Permissions
         new(PurchasingRequest, "Purchasing", "Raise purchase requests"),
         new(PurchasingApproveRequests, "Purchasing", "Approve purchase requests"),
         new(SuppliersManage, "Purchasing", "Manage suppliers"),
+        new(ContractsView, "Contracts", "View contracts"),
+        new(ContractsManage, "Contracts", "Create and edit contracts"),
         new(ReportsView, "Reports", "View reports and KPIs"),
         new(UsersManage, "Administration", "Manage users and roles"),
         new(SettingsManage, "Administration", "Manage organization settings, categories and custom fields"),

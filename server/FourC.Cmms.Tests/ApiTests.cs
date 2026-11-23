@@ -40,6 +40,7 @@ public sealed class ApiFixture : IAsyncLifetime
             b.UseSetting("Email:AllowedOrganizations", "*"); // sign-up is open in tests; the operator allows every organization
             b.UseSetting("App:PublicUrl", "https://cmms.test");
             b.UseSetting("Email:OverdueAutoRun", "false"); // tests run the overdue pass themselves
+            b.UseSetting("Contracts:AutoRun", "false"); // and the contract renewal and alert pass
             b.UseSetting("Push:ServiceAccountJson", "{\"project_id\":\"cmx-test\"}"); // push "set up"; the transport is a recorder
             b.UseSetting("Push:AutoSend", "false");
             b.ConfigureTestServices(s =>

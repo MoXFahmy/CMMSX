@@ -29,6 +29,7 @@ import { AssetPartsTab } from './AssetParts';
 import { ChecklistsCard } from './AssetChecklists';
 import { AssetMeasurements } from './AssetMeasurements';
 import { AssetCosts } from './AssetCosts';
+import { AssetContracts } from './AssetContracts';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -144,6 +145,7 @@ export function AssetDetailPage() {
             </Grid.Col>
             <Grid.Col span={{ base: 12, md: 4 }}>
               <Stack gap="lg">
+                {can(P.contractsView) && <AssetContracts assetId={a.id} />}
                 {a.primaryImageId ? <Card p={0} style={{ overflow: 'hidden' }}><Image src={`/api/attachments/${a.primaryImageId}/content`} h={220} fit="cover" alt={a.name} /></Card> : (
                   <Card><Center h={140}><Stack align="center" gap={4}><ThemeIcon size={48} variant="light" radius="xl"><IconBox size={26} /></ThemeIcon>
                     {can(P.assetsEdit) && <Anchor fz="sm" onClick={() => setTab('files')}>{t('assets.files')}</Anchor>}</Stack></Center></Card>
