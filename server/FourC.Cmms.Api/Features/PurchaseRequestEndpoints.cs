@@ -240,7 +240,9 @@ public static class PurchaseRequestEndpoints
                     var input = new PurchasingEndpoints.PoInput(grp.Key.SiteId, sup.Id, Today, null, who.Length > 0 ? who[..Math.Min(who.Length, 200)] : null, sup.Currency, null,
                         sup.PaymentTerms, null, null, null, null, 0, $"From {string.Join(", ", numbers)}",
                         grp.OrderBy(x => x.Request.Number).ThenBy(x => x.Line.LineNumber).Select(x => new PurchasingEndpoints.LineInput(null, x.Line.PartId, x.Line.Description,
-                            x.Line.UnitOfMeasure, x.Quantity, x.Price, 0, x.Line.StoreId, x.Line.WorkOrderId, null, x.Line.Id)).ToList());
+                            x.Line.UnitOfMeasure, x.Quantity, x.Price, 0, x.Line.StoreId, x.Line.WorkOrderId, null, x.Line.Id)).ToList(),
+                        // Parts orders when any part is on it, else services.
+                        await PurchasingEndpoints.DefaultTypeAsync(db, grp.Any(x => x.Line.PartId is not null) ? "PARTS" : "SERVICES", tk));
                     var o = await PurchasingEndpoints.CreateDraftAsync(db, ctx, input, tk);
                     foreach (var x in grp) (ordersOf.TryGetValue(x.Request.Id, out var l) ? l : ordersOf[x.Request.Id] = []).Add(o.Number);
                     list.Add(new { o.Id, o.Number, Supplier = sup.Name, Lines = o.Lines.Count });

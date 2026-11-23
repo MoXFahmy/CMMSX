@@ -19,7 +19,7 @@ public static class PurchasingEndpoints
         Guid? StoreId, Guid? WorkOrderId, string? AccountCode, Guid? PurchaseRequestLineId = null);
     public sealed record PoInput(Guid? SiteId, Guid? SupplierId, DateOnly? OrderDate, DateOnly? ExpectedDate, string? RequestedBy, string? Currency, decimal? ExchangeRate,
         string? PaymentTerms, string? ShippingMethod, string? DeliverTo, string? SupplierQuoteRef, decimal? TaxPercent, decimal ShippingCost, string? Notes,
-        List<LineInput> Lines, string? RowVersion = null);
+        List<LineInput> Lines, Guid? OrderTypeId = null, string? RowVersion = null);
     public sealed record ReasonInput(string? Reason);
     public sealed record ReceiveLine(Guid LineId, decimal Quantity, Guid? StoreId, string? BatchNumber, DateOnly? ExpiryDate);
     public sealed record ReceiveInput(DateOnly? Date, string? Reference, List<ReceiveLine> Lines);
@@ -36,6 +36,7 @@ public static class PurchasingEndpoints
         public string? Status { get; set; }
         public Guid? SupplierId { get; set; }
         public Guid? SiteId { get; set; }
+        public Guid? OrderTypeId { get; set; }
         public bool? Overdue { get; set; }
         public DateOnly? From { get; set; }
         public DateOnly? To { get; set; }
@@ -58,6 +59,7 @@ public static class PurchasingEndpoints
         if (statuses.Count > 0) q = q.Where(o => statuses.Contains(o.Status));
         if (f.SupplierId is not null) q = q.Where(o => o.SupplierId == f.SupplierId);
         if (f.SiteId is not null) q = q.Where(o => o.SiteId == f.SiteId);
+        if (f.OrderTypeId is not null) q = q.Where(o => o.OrderTypeId == f.OrderTypeId);
         if (f.From is not null) q = q.Where(o => o.OrderDate >= f.From);
         if (f.To is not null) q = q.Where(o => o.OrderDate <= f.To);
         if (f.Overdue == true) q = q.Where(o => Receivable.Contains(o.Status) && o.ExpectedDate < Today);
@@ -195,6 +197,7 @@ public static class PurchasingEndpoints
             var stores = await db.Stores.AsNoTracking().Where(x => storeIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Code, ct);
             var woIds = o.Lines.Where(l => l.WorkOrderId is not null).Select(l => l.WorkOrderId!.Value).ToList();
             var wos = await db.WorkOrders.AsNoTracking().Where(w => woIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => w.Number, ct);
+            var orderType = o.OrderTypeId is { } otid ? await db.OrderTypes.AsNoTracking().Where(t => t.Id == otid).Select(t => new { t.Id, t.Code, t.Name }).FirstOrDefaultAsync(ct) : null;
             var requestLineIds = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
             var requests = await db.PurchaseRequestLines.AllSites().AsNoTracking().Where(l => requestLineIds.Contains(l.Id))
                 .Select(l => new { l.Id, RequestId = l.PurchaseRequestId, Number = db.PurchaseRequests.AllSites().Where(r => r.Id == l.PurchaseRequestId).Select(r => r.Number).FirstOrDefault() })
@@ -210,7 +213,7 @@ public static class PurchasingEndpoints
             {
                 o.Id, o.Number, o.Status, o.SiteId, SiteName = o.Site!.Name, o.SupplierId, Supplier = new { o.Supplier!.Id, o.Supplier.Code, o.Supplier.Name, o.Supplier.ContactName, o.Supplier.Email, o.Supplier.Phone, o.Supplier.Address, o.Supplier.City, o.Supplier.Country, o.Supplier.TaxNumber },
                 o.OrderDate, o.ExpectedDate, o.RequestedBy, o.Currency, o.ExchangeRate, o.PaymentTerms, o.ShippingMethod, o.DeliverTo, o.SupplierQuoteRef, o.TaxPercent, o.ShippingCost, o.Notes,
-                o.SubmittedAt, o.ApprovedAt, o.ApprovedByName, o.CancelledAt, o.CancelReason, o.CreatedAt, o.LegacyRef,
+                o.SubmittedAt, o.ApprovedAt, o.ApprovedByName, o.CancelledAt, o.CancelReason, o.CreatedAt, o.LegacyRef, o.OrderTypeId, OrderType = orderType,
                 Lines = o.Lines.OrderBy(l => l.LineNumber).Select(l => new
                 {
                     l.Id, l.LineNumber, l.PartId, PartNumber = l.PartId is { } p ? parts.GetValueOrDefault(p)?.PartNumber : null, IsShelfItem = l.PartId is { } p2 && (parts.GetValueOrDefault(p2)?.IsShelfItem ?? false),
@@ -382,7 +385,8 @@ public static class PurchasingEndpoints
                 {
                     var sup = suppliers[grp.Key.SupplierId];
                     var input = new PoInput(grp.Key.SiteId, sup.Id, Today, null, ctx.UserName, sup.Currency, null, sup.PaymentTerms, null, null, null, null, 0,
-                        "Created from the purchase proposal.", grp.Select(r => new LineInput(null, r.Part.Id, r.Part.Name, r.Part.UnitOfMeasure, r.Quantity, r.Price, 0, r.Store.Id, null, null)).ToList());
+                        "Created from the purchase proposal.", grp.Select(r => new LineInput(null, r.Part.Id, r.Part.Name, r.Part.UnitOfMeasure, r.Quantity, r.Price, 0, r.Store.Id, null, null)).ToList(),
+                        await DefaultTypeAsync(db, "PARTS", tk));
                     var o = await CreateDraftAsync(db, ctx, input, tk);
                     list.Add(new { o.Id, o.Number, Supplier = sup.Name, Lines = o.Lines.Count });
                 }
@@ -391,6 +395,10 @@ public static class PurchasingEndpoints
             return Results.Ok(created);
         }).RequirePermission(Permissions.PurchasingCreate);
     }
+
+    /// <summary>The organization's active order type with this code (0.16.0), for orders CMX makes itself.</summary>
+    internal static async Task<Guid?> DefaultTypeAsync(CmmsDbContext db, string code, CancellationToken ct) =>
+        await db.OrderTypes.Where(t => t.Code == code && t.IsActive).Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
 
     internal static async Task<PurchaseOrder> CreateDraftAsync(CmmsDbContext db, ITenantContext ctx, PoInput i, CancellationToken ct)
     {
@@ -410,7 +418,7 @@ public static class PurchasingEndpoints
         o.SiteId = i.SiteId!.Value; o.SupplierId = i.SupplierId!.Value; o.OrderDate = i.OrderDate ?? Today; o.ExpectedDate = i.ExpectedDate; o.RequestedBy = i.RequestedBy.Clean();
         o.Currency = i.Currency.Clean()?.ToUpperInvariant() ?? o.Currency; o.ExchangeRate = i.ExchangeRate is > 0 ? i.ExchangeRate.Value : 1;
         o.PaymentTerms = i.PaymentTerms.Clean(); o.ShippingMethod = i.ShippingMethod.Clean(); o.DeliverTo = i.DeliverTo.Clean(); o.SupplierQuoteRef = i.SupplierQuoteRef.Clean();
-        o.TaxPercent = i.TaxPercent ?? o.TaxPercent; o.ShippingCost = i.ShippingCost; o.Notes = i.Notes.Clean();
+        o.TaxPercent = i.TaxPercent ?? o.TaxPercent; o.ShippingCost = i.ShippingCost; o.Notes = i.Notes.Clean(); o.OrderTypeId = i.OrderTypeId;
         var partIds = i.Lines.Where(l => l.PartId is not null).Select(l => l.PartId!.Value).ToList();
         var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
         foreach (var gone in o.Lines.Where(l => i.Lines.All(x => x.Id != l.Id)).ToList()) o.Lines.Remove(gone);
@@ -434,6 +442,7 @@ public static class PurchasingEndpoints
             .When(i.ExchangeRate is <= 0, "exchangeRate", "Exchange rate must be positive.").When(i.ExpectedDate < i.OrderDate, "expectedDate", "Expected date is before the order date.");
         if (i.SiteId is null || !await db.Sites.AnyAsync(x => x.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         if (i.SupplierId is null || !await db.Suppliers.AnyAsync(x => x.Id == i.SupplierId && x.IsActive, ct)) v.Add("supplierId", "Choose an active supplier.");
+        if (i.OrderTypeId is { } type && !await db.OrderTypes.AnyAsync(t => t.Id == type && t.IsActive, ct)) v.Add("orderTypeId", "Choose an active order type.");
         var lines = i.Lines ?? [];
         for (var k = 0; k < lines.Count; k++)
         {

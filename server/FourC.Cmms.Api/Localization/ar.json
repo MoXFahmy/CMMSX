@@ -985,5 +985,12 @@
  "Choose a supplier for {0} line {1}.": "اختر موردًا للبند {1} من {0}.",
  "{0} line {1}: quantity must be more than 0.": "{0} البند {1}: يجب أن تكون الكمية أكبر من 0.",
  "{0} line {1}: the price can't be below 0.": "{0} البند {1}: لا يمكن أن يقل السعر عن 0.",
- "Only approved requests can be closed.": "لا تُغلق إلا الطلبات المعتمدة."
+ "Only approved requests can be closed.": "لا تُغلق إلا الطلبات المعتمدة.",
+ "Enter a name.": "أدخل اسمًا.",
+ "Choose at least one approver.": "اختر معتمِدًا واحدًا على الأقل.",
+ "A level can have at most 5 approvers.": "لا يمكن أن يزيد معتمِدو المستوى على 5.",
+ "The minimum can't be below 0.": "لا يمكن أن يقل الحد الأدنى عن 0.",
+ "Choose whether all or any one of the approvers must sign.": "اختر هل يجب أن يعتمد جميع المعتمِدين أم أيٌّ منهم.",
+ "Choose an active order type.": "اختر نوع أمر نشطًا.",
+ "Another level in this set already starts at {0}.": "يوجد مستوى آخر في هذه المجموعة يبدأ بالفعل عند {0}."
 }
