@@ -13,7 +13,7 @@ import { SiteSwitch } from '@/components/SiteSwitch';
 import { EmailPreferences } from '@/components/EmailPreferences';
 import {
   IconLayoutDashboard, IconMapPin, IconBox, IconClipboardText, IconTool, IconCalendarRepeat, IconPackage, IconShoppingCart,
-  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices, IconCloudOff, IconCalendarWeek, IconStack2 } from '@tabler/icons-react';
+  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices, IconCloudOff, IconCalendarWeek, IconStack2, IconSignature } from '@tabler/icons-react';
 import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { handleFormError, notifySuccess } from './utils';
@@ -49,6 +49,7 @@ export function AppLayout() {
     { title: t('nav.materials'), items: [
       { label: t('nav.inventory'), to: '/inventory', icon: IconPackage, perm: P.inventoryView },
       { label: t('nav.purchasing'), to: '/purchasing', icon: IconShoppingCart, anyPerm: [P.purchasingView, P.purchasingRequest, P.purchasingApproveRequests] },
+      { label: t('nav.myApprovals'), to: '/approvals', icon: IconSignature, anyPerm: [P.purchasingApprove, P.purchasingApproveRequests] },
     ] },
     { title: t('nav.insights'), items: [
       { label: t('nav.reports'), to: '/reports', icon: IconChartBar, perm: P.reportsView },

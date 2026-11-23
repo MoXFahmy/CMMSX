@@ -73,8 +73,9 @@ public class ApprovalLevelSettingsTests(ApiFixture fx) : IClassFixture<ApiFixtur
         })));
         var d = await Ok(await o.Admin.GetAsync($"/api/purchase-orders/{po}"));
         Assert.Equal("SERVICES", d.GetProperty("orderType").GetProperty("code").GetString());
-        var listed = (await Ok(await o.Admin.GetAsync($"/api/purchase-orders?orderTypeId={services}"))).GetProperty("items").EnumerateArray().Select(Id).ToList();
-        Assert.Equal([po], listed);
+        var items = (await Ok(await o.Admin.GetAsync($"/api/purchase-orders?orderTypeId={services}"))).GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal([po], items.Select(Id).ToList());
+        Assert.Equal("Services", items[0].GetProperty("orderTypeName").GetString());
         var untyped = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/purchase-orders", new
         {
             siteId = o.Site, supplierId = o.Supplier, shippingCost = 0,

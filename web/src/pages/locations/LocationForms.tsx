@@ -17,7 +17,7 @@ export function SiteFormModal({ opened, onClose, site, onSaved }: { opened: bool
   const qc = useQueryClient();
   const { me } = useAuth();
   const blankSettings = { assetNumberPrefix: '', workOrderNumberPrefix: '', workRequestNumberPrefix: '', purchaseOrderNumberPrefix: '', defaultStoreId: null as string | null,
-    requestRecipientIds: [] as string[], emailSenderName: '', workingHours: null as WorkingDay[] | null };
+    requestRecipientIds: [] as string[], purchaseRequestRecipientIds: [] as string[], purchaseRequestNumberPrefix: '', emailSenderName: '', workingHours: null as WorkingDay[] | null };
   const form = useForm({
     initialValues: { code: '', name: '', address: '', city: '', country: '', timeZone: '', latitude: '' as number | '', longitude: '' as number | '', notes: '', isActive: true,
       settings: blankSettings },
@@ -34,7 +34,8 @@ export function SiteFormModal({ opened, onClose, site, onSaved }: { opened: bool
       settings: {
         assetNumberPrefix: site.settings?.assetNumberPrefix ?? '', workOrderNumberPrefix: site.settings?.workOrderNumberPrefix ?? '',
         workRequestNumberPrefix: site.settings?.workRequestNumberPrefix ?? '', purchaseOrderNumberPrefix: site.settings?.purchaseOrderNumberPrefix ?? '',
-        defaultStoreId: site.settings?.defaultStoreId ?? null, requestRecipientIds: site.settings?.requestRecipientIds ?? [], emailSenderName: site.settings?.emailSenderName ?? '',
+        defaultStoreId: site.settings?.defaultStoreId ?? null, requestRecipientIds: site.settings?.requestRecipientIds ?? [], purchaseRequestRecipientIds: site.settings?.purchaseRequestRecipientIds ?? [],
+        purchaseRequestNumberPrefix: site.settings?.purchaseRequestNumberPrefix ?? '', emailSenderName: site.settings?.emailSenderName ?? '',
         workingHours: site.settings?.workingHours ?? null,
       },
     } : { code: '', name: '', address: '', city: '', country: '', timeZone: '', latitude: '', longitude: '', notes: '', isActive: true, settings: blankSettings });
@@ -82,6 +83,7 @@ export function SiteFormModal({ opened, onClose, site, onSaved }: { opened: bool
                     <TextInput label={t('siteSettings.woPrefix')} placeholder={me?.tenant.settings.workOrderNumberPrefix} maxLength={20} {...form.getInputProps('settings.workOrderNumberPrefix')} />
                     <TextInput label={t('siteSettings.wrPrefix')} placeholder={me?.tenant.settings.workRequestNumberPrefix} maxLength={20} {...form.getInputProps('settings.workRequestNumberPrefix')} />
                     <TextInput label={t('siteSettings.poPrefix')} placeholder={me?.tenant.settings.purchaseOrderNumberPrefix} maxLength={20} {...form.getInputProps('settings.purchaseOrderNumberPrefix')} />
+                    <TextInput label={t('siteSettings.prPrefix')} placeholder={me?.tenant.settings.purchaseRequestNumberPrefix ?? 'PR-'} maxLength={20} {...form.getInputProps('settings.purchaseRequestNumberPrefix')} />
                     <TextInput label={t('siteSettings.assetPrefix', { asset: terms.asset })} placeholder={me?.tenant.settings.assetNumberPrefix} maxLength={20}
                       {...form.getInputProps('settings.assetNumberPrefix')} />
                   </SimpleGrid>
@@ -91,6 +93,8 @@ export function SiteFormModal({ opened, onClose, site, onSaved }: { opened: bool
                     {...form.getInputProps('settings.defaultStoreId')} />
                   <MultiSelect label={t('siteSettings.recipients')} description={t('siteSettings.recipientsHint')} searchable clearable
                     data={(people ?? []).map((u) => ({ value: u.id, label: u.fullName }))} {...form.getInputProps('settings.requestRecipientIds')} />
+                  <MultiSelect label={t('siteSettings.prRecipients')} description={t('siteSettings.prRecipientsHint')} searchable clearable
+                    data={(people ?? []).map((u) => ({ value: u.id, label: u.fullName }))} {...form.getInputProps('settings.purchaseRequestRecipientIds')} />
                   <TextInput label={t('siteSettings.senderName')} description={t('siteSettings.senderNameHint')} placeholder={me?.tenant.name} maxLength={100}
                     {...form.getInputProps('settings.emailSenderName')} />
                   <div><Text fw={500} fz="sm">{t('hours.site', { site: terms.site.toLowerCase() })}</Text><Text c="dimmed" fz="xs">{t('hours.siteHint')}</Text></div>

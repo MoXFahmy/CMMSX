@@ -27,6 +27,7 @@ import { PoFormPage } from './pages/purchasing/PoFormPage';
 import { PoDetailPage, PoPrintPage } from './pages/purchasing/PoDetailPage';
 import { RequestFormPage } from './pages/purchasing/RequestFormPage';
 import { RequestDetailPage } from './pages/purchasing/RequestDetailPage';
+import { MyApprovalsPage } from './pages/approvals/MyApprovalsPage';
 import { WorkOrderPrintPage } from './pages/work/WorkOrderPrintPage';
 import { ReportsPage, ReportViewPage } from './pages/reports/ReportsPage';
 
@@ -88,6 +89,7 @@ export function App() {
         <Route path="purchasing/orders/new" element={<PoFormPage />} />
         <Route path="purchasing/orders/:id" element={<PoDetailPage />} />
         <Route path="purchasing/orders/:id/edit" element={<PoFormPage />} />
+        <Route path="approvals" element={<MyApprovalsPage />} />
         <Route path="purchasing/requests/new" element={<RequestFormPage />} />
         <Route path="purchasing/requests/:id" element={<RequestDetailPage />} />
         <Route path="purchasing/requests/:id/edit" element={<RequestFormPage />} />

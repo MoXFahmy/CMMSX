@@ -47,7 +47,7 @@ public static class PurchasingEndpoints
     }
 
     public sealed record PoListItem(Guid Id, string Number, PurchaseOrderStatus Status, DateOnly OrderDate, DateOnly? ExpectedDate, Guid SupplierId, string SupplierName,
-        string SiteName, string Currency, string? RequestedBy, int Lines, decimal Total, decimal ReceivedPercent, bool IsOverdue);
+        string SiteName, string Currency, string? RequestedBy, int Lines, decimal Total, decimal ReceivedPercent, bool IsOverdue, string? OrderTypeName = null);
 
     /// <summary>One page of the purchase-order list (the list screen and its export share it).</summary>
     internal static async Task<PagedResult<PoListItem>> ListAsync(CmmsDbContext db, PoFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
@@ -68,7 +68,8 @@ public static class PurchasingEndpoints
             ["number"] = o => o.Number, ["orderDate"] = o => o.OrderDate, ["expectedDate"] = o => o.ExpectedDate, ["supplier"] = o => o.Supplier!.Name, ["status"] = o => o.Status,
         };
         var paged = await q.SortBy(f.Sort ?? "orderDate", f.Dir ?? (f.Sort is null ? "desc" : f.Dir), map, "orderDate")
-            .Select(o => new { o.Id, o.Number, o.Status, o.OrderDate, o.ExpectedDate, o.SupplierId, SupplierName = o.Supplier!.Name, SiteName = o.Site!.Name, o.Currency, o.TaxPercent, o.ShippingCost, o.RequestedBy })
+            .Select(o => new { o.Id, o.Number, o.Status, o.OrderDate, o.ExpectedDate, o.SupplierId, SupplierName = o.Supplier!.Name, SiteName = o.Site!.Name, o.Currency, o.TaxPercent, o.ShippingCost, o.RequestedBy,
+                OrderTypeName = db.OrderTypes.Where(t => t.Id == o.OrderTypeId).Select(t => t.Name).FirstOrDefault() })
             .ToPagedAsync(page, pageSize, ct, maxPageSize);
         var ids = paged.Items.Select(o => o.Id).ToList();
         var lines = (await db.PurchaseOrderLines.AsNoTracking().Where(l => ids.Contains(l.PurchaseOrderId)).ToListAsync(ct)).ToLookup(l => l.PurchaseOrderId);
@@ -79,7 +80,7 @@ public static class PurchasingEndpoints
             var ordered = ls.Sum(l => l.Quantity);
             return new PoListItem(o.Id, o.Number, o.Status, o.OrderDate, o.ExpectedDate, o.SupplierId, o.SupplierName, o.SiteName, o.Currency, o.RequestedBy, ls.Count,
                 PurchaseOrderMath.Total(po), ordered == 0 ? 0 : Math.Round(ls.Sum(l => Math.Min(l.QuantityReceived, l.Quantity)) / ordered * 100, 0),
-                Receivable.Contains(o.Status) && o.ExpectedDate < Today);
+                Receivable.Contains(o.Status) && o.ExpectedDate < Today, o.OrderTypeName);
         }).ToList(), paged.Total, paged.Page, paged.PageSize);
     }
 

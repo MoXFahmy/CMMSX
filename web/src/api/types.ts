@@ -18,7 +18,7 @@ export type Terminology = { site: string; sites: string; location: string; locat
 export type TenantSettings = {
   terminology: Terminology; terminologyArabic?: Terminology; defaultLanguage?: 'en' | 'ar'; assetNumberPrefix: string; assetNumberPadding: number; autoNumberAssets: boolean;
   workOrderNumberPrefix: string; workRequestNumberPrefix: string; requireCompletionNotes: boolean; autoGeneratePm: boolean;
-  purchaseOrderNumberPrefix: string; defaultTaxPercent: number; currency: string; dateFormat: string; timeZone: string;
+  purchaseOrderNumberPrefix: string; purchaseRequestNumberPrefix?: string; purchaseRequestRecipientIds?: string[]; defaultTaxPercent: number; currency: string; dateFormat: string; timeZone: string;
   requireLaborToComplete: boolean; requireAllTasksDone: boolean; requireFailureCodeForBreakdowns: boolean; autoStartWork: boolean;
   /** Smart checklists (0.13.0): what a failed step raises by default, its template, and readings needed to complete. */
   followUpDefault?: FollowUpKind; followUpTemplateId?: string | null; requireReadingSteps?: boolean;
@@ -75,7 +75,7 @@ export type Site = {
   settings?: SiteSettings;
 };
 export type SiteSettings = {
-  assetNumberPrefix?: string | null; workOrderNumberPrefix?: string | null; workRequestNumberPrefix?: string | null; purchaseOrderNumberPrefix?: string | null;
+  assetNumberPrefix?: string | null; workOrderNumberPrefix?: string | null; workRequestNumberPrefix?: string | null; purchaseOrderNumberPrefix?: string | null; purchaseRequestNumberPrefix?: string | null; purchaseRequestRecipientIds?: string[];
   workingHours?: WorkingDay[] | null; defaultStoreId?: string | null; requestRecipientIds?: string[]; emailSenderName?: string | null;
 };
 export type HierarchySite = { id: string; code: string; name: string; isActive: boolean; assetCount: number };
@@ -425,10 +425,11 @@ export const PO_STATUSES: PurchaseOrderStatus[] = ['Draft', 'Submitted', 'Approv
 export type SupplierItem = { id: string; code: string; name: string; contactName?: string; email?: string; phone?: string; city?: string; country?: string; currency?: string; paymentTerms?: string; isContractor: boolean; isActive: boolean; openOrders: number; receivedYtd: number };
 export type SupplierDetail = { id: string; code: string; name: string; contactName?: string; email?: string; phone?: string; address?: string; city?: string; country?: string; taxNumber?: string; paymentTerms?: string; currency?: string; isContractor: boolean; notes?: string; isActive: boolean };
 export type SupplierLookup = { id: string; code: string; name: string; currency?: string; paymentTerms?: string };
-export type PoListItem = { id: string; number: string; status: PurchaseOrderStatus; orderDate: string; expectedDate?: string; supplierId: string; supplierName: string; siteName: string; currency: string; requestedBy?: string; lines: number; total: number; receivedPercent: number; isOverdue: boolean };
+export type PoListItem = { id: string; number: string; status: PurchaseOrderStatus; orderTypeName?: string | null; orderDate: string; expectedDate?: string; supplierId: string; supplierName: string; siteName: string; currency: string; requestedBy?: string; lines: number; total: number; receivedPercent: number; isOverdue: boolean };
 export type PoLine = {
   id: string; lineNumber: number; partId?: string; partNumber?: string; isShelfItem: boolean; description: string; unitOfMeasure?: string; quantity: number; unitPrice: number; discountPercent: number;
   netUnitPrice: number; lineTotal: number; quantityReceived: number; outstanding: number; storeId?: string; storeCode?: string; workOrderId?: string; workOrderNumber?: string; accountCode?: string;
+  purchaseRequestLineId?: string | null; request?: { id: string; number: string } | null;
 };
 export type PoDetail = {
   id: string; number: string; status: PurchaseOrderStatus; siteId: string; siteName: string; supplierId: string;
@@ -437,7 +438,9 @@ export type PoDetail = {
   taxPercent: number; shippingCost: number; notes?: string; submittedAt?: string; approvedAt?: string; approvedByName?: string; cancelledAt?: string; cancelReason?: string; createdAt: string; legacyRef?: string;
   lines: PoLine[]; totals: { subtotal: number; tax: number; shippingCost: number; total: number; totalInBase: number };
   receipts: { id: string; date: string; purchaseOrderLineId?: string; partNumber: string; storeCode: string; quantity: number; unitCost: number; reference?: string; batchNumber?: string; createdByName?: string }[];
-  isOverdue: boolean; actions: { edit: boolean; submit: boolean; approve: boolean; approvalLimitExceeded: boolean; reject: boolean; receive: boolean; close: boolean; cancel: boolean; delete: boolean };
+  isOverdue: boolean; actions: { edit: boolean; submit: boolean; approve: boolean; approvalLimitExceeded: boolean; reject: boolean; receive: boolean; close: boolean; cancel: boolean; delete: boolean; restartApproval?: boolean };
+  orderTypeId?: string | null; orderType?: { id: string; code: string; name: string } | null;
+  approval?: import('@/pages/purchasing/approvals').ApprovalPanel | null;
   rowVersion: string;
 };
 

@@ -62,7 +62,7 @@ function OrdersTab() {
   const { p, set } = lp;
   const view = p('view') || 'open';
   const statuses = VIEWS.find((v) => v.key === view)?.statuses ?? null;
-  const q = { search: p('search'), supplierId: p('supplierId'), siteId: p('siteId'), overdue: p('overdue') };
+  const q = { search: p('search'), supplierId: p('supplierId'), siteId: p('siteId'), overdue: p('overdue'), orderTypeId: p('orderTypeId') };
   const listQuery = { ...q, status: statuses ?? undefined, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
   const { data, isFetching } = useQuery({
     queryKey: ['purchase-orders', listQuery, lp.page, lp.pageSize], placeholderData: (prev) => prev,
@@ -70,7 +70,8 @@ function OrdersTab() {
   });
   const { data: suppliers } = useQuery({ queryKey: ['suppliers', 'lookup'], queryFn: () => get<SupplierLookup[]>('/suppliers/lookup') });
   const { data: h } = useHierarchy();
-  const filtersActive = ['search', 'supplierId', 'siteId', 'overdue'].some((k) => p(k));
+  const { data: orderTypes } = useQuery({ queryKey: ['order-types'], queryFn: () => get<{ id: string; code: string; name: string; isActive: boolean }[]>('/order-types') });
+  const filtersActive = ['search', 'supplierId', 'siteId', 'overdue', 'orderTypeId'].some((k) => p(k));
   const allColumns: ListColumn<PoListItem>[] = [
     { accessor: 'number', title: t('po.number'), sortable: true, noWrap: true,
       render: (x) => <Anchor component={Link} to={`/purchasing/orders/${x.id}`} fw={600} fz="sm" onClick={(e) => e.stopPropagation()}>{x.number}</Anchor> },
@@ -86,13 +87,15 @@ function OrdersTab() {
     { accessor: 'site', title: terms.site, noWrap: true, export: [{ key: 'siteName' }], render: (x) => x.siteName },
     { accessor: 'requestedBy', title: t('po.requestedBy'), noWrap: true, render: (x) => x.requestedBy ?? '—' },
     { accessor: 'lines', title: t('po.lines'), textAlign: 'right', noWrap: true },
+    { accessor: 'orderType', title: t('approvals.orderType'), noWrap: true, export: [{ key: 'orderTypeName' }], render: (x) => x.orderTypeName ?? '—' },
   ];
-  const cols = useListColumns('purchase-orders', allColumns, { defaultHidden: ['site', 'requestedBy', 'lines'] });
+  const cols = useListColumns('purchase-orders', allColumns, { defaultHidden: ['site', 'requestedBy', 'lines', 'orderType'] });
   const chips: FilterDef[] = [
     { keys: ['search'], label: t('common.search') },
     { keys: ['supplierId'], label: t('po.supplier'), format: ([v]) => suppliers?.find((x) => x.id === v)?.name ?? '…' },
     { keys: ['siteId'], label: terms.site, format: ([v]) => h?.sites.find((x) => x.id === v)?.name ?? '…' },
     { keys: ['overdue'], label: t('po.overdueOnly'), format: () => t('common.yes') },
+    { keys: ['orderTypeId'], label: t('approvals.orderType'), format: ([v]) => orderTypes?.find((x) => x.id === v)?.name ?? '…' },
   ];
   return (
     <>
@@ -101,6 +104,7 @@ function OrdersTab() {
           <TextInput placeholder={t('po.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 240 }} />
           <Select placeholder={t('po.supplier')} data={(suppliers ?? []).map((x) => ({ value: x.id, label: x.name }))} value={p('supplierId') || null} onChange={(v) => set({ supplierId: v })} clearable searchable w={{ base: '100%', xs: 200 }} />
           <Select placeholder={terms.site} data={(h?.sites ?? []).map((x) => ({ value: x.id, label: x.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v })} clearable w={{ base: '100%', xs: 180 }} />
+          <Select placeholder={t('approvals.orderType')} data={(orderTypes ?? []).map((x) => ({ value: x.id, label: x.name }))} value={p('orderTypeId') || null} onChange={(v) => set({ orderTypeId: v })} clearable w={{ base: '100%', xs: 150 }} />
           <Checkbox label={t('po.overdueOnly')} checked={!!p('overdue')} onChange={(e) => set({ overdue: e.currentTarget.checked ? 'true' : null })} />
           {filtersActive && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')}
             onClick={() => lp.replaceAll(view !== 'open' ? `view=${view}` : '')}><IconFilterOff size={16} /></ActionIcon></Tooltip>}

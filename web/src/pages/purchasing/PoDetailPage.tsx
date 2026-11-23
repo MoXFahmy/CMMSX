@@ -16,6 +16,7 @@ import { AuditTimeline } from '@/components/AuditTimeline';
 import { Attachments } from '@/components/Attachments';
 import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtDateTime, fmtPrice, fmtQty, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { ApprovalPanel } from './ApprovalPanel';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={0}><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{label}</Text><Text fz="sm" component="div">{children || '—'}</Text></Stack>;
@@ -89,6 +90,7 @@ export function PoDetailPage() {
           )}
         </>} />
       {a.approvalLimitExceeded && <Alert color="orange" icon={<IconAlertTriangle size={16} />} mb="md">{t('po.overLimit')}</Alert>}
+      {o.approval && <ApprovalPanel approval={o.approval} canRestart={!!a.restartApproval} onRestart={() => void act('restart-approval', t('approvals.restarted'))} />}
       {o.status === 'Cancelled' && <Alert color="red" mb="md" title={t('po.cancelledTitle')}>{o.cancelReason}</Alert>}
       <Grid>
         <Grid.Col span={{ base: 12, lg: 9 }}>
@@ -112,7 +114,8 @@ export function PoDetailPage() {
                         <Table.Tr key={l.id}>
                           <Table.Td c="dimmed">{l.lineNumber}</Table.Td>
                           <Table.Td>{l.partId ? <Anchor component={Link} to={`/inventory/parts/${l.partId}`} fz="sm" fw={600}>{l.partNumber}</Anchor> : null}
-                            <Text fz="sm">{l.description}</Text>{l.accountCode && <Text fz="xs" c="dimmed">{t('po.accountCode')}: {l.accountCode}</Text>}</Table.Td>
+                            <Text fz="sm">{l.description}</Text>{l.accountCode && <Text fz="xs" c="dimmed">{t('po.accountCode')}: {l.accountCode}</Text>}
+                            {l.request && <Anchor component={Link} to={`/purchasing/requests/${l.request.id}`} fz="xs">{l.request.number}</Anchor>}</Table.Td>
                           <Table.Td><Stack gap={0}>{l.storeCode && <Text fz="sm">{t('po.intoStore')} {l.storeCode}</Text>}
                             {l.workOrderId && <Anchor component={Link} to={`/work-orders/${l.workOrderId}`} fz="sm">{l.workOrderNumber}</Anchor>}
                             {!l.storeCode && !l.workOrderId && <Text fz="sm" c="dimmed">{t('po.expense')}</Text>}</Stack></Table.Td>
@@ -166,6 +169,7 @@ export function PoDetailPage() {
             </Card>
             <Card>
               <Stack gap="sm">
+                <Field label={t('approvals.orderType')}>{o.orderType?.name}</Field>
                 <Field label={t('po.paymentTerms')}>{o.paymentTerms}</Field>
                 <Field label={t('po.quoteRef')}>{o.supplierQuoteRef}</Field>
                 <Field label={t('po.shippingMethod')}>{o.shippingMethod}</Field>
@@ -289,8 +293,16 @@ export function PoPrintPage() {
         <Group justify="space-between" style={{ borderTop: '2px solid #000' }} pt={4}><Text fw={700}>{t('po.total')}</Text><Text fw={700}>{fmtPrice(o.totals.total, o.currency)}</Text></Group>
       </Stack></Group>
       {o.notes && <Text mt="lg" fz="sm" style={{ whiteSpace: 'pre-wrap' }}><b>{t('common.notes')}:</b> {o.notes}</Text>}
+      {o.approval && o.approval.steps.some((s) => s.approvers.some((x) => x.signed)) && (
+        <Table mt="lg" fz="xs" withTableBorder>
+          <Table.Thead><Table.Tr><Table.Th>{t('approvals.level')}</Table.Th><Table.Th>{t('approvals.signedBy')}</Table.Th><Table.Th>{t('approvals.date')}</Table.Th><Table.Th>{t('approvals.comment')}</Table.Th></Table.Tr></Table.Thead>
+          <Table.Tbody>{o.approval.steps.flatMap((s) => s.approvers.filter((x) => x.signed).map((x) => (
+            <Table.Tr key={`${s.step}-${x.id}`}><Table.Td>{s.name}</Table.Td><Table.Td>{x.name}{x.approved === false ? ` (${t('approvals.returned')})` : ''}</Table.Td>
+              <Table.Td>{fmtDate(x.at ?? undefined)}</Table.Td><Table.Td>{x.comment}</Table.Td></Table.Tr>)))}</Table.Tbody>
+        </Table>
+      )}
       <Group mt={60} grow>
-        <Stack gap={2}><div style={{ borderTop: '1px solid #000' }} /><Text fz="xs">{t('po.approvedBy')}{o.approvedByName ? `: ${o.approvedByName} · ${fmtDate(o.approvedAt)}` : ''}</Text></Stack>
+        {!o.approval && <Stack gap={2}><div style={{ borderTop: '1px solid #000' }} /><Text fz="xs">{t('po.approvedBy')}{o.approvedByName ? `: ${o.approvedByName} · ${fmtDate(o.approvedAt)}` : ''}</Text></Stack>}
         <Stack gap={2}><div style={{ borderTop: '1px solid #000' }} /><Text fz="xs">{t('po.supplierAcceptance')}</Text></Stack>
       </Group>
       <Group justify="center" mt="xl" className="no-print"><Button onClick={() => window.print()} leftSection={<IconPrinter size={16} />}>{t('po.print')}</Button></Group>

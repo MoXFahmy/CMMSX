@@ -24,7 +24,8 @@
     "pm": "Preventive Maintenance",
     "insights": "Insights",
     "planning": "Planning",
-    "workGroups": "Work groups"
+    "workGroups": "Work groups",
+    "myApprovals": "My approvals"
   },
   "unit": {
     "overtime": "overtime",
@@ -403,7 +404,9 @@
     "replaceLogo": "Replace",
     "removeLogo": "Remove",
     "logoHint": "PNG, JPEG or WebP, up to 1 MB. Shown on printed reports and job cards.",
-    "logoTooBig": "The logo can be at most 1 MB."
+    "logoTooBig": "The logo can be at most 1 MB.",
+    "prPrefix": "Purchase request prefix",
+    "purchasingTab": "Purchasing"
   },
   "audit": {
     "Created": "created this record",
@@ -1112,7 +1115,9 @@
     "triage_other": "{{count}} requests waiting for triage",
     "lowStock_one": "{{count}} part at or below re-order level",
     "lowStock_other": "{{count}} parts at or below re-order level",
-    "none": "Nothing needs attention"
+    "none": "Nothing needs attention",
+    "approvals_one": "{{count}} item waiting for your approval",
+    "approvals_other": "{{count}} items waiting for your approval"
   },
   "jobCard": {
     "title": "Job card",
@@ -1218,6 +1223,30 @@
       "workorder_overdue": {
         "label": "Work overdue",
         "description": "Once, when a work order passes its due time."
+      },
+      "pr_submitted": {
+        "label": "Purchase request submitted",
+        "description": "To the site's purchase-request recipients (or everyone who may approve requests), and anyone named on the request."
+      },
+      "pr_approved": {
+        "label": "Purchase request approved",
+        "description": "To the person who raised it."
+      },
+      "pr_rejected": {
+        "label": "Purchase request returned",
+        "description": "To the person who raised it, with the reason."
+      },
+      "pr_ordered": {
+        "label": "Purchase request ordered",
+        "description": "To the person who raised it, with the order numbers."
+      },
+      "pr_received": {
+        "label": "Purchase request items arrived",
+        "description": "To the person who raised it, when its items are received."
+      },
+      "po_approvalWaiting": {
+        "label": "Order waiting for my signature",
+        "description": "With approval levels: to the approvers of the level whose turn it is."
       }
     },
     "notAllowedTitle": "E-mail isn't available for this organization yet",
@@ -1695,7 +1724,10 @@
     "recipients": "Told about new requests",
     "recipientsHint": "Instead of everyone who can manage requests. Empty: everyone who can manage requests and can see this site.",
     "senderName": "E-mail sender name",
-    "senderNameHint": "E-mails about this site come from \"<name> via CMX\"."
+    "senderNameHint": "E-mails about this site come from \"<name> via CMX\".",
+    "prPrefix": "Purchase request prefix",
+    "prRecipients": "Purchase request recipients",
+    "prRecipientsHint": "Told about new purchase requests at this site, instead of the organization's."
   },
   "requestTypes": {
     "title": "Request types",
@@ -2258,5 +2290,65 @@
     "details": "Details",
     "siteRequired": "Choose a site.",
     "approvedByLabel": "Approved by"
+  },
+  "approvals": {
+    "levels": "Approval levels",
+    "levelsHint": "An order needs every level whose minimum it reaches, signed lowest first. A site with levels of its own uses only those. When no level applies, approvers sign within their own limit as before.",
+    "newLevel": "New level",
+    "editLevel": "Edit level",
+    "set": "Applies to",
+    "setHint": "The organization's levels, or a site's own (which replace the organization's there).",
+    "organization": "Organization",
+    "orderType": "Order type",
+    "allTypes": "All types",
+    "name": "Level",
+    "namePlaceholder": "e.g. Plant manager",
+    "minAmount": "From amount",
+    "minAmountHint": "Order total incl. tax and shipping, in {{currency}}.",
+    "rule": "Who must sign",
+    "ruleAny": "Any one",
+    "ruleAll": "All of them",
+    "approvers": "Approvers",
+    "approversHint": "Up to 5 people with “Approve purchases”.",
+    "none": "No levels yet — orders are approved by one person within their limit.",
+    "problem": {
+      "no-permission": "No “Approve purchases” permission",
+      "no-site-access": "Can't see every site these levels cover",
+      "inactive": "Inactive user"
+    },
+    "tryAmount": "Try an amount",
+    "anySite": "Organization's levels",
+    "example": "An order of {{amount}} needs: {{names}}.",
+    "exampleNone": "An order of {{amount}} needs no level: approvers sign within their own limit.",
+    "orderTypes": "Order types",
+    "newOrderType": "New order type",
+    "prRecipients": "Purchase request recipients",
+    "prRecipientsHint": "Told about new purchase requests when the site names nobody. Empty: everyone who may approve requests.",
+    "panelTitle": "Approval",
+    "round": "Round {{round}}",
+    "waitingFor": "Waiting for {{names}}",
+    "stuckTitle": "Nobody listed can sign this step any more",
+    "stuckBody": "An approver left, lost “Approve purchases” or can't see this site. Fix the approval levels, then restart the approval.",
+    "restart": "Restart approval",
+    "restarted": "Approval restarted",
+    "level": "Level",
+    "signedBy": "Signed by",
+    "date": "Date",
+    "comment": "Comment",
+    "returned": "returned"
+  },
+  "myApprovals": {
+    "title": "My approvals",
+    "subtitle": "Requests and orders waiting for your signature",
+    "nothing": "Nothing is waiting for you.",
+    "orders": "Purchase orders",
+    "requests": "Purchase requests",
+    "sentBack": "Sent back to me",
+    "signedBefore": "Signed",
+    "next": "Next",
+    "yourLimit": "Within your limit",
+    "order": "Order",
+    "request": "Request",
+    "returnTitle": "Return {{number}}"
   }
 }
