@@ -98,8 +98,11 @@ DimoMaint has reference tables, brands and models, asset groups and a yearly num
   - Server-written texts: report rows and group labels, list exports (xlsx), e-mails and notifications that name a type,
     priority, status or criticality — through one helper `ListLabels.Name(settings, list, value, language)`.
   - Not the AI prompts (they keep the built-in meaning).
+- **No clashes** *(my call)*: saving refuses an organization name that equals another value's name (built-in or the
+  organization's) in either language — "This name is already used by High." — so a name always means one value.
 - **Import**: cells for these lists accept the built-in English name, the Arabic built-in name and the organization's names in
-  both languages (case-insensitive); the template and the "current data" export write the organization's English names.
+  both languages (case-insensitive). The template and the "current data" export write the organization's names in the person's
+  language, as they write choices today *(my call)*.
 
 ### 2. Brands and models
 
@@ -112,8 +115,14 @@ DimoMaint has reference tables, brands and models, asset groups and a yearly num
 - **Asset**: new `BrandId`, `ModelId` (nullable). The existing `Manufacturer` and `Model` text columns stay and always equal the
   chosen names (renaming a brand or model updates every asset's copy in one update). A model without a brand isn't allowed.
 - **Asset list**: brand and model as filters (by id); the existing columns keep showing the text.
-- **Upgrade**: the migration creates a brand per distinct trimmed manufacturer text (case-insensitive, first spelling met wins)
-  and a model per distinct (brand, model text), and sets every asset's ids. Model text on an asset with no manufacturer can't
+- **Merging** *(my call)*: renaming a brand to another brand's name (or a model to another model's name in the same brand) merges
+  them after a confirmation — the records move to the one kept and the other is removed. This is how the starting list is
+  cleaned up ("Grundfos Pumps" into "Grundfos").
+- **Upgrade and other writers** *(my call)*: one reconcile routine (C#, idempotent, per organization) creates the missing brands,
+  models and units from record texts and fills in missing ids. It runs at startup (once per organization while anything is
+  unlinked; this is the upgrade seeding), after an import saves, and at the end of a 4CSQL tool run (the tool writes texts
+  straight to the database). It creates a brand per distinct trimmed manufacturer text (case-insensitive, first spelling met
+  wins) and a model per distinct (brand, model text), and sets every asset's ids. Model text on an asset with no manufacturer can't
   become a model (a model needs a brand): the asset keeps the text with no ids (shown, not filterable until someone picks a
   brand).
 - **Import (Assets sheet)**: the existing Manufacturer and Model columns pick by name; an unknown brand or model is added to the
@@ -122,12 +131,15 @@ DimoMaint has reference tables, brands and models, asset groups and a yearly num
 
 ### 3. Units
 
-- **Settings › Units** (*Manage settings*): symbol (e.g. `pcs`, `m`, `L`, `°C`; unique, ≤ 20), name (English), name (Arabic),
-  active. Seeded at upgrade from the distinct unit texts on parts, measurement points and number steps (symbol = the text,
-  name = the text), plus a starter set for new organizations (pcs, m, L, kg, h, °C, bar, kWh).
-- **Part form, measurement point form, number step (checklist and template steps)**: the unit is picked from the list (stored
-  as the symbol text, as today). The part's unit stays required.
-- **Renaming a symbol** updates every part, point and step that uses it (one update each). In use = can't be deleted.
+- **Settings › Units** (*Manage settings*): symbol (e.g. `pcs`, `m`, `L`, `°C`; trimmed, unique **case-sensitively** so `mW` and
+  `MW` stay apart *(my call)*; ≤ 30, the part column's length), name (English), name (Arabic), active. Seeded by the reconcile
+  routine from the distinct trimmed unit texts on parts, measurement points and template / PM task number steps (symbol = name =
+  the text), plus a starter set for new organizations (pcs, m, L, kg, h, °C, bar, kWh).
+- **Part form, measurement point form, number steps on templates and PM tasks**: the unit is picked from the list (stored as the
+  symbol text, as today). The part's unit stays required. A work order's own checklist steps keep the unit they were copied
+  with: the list neither seeds from nor rewrites them, so finished jobs keep their history *(my call)*.
+- **Renaming a symbol** updates every part, point and template / PM task step that uses it (one update each); renaming it to
+  another unit's symbol merges the two after a confirmation (as brands). In use = can't be deleted.
 - **Import**: unit cells must match a symbol in the list — unknown ones are added (same reason as brands) and counted.
 - Units are not translated in quantities ("5 pcs" stays) — the Arabic name is for the picker only.
 
@@ -145,8 +157,10 @@ DimoMaint has reference tables, brands and models, asset groups and a yearly num
 - **PM target "Asset group"** (a fourth target beside asset, location and several assets): the PM names a group and works like
   "several assets" in round or group mode, with the group's **current active members at the PM's site** at each generation
   (skip statuses apply per asset as today). Per-asset templates and even spread aren't offered for group targets (asset and
-  category checklists still apply). An empty group (or none left after skip statuses) gives the same results as a round with no
-  available assets ("No active assets…"), never a silent nothing. The PM page and occurrences list show the members it would
+  category checklists still apply). It behaves exactly as a round does today *(my call)*: no active members at the site → "No
+  active assets…", the PM stays due and is reported on every run; every member in a skip status → skipped (or waiting, when
+  ahead) and moved on to its next date. An inactive group counts as no active members, with the reason "The asset group is
+  inactive." Never a silent nothing. The PM page and occurrences list show the members it would
   use today.
 - A group in use by a PM can't be deleted (make it inactive; an inactive group's PMs report "The asset group is inactive.").
 - **Import**: sheet **Asset groups** (code, name, site code, active) and **Asset group members** (group code, asset number;
@@ -160,7 +174,8 @@ DimoMaint has reference tables, brands and models, asset groups and a yearly num
   Assets keep their running number. The year is the organization's local year (its time zone setting) at creation.
 - Switching it on or off never renumbers existing records; switching on mid-year starts that year at 1 (numbers already taken
   are skipped by the existing check).
-- Bulk numbering for imports (`NextNumbersAsync`) follows the same rule.
+- No import sheet creates the yearly-numbered records (bulk numbering is only used for assets), so imports are unaffected.
+  Sequence names grow (`PurchaseRequest:<site id>:2027`), so the sequence name column widens.
 - The number preview in settings shows the next work order number.
 
 ### Permissions
@@ -182,8 +197,9 @@ Every new text in en + ar (web locales, server ar.json). Built-in Arabic names o
 
 1. A renamed, recoloured, hidden priority shows the organization's word everywhere (a report row, an export, an e-mail), stays
    on an existing work order, isn't offered for a new one, and the import accepts both names.
-2. Upgrade seeding: brands/models/units from existing texts, case and spaces collapsed, ids set.
+2. Reconcile: brands/models from existing texts (case and spaces collapsed), units (spaces trimmed, case kept), ids set;
+   running it again changes nothing; merging moves records.
 3. Renaming a brand, model or unit updates every record's text copy.
 4. A group PM follows membership: add an asset → next generation includes it; remove → drops; empty → "No active assets".
 5. Site-limited people: groups and members they can see; membership changes don't touch hidden members.
-6. Yearly numbering: `WO-2027-00001`, restarts on 1 Jan in the organization's time zone, per-site prefixes, imports, no duplicates.
+6. Yearly numbering: `WO-2027-00001`, restarts on 1 Jan in the organization's time zone, per-site prefixes, no duplicates.
