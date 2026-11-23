@@ -4,6 +4,15 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.16.1] - 2026-11-23
+
+Ships 0.16.0 (purchase requests and approval levels), which never went live: its build check failed on the fix below.
+
+### Fixed
+- **Two people signing at the same moment:** with two approvers on an "any one" approval level, the second could be told
+  "This record was changed by someone else" instead of "This step is already signed off". It happened when they signed
+  at the same moment as the first. No order was approved twice, but the message was wrong.
+
 ## [0.16.0] - 2026-11-23
 
 Purchase requests and approval levels. Anyone allowed asks for parts or services with a purchase request; one person
