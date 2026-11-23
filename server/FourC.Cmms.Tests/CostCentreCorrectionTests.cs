@@ -36,6 +36,21 @@ public class CostCentreCorrectionTests(ApiFixture fx) : IClassFixture<ApiFixture
     }
 
     [SkippableFact]
+    public async Task Change_shows_in_the_work_orders_activity()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var prod = await CostCentreAsync(o.Admin, "PROD", "Production");
+        var line = await CostCentreAsync(o.Admin, "LINE1", "Line 1", prod);
+        var wo = await WorkOrderAsync(o.Admin, o.Site, await AssetAsync(o.Admin, o.Site, "Press", costCentre: prod));
+        await Ok(await o.Admin.PostAsJsonAsync("/api/work-orders/cost-centre", new { ids = new[] { wo }, costCentreId = line }));
+        await Ok(await o.Admin.PostAsJsonAsync("/api/work-orders/cost-centre", new { ids = new[] { wo }, costCentreId = (Guid?)null }));
+        var notes = (await Ok(await o.Admin.GetAsync($"/api/work-orders/{wo}/activity"))).EnumerateArray().Select(a => a.GetProperty("body").GetString()).ToList();
+        Assert.Contains("Cost centre: Production → Production › Line 1", notes);
+        Assert.Contains("Cost centre: Production › Line 1 → No cost centre", notes);
+    }
+
+    [SkippableFact]
     public async Task Direct_issue_takes_the_locations_cost_centre_and_can_change()
     {
         Skip.IfNot(fx.Enabled);

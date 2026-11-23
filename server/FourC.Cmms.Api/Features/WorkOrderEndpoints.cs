@@ -360,13 +360,22 @@ public static class WorkOrderEndpoints
 
         // Correcting the cost centre (0.20.0): any status, closed and cancelled included, without reopening; logged in each work
         // order's history. Its labour, parts, contractors, other costs and purchase commitments move with it.
-        g.MapPost("/cost-centre", async (CostCentreChangeInput input, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPost("/cost-centre", async (CostCentreChangeInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             var ids = Bulk.Ids(input.Ids, "work orders");
             if (input.CostCentreId is { } cc && !await db.CostCentres.AnyAsync(c => c.Id == cc && c.IsActive, ct)) throw new DomainException("Choose an active cost centre.");
             var orders = await db.WorkOrders.Where(w => ids.Contains(w.Id)).ToListAsync(ct);
+            var paths = await CostCentreEndpoints.PathsAsync(db, ct);
+            string Name(Guid? id) => id is { } x ? paths.GetValueOrDefault(x) ?? "No cost centre" : "No cost centre";
             var changed = 0;
-            foreach (var w in orders.Where(w => w.CostCentreId != input.CostCentreId)) { w.CostCentreId = input.CostCentreId; changed++; }
+            var now = DateTimeOffset.UtcNow;
+            foreach (var w in orders.Where(w => w.CostCentreId != input.CostCentreId))
+            {
+                // A note in the work order's activity says who moved it and from where (the audit keeps the field change too).
+                AddComment(db, ctx, w.Id, $"Cost centre: {Name(w.CostCentreId)} → {Name(input.CostCentreId)}", now);
+                w.CostCentreId = input.CostCentreId;
+                changed++;
+            }
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { Changed = changed });
         }).RequirePermission(Permissions.WorkOrdersEdit);
