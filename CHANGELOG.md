@@ -4,6 +4,45 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.16.0] - 2026-11-23
+
+Purchase requests and approval levels. Anyone allowed asks for parts or services with a purchase request; one person
+approves it; buyers turn approved lines into draft orders by supplier. Orders can be signed by approval levels that add
+up with the amount. Organizations that set no levels approve orders exactly as before. See docs/PURCHASE_REQUESTS.md.
+
+### Added
+- **Purchase requests** (Purchasing › Requests, numbered `PR-00001`):
+  - **Lines:** a part with the store it should arrive in, or free text for services; quantity, needed-by date, work order
+    or asset, estimated price and reason.
+  - **Approval:** one person with the new *Approve purchase requests* permission, never the requester. Returned requests go
+    back to be fixed and submitted again.
+  - **Comments, files** and e-mails (submitted, approved, returned, ordered, arrived).
+  - **Raised from** a work order's short planned parts, Inventory › Short for work and the Re-order tab, as well as from
+    the Requests tab.
+- **Requests into orders:** approved lines from one request, or from several at once (**Lines to order**), become draft
+  orders grouped by supplier and site. Each order line keeps its request line, and the request follows its orders,
+  including when an order is deleted or cancelled.
+- **Order types:** Parts, Services and Capital as an editable list; each order has a type, shown and filterable.
+- **Approval levels** (Settings › Purchasing):
+  - Each level has a minimum amount, up to five approvers, and whether all of them or any one must sign.
+  - They can be set for the organization, for a site, or per order type; the most specific levels apply.
+  - Orders are signed lowest level first. A return goes back to Draft; earlier rounds stay visible.
+  - Restart approval is there for when an approver leaves. Signatures print on the order.
+- **My approvals:** a page and a bell count for requests and orders waiting for your signature, and what was sent back to
+  you.
+- **E-mails and settings:**
+  - New e-mail switches: purchase request submitted, approved, returned, ordered, arrived, and order waiting for my
+    signature.
+  - Per-site and organization purchase-request recipients and number prefix.
+
+### Changed
+- *Approve purchase orders* now approves by approval levels when they apply, and within the person's limit otherwise.
+- New permission *Raise purchase requests*. Technicians get it; Maintenance Managers and Administrators get both new
+  permissions.
+
+### Fixed
+- Adding a line to a saved draft purchase order failed with "This record was changed by someone else".
+
 ## [0.15.0] - 2026-11-23
 
 AI assistant. Claude (Anthropic's AI) turns a technician's notes into the completion report and diagnoses a fault from
