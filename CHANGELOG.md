@@ -4,6 +4,35 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.17.0] - 2026-11-23
+
+Contracts and contractors. Suppliers become companies that can supply, contract and/or manufacture; contractor work is
+recorded on work orders at the company's rates and counted once in every cost report; service contracts track their
+terms, renewals, covered assets and the work done under them, with a warning before a renewal or end date passes.
+Organizations that use none of this see no change. See docs/CONTRACTS.md.
+
+### Added
+- **Companies** (Purchasing › Companies, was Suppliers): roles *Supplier*, *Contractor* and *Manufacturer*, other contacts
+  and addresses, and a contractor's own hourly rate per category. Orders and requests pick suppliers only.
+- **Contractor categories** (Settings) with a default hourly rate. People can be linked to a contractor company.
+- **Contractor lines on work orders** (Contractors tab): company, category, person, planned hours and hours done. Planners
+  add and change lines; technicians record the hours done, the date and the person. The rate is copied onto the line, so
+  later rate changes never alter it. The job card prints the lines.
+- **Contractor cost** in work order totals, plan vs actual, work groups, Maintenance costs (new column and chart series),
+  the asset's Costs tab, the failure tree and asset work history. Labour of people linked to a company counts there too,
+  not in Labour, so nothing is counted twice.
+- **Service contracts** (Maintenance › Contracts, numbered `CON-00001`): company, manager, type, trade, site, value, payment
+  terms, expected work orders, covered assets with a yearly cost, files, amendments and termination.
+  - **Automatic renewal** adds a period each time the end passes, catching up if the server was off for a while.
+  - **Alerts:** in the alert window before the last day to stop a renewal (or before the end), the contract shows in the
+    bell and one e-mail goes to its manager and the people named in Settings › Contracts (new switch *Contract needs
+    attention*).
+  - **Links:** a contract field on work orders and PMs (a PM passes it to the work it creates), "Covered by" on work orders
+    and requests whose asset is under contract, and a contracts card on the asset page.
+  - **Reports › Contracts:** value, spend, work completed and expected per contract.
+- Permissions *View contracts* (Technician, Viewer, Maintenance Manager, Administrator) and *Create and edit contracts*
+  (Maintenance Manager, Administrator).
+
 ## [0.16.2] - 2026-11-23
 
 ### Fixed
