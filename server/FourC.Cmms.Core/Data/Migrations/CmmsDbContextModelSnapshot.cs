@@ -209,6 +209,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<DateOnly?>("CommissionedOn")
                         .HasColumnType("date");
 
+                    b.Property<Guid?>("CostCentreId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -336,6 +339,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("CategoryId");
+
+                    b.HasIndex("CostCentreId");
 
                     b.HasIndex("LocationId");
 
@@ -1125,6 +1130,142 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.ToTable("ContractTypes");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Costs.Budget", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal>("Amount")
+                        .HasPrecision(18, 2)
+                        .HasColumnType("decimal(18,2)");
+
+                    b.Property<Guid>("CostCentreId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<int>("Month")
+                        .HasColumnType("int");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<int>("Year")
+                        .HasColumnType("int");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("CostCentreId");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "CostCentreId", "Year", "Month")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("Budgets");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Costs.CostCentre", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid?>("SiteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ParentId");
+
+                    b.HasIndex("SiteId");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.ToTable("CostCentres");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Files.Attachment", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1787,6 +1928,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<Guid?>("CostCentreId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -1854,6 +1998,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CostCentreId");
 
                     b.HasIndex("PartId");
 
@@ -1950,6 +2096,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<Guid?>("CostCentreId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -2023,6 +2172,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("CostCentreId");
 
                     b.HasIndex("ParentId");
 
@@ -3064,6 +3215,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<Guid?>("ContractId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("CostCentreId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -3242,6 +3396,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasIndex("AssetId");
 
                     b.HasIndex("ContractId");
+
+                    b.HasIndex("CostCentreId");
 
                     b.HasIndex("LocationId");
 
@@ -5251,6 +5407,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<Guid?>("ContractId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("CostCentreId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -5407,6 +5566,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasIndex("CancelReasonId");
 
                     b.HasIndex("ContractId");
+
+                    b.HasIndex("CostCentreId");
 
                     b.HasIndex("DowntimeEventId");
 
@@ -6060,6 +6221,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<DateTimeOffset?>("AwaitingFeedbackSince")
                         .HasColumnType("datetimeoffset");
 
+                    b.Property<Guid?>("CostCentreId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<DateTimeOffset>("CreatedAt")
                         .HasColumnType("datetimeoffset");
 
@@ -6190,6 +6354,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("AssetId");
+
+                    b.HasIndex("CostCentreId");
 
                     b.HasIndex("DowntimeEventId");
 
@@ -6354,6 +6520,11 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasForeignKey("CategoryId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("FourC.Cmms.Core.Costs.CostCentre", null)
+                        .WithMany()
+                        .HasForeignKey("CostCentreId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("FourC.Cmms.Core.Locations.Location", "Location")
                         .WithMany()
                         .HasForeignKey("LocationId")
@@ -6491,6 +6662,28 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Costs.Budget", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Costs.CostCentre", null)
+                        .WithMany()
+                        .HasForeignKey("CostCentreId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Costs.CostCentre", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Costs.CostCentre", null)
+                        .WithMany()
+                        .HasForeignKey("ParentId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("FourC.Cmms.Core.Locations.Site", null)
+                        .WithMany()
+                        .HasForeignKey("SiteId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Identity.UserRole", b =>
                 {
                     b.HasOne("FourC.Cmms.Core.Identity.Role", "Role")
@@ -6567,6 +6760,11 @@ namespace FourC.Cmms.Core.Data.Migrations
 
             modelBuilder.Entity("FourC.Cmms.Core.Inventory.StockTransaction", b =>
                 {
+                    b.HasOne("FourC.Cmms.Core.Costs.CostCentre", null)
+                        .WithMany()
+                        .HasForeignKey("CostCentreId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("FourC.Cmms.Core.Inventory.Part", "Part")
                         .WithMany()
                         .HasForeignKey("PartId")
@@ -6597,6 +6795,11 @@ namespace FourC.Cmms.Core.Data.Migrations
 
             modelBuilder.Entity("FourC.Cmms.Core.Locations.Location", b =>
                 {
+                    b.HasOne("FourC.Cmms.Core.Costs.CostCentre", null)
+                        .WithMany()
+                        .HasForeignKey("CostCentreId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("FourC.Cmms.Core.Locations.Location", "Parent")
                         .WithMany()
                         .HasForeignKey("ParentId")
@@ -6704,6 +6907,11 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasOne("FourC.Cmms.Core.Contracts.Contract", null)
                         .WithMany()
                         .HasForeignKey("ContractId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("FourC.Cmms.Core.Costs.CostCentre", null)
+                        .WithMany()
+                        .HasForeignKey("CostCentreId")
                         .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("FourC.Cmms.Core.Locations.Location", "Location")
@@ -7060,6 +7268,11 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasForeignKey("ContractId")
                         .OnDelete(DeleteBehavior.NoAction);
 
+                    b.HasOne("FourC.Cmms.Core.Costs.CostCentre", null)
+                        .WithMany()
+                        .HasForeignKey("CostCentreId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("FourC.Cmms.Core.Assets.DowntimeEvent", null)
                         .WithMany()
                         .HasForeignKey("DowntimeEventId")
@@ -7251,6 +7464,11 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .WithMany()
                         .HasForeignKey("AssetId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FourC.Cmms.Core.Costs.CostCentre", null)
+                        .WithMany()
+                        .HasForeignKey("CostCentreId")
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("FourC.Cmms.Core.Assets.DowntimeEvent", null)
                         .WithMany()

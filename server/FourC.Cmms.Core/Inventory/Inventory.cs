@@ -84,6 +84,8 @@ public class StockTransaction : Entity, ITenantOwned
     public Guid? WorkOrderId { get; set; }
     public Guid? LocationId { get; set; }
     public Guid? SupplierId { get; set; }
+    /// <summary>Parts issued to or returned from a location without a work order (0.20.0): whose cost they are.</summary>
+    public Guid? CostCentreId { get; set; }
     public Guid? PurchaseOrderId { get; set; }
     public Guid? PurchaseOrderLineId { get; set; }
     /// <summary>PO / delivery note / GRN reference.</summary>

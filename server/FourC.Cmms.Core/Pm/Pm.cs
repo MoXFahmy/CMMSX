@@ -91,6 +91,8 @@ public class PmSchedule : TenantEntity
     public Guid? TradeId { get; set; }
     /// <summary>Team the generated work is given to.</summary>
     public Guid? TeamId { get; set; }
+    /// <summary>A cost centre for the work it generates (0.20.0); none = each work order takes its asset's or location's.</summary>
+    public Guid? CostCentreId { get; set; }
     public WorkPriority Priority { get; set; } = WorkPriority.Medium;
     public List<Guid> AssigneeIds { get; set; } = [];
     public Guid PmTaskId { get; set; }

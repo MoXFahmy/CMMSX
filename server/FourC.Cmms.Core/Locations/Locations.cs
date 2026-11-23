@@ -65,4 +65,6 @@ public class Location : TenantEntity
     public int Depth { get; set; }
 
     public static string Segment(Guid id) => id.ToString("N") + "/";
+    /// <summary>The location's cost centre (0.20.0); none = its parent's.</summary>
+    public Guid? CostCentreId { get; set; }
 }
