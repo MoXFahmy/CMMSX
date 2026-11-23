@@ -50,11 +50,12 @@ public static class TableExport
         (Nullable.GetUnderlyingType(p.PropertyType) ?? p.PropertyType) == typeof(Guid) || p.Name == "Id" || p.Name.EndsWith("Id", StringComparison.Ordinal);
 
     /// <summary>The cell values of each item, in column order. Throws <see cref="ArgumentException"/> for a key the rows don't have.</summary>
-    public static IReadOnlyList<object?[]> Rows(IEnumerable<object> items, IReadOnlyList<ExportColumn> cols, TimeZoneInfo tz)
+    /// <remarks>With <paramref name="settings"/>, work types, priorities, asset statuses and criticality read as the organization names them (0.21.0).</remarks>
+    public static IReadOnlyList<object?[]> Rows(IEnumerable<object> items, IReadOnlyList<ExportColumn> cols, TimeZoneInfo tz, FourC.Cmms.Core.Tenancy.TenantSettings? settings = null)
     {
         var list = items.ToList();
         if (list.Count > 0) Check(list[0].GetType(), cols);
-        return list.Select(item => cols.Select(c => Cell(Read(item, c.Key), tz)).ToArray()).ToList();
+        return list.Select(item => cols.Select(c => Cell(Read(item, c.Key), tz, settings)).ToArray()).ToList();
     }
 
     /// <summary>
@@ -108,10 +109,11 @@ public static class TableExport
         return current;
     }
 
-    private static object? Cell(object? v, TimeZoneInfo tz) => v switch
+    private static object? Cell(object? v, TimeZoneInfo tz, FourC.Cmms.Core.Tenancy.TenantSettings? settings) => v switch
     {
         null => null,
         string s => s,
+        Enum e when settings is not null && Lists.Key(e.GetType()) is not null => Lists.Name(settings, e),
         Enum e => Words(e.ToString()),
         bool b => b ? "Yes" : "No",
         DateOnly d => d,
@@ -119,7 +121,7 @@ public static class TableExport
         DateTime dt => dt,
         decimal or double or float or int or long or short or byte => Convert.ToDecimal(v, CultureInfo.InvariantCulture),
         Guid g => g.ToString(),
-        IEnumerable seq => string.Join(", ", seq.Cast<object?>().Where(x => x is not null).Select(x => x is Enum en ? Words(en.ToString()) : Convert.ToString(x, CultureInfo.InvariantCulture))),
+        IEnumerable seq => string.Join(", ", seq.Cast<object?>().Where(x => x is not null).Select(x => x is Enum en ? Cell(en, tz, settings) as string : Convert.ToString(x, CultureInfo.InvariantCulture))),
         _ => Convert.ToString(v, CultureInfo.InvariantCulture),
     };
 

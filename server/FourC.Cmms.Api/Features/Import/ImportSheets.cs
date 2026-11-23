@@ -171,6 +171,14 @@ public static class ImportSheets
         _ => TableExport.Words(value.ToString()),
     };
 
-    /// <summary>The choice word in the request's language.</summary>
-    public static string ChoiceText(Enum value) => Translator.T(ChoiceWord(value));
+    private static readonly AsyncLocal<FourC.Cmms.Core.Tenancy.TenantSettings?> Org = new();
+
+    /// <summary>
+    /// The organization whose wording of work types, priorities, asset statuses and criticality an import or export uses (0.21.0).
+    /// Set at the top of a run (an async local: set it in the method that does the work, not in a helper it awaits).
+    /// </summary>
+    public static FourC.Cmms.Core.Tenancy.TenantSettings? Organization { get => Org.Value; set => Org.Value = value; }
+
+    /// <summary>The choice word in the request's language (the organization's name for the four reworded lists).</summary>
+    public static string ChoiceText(Enum value) => Lists.Key(value.GetType()) is not null ? Lists.Name(Organization, value) : Translator.T(ChoiceWord(value));
 }

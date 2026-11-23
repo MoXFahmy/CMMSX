@@ -19,6 +19,8 @@ public class TenantSettings
     public Terminology Terminology { get; set; } = new();
     /// <summary>The same terms shown in Arabic.</summary>
     public Terminology TerminologyArabic { get; set; } = Terminology.Arabic();
+    /// <summary>0.21.0: the organization's names, colours, order and hidden values, by list (workType, priority, assetStatus, criticality) then value.</summary>
+    public Dictionary<string, Dictionary<string, ListLabel>> ListLabels { get; set; } = new();
     /// <summary>Language for people who haven't chosen one, and for e-mails to suppliers ("en" or "ar").</summary>
     public string DefaultLanguage { get; set; } = "en";
     public string AssetNumberPrefix { get; set; } = "AST-";

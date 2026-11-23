@@ -80,6 +80,8 @@ public static class ImportValues
     /// <summary>The choice a word names: its English name, the screens' word, or that word in Arabic (any case and spacing).</summary>
     private static Enum? Choice(Type type, string text)
     {
+        // The four reworded lists (0.21.0) also take the organization's names, in either language.
+        if (Lists.Key(type) is not null) return Lists.Parse(ImportSheets.Organization, type, text);
         var wanted = ImportSheets.Normal(text);
         foreach (Enum option in Enum.GetValues(type))
         {

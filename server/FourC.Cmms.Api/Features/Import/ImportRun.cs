@@ -168,6 +168,7 @@ public static class ImportRun
     {
         var stopwatch = Stopwatch.StartNew();
         var clock = elapsed ?? (() => stopwatch.Elapsed);
+        ImportSheets.Organization = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var plan = Match(book);
         foreach (var (def, sheet) in plan)
         {

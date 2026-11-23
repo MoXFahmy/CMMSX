@@ -27,7 +27,7 @@ public static class ReportEndpoints
     public sealed record ReportDef(string Key, string Category, string Title, string Description, string Permission, List<Param> Params);
     /// <summary>A report's choices. 0.14.0: one asset (with its components), and a year.</summary>
     public sealed record ReportArgs(DateOnly From, DateOnly To, Guid? SiteId, string? GroupBy, int Days, Guid? AssetId = null, int Year = 0, bool Components = false,
-        Guid? CostCentreId = null);
+        Guid? CostCentreId = null, FourC.Cmms.Core.Tenancy.TenantSettings? Settings = null);
     /// <summary>A month of the PM annual plan (0.14.0): column type "plan".</summary>
     public sealed record PlanCell(int Done, int Late, int Missed, int Cancelled, int Planned);
     public const string ChooseAsset = "Choose an asset.";
@@ -111,7 +111,9 @@ public static class ReportEndpoints
             if (costCentreId is { } centre && def.Params.Any(p => p.Type == "costCentre") && !await db.CostCentres.AnyAsync(x => x.Id == centre, ct)) return Results.NotFound();
             var y = year ?? Today.Year;
             if (def.Params.Any(p => p.Type == "year") && y is < 2000 or > 2100) throw new FourC.Cmms.Core.Common.DomainException(ChooseYear);
-            var a = new ReportArgs(f, t, siteId, gb, Math.Clamp(days ?? 180, 1, 3650), assetId, y, components == true, costCentreId);
+            // The organization's names for types, priorities, statuses and criticality (0.21.0) label the rows.
+            var orgSettings = (await db.Tenants.AsNoTracking().FirstAsync(x => x.Id == db.CurrentTenantId, ct)).Settings;
+            var a = new ReportArgs(f, t, siteId, gb, Math.Clamp(days ?? 180, 1, 3650), assetId, y, components == true, costCentreId, orgSettings);
             ReportResult r = key switch
             {
                 "wo-backlog" => await BacklogAsync(db, a, ct),
@@ -198,7 +200,7 @@ public static class ReportEndpoints
         var rows = Enum.GetValues<WorkPriority>().OrderByDescending(p => p).Select(p =>
         {
             var xs = open.Where(w => w.Priority == p).ToList();
-            return Row(("priority", p.ToString()), ("d0_7", xs.Count(w => Bucket(w.CreatedAt) == "d0_7")), ("d8_30", xs.Count(w => Bucket(w.CreatedAt) == "d8_30")),
+            return Row(("priority", Lists.Name(a.Settings, p)), ("d0_7", xs.Count(w => Bucket(w.CreatedAt) == "d0_7")), ("d8_30", xs.Count(w => Bucket(w.CreatedAt) == "d8_30")),
                 ("d31_90", xs.Count(w => Bucket(w.CreatedAt) == "d31_90")), ("d90", xs.Count(w => Bucket(w.CreatedAt) == "d90")),
                 ("onHold", xs.Count(w => w.Status == WorkOrderStatus.OnHold)), ("overdue", xs.Count(w => w.DueAt < now)), ("total", xs.Count));
         }).ToList();
@@ -234,7 +236,7 @@ public static class ReportEndpoints
 
         var byPriority = a.GroupBy == "priority";
         var groups = byPriority
-            ? Enum.GetValues<WorkPriority>().OrderByDescending(p => p).Select(p => (Label: p.ToString(), Match: (Func<WorkPriority, DateTimeOffset, bool>)((pr, _) => pr == p))).ToList()
+            ? Enum.GetValues<WorkPriority>().OrderByDescending(p => p).Select(p => (Label: Lists.Name(a.Settings, p), Match: (Func<WorkPriority, DateTimeOffset, bool>)((pr, _) => pr == p))).ToList()
             : Months(a).Select(m => (Label: MonthLabel(m.Y, m.M), Match: (Func<WorkPriority, DateTimeOffset, bool>)((_, d) => d.Year == m.Y && d.Month == m.M))).ToList();
         var key = byPriority ? "priority" : "month";
         var rows = groups.Select(g =>
@@ -325,7 +327,7 @@ public static class ReportEndpoints
         {
             "trade" => xs.GroupBy(x => x.Trade ?? "No trade"),
             "team" => xs.GroupBy(x => x.Team ?? "No team"),
-            "type" => xs.GroupBy(x => x.Type.ToString()),
+            "type" => xs.GroupBy(x => Lists.Name(a.Settings, x.Type)),
             _ => xs.GroupBy(x => x.Employee + (x.IsContractor ? " (contractor)" : "")),
         };
         var rows = groups.Select(g => Row(("group", g.Key), ("hours", g.Sum(x => x.Hours)), ("overtime", g.Sum(x => x.OvertimeHours)), ("total", g.Sum(x => x.Hours + x.OvertimeHours)),
@@ -627,7 +629,7 @@ public static class ReportEndpoints
         {
             var byPriority = a.GroupBy == "priority";
             var groups = byPriority
-                ? orders.GroupBy(o => o.Priority).OrderByDescending(g => g.Key).Select(g => (Label: g.Key.ToString(), Items: g.ToList()))
+                ? orders.GroupBy(o => o.Priority).OrderByDescending(g => g.Key).Select(g => (Label: Lists.Name(a.Settings, g.Key), Items: g.ToList()))
                 : orders.GroupBy(o => o.Trade ?? "No trade").OrderBy(g => g.Key == "No trade").ThenBy(g => g.Key).Select(g => (Label: g.Key, Items: g.ToList()));
             var rows = groups.Select(g => Row(("group", g.Label), ("orders", g.Items.Count), ("responseAvg", Avg(g.Items.Select(o => o.ResponseHours))),
                 ("responsePct", MetPct(g.Items.Select(o => o.Response))), ("completionAvg", Avg(g.Items.Select(o => o.CompletionHours))),
@@ -638,7 +640,7 @@ public static class ReportEndpoints
                 rows, new Chart("bar", "group", ["responsePct", "completionPct"]), summary);
         }
         string? T(string? word) => word is null ? null : Translator.T(word);
-        var list = orders.Select(o => Row(("number", o.Number), ("title", o.Title), ("priority", Translator.T(o.Priority.ToString())), ("trade", o.Trade),
+        var list = orders.Select(o => Row(("number", o.Number), ("title", o.Title), ("priority", Lists.Name(a.Settings, o.Priority)), ("trade", o.Trade),
             ("respondBy", o.RespondBy), ("respondedAt", o.RespondedAt), ("responseHours", o.ResponseHours), ("response", T(o.Response)),
             ("dueAt", o.DueAt), ("completedAt", o.CompletedAt), ("completionHours", o.CompletionHours), ("completion", T(o.Completion)),
             ("requestId", o.RequestId), ("workOrderId", o.WorkOrderId))).ToList();
@@ -711,7 +713,7 @@ public static class ReportEndpoints
         foreach (var chunk in ids.Chunk(1000))
             foreach (var d in await db.WorkOrders.AsNoTracking().Where(w => chunk.Contains(w.Id)).Select(w => new { w.Id, Site = w.Site!.Name, w.Type, Trade = w.Trade!.Name,
                          Team = w.Team!.Name, Asset = w.Asset == null ? null : w.Asset.AssetNumber + " · " + w.Asset.Name, Category = w.Asset!.Category!.Name, w.CostCentreId }).ToListAsync(ct))
-                dims[d.Id] = (d.Site, d.Type.ToString(), d.Trade ?? "No trade", d.Team ?? "No team", d.Asset ?? "No asset (location work)", d.Category ?? "Uncategorised",
+                dims[d.Id] = (d.Site, Lists.Name(a.Settings, d.Type), d.Trade ?? "No trade", d.Team ?? "No team", d.Asset ?? "No asset (location work)", d.Category ?? "Uncategorised",
                     d.CostCentreId is { } dc ? centrePaths.GetValueOrDefault(dc) ?? "No cost centre" : "No cost centre");
         string Key(CostLine l) => a.GroupBy switch
         {
@@ -854,7 +856,7 @@ public static class ReportEndpoints
         }).Take(5000).ToListAsync(ct);
         var costs = (await CostLinesAsync(db, wos, null, null, ct)).GroupBy(c => c.WoId)
             .ToDictionary(g => g.Key, g => (Hours: g.Sum(x => x.Hours), Cost: g.Sum(x => x.Total)));
-        var rows = items.Select(w => Row(("number", w.Number), ("date", w.CreatedAt), ("asset", w.Asset), ("type", Translator.T(w.Type.ToString())), ("title", w.Title),
+        var rows = items.Select(w => Row(("number", w.Number), ("date", w.CreatedAt), ("asset", w.Asset), ("type", Lists.Name(a.Settings, w.Type)), ("title", w.Title),
             ("symptom", w.Symptom), ("cause", w.Cause), ("remedy", w.Remedy), ("hours", R2(costs.GetValueOrDefault(w.Id).Hours)), ("cost", R2(costs.GetValueOrDefault(w.Id).Cost)),
             ("downtime", w.DowntimeHours), ("workOrderId", w.Id))).ToList();
         var subtitle = $"{root.AssetNumber} · {root.Name} · {Period(a)}" + (a.Components ? $" · {Translator.T("with its components")}" : "");

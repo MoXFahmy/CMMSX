@@ -13,6 +13,7 @@ public static class ImportWorkbook
     /// <summary>Every sheet with its headings only (custom fields included), in the request's language, and a Help sheet.</summary>
     public static async Task<byte[]> TemplateAsync(CmmsDbContext db, CancellationToken ct)
     {
+        ImportSheets.Organization = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var fields = await db.CustomFields.AsNoTracking().Where(f => f.EntityType == "Asset").OrderBy(f => f.SortOrder).ToListAsync(ct);
         var sheets = Defs(fields).Select(d => new ExportSheet(d.Name, Columns(d), [])).ToList();
         sheets.Add(Help(Defs(fields), []));
@@ -26,6 +27,7 @@ public static class ImportWorkbook
     public static async Task<byte[]> CurrentAsync(CmmsDbContext db, ITenantContext ctx, CancellationToken ct)
     {
         var c = await ImportRun.ContextAsync(db, ctx, ct);
+        ImportSheets.Organization = c.Settings;
         var defs = Defs(c.AssetFields);
         var cut = new List<string>();
         var sheets = new List<ExportSheet>();

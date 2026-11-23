@@ -20,16 +20,17 @@ public static class ListExport
     public static async Task<IResult> FileAsync<T>(HttpContext http, CmmsDbContext db, string list, Func<int, int, Task<PagedResult<T>>> page, CancellationToken ct)
         where T : notnull
     {
-        var zone = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings.TimeZone;
+        var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
+        var zone = settings.TimeZone;
         var tz = TimeZoneInfo.TryFindSystemTimeZoneById(zone ?? "UTC", out var found) ? found : TimeZoneInfo.Utc;
         ExportFile file;
-        try { file = Build(http.Request.Query, list, await page(1, MaxRows), tz); }
+        try { file = Build(http.Request.Query, list, await page(1, MaxRows), tz, settings); }
         catch (ArgumentException ex) { throw new DomainException(ex.Message); }
         if (file.Truncated) http.Response.Headers["X-Export-Truncated"] = "true";
         return Results.File(file.Bytes, file.ContentType, file.FileName);
     }
 
-    public static ExportFile Build<T>(IQueryCollection query, string list, PagedResult<T> page, TimeZoneInfo tz) where T : notnull
+    public static ExportFile Build<T>(IQueryCollection query, string list, PagedResult<T> page, TimeZoneInfo tz, FourC.Cmms.Core.Tenancy.TenantSettings? settings = null) where T : notnull
     {
         var items = page.Items.Cast<object>().ToList();
         var rowType = typeof(T) != typeof(object) ? typeof(T) : items.FirstOrDefault()?.GetType();
@@ -40,7 +41,7 @@ public static class ListExport
             : keys.Select((k, i) => new ExportColumn(k, titles.Count == keys.Count && titles[i].Length > 0 ? titles[i][..Math.Min(120, titles[i].Length)] : k)).ToList();
         if (cols.Count > MaxColumns) throw new ArgumentException($"Choose at most {MaxColumns} columns.");
         if (rowType is not null) TableExport.Check(rowType, cols);
-        var rows = TableExport.Rows(items, cols, tz);
+        var rows = TableExport.Rows(items, cols, tz, settings);
         var stamp = DateTime.UtcNow.ToString("yyyyMMdd-HHmm");
         var truncated = page.Total > items.Count;
         return string.Equals(query["format"], "csv", StringComparison.OrdinalIgnoreCase)

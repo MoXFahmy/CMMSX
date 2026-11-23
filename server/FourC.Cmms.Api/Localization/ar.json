@@ -1093,5 +1093,12 @@
  "Direct issues": "صرف مباشر",
  "Actual": "الفعلي",
  "Variance": "الفرق",
- "Choose a month from 1 to 12.": "اختر شهرًا من 1 إلى 12."
+ "Choose a month from 1 to 12.": "اختر شهرًا من 1 إلى 12.",
+ "Leave at least one work type showing.": "اترك نوع عمل واحدًا على الأقل ظاهرًا.",
+ "Leave at least one priority showing.": "اترك أولوية واحدة على الأقل ظاهرة.",
+ "Leave at least one asset status showing.": "اترك حالة أصل واحدة على الأقل ظاهرة.",
+ "Leave at least one criticality level showing.": "اترك مستوى أهمية واحدًا على الأقل ظاهرًا.",
+ "Choose a colour from the list.": "اختر لونًا من القائمة.",
+ "A name can be at most 50 characters.": "يمكن أن يكون الاسم 50 حرفًا على الأكثر.",
+ "This name is already used by {0}.": "هذا الاسم مستخدم بالفعل لـ {0}."
 }
