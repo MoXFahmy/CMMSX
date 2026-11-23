@@ -53,3 +53,5 @@ Maintenance › **Planning**. Week (7 days from today) or month; by technician o
 - **Upcoming PMs** (not generated yet) appear as dashed cards in the rows of the schedule's technicians; *Generate now*
   creates the work order straight away.
 - Only people who may edit work orders can drag; everyone who can see work orders can look.
+- Since 0.19.0 each day counts time away and extra time, the board warns when work lands on a day someone is away or
+  over their hours, and it has a contractor view — see [CALENDARS_AND_TIMESHEET.md](CALENDARS_AND_TIMESHEET.md).
