@@ -318,7 +318,10 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         if (!Available) return;
         var settings = (await db.Tenants.AsNoTracking().Where(t => t.Id == db.CurrentTenantId).Select(t => t.Settings).FirstAsync(ct));
         var named = (settings.ContractAlertRecipientIds ?? []).Concat(c.ManagerId is { } m ? [m] : []).Distinct().ToList();
-        var to = named.Count > 0 ? await UsersAsync(db, named, ct) : await UsersWithPermissionAsync(db, Permissions.ContractsManage, ct);
+        // Only the named people who can still get it (active, and able to see a site's contract) count; with none of them left —
+        // the manager left, or works at another site — everyone who may manage contracts is told, so a deadline never passes unannounced.
+        var to = await ReachingSiteAsync(await UsersAsync(db, named, ct), c.SiteId, ct);
+        if (to.Count == 0) to = await UsersWithPermissionAsync(db, Permissions.ContractsManage, ct);
         var company = await db.Suppliers.AsNoTracking().Where(s => s.Id == c.SupplierId).Select(s => s.Name).FirstOrDefaultAsync(ct) ?? "";
         var site = c.SiteId is { } sid ? await db.Sites.AllSites().AsNoTracking().Where(s => s.Id == sid).Select(s => s.Name).FirstOrDefaultAsync(ct) : null;
         var facts = new ContractFacts(c.Number, c.Title, company, site, c.EndDate, deadline, c.AutoRenew);
@@ -484,6 +487,16 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         (await db.Employees.AsNoTracking().Where(e => ids.Contains(e.Id))
             .Select(e => new { e.Email, e.FullName, e.UserId, UserEmail = db.Users.Where(u => u.Id == e.UserId).Select(u => u.Email).FirstOrDefault() })
             .ToListAsync(ct)).Select(e => new EmailRecipient(e.Email ?? e.UserEmail, e.FullName, e.UserId)).ToList();
+
+    /// <summary>The people who may see <paramref name="siteId"/> (everyone when there is no site).</summary>
+    private async Task<List<EmailRecipient>> ReachingSiteAsync(List<EmailRecipient> people, Guid? siteId, CancellationToken ct)
+    {
+        if (siteId is not { } site) return people;
+        var kept = new List<EmailRecipient>();
+        foreach (var p in people)
+            if (p.UserId is { } id && Access.CoversSite(await access.GetAsync(id, ct), site)) kept.Add(p);
+        return kept;
+    }
 
     internal static async Task<List<EmailRecipient>> UsersAsync(CmmsDbContext db, IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
         await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId)

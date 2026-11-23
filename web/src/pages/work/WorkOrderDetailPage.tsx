@@ -33,6 +33,7 @@ import { GroupCard, TemplateCard } from './WorkOrderGroupBits';
 import { ChecklistPanel } from './ChecklistPanel';
 import { SourceBanner } from './SourceBanner';
 import { ContractorsPanel } from './ContractorsPanel';
+import { costLines } from './woTotals';
 import { CoveredBanner } from '@/components/CoveredBanner';
 import { BackRunningButton } from '@/pages/assets/AssetDowntime';
 import { downFor } from '@/components/downtime';
@@ -243,9 +244,7 @@ export function WorkOrderDetailPage() {
                   <Text fw={600} mb="sm">{t('wo.totals')}</Text>
                   <Table verticalSpacing={4}><Table.Tbody>
                     <Table.Tr><Table.Td>{t('wo.laborHours')}</Table.Td><Table.Td ta="right">{w.totals.laborHours}</Table.Td></Table.Tr>
-                    <Table.Tr><Table.Td>{t('wo.laborCost')}</Table.Td><Table.Td ta="right">{fmtMoney(w.totals.laborCost, currency)}</Table.Td></Table.Tr>
-                    <Table.Tr><Table.Td>{t('wo.partsCost')}</Table.Td><Table.Td ta="right">{fmtMoney(w.totals.partsCost, currency)}</Table.Td></Table.Tr>
-                    <Table.Tr><Table.Td>{t('wo.otherCost')}</Table.Td><Table.Td ta="right">{fmtMoney(w.totals.otherCost, currency)}</Table.Td></Table.Tr>
+                    {costLines(w.totals).map((l) => <Table.Tr key={l.key}><Table.Td>{t(l.key)}</Table.Td><Table.Td ta="right">{fmtMoney(l.value, currency)}</Table.Td></Table.Tr>)}
                     <Table.Tr><Table.Td fw={700}>{t('wo.totalCost')}</Table.Td><Table.Td ta="right" fw={700}>{fmtMoney(w.totals.totalCost, currency)}</Table.Td></Table.Tr>
                   </Table.Tbody></Table>
                 </Card>

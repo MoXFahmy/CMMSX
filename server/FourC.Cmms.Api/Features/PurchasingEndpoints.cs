@@ -15,8 +15,8 @@ public static class PurchasingEndpoints
 {
     public sealed record SupplierInput(string Code, string Name, string? ContactName, string? Email, string? Phone, string? Address, string? City, string? Country,
         string? TaxNumber, string? PaymentTerms, string? Currency, bool IsContractor, string? Notes, bool IsActive = true,
-        // Companies (0.17.0): roles and lists; a null list leaves it as it is (the import).
-        bool IsSupplier = true, bool IsManufacturer = false, List<SupplierContactInput>? Contacts = null, List<SupplierAddressInput>? Addresses = null,
+        // Companies (0.17.0): roles and lists; a role or list left out (null) stays as it is — the import has none of them.
+        bool? IsSupplier = null, bool? IsManufacturer = null, List<SupplierContactInput>? Contacts = null, List<SupplierAddressInput>? Addresses = null,
         List<SupplierRateInput>? Rates = null);
     public sealed record SupplierContactInput(Guid? Id, string Name, string? Role, string? Phone, string? Email);
     public sealed record SupplierAddressInput(Guid? Id, string? Label, string Address, string? City, string? Country);
@@ -150,14 +150,19 @@ public static class PurchasingEndpoints
             }).ToPagedAsync(page ?? 1, pageSize ?? 50, ct);
         }).RequirePermission(Permissions.PurchasingView);
         // Pickers (0.17.0): active companies with the role asked for; orders and requests ask for suppliers (the default).
-        s.MapGet("/lookup", async (CmmsDbContext db, string? role, CancellationToken ct) =>
-            await WithRole(db.Suppliers.AsNoTracking().Where(x => x.IsActive), role ?? "supplier").OrderBy(x => x.Name).Select(x => new
+        s.MapGet("/lookup", async (CmmsDbContext db, string? role, HttpContext http, PermissionService perms, CancellationToken ct) =>
+        {
+            // Contacts and contractor rates only for people who work with them (work orders, people, contracts, purchasing).
+            var mine = await perms.GetAsync(UserId(http));
+            var details = new[] { Permissions.WorkOrdersView, Permissions.PeopleView, Permissions.ContractsView, Permissions.PurchasingView, Permissions.SuppliersManage }.Any(mine.Contains);
+            var rows = await WithRole(db.Suppliers.AsNoTracking().Where(x => x.IsActive), role ?? "supplier").OrderBy(x => x.Name).Select(x => new
             {
                 x.Id, x.Code, x.Name, x.Currency, x.PaymentTerms,
                 Contacts = x.Contacts.OrderBy(c => c.Sort).Select(c => new { c.Id, c.Name, c.Role }).ToList(),
                 Rates = x.CategoryRates.Select(r => new { CategoryId = r.ContractorCategoryId, r.Rate }).ToList(),
-            }).ToListAsync(ct))
-            .RequireAuthorization();
+            }).ToListAsync(ct);
+            return Results.Ok(details ? rows : rows.Select(x => x with { Contacts = [], Rates = [] }).ToList());
+        }).RequireAuthorization();
         s.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
             await db.Suppliers.AsNoTracking().Where(x => x.Id == id).Select(x => new
             {
@@ -552,7 +557,7 @@ public static class PurchasingEndpoints
     {
         var v = new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200).MaxLength("email", i.Email, "Email", 200)
             .When(i.Email.Clean() is { } e && !e.Contains('@'), "email", "Enter a valid email address.").When(i.Currency.Clean() is { Length: not 3 }, "currency", "Use a 3-letter currency code.")
-            .When(!i.IsSupplier && !i.IsContractor && !i.IsManufacturer, "roles", "Choose at least one role.");
+            .When(i.IsSupplier == false && !i.IsContractor && i.IsManufacturer != true, "roles", "Choose at least one role.");
         var contacts = i.Contacts ?? [];
         for (var k = 0; k < contacts.Count; k++)
         {
@@ -595,7 +600,9 @@ public static class PurchasingEndpoints
     {
         x.ContactName = i.ContactName.Clean(); x.Email = i.Email.Clean(); x.Phone = i.Phone.Clean(); x.Address = i.Address.Clean(); x.City = i.City.Clean(); x.Country = i.Country.Clean();
         x.TaxNumber = i.TaxNumber.Clean(); x.PaymentTerms = i.PaymentTerms.Clean(); x.Currency = i.Currency.Clean()?.ToUpperInvariant(); x.IsContractor = i.IsContractor;
-        x.Notes = i.Notes.Clean(); x.IsActive = i.IsActive; x.IsSupplier = i.IsSupplier; x.IsManufacturer = i.IsManufacturer;
+        x.Notes = i.Notes.Clean(); x.IsActive = i.IsActive;
+        if (i.IsSupplier is { } supplier) x.IsSupplier = supplier;
+        if (i.IsManufacturer is { } maker) x.IsManufacturer = maker;
         if (i.Contacts is { } contacts)
         {
             x.Contacts.RemoveAll(c => !contacts.Any(n => n.Id == c.Id));

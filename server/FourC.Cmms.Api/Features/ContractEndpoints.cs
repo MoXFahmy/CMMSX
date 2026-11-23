@@ -132,8 +132,11 @@ public static class ContractEndpoints
             .RequirePermission(Permissions.ContractsView);
 
         // The contract picker on work orders and PMs: active and upcoming contracts usable at the site, those covering the asset first.
-        g.MapGet("/options", async (Guid? siteId, Guid? assetId, CmmsDbContext db, CancellationToken ct) =>
+        g.MapGet("/options", async (Guid? siteId, Guid? assetId, CmmsDbContext db, HttpContext http, PermissionService perms, CancellationToken ct) =>
         {
+            // People who plan work or PMs, or may see contracts; not every signed-in user.
+            var mine = await perms.GetAsync(UserId(http));
+            if (!new[] { Permissions.ContractsView, Permissions.WorkOrdersCreate, Permissions.WorkOrdersEdit, Permissions.PmManage }.Any(mine.Contains)) return Results.Forbid();
             var today = await TodayAsync(db, ct);
             var q = WithStatus(db.Contracts.AsNoTracking(), [ContractStatus.Active, ContractStatus.Upcoming], today);
             if (siteId is { } site) q = q.Where(c => c.SiteId == null || c.SiteId == site);
@@ -142,8 +145,8 @@ public static class ContractEndpoints
                 c.Id, c.Number, c.Title, CompanyName = c.Supplier!.Name, c.StartDate, c.EndDate, c.AutoRenew, c.TerminatedOn,
                 Covers = assetId != null && c.Assets.Any(a => a.AssetId == assetId),
             }).ToListAsync(ct);
-            return list.OrderByDescending(c => c.Covers).ThenBy(c => c.Number)
-                .Select(c => new { c.Id, c.Number, c.Title, c.CompanyName, Status = ContractTerms.StatusOn(today, c.StartDate, c.EndDate, c.AutoRenew, c.TerminatedOn), c.Covers });
+            return Results.Ok(list.OrderByDescending(c => c.Covers).ThenBy(c => c.Number)
+                .Select(c => new { c.Id, c.Number, c.Title, c.CompanyName, Status = ContractTerms.StatusOn(today, c.StartDate, c.EndDate, c.AutoRenew, c.TerminatedOn), c.Covers }));
         }).RequireAuthorization();
 
         // An asset's contracts (the asset page's card).
@@ -260,7 +263,8 @@ public static class ContractEndpoints
             var a = new ContractAmendment { ContractId = id, TenantId = c.TenantId, Date = i.Date, Description = i.Description.Trim(), NewValue = i.NewValue, CreatedAt = DateTimeOffset.UtcNow, CreatedByName = ctx.UserName };
             db.ContractAmendments.Add(a);
             // A new value applies to the current period and the renewals after it.
-            if (i.NewValue is { } value) c.Periods.OrderBy(p => p.Number).Last().Value = value;
+            // The contract's value follows too, so the edit form (which sends it back) and the list show it.
+            if (i.NewValue is { } value) { c.Periods.OrderBy(p => p.Number).Last().Value = value; c.Value = value; }
             c.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { a.Id });
