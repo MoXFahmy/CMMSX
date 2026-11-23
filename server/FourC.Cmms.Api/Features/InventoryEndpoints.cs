@@ -209,6 +209,8 @@ public static class InventoryEndpoints
             if (!v.IsValid) return v.Problem();
             var p = CreatePart(db, i);
             foreach (var l in i.Levels ?? []) db.StockLevels.Add(new StockLevel { PartId = p.Id, StoreId = l.StoreId, Bin = l.Bin.Clean(), MinLevel = l.MinLevel, ReorderLevel = l.ReorderLevel, MaxLevel = l.MaxLevel, ReorderQuantity = l.ReorderQuantity });
+            // The preferred supplier always has a catalogue row (0.18.0).
+            if (p.PreferredSupplierId is { } preferred) await CatalogueEndpoints.EnsureRowAsync(db, p, preferred, ct);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/parts/{p.Id}", new { p.Id });
         }).RequirePermission(Permissions.InventoryManage);
@@ -221,6 +223,7 @@ public static class InventoryEndpoints
             if (!v.IsValid) return v.Problem();
             if (i.RowVersion is not null) db.Entry(p).Property(x => x.RowVersion).OriginalValue = i.RowVersion.ToVersion();
             UpdatePart(p, i);
+            if (p.PreferredSupplierId is { } preferred) await CatalogueEndpoints.EnsureRowAsync(db, p, preferred, ct);
             if (i.Levels is not null)
             {
                 var existing = await db.StockLevels.Where(l => l.PartId == id).ToListAsync(ct);
@@ -254,6 +257,7 @@ public static class InventoryEndpoints
             if (await db.AssetParts.AllSites().AnyAsync(x => x.PartId == id, ct))
                 throw new DomainException("This part is on assets' spare-parts lists. Remove it from them, or mark it inactive instead.");
             await db.StockLevels.AllSites().Where(l => l.PartId == id).ExecuteDeleteAsync(ct);
+            db.SupplierParts.RemoveRange(await db.SupplierParts.Where(r => r.PartId == id).ToListAsync(ct)); // its catalogue goes with it (0.18.0)
             db.Parts.Remove(p);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
