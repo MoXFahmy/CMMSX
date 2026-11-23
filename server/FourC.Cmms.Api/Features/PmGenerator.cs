@@ -266,10 +266,12 @@ public static class PmGenerator
         var ownTemplates = ownIds.Count == 0 ? [] : await db.PmTasks.AsNoTracking().Include(t => t.Steps).Include(t => t.Parts).Where(t => ownIds.Contains(t.Id)).ToDictionaryAsync(t => t.Id, ct);
         IReadOnlyList<PmTaskStep> StepsFor(Guid assetId) => own.TryGetValue(assetId, out var tid) && ownTemplates.TryGetValue(tid, out var ot)
             ? ot.Steps.OrderBy(x => x.Sequence).ToList() : steps;
+        // A round's work order has no single asset: without the PM's own cost centre, it takes the one its assets share (0.20.0).
+        var costCentre = s.CostCentreId ?? (round is { Count: > 0 } ? await CostCentreQueries.SharedAsync(db, round.Select(r => r.Id), ct) : null);
         // A round's work order has no single asset: it lists the covered assets and repeats the steps for each of them.
         var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description.Length == 0 ? null : description, task.WorkType, task.Priority ?? s.Priority,
             s.SiteId, round is null ? s.LocationId : s.LocationId ?? PmRound.CommonLocationId(round), round is null ? s.AssetId : null, s.TradeId ?? task.TradeId, assignees,
-            start, PmCalendar.DueDate(s, start, nonWorkingDays ?? []), task.EstimatedHours, null, TeamId: s.TeamId, CostCentreId: s.CostCentreId);
+            start, PmCalendar.DueDate(s, start, nonWorkingDays ?? []), task.EstimatedHours, null, TeamId: s.TeamId, CostCentreId: costCentre);
         // The template's parts come along as planned parts (once per covered asset on a round, from that asset's own template where
         // it has one), reserved in the default store for the site.
         var taskParts = await db.PmTaskParts.AsNoTracking().Where(p => p.PmTaskId == task.Id).Select(p => new { p.PartId, p.Quantity }).ToListAsync(ct);

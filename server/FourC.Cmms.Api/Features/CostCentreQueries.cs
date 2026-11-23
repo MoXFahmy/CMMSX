@@ -27,6 +27,21 @@ public static class CostCentreQueries
         return null;
     }
 
+    /// <summary>
+    /// The cost centre all of a round's assets have in force, or null when they differ or one has none (the round then takes its
+    /// location's, as any work without an asset).
+    /// </summary>
+    public static async Task<Guid?> SharedAsync(CmmsDbContext db, IEnumerable<Guid> assetIds, CancellationToken ct)
+    {
+        Guid? shared = null;
+        foreach (var id in assetIds.Distinct())
+        {
+            if (await InForceAsync(db, id, null, ct) is not { } cc || (shared is { } s && s != cc)) return null;
+            shared = cc;
+        }
+        return shared;
+    }
+
     /// <summary>Why a cost centre can't be chosen, or null when it can: it must exist for the user's sites and be active (unless kept unchanged).</summary>
     public static async Task<string?> ChoiceProblemAsync(CmmsDbContext db, Guid? costCentreId, Guid? current, CancellationToken ct)
     {

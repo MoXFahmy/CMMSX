@@ -132,4 +132,32 @@ public class CostCentreWorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(prod, await CostCentreOf(o.Admin, before));
         Assert.Equal(pack, await CostCentreOf(o.Admin, await WorkOrderAsync(o.Admin, o.Site, a)));
     }
+
+    [SkippableFact]
+    public async Task A_round_takes_the_cost_centre_its_assets_share_else_its_locations()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var prod = await CostCentreAsync(o.Admin, "PROD", "Production");
+        var pack = await CostCentreAsync(o.Admin, "PACK", "Packing");
+        var fac = await CostCentreAsync(o.Admin, "FAC", "Facilities");
+        var hall = await LocationAsync(o.Admin, o.Site, "HALL", costCentre: fac);
+        var a = await AssetAsync(o.Admin, o.Site, "Press 1", hall, costCentre: prod);
+        var b = await AssetAsync(o.Admin, o.Site, "Press 2", hall, costCentre: prod);
+        var c = await AssetAsync(o.Admin, o.Site, "Wrapper", hall, costCentre: pack);
+        var task = await Pm12.TemplateAsync(o.Admin, "LUBE");
+        var same = Id(await Pm12.SaveScheduleAsync(o.Admin, Pm12.Schedule(o.Site, task, Today, assets: [a, b], extra: new() { ["code"] = "R1", ["multiAssetMode"] = "Round" })));
+        var mixed = Id(await Pm12.SaveScheduleAsync(o.Admin, Pm12.Schedule(o.Site, task, Today, assets: [a, c], extra: new() { ["code"] = "R2", ["multiAssetMode"] = "Round" })));
+        await Pm12.GenerateAsync(o.Admin, Today, same, mixed);
+        var generated = (await Ok(await o.Admin.GetAsync("/api/work-orders?source=pm&pageSize=100"))).GetProperty("items").EnumerateArray().ToList();
+        Assert.Equal(2, generated.Count);
+        var bySchedule = new Dictionary<Guid, Guid?>();
+        foreach (var w in generated)
+        {
+            var detail = await Ok(await o.Admin.GetAsync($"/api/work-orders/{Id(w)}"));
+            bySchedule[detail.GetProperty("pm").GetProperty("id").GetGuid()] = await CostCentreOf(o.Admin, Id(w));
+        }
+        Assert.Equal(prod, bySchedule[same]);
+        Assert.Equal(fac, bySchedule[mixed]);
+    }
 }
