@@ -111,8 +111,26 @@ public static partial class TechEndpoints
             var siteIds = jobs.Select(j => j.SiteId).Distinct().ToList();
             var defaultStores = (await db.Sites.AllSites().AsNoTracking().Where(s => siteIds.Contains(s.Id)).Select(s => new { s.Id, s.Settings }).ToListAsync(ct))
                 .ToDictionary(s => s.Id, s => s.Settings.DefaultStoreId);
+            // My day (0.19.0): my hours of the last 30 days on every work order (a job completed since still counts on its day) and
+            // my available hours for those days and today.
+            var today = DateOnly.FromDateTime(DateTime.UtcNow);
+            var myLabour = await db.WorkOrderLabor.AsNoTracking().Where(l => l.EmployeeId == me.EmployeeId && l.WorkDate >= today.AddDays(-30) && l.WorkDate <= today.AddDays(1))
+                .OrderByDescending(l => l.WorkDate)
+                .Select(l => new { l.WorkOrderId, Number = db.WorkOrders.Where(w => w.Id == l.WorkOrderId).Select(w => w.Number).FirstOrDefault(),
+                    Title = db.WorkOrders.Where(w => w.Id == l.WorkOrderId).Select(w => w.Title).FirstOrDefault(), l.WorkDate, l.Hours, l.OvertimeHours })
+                .ToListAsync(ct);
+            var myHours = (await AvailabilityQueries.DaysAsync(db, [me.EmployeeId], today.AddDays(-30), today, ct)).GetValueOrDefault(me.EmployeeId) ?? [];
             var body = new
             {
+                MyDay = new
+                {
+                    Labour = myLabour,
+                    Available = myHours.OrderBy(d => d.Key).Select(d => new
+                    {
+                        Day = d.Key, Hours = d.Value.Available,
+                        Away = d.Value.Slots.Where(x => x.Kind == FourC.Cmms.Core.Planning.AvailabilityKind.Away).Select(x => x.Name).ToList(),
+                    }),
+                },
                 me.EmployeeId, ctx.UserId,
                 Jobs = jobs.Select(j => new
                 {
