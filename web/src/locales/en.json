@@ -2140,6 +2140,32 @@
     "fromAi": "From AI — check before completing",
     "addYourself": "Suggested — add these yourself",
     "hintHours": "{{hours}} h of work",
-    "usePart": "Use {{qty}} × {{part}}"
+    "usePart": "Use {{qty}} × {{part}}",
+    "diagnosis": "AI diagnosis",
+    "diagnose": "Diagnose",
+    "runAgain": "Run again",
+    "needsAsset": "Choose an asset first: a diagnosis works from the asset's history.",
+    "reading": "Reading the asset's history… this can take up to half a minute.",
+    "tooThin": "Too few completed work orders on this asset and similar ones for a diagnosis.",
+    "context": "What is known",
+    "observed": "What was seen",
+    "probableCause": "Probable cause",
+    "confidence": {
+      "low": "Low",
+      "medium": "Medium",
+      "high": "High"
+    },
+    "estimatedHours": "About {{hours}} h",
+    "sources": "Based on",
+    "addToPlanned": "Add to planned parts",
+    "planned_one": "{{count}} part added to the planned parts.",
+    "planned_other": "{{count}} parts added to the planned parts.",
+    "wasHelpful": "Was this helpful?",
+    "helpful": "Helpful",
+    "notHelpful": "Not helpful",
+    "sent_one": "from {{count}} past work order",
+    "sent_other": "from {{count}} past work orders",
+    "earlier_one": "Earlier diagnoses ({{count}})",
+    "earlier_other": "Earlier diagnoses ({{count}})"
   }
 }

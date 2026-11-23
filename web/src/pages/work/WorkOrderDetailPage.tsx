@@ -12,6 +12,7 @@ import { IconAlertTriangle, IconCheck, IconCopy, IconDots, IconEdit, IconPrinter
 import { del, get, post } from '@/api/client';
 import { HOLD_REASONS, type ActivityItem, type Lookup, type WorkOrderDetail, type WorkOrderStatus } from '@/api/types';
 import { CodeSelect } from '@/components/CodeSelect';
+import { DiagnosisPanel } from '@/components/DiagnosisPanel';
 import { aiOn, useAiStatus } from '@/components/aiStatus';
 import { applyReport, reportHints, type AiReportResult } from '@/components/aiReport';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -130,6 +131,8 @@ export function WorkOrderDetailPage() {
             <Grid.Col span={{ base: 12, md: 8 }}>
               <Stack gap="lg">
                 {w.group && <GroupCard group={w.group} canComment={canExec} onChange={refresh} />}
+                <DiagnosisPanel kind="work-order" id={w.id} hasAsset={!!w.assetId} canRun={can(P.woExecute)} canPlan={canPlan}
+                  plannedPartIds={w.plannedParts.map((p) => p.partId)} onPlanned={refresh} />
                 {w.source && <SourceBanner source={w.source} />}
                 {w.asset?.underWarranty && !locked && (
                   <Alert variant="light" color="teal" icon={<IconShieldCheck size={18} />} title={t('wo.underWarrantyTitle', { type: t(`warrantyType.${w.asset.warrantyType}`) })}>
