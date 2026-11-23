@@ -220,14 +220,16 @@ export type WorkOrderDetail = {
   tasks: WorkOrderStep[];
   /** Smart checklists (0.13.0): the points its steps use, and the work order and step a follow-up came from. */
   points?: PointView[]; source?: StepSource | null;
-  labor: { id: string; employeeId: string; employeeName: string; workDate: string; createdAt: string; hours: number; overtimeHours: number; rate: number; overtimeRate: number; notes?: string; cost: number }[];
+  labor: { id: string; employeeId: string; employeeName: string; workDate: string; createdAt: string; hours: number; overtimeHours: number; rate: number; overtimeRate: number; notes?: string; cost: number; companyName?: string | null }[];
   costs: { id: string; description: string; quantity: number; unitCost: number; vendor?: string; reference?: string; total: number; createdAt: string }[];
   parts: WoPartItem[];
   plannedParts: PlannedPart[];
   /** Signatures captured on completion (attachments): shown on the page and printed on the job card. */
   signatures: { id: string; signedBy?: string | null; createdAt: string }[];
-  totals: { laborHours: number; laborCost: number; partsCost: number; otherCost: number; totalCost: number };
-  planned: { laborHours: number; laborCost: number; partsCost: number; totalCost: number };
+  /** Contractor (0.17.0): lines plus labour of company-linked employees (moved out of laborCost). */
+  totals: { laborHours: number; laborCost: number; partsCost: number; otherCost: number; contractorHours: number; contractorCost: number; totalCost: number };
+  planned: { laborHours: number; laborCost: number; partsCost: number; contractorHours: number; contractorCost: number; totalCost: number };
+  contractors: ContractorLine[]; contractId?: string | null; contract?: { id: string; number: string; title: string; companyName: string } | null; coveredBy?: CoveredBy | null;
   dueAt?: string | null; dueFromTarget: boolean; startBy?: string | null; respondedAt?: string | null; sla: SlaView;
   allowedTransitions: WorkOrderStatus[]; isOverdue: boolean; createdAt: string; updatedAt?: string; legacyRef?: string; rowVersion: string;
   /** 0.12.0: the work template it was made from (documents shown, not copied), its own recipients, its group and the group's comments. */
@@ -265,6 +267,8 @@ export type WorkRequestDetail = {
   /** 0.10.0 */
   requestTypeId?: string | null; requestType?: { id: string; name: string; defaultTradeId?: string | null } | null; extraRecipients: { id: string; name: string }[];
   accessWindows: AccessWindow[]; onlyWhenStopped: boolean; awaitingFeedback: boolean; canAnswer: boolean; feedback: RequestFeedback[];
+  /** The active service contract covering its asset (0.17.0). */
+  coveredBy?: CoveredBy | null;
 };
 export type WorkDashboard = {
   open: number; overdue: number; completedLast30: number; requestsAwaiting: number; late: number; dueSoon: number; responseLate: number;
@@ -336,6 +340,8 @@ export type PmScheduleListItem = {
 };
 export type PmScheduleDetail = {
   onlyWhenStopped?: boolean;
+  /** The service contract it is done under (0.17.0). */
+  contractId?: string | null;
   id: string; code: string; name: string; description?: string; siteId: string; locationId?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
   /** A round's assets in order (empty for single-asset/location schedules). */
   assets: { id: string; assetNumber: string; name: string; pmTaskId?: string | null }[];
@@ -371,7 +377,7 @@ export type WorkGroupDetail = {
   pm?: { id: string; code: string; name: string } | null; status: WorkGroupStatus;
   children: { id: string; number: string; title: string; status: WorkOrderStatus; assetId?: string; assetNumber?: string; assetName?: string; dueDate?: string; completedAt?: string;
     assignees: { employeeId: string; fullName: string }[]; stepsDone: number; stepsTotal: number; laborHours: number; cost: number }[];
-  totals: { laborHours: number; laborCost: number; partsCost: number; otherCost: number; totalCost: number };
+  totals: { laborHours: number; laborCost: number; partsCost: number; otherCost: number; contractorCost?: number; totalCost: number };
   comments: { id: string; body: string; userName?: string; createdAt: string }[];
 };
 export type PmRunResult = { scheduleId: string; code: string; name: string; dueDate?: string; taskName?: string; assetNumber?: string; workOrderId?: string; workOrderNumber?: string; skipped?: string; groupId?: string; groupNumber?: string };
@@ -469,3 +475,27 @@ export type RowResult = { row: number; key: string; outcome: ImportOutcome; chan
 /** One sheet of a check or import; `rows` lists the new, changed and problem rows (not the unchanged ones). */
 export type SheetResult = { sheet: string; new: number; changed: number; unchanged: number; problems: number; rows: RowResult[]; ignoredColumns: string[] };
 export type ImportResult = { saved: boolean; sheets: SheetResult[]; newLookups: string[]; notes: string[]; stopped: string | null };
+
+/** Service contracts (0.17.0). */
+export type ContractStatus = 'Upcoming' | 'Active' | 'Expired' | 'Terminated';
+export type ExpectedPer = 'Year' | 'Quarter' | 'Month';
+export type ContractListItem = { id: string; number: string; title: string; companyName: string; typeName?: string; siteName?: string; startDate: string; endDate: string;
+  status: ContractStatus; value?: number; currency?: string; deadline?: string; needsAttention: boolean; autoRenew: boolean };
+export type ContractDetail = {
+  id: string; number: string; title: string; status: ContractStatus; deadline?: string | null; needsAttention: boolean;
+  supplierId: string; company: { id: string; code: string; name: string; contactName?: string; phone?: string; email?: string };
+  managerId?: string | null; manager?: { id: string; name: string } | null; contractTypeId?: string | null; type?: { id: string; code: string; name: string } | null;
+  tradeId?: string | null; trade?: { id: string; code: string; name: string } | null; siteId?: string | null; site?: { id: string; code: string; name: string } | null;
+  notes?: string | null; startDate: string; endDate: string; value?: number | null; currency?: string | null; paymentTerms?: string | null;
+  expectedWorkOrders?: number | null; expectedPer?: ExpectedPer | null; autoRenew: boolean; renewalMonths?: number | null; noticeDays: number; alertDays: number;
+  terminatedOn?: string | null; terminationReason?: string | null;
+  periods: { id: string; number: number; startDate: string; endDate: string; value?: number | null; isRenewal: boolean }[];
+  amendments: { id: string; date: string; description: string; newValue?: number | null; createdAt: string; createdByName?: string }[];
+  assets: { assetId: string; assetNumber: string; name: string; siteName: string; yearlyCost?: number | null }[];
+  workOrders: { id: string; number: string; title: string; status: WorkOrderStatus; completedAt?: string | null; dueDate?: string | null }[]; workOrderCount: number;
+  actions: { edit: boolean; amend: boolean; terminate: boolean; delete: boolean }; rowVersion: string;
+};
+export type ContractOption = { id: string; number: string; title: string; companyName: string; status: ContractStatus; covers: boolean };
+export type CoveredBy = { id: string; number: string; title: string; companyName: string };
+export type ContractorLine = { id: string; supplierId: string; companyName: string; categoryId?: string | null; categoryName?: string | null; contactId?: string | null; personName?: string | null;
+  plannedHours: number; hoursDone: number; doneOn?: string | null; rate: number; cost: number; plannedCost: number; notes?: string | null };

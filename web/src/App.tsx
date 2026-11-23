@@ -27,6 +27,9 @@ import { PoFormPage } from './pages/purchasing/PoFormPage';
 import { PoDetailPage, PoPrintPage } from './pages/purchasing/PoDetailPage';
 import { RequestFormPage } from './pages/purchasing/RequestFormPage';
 import { RequestDetailPage } from './pages/purchasing/RequestDetailPage';
+import { ContractsPage } from './pages/contracts/ContractsPage';
+import { ContractFormPage } from './pages/contracts/ContractFormPage';
+import { ContractDetailPage } from './pages/contracts/ContractDetailPage';
 import { MyApprovalsPage } from './pages/approvals/MyApprovalsPage';
 import { WorkOrderPrintPage } from './pages/work/WorkOrderPrintPage';
 import { ReportsPage, ReportViewPage } from './pages/reports/ReportsPage';
@@ -90,6 +93,10 @@ export function App() {
         <Route path="purchasing/orders/:id" element={<PoDetailPage />} />
         <Route path="purchasing/orders/:id/edit" element={<PoFormPage />} />
         <Route path="approvals" element={<MyApprovalsPage />} />
+        <Route path="contracts" element={<ContractsPage />} />
+        <Route path="contracts/new" element={<ContractFormPage />} />
+        <Route path="contracts/:id" element={<ContractDetailPage />} />
+        <Route path="contracts/:id/edit" element={<ContractFormPage />} />
         <Route path="purchasing/requests/new" element={<RequestFormPage />} />
         <Route path="purchasing/requests/:id" element={<RequestDetailPage />} />
         <Route path="purchasing/requests/:id/edit" element={<RequestFormPage />} />
