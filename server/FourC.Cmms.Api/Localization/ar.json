@@ -937,5 +937,8 @@
  "The AI assistant didn't answer. Try again in a moment.": "لم يُجب المساعد الذكي. حاول مرة أخرى بعد قليل.",
  "Type or dictate some notes first.": "اكتب ملاحظاتك أو أملِها أولًا.",
  "Notes can be at most 8,000 characters.": "لا يمكن أن تزيد الملاحظات عن 8000 حرف.",
- "The AI assistant couldn't help with these notes.": "لم يستطع المساعد الذكي المساعدة في هذه الملاحظات."
+ "The AI assistant couldn't help with these notes.": "لم يستطع المساعد الذكي المساعدة في هذه الملاحظات.",
+ "Choose an asset first: a diagnosis works from the asset's history.": "اختر الأصل أولًا: التشخيص يعتمد على سجل الأصل.",
+ "There are only {0} completed work orders on this asset and similar ones — too few for a diagnosis.": "يوجد {0} أوامر عمل مكتملة فقط على هذا الأصل والأصول المشابهة — وهذا قليل جدًا للتشخيص.",
+ "The AI assistant couldn't help with this one.": "لم يستطع المساعد الذكي المساعدة في هذا."
 }

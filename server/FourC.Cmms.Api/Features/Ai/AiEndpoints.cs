@@ -25,5 +25,7 @@ public static class AiEndpoints
         // The completion report from the technician's notes: suggestions only, nothing is saved.
         g.MapPost("/report", (AiReportInput input, Core.Data.CmmsDbContext db, AiService ai, CancellationToken ct) =>
             Guard(() => AiReport.HandleAsync(input, db, ai, ct))).RequirePermission(Permissions.WorkOrdersExecute);
+
+        AiDiagnose.Map(api);
     }
 }
