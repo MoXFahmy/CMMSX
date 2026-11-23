@@ -16,10 +16,10 @@ public static class PurchasingEndpoints
     public sealed record SupplierInput(string Code, string Name, string? ContactName, string? Email, string? Phone, string? Address, string? City, string? Country,
         string? TaxNumber, string? PaymentTerms, string? Currency, bool IsContractor, string? Notes, bool IsActive = true);
     public sealed record LineInput(Guid? Id, Guid? PartId, string? Description, string? UnitOfMeasure, decimal Quantity, decimal UnitPrice, decimal DiscountPercent,
-        Guid? StoreId, Guid? WorkOrderId, string? AccountCode);
+        Guid? StoreId, Guid? WorkOrderId, string? AccountCode, Guid? PurchaseRequestLineId = null);
     public sealed record PoInput(Guid? SiteId, Guid? SupplierId, DateOnly? OrderDate, DateOnly? ExpectedDate, string? RequestedBy, string? Currency, decimal? ExchangeRate,
         string? PaymentTerms, string? ShippingMethod, string? DeliverTo, string? SupplierQuoteRef, decimal? TaxPercent, decimal ShippingCost, string? Notes,
-        List<LineInput> Lines, string? RowVersion = null);
+        List<LineInput> Lines, Guid? OrderTypeId = null, string? RowVersion = null);
     public sealed record ReasonInput(string? Reason);
     public sealed record ReceiveLine(Guid LineId, decimal Quantity, Guid? StoreId, string? BatchNumber, DateOnly? ExpiryDate);
     public sealed record ReceiveInput(DateOnly? Date, string? Reference, List<ReceiveLine> Lines);
@@ -36,6 +36,7 @@ public static class PurchasingEndpoints
         public string? Status { get; set; }
         public Guid? SupplierId { get; set; }
         public Guid? SiteId { get; set; }
+        public Guid? OrderTypeId { get; set; }
         public bool? Overdue { get; set; }
         public DateOnly? From { get; set; }
         public DateOnly? To { get; set; }
@@ -46,7 +47,7 @@ public static class PurchasingEndpoints
     }
 
     public sealed record PoListItem(Guid Id, string Number, PurchaseOrderStatus Status, DateOnly OrderDate, DateOnly? ExpectedDate, Guid SupplierId, string SupplierName,
-        string SiteName, string Currency, string? RequestedBy, int Lines, decimal Total, decimal ReceivedPercent, bool IsOverdue);
+        string SiteName, string Currency, string? RequestedBy, int Lines, decimal Total, decimal ReceivedPercent, bool IsOverdue, string? OrderTypeName = null);
 
     /// <summary>One page of the purchase-order list (the list screen and its export share it).</summary>
     internal static async Task<PagedResult<PoListItem>> ListAsync(CmmsDbContext db, PoFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
@@ -58,6 +59,7 @@ public static class PurchasingEndpoints
         if (statuses.Count > 0) q = q.Where(o => statuses.Contains(o.Status));
         if (f.SupplierId is not null) q = q.Where(o => o.SupplierId == f.SupplierId);
         if (f.SiteId is not null) q = q.Where(o => o.SiteId == f.SiteId);
+        if (f.OrderTypeId is not null) q = q.Where(o => o.OrderTypeId == f.OrderTypeId);
         if (f.From is not null) q = q.Where(o => o.OrderDate >= f.From);
         if (f.To is not null) q = q.Where(o => o.OrderDate <= f.To);
         if (f.Overdue == true) q = q.Where(o => Receivable.Contains(o.Status) && o.ExpectedDate < Today);
@@ -66,7 +68,8 @@ public static class PurchasingEndpoints
             ["number"] = o => o.Number, ["orderDate"] = o => o.OrderDate, ["expectedDate"] = o => o.ExpectedDate, ["supplier"] = o => o.Supplier!.Name, ["status"] = o => o.Status,
         };
         var paged = await q.SortBy(f.Sort ?? "orderDate", f.Dir ?? (f.Sort is null ? "desc" : f.Dir), map, "orderDate")
-            .Select(o => new { o.Id, o.Number, o.Status, o.OrderDate, o.ExpectedDate, o.SupplierId, SupplierName = o.Supplier!.Name, SiteName = o.Site!.Name, o.Currency, o.TaxPercent, o.ShippingCost, o.RequestedBy })
+            .Select(o => new { o.Id, o.Number, o.Status, o.OrderDate, o.ExpectedDate, o.SupplierId, SupplierName = o.Supplier!.Name, SiteName = o.Site!.Name, o.Currency, o.TaxPercent, o.ShippingCost, o.RequestedBy,
+                OrderTypeName = db.OrderTypes.Where(t => t.Id == o.OrderTypeId).Select(t => t.Name).FirstOrDefault() })
             .ToPagedAsync(page, pageSize, ct, maxPageSize);
         var ids = paged.Items.Select(o => o.Id).ToList();
         var lines = (await db.PurchaseOrderLines.AsNoTracking().Where(l => ids.Contains(l.PurchaseOrderId)).ToListAsync(ct)).ToLookup(l => l.PurchaseOrderId);
@@ -77,7 +80,7 @@ public static class PurchasingEndpoints
             var ordered = ls.Sum(l => l.Quantity);
             return new PoListItem(o.Id, o.Number, o.Status, o.OrderDate, o.ExpectedDate, o.SupplierId, o.SupplierName, o.SiteName, o.Currency, o.RequestedBy, ls.Count,
                 PurchaseOrderMath.Total(po), ordered == 0 ? 0 : Math.Round(ls.Sum(l => Math.Min(l.QuantityReceived, l.Quantity)) / ordered * 100, 0),
-                Receivable.Contains(o.Status) && o.ExpectedDate < Today);
+                Receivable.Contains(o.Status) && o.ExpectedDate < Today, o.OrderTypeName);
         }).ToList(), paged.Total, paged.Page, paged.PageSize);
     }
 
@@ -117,6 +120,7 @@ public static class PurchasingEndpoints
         if (count == 0) throw new DomainException("Enter the quantity received on at least one line.");
         o.Status = o.Lines.All(l => l.QuantityReceived >= l.Quantity) ? PurchaseOrderStatus.Received : PurchaseOrderStatus.PartiallyReceived;
         await mail.PartsReceivedAsync(db, ctx, o, forWork, tk);
+        await PurchaseRequestSync.ReceivedAsync(db, ctx, mail, o, i.Lines.Where(x => x.Quantity > 0).Select(x => (x.LineId, x.Quantity)).ToList(), tk);
         await db.SaveChangesAsync(tk);
         return count;
     }
@@ -184,7 +188,7 @@ public static class PurchasingEndpoints
             ListExport.FileAsync(http, db, "purchase-orders", (page, size) => ListAsync(db, f, page, size, ct, ListExport.MaxRows), ct))
             .RequirePermission(Permissions.PurchasingView);
 
-        g.MapGet("/{id:guid}", async (Guid id, HttpContext http, CmmsDbContext db, PermissionService perms, CancellationToken ct) =>
+        g.MapGet("/{id:guid}", async (Guid id, HttpContext http, CmmsDbContext db, PermissionService perms, AccessService access, CancellationToken ct) =>
         {
             var o = await db.PurchaseOrders.AsNoTracking().Include(x => x.Supplier).Include(x => x.Site).Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (o is null) return Results.NotFound();
@@ -194,6 +198,11 @@ public static class PurchasingEndpoints
             var stores = await db.Stores.AsNoTracking().Where(x => storeIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Code, ct);
             var woIds = o.Lines.Where(l => l.WorkOrderId is not null).Select(l => l.WorkOrderId!.Value).ToList();
             var wos = await db.WorkOrders.AsNoTracking().Where(w => woIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => w.Number, ct);
+            var orderType = o.OrderTypeId is { } otid ? await db.OrderTypes.AsNoTracking().Where(t => t.Id == otid).Select(t => new { t.Id, t.Code, t.Name }).FirstOrDefaultAsync(ct) : null;
+            var requestLineIds = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
+            var requests = await db.PurchaseRequestLines.AllSites().AsNoTracking().Where(l => requestLineIds.Contains(l.Id))
+                .Select(l => new { l.Id, RequestId = l.PurchaseRequestId, Number = db.PurchaseRequests.AllSites().Where(r => r.Id == l.PurchaseRequestId).Select(r => r.Number).FirstOrDefault() })
+                .ToDictionaryAsync(l => l.Id, ct);
             var receipts = await db.StockTransactions.AsNoTracking().Where(t => t.PurchaseOrderId == id && t.Type == StockTransactionType.Receipt).OrderByDescending(t => t.CreatedAt)
                 .Select(t => new { t.Id, t.Date, t.PurchaseOrderLineId, t.Part!.PartNumber, StoreCode = t.Store!.Code, t.Quantity, t.UnitCost, t.Reference, t.BatchNumber, t.CreatedByName }).ToListAsync(ct);
             var mine = await perms.GetAsync(UserId(http));
@@ -201,17 +210,25 @@ public static class PurchasingEndpoints
             var totalBase = PurchaseOrderMath.TotalInBase(o);
             var canApproveAmount = limit is null || totalBase <= limit;
             var hasReceipts = o.Lines.Any(l => l.QuantityReceived > 0);
+            // Approval levels (0.16.0): the panel, and who may sign; approving a draft isn't offered when levels would apply.
+            var approval = await PurchaseApprovals.PanelAsync(db, perms, access, o, UserId(http), ct);
+            var byLevels = approval.Waiting;
+            var iCanSign = approval.ICanSign;
+            var draftNeedsLevels = o.Status == PurchaseOrderStatus.Draft && (await PurchaseApprovals.LevelsForAsync(db, o, ct)).Count > 0;
             return Results.Ok(new
             {
                 o.Id, o.Number, o.Status, o.SiteId, SiteName = o.Site!.Name, o.SupplierId, Supplier = new { o.Supplier!.Id, o.Supplier.Code, o.Supplier.Name, o.Supplier.ContactName, o.Supplier.Email, o.Supplier.Phone, o.Supplier.Address, o.Supplier.City, o.Supplier.Country, o.Supplier.TaxNumber },
                 o.OrderDate, o.ExpectedDate, o.RequestedBy, o.Currency, o.ExchangeRate, o.PaymentTerms, o.ShippingMethod, o.DeliverTo, o.SupplierQuoteRef, o.TaxPercent, o.ShippingCost, o.Notes,
-                o.SubmittedAt, o.ApprovedAt, o.ApprovedByName, o.CancelledAt, o.CancelReason, o.CreatedAt, o.LegacyRef,
+                o.SubmittedAt, o.ApprovedAt, o.ApprovedByName, o.CancelledAt, o.CancelReason, o.CreatedAt, o.LegacyRef, o.OrderTypeId, OrderType = orderType,
                 Lines = o.Lines.OrderBy(l => l.LineNumber).Select(l => new
                 {
                     l.Id, l.LineNumber, l.PartId, PartNumber = l.PartId is { } p ? parts.GetValueOrDefault(p)?.PartNumber : null, IsShelfItem = l.PartId is { } p2 && (parts.GetValueOrDefault(p2)?.IsShelfItem ?? false),
                     l.Description, l.UnitOfMeasure, l.Quantity, l.UnitPrice, l.DiscountPercent, l.NetUnitPrice, l.LineTotal, l.QuantityReceived, Outstanding = Math.Max(l.Quantity - l.QuantityReceived, 0),
                     l.StoreId, StoreCode = l.StoreId is { } sid ? stores.GetValueOrDefault(sid) : null, l.WorkOrderId, WorkOrderNumber = l.WorkOrderId is { } wid ? wos.GetValueOrDefault(wid) : null, l.AccountCode,
+                    l.PurchaseRequestLineId,
+                    Request = l.PurchaseRequestLineId is { } rl && requests.GetValueOrDefault(rl) is { } rq ? new { Id = rq.RequestId, rq.Number } : null,
                 }),
+                Approval = approval.View,
                 Totals = new { Subtotal = PurchaseOrderMath.Subtotal(o), Tax = PurchaseOrderMath.Tax(o), o.ShippingCost, Total = PurchaseOrderMath.Total(o), TotalInBase = totalBase },
                 Receipts = receipts,
                 IsOverdue = Receivable.Contains(o.Status) && o.ExpectedDate < Today,
@@ -219,9 +236,12 @@ public static class PurchasingEndpoints
                 {
                     Edit = o.Status == PurchaseOrderStatus.Draft && mine.Contains(Permissions.PurchasingCreate),
                     Submit = o.Status == PurchaseOrderStatus.Draft && mine.Contains(Permissions.PurchasingCreate),
-                    Approve = o.Status is PurchaseOrderStatus.Draft or PurchaseOrderStatus.Submitted && mine.Contains(Permissions.PurchasingApprove) && canApproveAmount,
-                    ApprovalLimitExceeded = o.Status is PurchaseOrderStatus.Draft or PurchaseOrderStatus.Submitted && mine.Contains(Permissions.PurchasingApprove) && !canApproveAmount,
-                    Reject = o.Status == PurchaseOrderStatus.Submitted && mine.Contains(Permissions.PurchasingApprove),
+                    Approve = byLevels ? iCanSign
+                        : o.Status is PurchaseOrderStatus.Draft or PurchaseOrderStatus.Submitted && !draftNeedsLevels && mine.Contains(Permissions.PurchasingApprove) && canApproveAmount,
+                    ApprovalLimitExceeded = !byLevels && !draftNeedsLevels && o.Status is PurchaseOrderStatus.Draft or PurchaseOrderStatus.Submitted
+                        && mine.Contains(Permissions.PurchasingApprove) && !canApproveAmount,
+                    Reject = byLevels ? iCanSign : o.Status == PurchaseOrderStatus.Submitted && mine.Contains(Permissions.PurchasingApprove),
+                    RestartApproval = byLevels && mine.Contains(Permissions.PurchasingApprove),
                     Receive = Receivable.Contains(o.Status) && mine.Contains(Permissions.PurchasingReceive),
                     Close = o.Status is PurchaseOrderStatus.PartiallyReceived or PurchaseOrderStatus.Received && mine.Contains(Permissions.PurchasingApprove),
                     Cancel = o.Status is PurchaseOrderStatus.Draft or PurchaseOrderStatus.Submitted or PurchaseOrderStatus.Approved && !hasReceipts
@@ -248,8 +268,10 @@ public static class PurchasingEndpoints
             var v = await ValidatePoAsync(i, db, ct);
             if (!v.IsValid) return v.Problem();
             if (i.RowVersion is not null) db.Entry(o).Property(x => x.RowVersion).OriginalValue = i.RowVersion.ToVersion();
+            var before = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
             await ApplyPoAsync(db, o, i, ct);
             await db.SaveChangesAsync(ct);
+            if (before.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, before, ct); await db.SaveChangesAsync(ct); }
             return Results.Ok(new { o.Id });
         }).RequirePermission(Permissions.PurchasingCreate);
 
@@ -258,27 +280,38 @@ public static class PurchasingEndpoints
             var o = await db.PurchaseOrders.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (o is null) return Results.NotFound();
             if (o.Status != PurchaseOrderStatus.Draft) throw new DomainException("Only draft purchase orders can be deleted. Cancel it instead.");
+            var requested = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
             db.PurchaseOrders.Remove(o);
             await db.SaveChangesAsync(ct);
+            if (requested.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, requested, ct); await db.SaveChangesAsync(ct); } // their requests: back to order
             return Results.NoContent();
         }).RequirePermission(Permissions.PurchasingCreate);
 
-        g.MapPost("/{id:guid}/submit", async (Guid id, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/submit", async (Guid id, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, PermissionService perms, AccessService access, CancellationToken ct) =>
         {
             var o = await LoadAsync(db, id, ct);
             Require(o, PurchaseOrderStatus.Draft);
             await RequireReadyAsync(db, o, ct);
-            o.Status = PurchaseOrderStatus.Submitted; o.SubmittedAt = DateTimeOffset.UtcNow;
-            await mail.PoSubmittedAsync(db, ctx, o, ct);
+            o.Status = PurchaseOrderStatus.Submitted; o.SubmittedAt = DateTimeOffset.UtcNow; o.SubmittedById = ctx.UserId;
+            // Approval levels (0.16.0): the levels this order needs are copied onto it and their first signers told; else today's rule.
+            if (!await PurchaseApprovals.StartAsync(db, ctx, perms, access, mail, o, ct)) await mail.PoSubmittedAsync(db, ctx, o, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { o.Id, o.Status });
         }).RequirePermission(Permissions.PurchasingCreate);
 
-        g.MapPost("/{id:guid}/approve", async (Guid id, HttpContext http, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/approve", async (Guid id, HttpContext http, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, PermissionService perms, AccessService access,
+            CancellationToken ct) =>
         {
             var o = await LoadAsync(db, id, ct);
             Require(o, PurchaseOrderStatus.Draft, PurchaseOrderStatus.Submitted);
             await RequireReadyAsync(db, o, ct);
+            if (await PurchaseApprovals.SigningAsync(db, o, ct))
+            {
+                await PurchaseApprovals.SignAsync(db, ctx, perms, access, mail, id, approve: true, null, ct);
+                return Results.Ok(new { o.Id, (await db.PurchaseOrders.AsNoTracking().FirstAsync(x => x.Id == id, ct)).Status });
+            }
+            if (o.Status == PurchaseOrderStatus.Draft && (await PurchaseApprovals.LevelsForAsync(db, o, ct)).Count > 0)
+                throw new DomainException("Submit the order for approval first.");
             var limit = await db.Users.Where(u => u.Id == UserId(http)).Select(u => u.PurchaseApprovalLimit).FirstOrDefaultAsync(ct);
             var total = PurchaseOrderMath.TotalInBase(o);
             if (limit is not null && total > limit) throw new DomainException($"This order ({total:N2}) is above your approval limit of {limit:N2}.");
@@ -289,16 +322,30 @@ public static class PurchasingEndpoints
             return Results.Ok(new { o.Id, o.Status });
         }).RequirePermission(Permissions.PurchasingApprove);
 
-        g.MapPost("/{id:guid}/reject", async (Guid id, ReasonInput i, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/reject", async (Guid id, ReasonInput i, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, PermissionService perms, AccessService access,
+            CancellationToken ct) =>
         {
             var o = await LoadAsync(db, id, ct);
             Require(o, PurchaseOrderStatus.Submitted);
+            if (await PurchaseApprovals.SigningAsync(db, o, ct))
+            {
+                await PurchaseApprovals.SignAsync(db, ctx, perms, access, mail, id, approve: false, i.Reason, ct);
+                return Results.Ok(new { o.Id, Status = PurchaseOrderStatus.Draft });
+            }
             if (i.Reason.Clean() is not { } reason) return new Validator().Required("reason", i.Reason, "Reason").Problem();
             o.Status = PurchaseOrderStatus.Draft; o.SubmittedAt = null;
             o.Notes = $"{o.Notes}{(o.Notes is null ? "" : "\n")}Returned by {ctx.UserName} on {Today:yyyy-MM-dd}: {reason}";
             await mail.PoDecidedAsync(db, ctx, o, approved: false, reason, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { o.Id, o.Status });
+        }).RequirePermission(Permissions.PurchasingApprove);
+
+        // Approval levels (0.16.0): a new round from today's levels, for when an approver left or the levels changed.
+        g.MapPost("/{id:guid}/restart-approval", async (Guid id, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, PermissionService perms, AccessService access,
+            CancellationToken ct) =>
+        {
+            await PurchaseApprovals.RestartAsync(db, ctx, perms, access, mail, id, ct);
+            return Results.Ok(new { Id = id });
         }).RequirePermission(Permissions.PurchasingApprove);
 
         g.MapPost("/{id:guid}/cancel", async (Guid id, ReasonInput i, HttpContext http, CmmsDbContext db, PermissionService perms, CancellationToken ct) =>
@@ -311,6 +358,8 @@ public static class PurchasingEndpoints
             if (i.Reason.Clean() is not { } reason) return new Validator().Required("reason", i.Reason, "Reason").Problem();
             o.Status = PurchaseOrderStatus.Cancelled; o.CancelledAt = DateTimeOffset.UtcNow; o.CancelReason = reason;
             await db.SaveChangesAsync(ct);
+            var requested = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
+            if (requested.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, requested, ct); await db.SaveChangesAsync(ct); } // their requests: back to order
             return Results.Ok(new { o.Id, o.Status });
         }).RequirePermission(Permissions.PurchasingView);
 
@@ -369,7 +418,8 @@ public static class PurchasingEndpoints
                 {
                     var sup = suppliers[grp.Key.SupplierId];
                     var input = new PoInput(grp.Key.SiteId, sup.Id, Today, null, ctx.UserName, sup.Currency, null, sup.PaymentTerms, null, null, null, null, 0,
-                        "Created from the purchase proposal.", grp.Select(r => new LineInput(null, r.Part.Id, r.Part.Name, r.Part.UnitOfMeasure, r.Quantity, r.Price, 0, r.Store.Id, null, null)).ToList());
+                        "Created from the purchase proposal.", grp.Select(r => new LineInput(null, r.Part.Id, r.Part.Name, r.Part.UnitOfMeasure, r.Quantity, r.Price, 0, r.Store.Id, null, null)).ToList(),
+                        await DefaultTypeAsync(db, "PARTS", tk));
                     var o = await CreateDraftAsync(db, ctx, input, tk);
                     list.Add(new { o.Id, o.Number, Supplier = sup.Name, Lines = o.Lines.Count });
                 }
@@ -379,7 +429,11 @@ public static class PurchasingEndpoints
         }).RequirePermission(Permissions.PurchasingCreate);
     }
 
-    private static async Task<PurchaseOrder> CreateDraftAsync(CmmsDbContext db, ITenantContext ctx, PoInput i, CancellationToken ct)
+    /// <summary>The organization's active order type with this code (0.16.0), for orders CMX makes itself.</summary>
+    internal static async Task<Guid?> DefaultTypeAsync(CmmsDbContext db, string code, CancellationToken ct) =>
+        await db.OrderTypes.Where(t => t.Code == code && t.IsActive).Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
+
+    internal static async Task<PurchaseOrder> CreateDraftAsync(CmmsDbContext db, ITenantContext ctx, PoInput i, CancellationToken ct)
     {
         var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var (sequence, prefix) = Numbering.For(settings, await db.Sites.AllSites().AsNoTracking().FirstOrDefaultAsync(s => s.Id == i.SiteId, ct), NumberKind.PurchaseOrder);
@@ -397,7 +451,7 @@ public static class PurchasingEndpoints
         o.SiteId = i.SiteId!.Value; o.SupplierId = i.SupplierId!.Value; o.OrderDate = i.OrderDate ?? Today; o.ExpectedDate = i.ExpectedDate; o.RequestedBy = i.RequestedBy.Clean();
         o.Currency = i.Currency.Clean()?.ToUpperInvariant() ?? o.Currency; o.ExchangeRate = i.ExchangeRate is > 0 ? i.ExchangeRate.Value : 1;
         o.PaymentTerms = i.PaymentTerms.Clean(); o.ShippingMethod = i.ShippingMethod.Clean(); o.DeliverTo = i.DeliverTo.Clean(); o.SupplierQuoteRef = i.SupplierQuoteRef.Clean();
-        o.TaxPercent = i.TaxPercent ?? o.TaxPercent; o.ShippingCost = i.ShippingCost; o.Notes = i.Notes.Clean();
+        o.TaxPercent = i.TaxPercent ?? o.TaxPercent; o.ShippingCost = i.ShippingCost; o.Notes = i.Notes.Clean(); o.OrderTypeId = i.OrderTypeId;
         var partIds = i.Lines.Where(l => l.PartId is not null).Select(l => l.PartId!.Value).ToList();
         var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
         foreach (var gone in o.Lines.Where(l => i.Lines.All(x => x.Id != l.Id)).ToList()) o.Lines.Remove(gone);
@@ -406,10 +460,17 @@ public static class PurchasingEndpoints
         {
             var line = x.Id is { } lid ? o.Lines.FirstOrDefault(l => l.Id == lid) : null;
             var part = x.PartId is { } pid ? parts[pid] : null;
-            if (line is null) { line = new PurchaseOrderLine { Description = "" }; o.Lines.Add(line); }
+            if (line is null)
+            {
+                line = new PurchaseOrderLine { Description = "" };
+                o.Lines.Add(line);
+                // A new line on a saved order: its id is preset, so EF would take it for an existing row (as 0.12.1 found for PM task parts).
+                if (db.Entry(o).State is not (EntityState.Added or EntityState.Detached)) db.Entry(line).State = EntityState.Added;
+            }
             line.LineNumber = n++; line.PartId = x.PartId; line.Description = x.Description.Clean() ?? part?.Name ?? "";
             line.UnitOfMeasure = x.UnitOfMeasure.Clean() ?? part?.UnitOfMeasure; line.Quantity = x.Quantity; line.UnitPrice = x.UnitPrice; line.DiscountPercent = x.DiscountPercent;
             line.StoreId = x.StoreId; line.WorkOrderId = x.WorkOrderId; line.AccountCode = x.AccountCode.Clean();
+            if (x.PurchaseRequestLineId is not null) line.PurchaseRequestLineId = x.PurchaseRequestLineId; // edits keep the line's request (0.16.0)
         }
     }
 
@@ -420,6 +481,7 @@ public static class PurchasingEndpoints
             .When(i.ExchangeRate is <= 0, "exchangeRate", "Exchange rate must be positive.").When(i.ExpectedDate < i.OrderDate, "expectedDate", "Expected date is before the order date.");
         if (i.SiteId is null || !await db.Sites.AnyAsync(x => x.Id == i.SiteId, ct)) v.Add("siteId", "Choose a site.");
         if (i.SupplierId is null || !await db.Suppliers.AnyAsync(x => x.Id == i.SupplierId && x.IsActive, ct)) v.Add("supplierId", "Choose an active supplier.");
+        if (i.OrderTypeId is { } type && !await db.OrderTypes.AnyAsync(t => t.Id == type && t.IsActive, ct)) v.Add("orderTypeId", "Choose an active order type.");
         var lines = i.Lines ?? [];
         for (var k = 0; k < lines.Count; k++)
         {

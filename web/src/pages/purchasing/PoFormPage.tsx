@@ -22,6 +22,7 @@ type Line = {
 type Values = {
   siteId: string | null; supplierId: string | null; orderDate: Date | string | null; expectedDate: Date | string | null; requestedBy: string; currency: string; exchangeRate: number | '';
   paymentTerms: string; shippingMethod: string; deliverTo: string; supplierQuoteRef: string; taxPercent: number | ''; shippingCost: number | ''; notes: string; lines: Line[];
+  orderTypeId: string | null;
 };
 const blankLine = (): Line => ({ partId: null, part: null, description: '', unitOfMeasure: '', quantity: 1, unitPrice: '', discountPercent: 0, storeId: null, workOrderId: null, workOrder: null, accountCode: '' });
 const n = (v: number | '') => (v === '' ? 0 : v);
@@ -40,9 +41,10 @@ export function PoFormPage() {
   const { data: suppliers } = useQuery({ queryKey: ['suppliers', 'lookup'], queryFn: () => get<SupplierLookup[]>('/suppliers/lookup') });
   const { data: h } = useHierarchy();
   const { data: stores } = useStores();
+  const { data: orderTypes } = useQuery({ queryKey: ['order-types'], queryFn: () => get<{ id: string; code: string; name: string; isActive: boolean }[]>('/order-types') });
   const form = useForm<Values>({
     initialValues: { siteId: null, supplierId: null, orderDate: new Date(), expectedDate: null, requestedBy: me?.user.fullName ?? '', currency: base, exchangeRate: 1, paymentTerms: '', shippingMethod: '',
-      deliverTo: '', supplierQuoteRef: '', taxPercent: me?.tenant.settings.defaultTaxPercent ?? 0, shippingCost: 0, notes: '', lines: [blankLine()] },
+      deliverTo: '', supplierQuoteRef: '', taxPercent: me?.tenant.settings.defaultTaxPercent ?? 0, shippingCost: 0, notes: '', lines: [blankLine()], orderTypeId: null },
   });
   const seeded = useRef(false);
   useEffect(() => {
@@ -50,7 +52,7 @@ export function PoFormPage() {
     form.setValues({
       siteId: po.siteId, supplierId: po.supplierId, orderDate: po.orderDate, expectedDate: po.expectedDate ?? null, requestedBy: po.requestedBy ?? '', currency: po.currency, exchangeRate: po.exchangeRate,
       paymentTerms: po.paymentTerms ?? '', shippingMethod: po.shippingMethod ?? '', deliverTo: po.deliverTo ?? '', supplierQuoteRef: po.supplierQuoteRef ?? '', taxPercent: po.taxPercent, shippingCost: po.shippingCost,
-      notes: po.notes ?? '', lines: po.lines.map((l) => ({ id: l.id, partId: l.partId ?? null, part: l.partId ? { id: l.partId, partNumber: l.partNumber ?? '', name: l.description } : null, description: l.description,
+      notes: po.notes ?? '', orderTypeId: po.orderTypeId ?? null, lines: po.lines.map((l) => ({ id: l.id, partId: l.partId ?? null, part: l.partId ? { id: l.partId, partNumber: l.partNumber ?? '', name: l.description } : null, description: l.description,
         unitOfMeasure: l.unitOfMeasure ?? '', quantity: l.quantity, unitPrice: l.unitPrice, discountPercent: l.discountPercent, storeId: l.storeId ?? null, workOrderId: l.workOrderId ?? null,
         workOrder: l.workOrderId ? { id: l.workOrderId, number: l.workOrderNumber ?? '' } : null, accountCode: l.accountCode ?? '' })),
     });
@@ -80,6 +82,13 @@ export function PoFormPage() {
     })();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [h, stores]);
+  // New orders are Parts orders unless someone picks another type (0.16.0).
+  useEffect(() => {
+    if (editing || !orderTypes || form.getValues().orderTypeId) return;
+    const parts = orderTypes.find((x) => x.code === 'PARTS' && x.isActive);
+    if (parts) form.setFieldValue('orderTypeId', parts.id);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [orderTypes]);
   const onSupplier = (sid: string | null) => {
     form.setFieldValue('supplierId', sid);
     const s = suppliers?.find((x) => x.id === sid);
@@ -99,6 +108,7 @@ export function PoFormPage() {
       rowVersion: po?.rowVersion,
       lines: x.lines.filter((l) => l.partId || l.description.trim()).map((l) => ({ id: l.id ?? null, partId: l.partId, description: l.description, unitOfMeasure: l.unitOfMeasure, quantity: n(l.quantity),
         unitPrice: n(l.unitPrice), discountPercent: n(l.discountPercent), storeId: l.partId ? l.storeId : null, workOrderId: l.workOrderId, accountCode: l.accountCode })),
+      orderTypeId: x.orderTypeId,
     };
     try {
       const r = editing ? await put<{ id: string }>(`/purchase-orders/${id}`, body) : await post<{ id: string; number: string }>('/purchase-orders', body);
@@ -126,6 +136,10 @@ export function PoFormPage() {
               <DateInput label={t('po.orderDate')} required valueFormat="DD MMM YYYY" {...form.getInputProps('orderDate')} />
               <DateInput label={t('po.expected')} valueFormat="DD MMM YYYY" clearable {...form.getInputProps('expectedDate')} />
               <TextInput label={t('po.requestedBy')} {...form.getInputProps('requestedBy')} />
+            </SimpleGrid>
+            <SimpleGrid cols={{ base: 1, sm: 3 }} mt="sm">
+              <Select label={t('approvals.orderType')} clearable data={(orderTypes ?? []).filter((x) => x.isActive || x.id === v.orderTypeId).map((x) => ({ value: x.id, label: x.name }))}
+                {...form.getInputProps('orderTypeId')} />
             </SimpleGrid>
           </Card>
         </Grid.Col>

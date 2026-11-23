@@ -1,16 +1,17 @@
 import { useState } from 'react';
 import { Badge, Button, Card, Drawer, Group, Modal, Select, Stack, Table, Text, TextInput } from '@mantine/core';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
-import { Link } from 'react-router';
+import { Link, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
-import { IconPlus } from '@tabler/icons-react';
+import { IconPlus, IconShoppingCartPlus } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { confirmAction } from '@/components/confirm';
+import { draftFromShortages } from '@/pages/purchasing/purchaseRequests';
 import { fmtDate, fmtDateTime, fmtQty, notifyError, notifySuccess } from '@/components/utils';
 
-type Store = { id: string; code: string; name: string };
+type Store = { id: string; code: string; name: string; siteId: string };
 type Shortage = { workOrderId: string; workOrderNumber: string; dueDate?: string | null; partId: string; partNumber: string; partName: string; unitOfMeasure: string; storeId: string; storeCode: string; short: number };
 type CountRow = { id: string; name: string; storeId: string; storeCode: string; status: 'Open' | 'Posted' | 'Cancelled'; lines: number; createdAt: string; postedAt?: string | null };
 type CountDetail = {
@@ -23,16 +24,41 @@ const useStores = () => useQuery({ queryKey: ['stores'], queryFn: () => get<Stor
 /** Inventory › Short for work (0.11.0): planned parts on open work that their store can't cover — the store keeper's list. */
 export function ShortagesTab() {
   const { t } = useTranslation();
+  const { can } = useAuth();
+  const navigate = useNavigate();
+  const qc = useQueryClient();
   const [store, setStore] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Shortage[]>([]);
+  const [busy, setBusy] = useState(false);
   const { data: stores } = useStores();
   const { data, isFetching } = useQuery({ queryKey: ['shortages', store], queryFn: () => get<Shortage[]>('/inventory/shortages', { storeId: store ?? undefined }) });
+  const mayRequest = can(P.purchasingRequest);
+  // 0.16.0: what's short becomes draft purchase requests, one per site, each line for its work order.
+  const request = async () => {
+    setBusy(true);
+    try {
+      const siteOf = new Map((stores ?? []).map((s) => [s.id, s.siteId]));
+      const drafts = draftFromShortages(selected.map((r) => ({ partId: r.partId, storeId: r.storeId, siteId: siteOf.get(r.storeId) ?? '', short: r.short, workOrderId: r.workOrderId,
+        dueDate: r.dueDate ?? null, description: r.partName, unitOfMeasure: r.unitOfMeasure }))).filter((d) => d.siteId);
+      const made: { id: string; number: string }[] = [];
+      for (const d of drafts) made.push(await post<{ id: string; number: string }>('/purchase-requests', { siteId: d.siteId, lines: d.lines }));
+      notifySuccess(t('pr.requestsCreated', { count: made.length, numbers: made.map((m) => m.number).join(', ') }));
+      setSelected([]);
+      await qc.invalidateQueries({ queryKey: ['purchase-requests'] });
+      if (made.length === 1) navigate(`/purchasing/requests/${made[0].id}`);
+    } catch (e) { notifyError(e); } finally { setBusy(false); }
+  };
   return (
     <Stack>
       <Group justify="space-between">
         <Text c="dimmed" fz="sm">{t('invPhone.shortagesHint')}</Text>
-        <Select placeholder={t('invPhone.allStores')} clearable w={220} data={(stores ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))} value={store} onChange={setStore} />
+        <Group gap="xs">
+          {mayRequest && <Button leftSection={<IconShoppingCartPlus size={16} />} disabled={!selected.length} loading={busy} onClick={request}>{t('pr.requestSelected', { count: selected.length })}</Button>}
+          <Select placeholder={t('invPhone.allStores')} clearable w={220} data={(stores ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))} value={store} onChange={setStore} />
+        </Group>
       </Group>
       <DataTable withTableBorder borderRadius="sm" minHeight={140} fetching={isFetching} records={data ?? []} idAccessor={(r) => `${r.workOrderId}-${r.partId}-${r.storeId}`}
+        selectedRecords={mayRequest ? selected : undefined} onSelectedRecordsChange={mayRequest ? setSelected : undefined}
         noRecordsText={t('invPhone.noShortages')}
         columns={[
           { accessor: 'workOrderNumber', title: t('wo.number'), render: (r) => <Link to={`/work-orders/${r.workOrderId}`}>{r.workOrderNumber}</Link> },

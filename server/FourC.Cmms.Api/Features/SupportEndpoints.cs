@@ -175,6 +175,8 @@ public static class AttachmentEndpoints
         ["Part"] = (Permissions.InventoryView, Permissions.InventoryManage),
         ["Supplier"] = (Permissions.PurchasingView, Permissions.SuppliersManage),
         ["PurchaseOrder"] = (Permissions.PurchasingView, Permissions.PurchasingCreate),
+        // Purchase requests (0.16.0): anyone who may use requests (checked in AllowedAsync).
+        ["PurchaseRequest"] = (Permissions.PurchasingRequest, Permissions.PurchasingRequest),
     };
 
     // Files are served from the app's own origin, so a file the browser runs as a page (SVG, HTML, any XML) would run
@@ -223,7 +225,7 @@ public static class AttachmentEndpoints
 
         g.MapGet("/", async (string entityType, Guid entityId, CmmsDbContext db, HttpContext http, PermissionService perms, CancellationToken ct) =>
         {
-            if (!await AllowedAsync(http, perms, entityType, edit: false)) return Results.Forbid();
+            if (!await AllowedAsync(http, perms, entityType, edit: false, db, entityId)) return Results.Forbid();
             if (!await SiteAccess.VisibleAsync(db, entityType, entityId, ct)) return Results.NotFound();
             var rows = await db.Attachments.AsNoTracking().Where(a => a.EntityType == entityType && a.EntityId == entityId).OrderByDescending(a => a.CreatedAt).ToListAsync(ct);
             var userIds = rows.Select(r => r.CreatedById).OfType<Guid>().Distinct().ToList();
@@ -237,7 +239,7 @@ public static class AttachmentEndpoints
             var form = await req.ReadFormAsync(ct);
             var entityType = form["entityType"].ToString();
             if (!Guid.TryParse(form["entityId"], out var entityId)) throw new DomainException("Missing entity id.");
-            if (!await AllowedAsync(req.HttpContext, perms, entityType, edit: true)) return Results.Forbid();
+            if (!await AllowedAsync(req.HttpContext, perms, entityType, edit: true, db, entityId)) return Results.Forbid();
             var exists = entityType switch
             {
                 "Asset" => await db.Assets.AnyAsync(a => a.Id == entityId, ct),
@@ -249,6 +251,7 @@ public static class AttachmentEndpoints
                 "Part" => await db.Parts.AnyAsync(a => a.Id == entityId, ct),
                 "Supplier" => await db.Suppliers.AnyAsync(a => a.Id == entityId, ct),
                 "PurchaseOrder" => await db.PurchaseOrders.AnyAsync(a => a.Id == entityId, ct),
+                "PurchaseRequest" => await db.PurchaseRequests.AnyAsync(a => a.Id == entityId, ct),
                 _ => false,
             };
             if (!exists) return Results.NotFound();
@@ -276,7 +279,7 @@ public static class AttachmentEndpoints
         {
             var a = await db.Attachments.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (a is null || !await SiteAccess.VisibleAsync(db, a.EntityType, a.EntityId, ct)) return Results.NotFound();
-            if (!await AllowedAsync(http, perms, a.EntityType, edit: false)) return Results.Forbid();
+            if (!await AllowedAsync(http, perms, a.EntityType, edit: false, db, a.EntityId)) return Results.Forbid();
             var stream = await storage.OpenReadAsync(a.StorageKey, ct);
             if (stream is null) return Results.NotFound();
             // Decided from the stored type at every request, so files uploaded before types were checked are covered too.
@@ -299,7 +302,7 @@ public static class AttachmentEndpoints
         {
             var a = await db.Attachments.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (a is null || !await SiteAccess.VisibleAsync(db, a.EntityType, a.EntityId, ct)) return Results.NotFound();
-            if (!await AllowedAsync(http, perms, a.EntityType, edit: true)) return Results.Forbid();
+            if (!await AllowedAsync(http, perms, a.EntityType, edit: true, db, a.EntityId)) return Results.Forbid();
             if (!a.ContentType.StartsWith("image/")) throw new DomainException("Only images can be the primary photo.");
             await db.Attachments.Where(x => x.EntityType == a.EntityType && x.EntityId == a.EntityId && x.Id != id).ExecuteUpdateAsync(s => s.SetProperty(x => x.IsPrimaryImage, false), ct);
             a.IsPrimaryImage = true;
@@ -311,7 +314,7 @@ public static class AttachmentEndpoints
         {
             var a = await db.Attachments.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (a is null || !await SiteAccess.VisibleAsync(db, a.EntityType, a.EntityId, ct)) return Results.NotFound();
-            if (!await AllowedAsync(http, perms, a.EntityType, edit: true)) return Results.Forbid();
+            if (!await AllowedAsync(http, perms, a.EntityType, edit: true, db, a.EntityId)) return Results.Forbid();
             db.Attachments.Remove(a);
             await db.SaveChangesAsync(ct);
             await storage.DeleteAsync(a.StorageKey, ct);
@@ -319,10 +322,11 @@ public static class AttachmentEndpoints
         });
     }
 
-    private static async Task<bool> AllowedAsync(HttpContext http, PermissionService perms, string entityType, bool edit)
+    private static async Task<bool> AllowedAsync(HttpContext http, PermissionService perms, string entityType, bool edit, CmmsDbContext db, Guid entityId)
     {
         if (!EntityPermissions.TryGetValue(entityType, out var p)) return false;
         var userId = Guid.Parse(http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
+        if (entityType == "PurchaseRequest") return await PurchaseRequestEndpoints.FilesAllowedAsync(db, await perms.GetAsync(userId), userId, entityId, edit);
         return (await perms.GetAsync(userId)).Contains(edit ? p.Edit : p.View);
     }
 }
@@ -356,6 +360,7 @@ public static class SiteAccess
             "PmSchedule" => await db.PmSchedules.AnyAsync(x => x.Id == id, ct),
             "Store" => await db.Stores.AnyAsync(x => x.Id == id, ct),
             "PurchaseOrder" => await db.PurchaseOrders.AnyAsync(x => x.Id == id, ct),
+            "PurchaseRequest" => await db.PurchaseRequests.AnyAsync(x => x.Id == id, ct),
             "Team" => await db.Teams.AnyAsync(x => x.Id == id, ct),
             "Meter" => await db.Meters.AnyAsync(x => x.Id == id, ct),
             "DowntimeEvent" => await db.DowntimeEvents.AnyAsync(x => x.Id == id, ct),

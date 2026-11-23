@@ -16,6 +16,8 @@ import { PoStatusBadge } from '@/components/InventoryBadges';
 import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtPrice, fmtQty, handleFormError, notifyError, notifySuccess } from '@/components/utils';
 import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
+import { RequestsTab } from './RequestsTab';
+import { draftFromShortages } from './purchaseRequests';
 
 const VIEWS: { key: string; statuses: PurchaseOrderStatus[] | null }[] = [
   { key: 'open', statuses: ['Draft', 'Submitted', 'Approved', 'PartiallyReceived'] }, { key: 'Draft', statuses: ['Draft'] }, { key: 'Submitted', statuses: ['Submitted'] },
@@ -26,21 +28,28 @@ export function PurchasingPage() {
   const { t } = useTranslation();
   const { can } = useAuth();
   const navigate = useNavigate();
-  const { tab = 'orders' } = useParams();
+  const orders = can(P.purchasingView);
+  const requests = can(P.purchasingRequest) || can(P.purchasingApproveRequests) || orders;
+  const { tab = orders ? 'orders' : 'requests' } = useParams();
   return (
     <>
       <PageHeader title={t('po.title')} subtitle={t('po.subtitle')}
-        actions={can(P.purchasingCreate) && <Button leftSection={<IconPlus size={16} />} component={Link} to="/purchasing/orders/new">{t('po.new')}</Button>} />
+        actions={<Group gap="xs">
+          {can(P.purchasingRequest) && <Button variant={can(P.purchasingCreate) ? 'default' : 'filled'} leftSection={<IconPlus size={16} />} component={Link} to="/purchasing/requests/new">{t('pr.new')}</Button>}
+          {can(P.purchasingCreate) && <Button leftSection={<IconPlus size={16} />} component={Link} to="/purchasing/orders/new">{t('po.new')}</Button>}
+        </Group>} />
       <Tabs value={tab} onChange={(v) => navigate(v === 'orders' ? '/purchasing' : `/purchasing/${v}`)} mb="md" keepMounted={false}>
         <Tabs.List>
-          <Tabs.Tab value="orders">{t('po.tabs.orders')}</Tabs.Tab>
+          {orders && <Tabs.Tab value="orders">{t('po.tabs.orders')}</Tabs.Tab>}
+          {requests && <Tabs.Tab value="requests">{t('po.tabs.requests')}</Tabs.Tab>}
           {can(P.inventoryView) && <Tabs.Tab value="proposal">{t('po.tabs.proposal')}</Tabs.Tab>}
-          <Tabs.Tab value="suppliers">{t('po.tabs.suppliers')}</Tabs.Tab>
+          {orders && <Tabs.Tab value="suppliers">{t('po.tabs.suppliers')}</Tabs.Tab>}
         </Tabs.List>
       </Tabs>
-      {tab === 'orders' && <OrdersTab />}
+      {tab === 'orders' && orders && <OrdersTab />}
+      {tab === 'requests' && requests && <RequestsTab />}
       {tab === 'proposal' && <ProposalTab />}
-      {tab === 'suppliers' && <SuppliersTab />}
+      {tab === 'suppliers' && orders && <SuppliersTab />}
     </>
   );
 }
@@ -53,7 +62,7 @@ function OrdersTab() {
   const { p, set } = lp;
   const view = p('view') || 'open';
   const statuses = VIEWS.find((v) => v.key === view)?.statuses ?? null;
-  const q = { search: p('search'), supplierId: p('supplierId'), siteId: p('siteId'), overdue: p('overdue') };
+  const q = { search: p('search'), supplierId: p('supplierId'), siteId: p('siteId'), overdue: p('overdue'), orderTypeId: p('orderTypeId') };
   const listQuery = { ...q, status: statuses ?? undefined, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
   const { data, isFetching } = useQuery({
     queryKey: ['purchase-orders', listQuery, lp.page, lp.pageSize], placeholderData: (prev) => prev,
@@ -61,7 +70,8 @@ function OrdersTab() {
   });
   const { data: suppliers } = useQuery({ queryKey: ['suppliers', 'lookup'], queryFn: () => get<SupplierLookup[]>('/suppliers/lookup') });
   const { data: h } = useHierarchy();
-  const filtersActive = ['search', 'supplierId', 'siteId', 'overdue'].some((k) => p(k));
+  const { data: orderTypes } = useQuery({ queryKey: ['order-types'], queryFn: () => get<{ id: string; code: string; name: string; isActive: boolean }[]>('/order-types') });
+  const filtersActive = ['search', 'supplierId', 'siteId', 'overdue', 'orderTypeId'].some((k) => p(k));
   const allColumns: ListColumn<PoListItem>[] = [
     { accessor: 'number', title: t('po.number'), sortable: true, noWrap: true,
       render: (x) => <Anchor component={Link} to={`/purchasing/orders/${x.id}`} fw={600} fz="sm" onClick={(e) => e.stopPropagation()}>{x.number}</Anchor> },
@@ -77,13 +87,15 @@ function OrdersTab() {
     { accessor: 'site', title: terms.site, noWrap: true, export: [{ key: 'siteName' }], render: (x) => x.siteName },
     { accessor: 'requestedBy', title: t('po.requestedBy'), noWrap: true, render: (x) => x.requestedBy ?? '—' },
     { accessor: 'lines', title: t('po.lines'), textAlign: 'right', noWrap: true },
+    { accessor: 'orderType', title: t('approvals.orderType'), noWrap: true, export: [{ key: 'orderTypeName' }], render: (x) => x.orderTypeName ?? '—' },
   ];
-  const cols = useListColumns('purchase-orders', allColumns, { defaultHidden: ['site', 'requestedBy', 'lines'] });
+  const cols = useListColumns('purchase-orders', allColumns, { defaultHidden: ['site', 'requestedBy', 'lines', 'orderType'] });
   const chips: FilterDef[] = [
     { keys: ['search'], label: t('common.search') },
     { keys: ['supplierId'], label: t('po.supplier'), format: ([v]) => suppliers?.find((x) => x.id === v)?.name ?? '…' },
     { keys: ['siteId'], label: terms.site, format: ([v]) => h?.sites.find((x) => x.id === v)?.name ?? '…' },
     { keys: ['overdue'], label: t('po.overdueOnly'), format: () => t('common.yes') },
+    { keys: ['orderTypeId'], label: t('approvals.orderType'), format: ([v]) => orderTypes?.find((x) => x.id === v)?.name ?? '…' },
   ];
   return (
     <>
@@ -92,6 +104,7 @@ function OrdersTab() {
           <TextInput placeholder={t('po.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 240 }} />
           <Select placeholder={t('po.supplier')} data={(suppliers ?? []).map((x) => ({ value: x.id, label: x.name }))} value={p('supplierId') || null} onChange={(v) => set({ supplierId: v })} clearable searchable w={{ base: '100%', xs: 200 }} />
           <Select placeholder={terms.site} data={(h?.sites ?? []).map((x) => ({ value: x.id, label: x.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v })} clearable w={{ base: '100%', xs: 180 }} />
+          <Select placeholder={t('approvals.orderType')} data={(orderTypes ?? []).map((x) => ({ value: x.id, label: x.name }))} value={p('orderTypeId') || null} onChange={(v) => set({ orderTypeId: v })} clearable w={{ base: '100%', xs: 150 }} />
           <Checkbox label={t('po.overdueOnly')} checked={!!p('overdue')} onChange={(e) => set({ overdue: e.currentTarget.checked ? 'true' : null })} />
           {filtersActive && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')}
             onClick={() => lp.replaceAll(view !== 'open' ? `view=${view}` : '')}><IconFilterOff size={16} /></ActionIcon></Tooltip>}
@@ -138,6 +151,21 @@ function ProposalTab() {
   const missingSupplier = selected.filter((r) => !sup(r));
   const total = selected.reduce((a, r) => a + qty(r) * r.unitPrice, 0);
   const groups = new Set(selected.map((r) => `${sup(r)}|${r.siteId}`)).size;
+  // People who may ask but not order (0.16.0): the chosen lines become draft purchase requests, one per site.
+  const requestIt = async () => {
+    setBusy(true);
+    try {
+      const drafts = draftFromShortages(selected.map((r) => ({ partId: r.partId, storeId: r.storeId, siteId: r.siteId, short: qty(r), description: r.partName, unitOfMeasure: r.unitOfMeasure })));
+      const price = new Map(selected.map((r) => [`${r.partId}|${r.storeId}`, r.unitPrice]));
+      const made: { id: string; number: string }[] = [];
+      for (const d of drafts)
+        made.push(await post<{ id: string; number: string }>('/purchase-requests', { siteId: d.siteId,
+          lines: d.lines.map((l) => ({ ...l, estimatedUnitPrice: price.get(`${l.partId}|${l.storeId}`) ?? null })) }));
+      notifySuccess(t('pr.requestsCreated', { count: made.length, numbers: made.map((m) => m.number).join(', ') }));
+      await qc.invalidateQueries({ queryKey: ['purchase-requests'] });
+      if (made.length === 1) navigate(`/purchasing/requests/${made[0].id}`);
+    } catch (e) { notifyError(e); } finally { setBusy(false); }
+  };
   const create = async () => {
     setBusy(true);
     try {
@@ -158,6 +186,8 @@ function ProposalTab() {
           <Text fz="sm" c="dimmed" style={{ flex: '1 1 300px' }}>{t('po.proposalHint')}</Text>
           {can(P.purchasingCreate) && <Button leftSection={<IconShoppingCartPlus size={16} />} disabled={!selected.length || missingSupplier.length > 0} loading={busy} onClick={create}>
             {selected.length ? t('po.createOrders', { count: groups, total: fmtPrice(total, currency) }) : t('po.selectLines')}</Button>}
+          {!can(P.purchasingCreate) && can(P.purchasingRequest) && <Button leftSection={<IconShoppingCartPlus size={16} />} disabled={!selected.length} loading={busy} onClick={requestIt}>
+            {t('pr.requestSelected', { count: selected.length })}</Button>}
         </Group>
         {missingSupplier.length > 0 && <Alert color="orange" mt="sm" p="xs">{t('po.chooseSupplierFor', { parts: missingSupplier.map((r) => r.partNumber).join(', ') })}</Alert>}
       </Card>

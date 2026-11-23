@@ -51,6 +51,12 @@ public class PurchaseOrder : TenantEntity
     public string? ApprovedByName { get; set; }
     public DateTimeOffset? CancelledAt { get; set; }
     public string? CancelReason { get; set; }
+    /// <summary>Parts, Services, Capital… (0.16.0); approval levels can differ by type.</summary>
+    public Guid? OrderTypeId { get; set; }
+    /// <summary>Who submitted it for approval (0.16.0): with approval levels they can't sign it themselves.</summary>
+    public Guid? SubmittedById { get; set; }
+    /// <summary>How many times it was submitted under approval levels (0 = never); steps and signatures belong to a round.</summary>
+    public int ApprovalRound { get; set; }
     public List<PurchaseOrderLine> Lines { get; set; } = [];
 }
 
@@ -72,6 +78,8 @@ public class PurchaseOrderLine : Entity
     /// <summary>Direct purchase for a work order: received cost is charged to it.</summary>
     public Guid? WorkOrderId { get; set; }
     public string? AccountCode { get; set; }
+    /// <summary>The purchase request line this order line was made from (0.16.0).</summary>
+    public Guid? PurchaseRequestLineId { get; set; }
 
     public decimal NetUnitPrice => Math.Round(UnitPrice * (1 - DiscountPercent / 100m), 4);
     public decimal LineTotal => Math.Round(Quantity * NetUnitPrice, 2);

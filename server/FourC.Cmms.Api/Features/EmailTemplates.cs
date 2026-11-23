@@ -11,6 +11,8 @@ public sealed record WorkOrderFacts(string Number, string Title, string Priority
 
 /// <summary>Facts about a purchase order for internal e-mails.</summary>
 public sealed record PoFacts(string Number, string? Supplier, string Total, string? RequestedBy);
+/// <summary>A purchase request in an e-mail (0.16.0).</summary>
+public sealed record PrFacts(string Number, string? Site, string? RequestedBy, string Lines, string? Estimate);
 
 /// <summary>A purchase order as the supplier sees it.</summary>
 public sealed record PoDocument(string Number, string OrderDate, string? ExpectedDate, string? DeliverTo, string? PaymentTerms, string? QuoteRef, string? Contact,
@@ -77,6 +79,10 @@ public static class EmailTemplates
         $"Approve purchase order {po.Number} ({po.Total})", "A purchase order is waiting for your approval",
         [("Order", po.Number), ("Supplier", po.Supplier), ("Total", po.Total), ("Requested by", po.RequestedBy)], null, link, "Review the order");
 
+    public static EmailContent PoApprovalWaiting(string org, PoFacts po, string level, string? link) => Layout(org,
+        $"Sign purchase order {po.Number} ({po.Total})", "A purchase order is waiting for your signature",
+        [("Order", po.Number), ("Supplier", po.Supplier), ("Total", po.Total), ("Requested by", po.RequestedBy), ("Level", level)], null, link, "Review the order");
+
     public static EmailContent PoApproved(string org, PoFacts po, string? link) => Layout(org,
         $"Purchase order {po.Number} approved", "Your purchase order was approved",
         [("Order", po.Number), ("Supplier", po.Supplier), ("Total", po.Total)], "You can now send it to the supplier.", link, "Open the order");
@@ -84,6 +90,26 @@ public static class EmailTemplates
     public static EmailContent PoRejected(string org, PoFacts po, string reason, string? link) => Layout(org,
         $"Purchase order {po.Number} returned", "Your purchase order was returned for changes",
         [("Order", po.Number), ("Supplier", po.Supplier), ("Total", po.Total)], $"Reason: {reason}", link, "Open the order");
+
+    // ---------------- Purchase requests (0.16.0) ----------------
+
+    private static IEnumerable<(string, string?)> PrLines(PrFacts r) =>
+        [("Request", r.Number), ("Site", r.Site), ("Requested by", r.RequestedBy), ("Items", r.Lines), ("Estimate", r.Estimate)];
+
+    public static EmailContent PrSubmitted(string org, PrFacts r, string? link) => Layout(org,
+        $"Approve purchase request {r.Number}", "A purchase request is waiting for approval", PrLines(r), null, link, "Review the request");
+
+    public static EmailContent PrApproved(string org, PrFacts r, string? link) => Layout(org,
+        $"Purchase request {r.Number} approved", "Your purchase request was approved", PrLines(r), "Purchasing will order it.", link, "Open the request");
+
+    public static EmailContent PrRejected(string org, PrFacts r, string reason, string? link) => Layout(org,
+        $"Purchase request {r.Number} returned", "Your purchase request was returned", PrLines(r), $"Reason: {reason}", link, "Open the request");
+
+    public static EmailContent PrOrdered(string org, PrFacts r, IReadOnlyList<string> orders, string? link) => Layout(org,
+        $"Purchase request {r.Number} ordered", "Items you asked for were ordered", [.. PrLines(r), ("Orders", string.Join(", ", orders))], null, link, "Open the request");
+
+    public static EmailContent PrReceived(string org, PrFacts r, IReadOnlyList<string> lines, string? link) => Layout(org,
+        $"Items arrived for purchase request {r.Number}", "Items you asked for have arrived", PrLines(r), string.Join("\n", lines), link, "Open the request");
 
     public static EmailContent PartsReceived(string org, WorkOrderFacts w, string poNumber, IReadOnlyList<string> lines, string? link) => Layout(org,
         $"Parts arrived for {w.Number} {w.Title}", "Parts ordered for your job have arrived",

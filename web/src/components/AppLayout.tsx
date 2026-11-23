@@ -13,12 +13,12 @@ import { SiteSwitch } from '@/components/SiteSwitch';
 import { EmailPreferences } from '@/components/EmailPreferences';
 import {
   IconLayoutDashboard, IconMapPin, IconBox, IconClipboardText, IconTool, IconCalendarRepeat, IconPackage, IconShoppingCart,
-  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices, IconCloudOff, IconCalendarWeek, IconStack2 } from '@tabler/icons-react';
+  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices, IconCloudOff, IconCalendarWeek, IconStack2, IconSignature } from '@tabler/icons-react';
 import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { handleFormError, notifySuccess } from './utils';
 
-type Item = { label: string; to: string; icon: typeof IconBox; perm?: string; soon?: boolean };
+type Item = { label: string; to: string; icon: typeof IconBox; perm?: string; anyPerm?: string[]; soon?: boolean };
 
 export function AppLayout() {
   const { t } = useTranslation();
@@ -48,7 +48,8 @@ export function AppLayout() {
     ] },
     { title: t('nav.materials'), items: [
       { label: t('nav.inventory'), to: '/inventory', icon: IconPackage, perm: P.inventoryView },
-      { label: t('nav.purchasing'), to: '/purchasing', icon: IconShoppingCart, perm: P.purchasingView },
+      { label: t('nav.purchasing'), to: '/purchasing', icon: IconShoppingCart, anyPerm: [P.purchasingView, P.purchasingRequest, P.purchasingApproveRequests] },
+      { label: t('nav.myApprovals'), to: '/approvals', icon: IconSignature, anyPerm: [P.purchasingApprove, P.purchasingApproveRequests] },
     ] },
     { title: t('nav.insights'), items: [
       { label: t('nav.reports'), to: '/reports', icon: IconChartBar, perm: P.reportsView },
@@ -122,7 +123,7 @@ export function AppLayout() {
       <AppShell.Navbar p="xs">
         <ScrollArea>
           {sections.map((s, i) => {
-            const items = s.items.filter((it) => !it.perm || can(it.perm));
+            const items = s.items.filter((it) => (!it.perm || can(it.perm)) && (!it.anyPerm || it.anyPerm.some((x) => can(x))));
             if (!items.length) return null;
             return (
               <div key={i}>

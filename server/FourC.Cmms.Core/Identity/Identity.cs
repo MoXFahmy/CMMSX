@@ -80,6 +80,10 @@ public static class Permissions
     public const string PurchasingCreate = "purchasing.create";
     public const string PurchasingApprove = "purchasing.approve";
     public const string PurchasingReceive = "purchasing.receive";
+    /// <summary>Ask for parts or services to be bought (0.16.0).</summary>
+    public const string PurchasingRequest = "purchasing.request";
+    /// <summary>Approve or reject purchase requests (0.16.0).</summary>
+    public const string PurchasingApproveRequests = "purchasing.approveRequests";
     public const string SuppliersManage = "suppliers.manage";
     public const string ReportsView = "reports.view";
     public const string UsersManage = "users.manage";
@@ -118,8 +122,10 @@ public static class Permissions
         new(InventoryTransact, "Inventory", "Receive, issue, return, adjust, transfer and count stock"),
         new(PurchasingView, "Purchasing", "View suppliers and purchase orders"),
         new(PurchasingCreate, "Purchasing", "Create, edit and submit purchase orders"),
-        new(PurchasingApprove, "Purchasing", "Approve purchase orders (up to the user's approval limit)"),
+        new(PurchasingApprove, "Purchasing", "Approve purchase orders (by approval levels, or up to the user's limit)"),
         new(PurchasingReceive, "Purchasing", "Receive goods against purchase orders"),
+        new(PurchasingRequest, "Purchasing", "Raise purchase requests"),
+        new(PurchasingApproveRequests, "Purchasing", "Approve purchase requests"),
         new(SuppliersManage, "Purchasing", "Manage suppliers"),
         new(ReportsView, "Reports", "View reports and KPIs"),
         new(UsersManage, "Administration", "Manage users and roles"),

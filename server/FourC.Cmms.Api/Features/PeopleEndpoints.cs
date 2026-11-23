@@ -29,6 +29,9 @@ public static class PeopleEndpoints
             async (db, id, ct) => await db.WorkOrders.AllSites().AnyAsync(w => w.RemedyId == id, ct), null, null);
         MapLookup(api, "/cancel-reasons", "Cancel reasons", db => db.CancelReasons, () => new CancelReason { Code = "", Name = "" }, Permissions.SettingsManage,
             async (db, id, ct) => await db.WorkOrders.AllSites().AnyAsync(w => w.CancelReasonId == id, ct), null, null);
+        // Kinds of purchase order (0.16.0): approval levels can differ by type.
+        MapLookup(api, "/order-types", "Order types", db => db.OrderTypes, () => new FourC.Cmms.Core.Purchasing.OrderType { Code = "", Name = "" }, Permissions.SettingsManage,
+            async (db, id, ct) => await db.PurchaseOrders.AllSites().AnyAsync(o => o.OrderTypeId == id, ct) || await db.ApprovalLevels.AnyAsync(l => l.OrderTypeId == id, ct), null, null);
 
         var g = api.MapGroup("/employees").WithTags("Employees");
         g.MapGet("/", async (CmmsDbContext db, string? search, Guid? tradeId, bool? activeOnly, CancellationToken ct) =>

@@ -97,6 +97,7 @@ public static class SiteEndpoints
     {
         AssetNumberPrefix = s.AssetNumberPrefix.Clean(), WorkOrderNumberPrefix = s.WorkOrderNumberPrefix.Clean(),
         WorkRequestNumberPrefix = s.WorkRequestNumberPrefix.Clean(), PurchaseOrderNumberPrefix = s.PurchaseOrderNumberPrefix.Clean(),
+        PurchaseRequestNumberPrefix = s.PurchaseRequestNumberPrefix.Clean(), PurchaseRequestRecipientIds = (s.PurchaseRequestRecipientIds ?? []).Distinct().ToList(),
         WorkingHours = s.WorkingHours is { Count: > 0 } h ? h.OrderBy(d => d.Day).ToList() : null, DefaultStoreId = s.DefaultStoreId,
         RequestRecipientIds = (s.RequestRecipientIds ?? []).Distinct().ToList(), EmailSenderName = s.EmailSenderName.Clean(),
     };
@@ -112,10 +113,14 @@ public static class SiteEndpoints
             v.MaxLength("settings.assetNumberPrefix", st.AssetNumberPrefix, "Prefix", 20).MaxLength("settings.workOrderNumberPrefix", st.WorkOrderNumberPrefix, "Prefix", 20)
                 .MaxLength("settings.workRequestNumberPrefix", st.WorkRequestNumberPrefix, "Prefix", 20)
                 .MaxLength("settings.purchaseOrderNumberPrefix", st.PurchaseOrderNumberPrefix, "Prefix", 20)
+                .MaxLength("settings.purchaseRequestNumberPrefix", st.PurchaseRequestNumberPrefix, "Prefix", 20)
                 .MaxLength("settings.emailSenderName", st.EmailSenderName, "Sender name", 100);
             if (WorkingHours.Problem(st.WorkingHours) is { } hours) v.Add("settings.workingHours", hours);
             if (st.DefaultStoreId is { } store && (id is null || !await db.Stores.AnyAsync(s => s.Id == store && s.SiteId == id && s.IsActive, ct)))
                 v.Add("settings.defaultStoreId", "Choose one of this site's stores.");
+            var buyers = (st.PurchaseRequestRecipientIds ?? []).Distinct().ToList();
+            if (buyers.Count > 0 && await db.Users.CountAsync(u => buyers.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != buyers.Count)
+                v.Add("settings.purchaseRequestRecipientIds", "Choose active users.");
             var who = (st.RequestRecipientIds ?? []).Distinct().ToList();
             if (who.Count > 0 && await db.Users.CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != who.Count)
                 v.Add("settings.requestRecipientIds", "Choose active users.");
