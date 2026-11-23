@@ -95,6 +95,11 @@ public static class ImportSheets
             I("leadTimeDays", "Lead time (days)", "مدة التوريد (أيام)"), Y("critical", "Critical", "حرجة"), Y("shelfLife", "Shelf-life item", "صنف له صلاحية"),
             Y("allowNegative", "Allow negative stock", "السماح بالرصيد السالب"), T("preferredSupplierCode", "Preferred supplier code", "رمز المورد المفضل"),
             T("barcode", "Barcode", "الباركود"), Notes, Active]),
+        // The supplier catalogue (0.18.0): one row per part and supplier; rows are added and changed, never removed (that's on the part page).
+        new("SupplierCatalogue", "Supplier catalogue", "كتالوج الموردين", [T("partNumber", "Part number", "رقم القطعة", true), T("supplierCode", "Supplier code", "رمز المورد", true),
+            T("supplierPartNumber", "Supplier's part number", "رقم القطعة لدى المورد"), T("packName", "Pack", "العبوة"), N("packSize", "Pieces per pack", "عدد القطع في العبوة"),
+            N("packPrice", "Price per pack", "سعر العبوة"), T("currency", "Currency", "العملة"), N("discountPercent", "Discount %", "الخصم %"),
+            I("leadTimeDays", "Lead time (days)", "مدة التوريد (أيام)"), I("minPacks", "Minimum packs", "الحد الأدنى من العبوات"), T("notes", "Notes", "ملاحظات")]),
         new("AssetParts", "Asset parts", "قطع الأصول", [T("assetNumber", "Asset number", "رقم الأصل", true), T("partNumber", "Part number", "رقم القطعة", true),
             N("quantity", "Quantity", "الكمية", true), T("note", "Note", "ملاحظة")]),
         new("Stock", "Stock", "المخزون", [T("partNumber", "Part number", "رقم القطعة", true), T("storeCode", "Store code", "رمز المخزن", true),

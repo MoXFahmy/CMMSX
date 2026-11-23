@@ -88,7 +88,7 @@ public class ImportValuesTests
     [Fact]
     public void Sheets_are_found_by_english_or_arabic_name()
     {
-        Assert.Equal(20, ImportSheets.All.Count);
+        Assert.Equal(21, ImportSheets.All.Count); // 0.18.0 added the Supplier catalogue
         Assert.Equal("AssetParts", ImportSheets.Find("قطع الأصول")?.Key);
         Assert.Equal("Assets", ImportSheets.Find(" assets ")?.Key);
         Assert.Equal("Assets", ImportSheets.Find("الأصول")?.Key);

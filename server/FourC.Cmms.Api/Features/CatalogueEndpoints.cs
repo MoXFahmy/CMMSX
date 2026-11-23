@@ -183,13 +183,16 @@ public static class CatalogueEndpoints
         else if (part.PreferredSupplierId == row.SupplierId) part.PreferredSupplierId = null;
     }
 
-    private static async Task<Validator> ValidateAsync(CmmsDbContext db, Part part, SupplierPartInput i, SupplierPart? existing, CancellationToken ct)
-    {
-        var v = new Validator().When(i.PackSize <= 0, "packSize", "Pieces per pack must be more than 0.")
+    /// <summary>The checks that need no database (shared with the import).</summary>
+    internal static Validator Rules(SupplierPartInput i) => new Validator().When(i.PackSize <= 0, "packSize", "Pieces per pack must be more than 0.")
             .When(i.PackPrice < 0, "packPrice", "The price can't be below 0.").When(i.DiscountPercent is < 0 or > 100, "discountPercent", "Discount must be between 0 and 100%.")
             .When(i.MinPacks < 1, "minPacks", "Minimum order must be at least 1 pack.").When(i.Currency.Clean() is { Length: not 3 }, "currency", "Use a 3-letter currency code.")
             .When(i.LeadTimeDays is < 0 or > 3650, "leadTimeDays", "Lead time must be between 0 and 3650 days.")
             .MaxLength("supplierPartNumber", i.SupplierPartNumber, "Supplier's part number", 100).MaxLength("packName", i.PackName, "Pack", 100).MaxLength("notes", i.Notes, "Notes", 1000);
+
+    private static async Task<Validator> ValidateAsync(CmmsDbContext db, Part part, SupplierPartInput i, SupplierPart? existing, CancellationToken ct)
+    {
+        var v = Rules(i);
         if (existing is null || existing.SupplierId != i.SupplierId)
         {
             if (!await db.Suppliers.AnyAsync(s => s.Id == i.SupplierId && s.IsSupplier && s.IsActive, ct)) v.Add("supplierId", "Choose a company with the Supplier role.");

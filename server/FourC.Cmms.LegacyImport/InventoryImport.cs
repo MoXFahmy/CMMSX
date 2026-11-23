@@ -98,6 +98,26 @@ static class InventoryImport
                 p.AlternatePartIds = p.AlternatePartIds.Union(grp.Select(a => parts.GetValueOrDefault(K(a.Alternate))?.Id).OfType<Guid>().Where(id => id != p.Id)).ToList();
         await db.SaveChangesAsync();
 
+        // ---------- Supplier catalogue (0.18.0) ----------
+        // Every part–supplier pair 4CSQL lists, and each part's own supplier. 4CSQL keeps no prices or packs there: a pack of 1 in the part's
+        // unit, no price, the company's currency (else the organization's), the part's lead time. Re-imports add only missing rows.
+        var baseCurrency = (await db.Tenants.IgnoreQueryFilters().AsNoTracking().FirstAsync(t => t.Id == tenantId)).Settings.Currency.ToUpperInvariant();
+        var haveRows = (await db.SupplierParts.IgnoreQueryFilters().Where(r => r.TenantId == tenantId && !r.IsDeleted).Select(r => new { r.PartId, r.SupplierId }).ToListAsync())
+            .Select(r => (r.PartId, r.SupplierId)).ToHashSet();
+        var pairs = m.PartSuppliers.Select(x => (Part: parts.GetValueOrDefault(K(x.Part)), Supplier: suppliers.GetValueOrDefault(K(x.Supplier))))
+            .Concat(parts.Values.Where(p => p.PreferredSupplierId is not null).Select(p => (Part: (Part?)p, Supplier: suppliers.Values.FirstOrDefault(v => v.Id == p.PreferredSupplierId))));
+        foreach (var (part, supplier) in pairs)
+        {
+            if (part is null || supplier is null || !haveRows.Add((part.Id, supplier.Id))) continue;
+            db.SupplierParts.Add(new SupplierPart
+            {
+                TenantId = tenantId, PartId = part.Id, SupplierId = supplier.Id, PackName = part.UnitOfMeasure, PackSize = 1, MinPacks = 1, LeadTimeDays = part.LeadTimeDays,
+                Currency = string.IsNullOrWhiteSpace(supplier.Currency) ? baseCurrency : supplier.Currency.Trim().ToUpperInvariant(),
+            });
+            report.Created("Catalogue row");
+        }
+        await db.SaveChangesAsync();
+
         // ---------- Store levels ----------
         var levels = (await db.StockLevels.IgnoreQueryFilters().Where(l => l.TenantId == tenantId).ToListAsync()).ToDictionary(l => (l.PartId, l.StoreId));
         StockLevel Level(Part p, Store s)

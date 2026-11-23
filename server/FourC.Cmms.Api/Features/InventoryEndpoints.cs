@@ -402,12 +402,27 @@ public static class InventoryEndpoints
                     (o.Status == PurchaseOrderStatus.Draft || o.Status == PurchaseOrderStatus.Submitted || OpenPo.Contains(o.Status)))).Sum(x => (decimal?)((x.Quantity - x.QuantityReceived) * x.PackSize)) ?? 0,
             }).ToListAsync(ct);
             var suppliers = await db.Suppliers.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.Name, ct);
+            // The supplier catalogue (0.18.0): each part's active rows from active suppliers, preferred first, and who it was last received from.
+            var partIds = rows.Select(r => r.PartId).Distinct().ToList();
+            var catalogue = (await db.SupplierParts.AsNoTracking().Where(c => partIds.Contains(c.PartId) && c.IsActive && c.Supplier!.IsActive && c.Supplier.IsSupplier)
+                    .Select(c => new { c.PartId, c.SupplierId, SupplierName = c.Supplier!.Name, c.PackName, c.PackSize, c.PackPrice, c.Currency, c.MinPacks, c.DiscountPercent })
+                    .ToListAsync(ct)).ToLookup(c => c.PartId);
+            var lastFrom = (await db.StockTransactions.AllSites().AsNoTracking()
+                    .Where(t => partIds.Contains(t.PartId) && t.Type == StockTransactionType.Receipt && t.SupplierId != null)
+                    .GroupBy(t => t.PartId).Select(g => new { PartId = g.Key, SupplierId = g.OrderByDescending(t => t.Date).ThenByDescending(t => t.CreatedAt).First().SupplierId })
+                    .ToListAsync(ct)).ToDictionary(x => x.PartId, x => x.SupplierId);
+            Guid? Suggested(Guid partId, Guid? preferred) =>
+                preferred ?? (catalogue[partId].Select(c => c.SupplierId).Distinct().Count() == 1 ? (Guid?)catalogue[partId].First().SupplierId : null) ?? lastFrom.GetValueOrDefault(partId);
             // A level is proposed when available stock plus what is on order is at or below its re-order level.
             return rows.Where(r => r.QuantityOnHand - r.Reserved + r.OnOrder <= r.ReorderLevel).Select(r =>
             {
+                var supplier = Suggested(r.PartId, r.PreferredSupplierId);
+                var options = catalogue[r.PartId].OrderByDescending(c => c.SupplierId == r.PreferredSupplierId).ThenBy(c => c.SupplierName)
+                    .Select(c => new { c.SupplierId, c.SupplierName, c.PackName, c.PackSize, c.PackPrice, c.Currency, c.MinPacks, c.DiscountPercent, IsPreferred = c.SupplierId == r.PreferredSupplierId })
+                    .ToList();
                 return new { r.PartId, r.PartNumber, r.PartName, r.UnitOfMeasure, r.IsCritical, r.StoreId, r.StoreCode, r.SiteId, r.QuantityOnHand, r.Reserved, Available = r.QuantityOnHand - r.Reserved,
                     r.OnOrder, r.MinLevel, r.ReorderLevel, r.MaxLevel,
-                    SuggestedQuantity = SuggestedQuantity(r.QuantityOnHand, r.Reserved, r.OnOrder, r.ReorderQuantity, r.MaxLevel), r.PreferredSupplierId, SupplierName = r.PreferredSupplierId is { } sid ? suppliers.GetValueOrDefault(sid) : null, UnitPrice = r.Price,
+                    SuggestedQuantity = SuggestedQuantity(r.QuantityOnHand, r.Reserved, r.OnOrder, r.ReorderQuantity, r.MaxLevel), PreferredSupplierId = supplier, SupplierName = supplier is { } sid ? suppliers.GetValueOrDefault(sid) : null, Catalogue = options, UnitPrice = r.Price,
                     BelowMinimum = r.QuantityOnHand < r.MinLevel };
             }).OrderByDescending(r => r.IsCritical).ThenByDescending(r => r.BelowMinimum).ThenBy(r => r.PartNumber);
         }).RequirePermission(Permissions.InventoryView);
