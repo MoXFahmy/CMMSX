@@ -4,6 +4,13 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.18.1] - 2026-11-23
+
+### Fixed
+- **0.18.0 never went live:** the 4CSQL migration tool didn't compile (its supplier catalogue step declared the
+  organization's currency twice), so the server build failed and the deploy was skipped. It builds again; 0.18.1 carries
+  everything listed under 0.18.0.
+
 ## [0.18.0] - 2026-11-23
 
 Supplier catalogue and purchase units. A part can be bought from several suppliers, each with their own part number,
