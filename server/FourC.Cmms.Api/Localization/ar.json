@@ -1044,5 +1044,15 @@
  "Contract": "العقد",
  "Ends": "ينتهي",
  "Last day to stop the renewal": "آخر يوم لإيقاف التجديد",
- "Open the contract": "فتح العقد"
+ "Open the contract": "فتح العقد",
+ "Choose a contract.": "اختر عقدًا.",
+ "This contract is for another site.": "هذا العقد لموقع آخر.",
+ "This contract has ended.": "انتهى هذا العقد.",
+ "Contracts": "العقود",
+ "Currency": "العملة",
+ "Spend": "الإنفاق",
+ "Upcoming": "قادم",
+ "Expired": "منتهٍ",
+ "Terminated": "مُنهى",
+ "Each contract's value, spend and completed work in the period against what it expects.": "قيمة كل عقد وإنفاقه والأعمال المنجزة في الفترة مقارنة بالمتوقع."
 }

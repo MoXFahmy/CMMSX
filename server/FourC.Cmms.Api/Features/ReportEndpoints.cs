@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Security.Claims;
 using FourC.Cmms.Api.Infrastructure;
+using FourC.Cmms.Core.Contracts;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Inventory;
@@ -63,6 +64,7 @@ public static class ReportEndpoints
         new("failure-pareto", "Reliability", "Failure analysis", "Breakdowns by failure code — the few causes behind most of the downtime.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("maintenance-costs", "Costs", "Maintenance costs", "Labour, parts and other costs booked in the period.", Permissions.WorkOrdersView,
             [Range, SiteP, GroupBy("asset", ("asset", "Asset"), ("site", "Site"), ("category", "Asset category"), ("type", "Work type"), ("trade", "Trade"), ("team", "Team"), ("technician", "Technician"), ("month", "Month"))]),
+        new("contracts", "Costs", "Contracts", "Each contract's value, spend and completed work in the period against what it expects.", Permissions.ReportsView, [Range, SiteP]),
         new("asset-work-history", "Assets", "Asset work history", "Every work order on one asset in the period, with its codes, hours, cost and downtime.", Permissions.WorkOrdersView,
             [AssetP, Range, ComponentsP]),
         new("assets-by-category", "Assets", "Asset register summary", "Assets by category and status with purchase and current value.", Permissions.AssetsView, [SiteP]),
@@ -121,6 +123,7 @@ public static class ReportEndpoints
                 "out-of-limits" => await OutOfLimitsAsync(db, a, ct),
                 "downtime" => await DowntimeLogAsync(db, a, ct),
                 "maintenance-costs" => await CostsAsync(db, a, ct),
+                "contracts" => await ContractsAsync(db, a, ct),
                 "assets-by-category" => await AssetsAsync(db, a, ct),
                 "stock-valuation" => await ValuationAsync(db, a, ct),
                 "stock-reorder" => await ReorderAsync(db, a, ct),
@@ -716,6 +719,47 @@ public static class ReportEndpoints
             rows, new Chart("bar", "group", ["labor", "parts", "other", "contractor"], true),
             [new("Total cost", R2(total), "currency"), new("Labour", R2(lines.Sum(x => x.Labor)), "currency"), new("Parts", R2(lines.Sum(x => x.Parts)), "currency"), new("Other", R2(lines.Sum(x => x.Other)), "currency"),
              new("Contractor", R2(lines.Sum(x => x.Contractor)), "currency")]);
+    }
+
+    /// <summary>
+    /// Contracts (0.17.0): each contract overlapping the period with the value of its periods overlapping it (in the contract's currency), the
+    /// spend on work orders naming it dated in the period (base currency), the work orders completed in the period and the expected number.
+    /// With a site: that site's and organization-wide contracts, counting only that site's work.
+    /// </summary>
+    private static async Task<ReportResult> ContractsAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
+    {
+        var today = await ContractEndpoints.TodayAsync(db, ct);
+        var q = db.Contracts.AsNoTracking().Where(c => c.StartDate <= a.To && (c.EndDate >= a.From || (c.AutoRenew && c.TerminatedOn == null)));
+        if (a.SiteId is { } site) q = q.Where(c => c.SiteId == null || c.SiteId == site);
+        var contracts = await q.Include(c => c.Periods).OrderBy(c => c.Number)
+            .Select(c => new { c, Company = c.Supplier!.Name, Type = c.ContractType == null ? null : c.ContractType.Name }).ToListAsync(ct);
+        var ids = contracts.Select(x => x.c.Id).ToList();
+        var wos = db.WorkOrders.AsNoTracking().Where(w => w.ContractId != null && ids.Contains(w.ContractId.Value));
+        if (a.SiteId is { } s2) wos = wos.Where(w => w.SiteId == s2);
+        var contractOf = await wos.Select(w => new { w.Id, w.ContractId, w.CompletedAt }).ToListAsync(ct);
+        var byWork = contractOf.ToDictionary(w => w.Id, w => w.ContractId!.Value);
+        var spend = (await CostLinesAsync(db, wos, a.From, a.To, ct)).GroupBy(l => byWork[l.WoId])
+            .ToDictionary(g => g.Key, g => g.Sum(l => l.Total));
+        var (start, end) = (Start(a.From), End(a.To));
+        var completed = contractOf.Where(w => w.CompletedAt >= start && w.CompletedAt < end).GroupBy(w => w.ContractId!.Value).ToDictionary(g => g.Key, g => g.Count());
+        var rows = contracts.Select(x =>
+        {
+            var c = x.c;
+            var value = c.Periods.Where(p => p.StartDate <= a.To && p.EndDate >= a.From).Sum(p => p.Value ?? 0);
+            // The part of the period the contract runs: from its start to its end (a renewing contract runs on), or the day before termination.
+            var runsTo = c.TerminatedOn is { } t ? t.AddDays(-1) : c.AutoRenew ? a.To : c.EndDate;
+            var (from, to) = (c.StartDate > a.From ? c.StartDate : a.From, runsTo < a.To ? runsTo : a.To);
+            decimal? expected = c.ExpectedWorkOrders is { } n ? ContractTerms.ExpectedIn(n, c.ExpectedPer ?? ExpectedPer.Year, from, to) : null;
+            return Row(("number", c.Number), ("title", c.Title), ("company", x.Company), ("type", x.Type),
+                ("status", Translator.T(ContractTerms.StatusOn(today, c.StartDate, c.EndDate, c.AutoRenew, c.TerminatedOn).ToString())),
+                ("value", R2(value)), ("currency", c.Currency), ("spend", R2(spend.GetValueOrDefault(c.Id))), ("completed", completed.GetValueOrDefault(c.Id)),
+                ("expected", expected), ("contractId", c.Id));
+        }).ToList();
+        return new("contracts", "Contracts", Period(a),
+            [new("number", "Number"), new("title", "Title"), new("company", "Company"), new("type", "Type"), new("status", "Status"), new("value", "Value", "number"),
+             new("currency", "Currency"), new("spend", "Spend", "currency"), new("completed", "Completed", "number"), new("expected", "Expected", "number")],
+            rows, null,
+            [new("Contracts", rows.Count), new("Spend", R2(spend.Values.Sum()), "currency"), new("Completed", completed.Values.Sum())]);
     }
 
     /// <summary>Maintenance costs by technician (0.14.0): each person's labour hours and cost and the work orders they logged hours on; parts and other costs aren't per person.</summary>

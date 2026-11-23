@@ -33,7 +33,7 @@ public static class PmEndpoints
         bool? ManagesTeam = null, bool? OnlyWhenStopped = null, List<Guid>? RecipientIds = null,
         bool? ManagesRules = null, List<Core.Assets.AssetStatus>? SkipStatusesOverride = null, List<DayOfWeek>? NonWorkingDaysOverride = null, bool? NoStackingOverride = null,
         List<AssetTemplateInput>? AssetTemplates = null, List<Guid>? CalendarIds = null, List<ExtraMeterInput>? ExtraMeters = null,
-        MultiAssetMode? MultiAssetMode = null, GroupPlan? GroupPlan = null, int? SpreadParts = null);
+        MultiAssetMode? MultiAssetMode = null, GroupPlan? GroupPlan = null, int? SpreadParts = null, Guid? ContractId = null, bool? ManagesContract = null);
     /// <summary>A meter trigger on top of the PM's own (0.12.0), whichever comes first.</summary>
     public sealed record ExtraMeterInput(Guid MeterId, decimal Interval, decimal? NextDueReading = null);
     /// <summary>A multi-asset PM's asset with its own template (empty = the PM's).</summary>
@@ -201,7 +201,7 @@ public static class PmEndpoints
                 s.Id, s.Code, s.Name, s.Description, s.SiteId, s.LocationId, s.AssetId, Asset = s.Asset is null ? null : new { s.Asset.Id, s.Asset.AssetNumber, s.Asset.Name },
                 Assets = s.Assets.Where(a => a.Asset is not null).OrderBy(a => a.Sequence).Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name, a.PmTaskId }),
                 s.SkipStatusesOverride, s.NonWorkingDaysOverride, s.NoStackingOverride, s.MultiAssetMode, s.GroupPlan, s.SpreadParts, s.SpreadIndex, s.CycleStart,
-                s.TradeId, s.TeamId, s.Priority, s.AssigneeIds, s.RecipientIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, s.PmTask.Name }, s.OnlyWhenStopped,
+                s.TradeId, s.TeamId, s.Priority, s.AssigneeIds, s.RecipientIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, s.PmTask.Name }, s.OnlyWhenStopped, s.ContractId,
                 ExtraTasks = s.ExtraTasks.Select(e => new { e.PmTaskId, e.EveryNth }), s.Type, s.Basis, s.Frequency, s.Unit, s.WeekOfMonth, s.DayOfWeek, s.DayOfMonth,
                 s.WorkPeriodDays, s.WholeMonth, s.LeadDays, s.StartDate, s.NextDueDate, s.LastDueDate, s.LastGeneratedAt, s.GenerationCount,
                 s.MeterId, Meter = s.Meter is null ? null : new { s.Meter.Id, s.Meter.Code, s.Meter.Name, s.Meter.Unit, s.Meter.CurrentReading },
@@ -231,6 +231,8 @@ public static class PmEndpoints
         g.MapPost("/", async (ScheduleInput input, CmmsDbContext db, CancellationToken ct) =>
         {
             var v = await ValidateScheduleAsync(input, null, db, ct);
+            if (input.ManagesContract == true && input.ContractId is { } contract && await ContractEndpoints.ChoiceProblemAsync(db, contract, input.SiteId, ct) is { } problem)
+                v.Add("contractId", problem);
             if (!v.IsValid) return v.Problem();
             var code = input.Code.Clean() ?? await Numbering.NextAsync(db, "PmSchedule", "PM-", 5, n => db.PmSchedules.AllSites().AnyAsync(x => x.Code == n, ct),
                 p => db.PmSchedules.AllSites().Where(x => x.Code.StartsWith(p)).Select(x => x.Code).ToListAsync(ct), ct);
@@ -275,6 +277,8 @@ public static class PmEndpoints
                 input = input with { TeamId = await db.Teams.AllSites().AnyAsync(t => t.Id == keep && (t.SiteId == null || t.SiteId == input.SiteId), ct) ? keep : null };
             var v = await ValidateScheduleAsync(input, id, db, ct, hidden);
             if (coversHidden is not null) v.Add("assetIds", coversHidden);
+            if (input.ManagesContract == true && input.ContractId is { } contract && contract != s.ContractId
+                && await ContractEndpoints.ChoiceProblemAsync(db, contract, input.SiteId, ct) is { } problem) v.Add("contractId", problem);
             v.Merge(ScheduleChangeRules(s, input));
             // Work generated out of order (0.12.0) doesn't count as a generation, but it fixes the mode too.
             if (input.MultiAssetMode is { } mode && mode != s.MultiAssetMode && s.GenerationCount == 0
@@ -837,6 +841,7 @@ public static class PmEndpoints
     {
         s.Description = i.Description.Clean(); s.SiteId = i.SiteId; s.LocationId = i.LocationId; s.AssetId = i.AssetId; s.TradeId = i.TradeId; s.TeamId = i.TeamId; s.Priority = i.Priority;
         if (i.OnlyWhenStopped is { } stopped) s.OnlyWhenStopped = stopped; // left out (older pages, the import): unchanged
+        if (i.ManagesContract == true) s.ContractId = i.ContractId; // the contract (0.17.0), passed to the work it creates
         if (i.RecipientIds is not null) s.RecipientIds = i.RecipientIds.Distinct().ToList(); // left out: unchanged
         if (i.SpreadParts is { } spread && (spread >= 2 ? spread : (int?)null) != s.SpreadParts)
         {

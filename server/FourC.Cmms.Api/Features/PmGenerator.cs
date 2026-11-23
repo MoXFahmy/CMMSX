@@ -285,7 +285,7 @@ public static class PmGenerator
             planned.Add(new WorkOrderPart { PartId = partId, Quantity = qty, StoreId = await Planning.DefaultStoreAsync(db, partId, s.SiteId, ct) });
         return await WorkOrderEndpoints.CreateAsync(db, ctx, input, null, ct, w =>
         {
-            w.PmScheduleId = s.Id; w.PmTaskId = task.Id; w.PmDueDate = due; w.OnlyWhenStopped = s.OnlyWhenStopped; w.RecipientIds = recipients;
+            w.PmScheduleId = s.Id; w.PmTaskId = task.Id; w.PmDueDate = due; w.OnlyWhenStopped = s.OnlyWhenStopped; w.RecipientIds = recipients; w.ContractId = s.ContractId;
             foreach (var p in planned) { p.WorkOrderId = w.Id; db.WorkOrderParts.Add(p); }
             if (round is null) return;
             for (var n = 0; n < round.Count; n++) w.Assets.Add(new WorkOrderAsset { WorkOrderId = w.Id, AssetId = round[n].Id, Sequence = n + 1 });

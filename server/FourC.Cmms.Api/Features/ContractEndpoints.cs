@@ -68,6 +68,27 @@ public static class ContractEndpoints
                 || (a && c.StartDate <= today && (c.EndDate >= today || (c.AutoRenew && c.TerminatedOn == null))))));
     }
 
+    /// <summary>Why a contract can't be newly named on work or a PM at <paramref name="siteId"/>, or null when it can.</summary>
+    internal static async Task<string?> ChoiceProblemAsync(CmmsDbContext db, Guid contractId, Guid siteId, CancellationToken ct)
+    {
+        var c = await db.Contracts.AsNoTracking().Where(x => x.Id == contractId)
+            .Select(x => new { x.SiteId, x.StartDate, x.EndDate, x.AutoRenew, x.TerminatedOn }).FirstOrDefaultAsync(ct);
+        if (c is null) return "Choose a contract.";
+        if (c.SiteId is { } s && s != siteId) return "This contract is for another site.";
+        var status = ContractTerms.StatusOn(await TodayAsync(db, ct), c.StartDate, c.EndDate, c.AutoRenew, c.TerminatedOn);
+        return status is ContractStatus.Expired or ContractStatus.Terminated ? "This contract has ended." : null;
+    }
+
+    /// <summary>The active contract covering <paramref name="assetId"/> ("Covered by CON-00003 · Lift Co"): the one named on the work first, else the lowest number.</summary>
+    internal static async Task<object?> CoveredByAsync(CmmsDbContext db, Guid? assetId, Guid? preferred, CancellationToken ct)
+    {
+        if (assetId is not { } asset) return null;
+        var today = await TodayAsync(db, ct);
+        return await WithStatus(db.Contracts.AsNoTracking().Where(c => c.Assets.Any(a => a.AssetId == asset)), [ContractStatus.Active], today)
+            .OrderBy(c => c.Id == preferred ? 0 : 1).ThenBy(c => c.Number)
+            .Select(c => new { c.Id, c.Number, c.Title, CompanyName = c.Supplier!.Name }).FirstOrDefaultAsync(ct);
+    }
+
     internal static async Task<PagedResult<ContractListItem>> ListAsync(CmmsDbContext db, ContractFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
     {
         var today = await TodayAsync(db, ct);
@@ -109,6 +130,37 @@ public static class ContractEndpoints
         g.MapGet("/export", ([AsParameters] ContractFilter f, HttpContext http, CmmsDbContext db, CancellationToken ct) =>
             ListExport.FileAsync(http, db, "contracts", (page, size) => ListAsync(db, f, page, size, ct, ListExport.MaxRows), ct))
             .RequirePermission(Permissions.ContractsView);
+
+        // The contract picker on work orders and PMs: active and upcoming contracts usable at the site, those covering the asset first.
+        g.MapGet("/options", async (Guid? siteId, Guid? assetId, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var today = await TodayAsync(db, ct);
+            var q = WithStatus(db.Contracts.AsNoTracking(), [ContractStatus.Active, ContractStatus.Upcoming], today);
+            if (siteId is { } site) q = q.Where(c => c.SiteId == null || c.SiteId == site);
+            var list = await q.Select(c => new
+            {
+                c.Id, c.Number, c.Title, CompanyName = c.Supplier!.Name, c.StartDate, c.EndDate, c.AutoRenew, c.TerminatedOn,
+                Covers = assetId != null && c.Assets.Any(a => a.AssetId == assetId),
+            }).ToListAsync(ct);
+            return list.OrderByDescending(c => c.Covers).ThenBy(c => c.Number)
+                .Select(c => new { c.Id, c.Number, c.Title, c.CompanyName, Status = ContractTerms.StatusOn(today, c.StartDate, c.EndDate, c.AutoRenew, c.TerminatedOn), c.Covers });
+        }).RequireAuthorization();
+
+        // An asset's contracts (the asset page's card).
+        api.MapGet("/assets/{id:guid}/contracts", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
+        {
+            if (!await db.Assets.AnyAsync(a => a.Id == id, ct)) return Results.NotFound();
+            var today = await TodayAsync(db, ct);
+            var rows = await db.ContractAssets.AsNoTracking().Where(ca => ca.AssetId == id)
+                .Join(db.Contracts.AsNoTracking(), ca => ca.ContractId, c => c.Id, (ca, c) => new
+                {
+                    c.Id, c.Number, c.Title, CompanyName = c.Supplier!.Name, c.StartDate, c.EndDate, c.AutoRenew, c.TerminatedOn, ca.YearlyCost,
+                }).ToListAsync(ct);
+            return Results.Ok(rows.OrderByDescending(r => r.EndDate).Select(r => new
+            {
+                r.Id, r.Number, r.Title, r.CompanyName, Status = ContractTerms.StatusOn(today, r.StartDate, r.EndDate, r.AutoRenew, r.TerminatedOn), r.StartDate, r.EndDate, r.YearlyCost,
+            }));
+        }).WithTags("Contracts").RequirePermission(Permissions.ContractsView);
 
         g.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, HttpContext http, PermissionService perms, CancellationToken ct) =>
         {

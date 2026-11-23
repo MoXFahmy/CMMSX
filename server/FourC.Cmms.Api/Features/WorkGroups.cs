@@ -59,6 +59,7 @@ public static partial class WorkGroups
             await WorkOrderEndpoints.CreateAsync(db, ctx, input, null, ct, w =>
             {
                 w.PmScheduleId = s.Id; w.PmTaskId = t.Id; w.PmDueDate = due; w.GroupId = group.Id; w.OnlyWhenStopped = s.OnlyWhenStopped; w.RecipientIds = [.. recipients];
+                w.ContractId = s.ContractId;
                 foreach (var p in planned.Where(p => p.Quantity > 0)) { p.WorkOrderId = w.Id; db.WorkOrderParts.Add(p); }
             }, $"Generated from PM {s.Code} (group {group.Number})", mail, applyTargets: false, typedSteps: t.Steps.OrderBy(x => x.Sequence).ToList());
         }
