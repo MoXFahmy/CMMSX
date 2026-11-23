@@ -83,7 +83,7 @@ services.AddHostedService<PmSchedulerService>();
 services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
 // The AI assistant (0.15.0): one CMX key (Ai:ApiKey), a monthly ceiling for every organization, and the price table.
 services.Configure<FourC.Cmms.Api.Features.Ai.AiOptions>(builder.Configuration.GetSection("Ai"));
-services.AddSingleton<FourC.Cmms.Api.Features.Ai.IAiClient, FourC.Cmms.Api.Features.Ai.NoAiClient>();
+services.AddSingleton<FourC.Cmms.Api.Features.Ai.IAiClient, FourC.Cmms.Api.Features.Ai.AnthropicAiClient>();
 services.AddScoped<FourC.Cmms.Api.Features.Ai.AiService>();
 var emailOptions = builder.Configuration.GetSection("Email").Get<EmailOptions>() ?? new();
 if (emailOptions.Available)
