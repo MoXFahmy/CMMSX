@@ -179,6 +179,7 @@ api.MapInventoryEndpoints();
 api.MapPurchasingEndpoints();
 api.MapPurchaseRequestEndpoints();
 api.MapApprovalLevelEndpoints();
+api.MapMyApprovalsEndpoints();
 api.MapReportEndpoints();
 api.MapDashboardEndpoints();
 api.MapAlertEndpoints();

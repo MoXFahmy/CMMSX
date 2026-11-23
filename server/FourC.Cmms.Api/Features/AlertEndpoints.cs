@@ -13,10 +13,10 @@ public static class AlertEndpoints
 {
     public static void MapAlertEndpoints(this RouteGroupBuilder api)
     {
-        api.MapGet("/alerts", async (CmmsDbContext db, HttpContext http, PermissionService perms, ITenantContext ctx, CancellationToken ct) =>
+        api.MapGet("/alerts", async (CmmsDbContext db, HttpContext http, PermissionService perms, AccessService access, ITenantContext ctx, CancellationToken ct) =>
         {
             var mine = await perms.GetAsync(Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!));
-            int? overdue = null, myOverdue = null, triage = null, lowStock = null;
+            int? overdue = null, myOverdue = null, triage = null, lowStock = null, approvals = null;
             if (mine.Contains(Permissions.WorkOrdersView))
             {
                 // The same rule as the work order list's "late" filter.
@@ -30,7 +30,13 @@ public static class AlertEndpoints
             if (mine.Contains(Permissions.InventoryView))
                 // The same rule as the parts list's "below re-order level" filter.
                 lowStock = await db.Parts.CountAsync(p => p.IsActive && db.StockLevels.Any(l => l.PartId == p.Id && l.ReorderQuantity > 0 && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel), ct);
-            return Results.Ok(new { OverdueWorkOrders = overdue, MyOverdueWorkOrders = myOverdue, RequestsToTriage = triage, PartsBelowReorder = lowStock });
+            if (MyApprovals.Approves(mine))
+            {
+                // Requests and orders waiting for my signature (0.16.0), by the same rules as My approvals.
+                var lists = await MyApprovals.ListsAsync(db, perms, access, Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!), mine, includeSentBack: false, ct);
+                approvals = lists.Requests.Count + lists.Orders.Count;
+            }
+            return Results.Ok(new { OverdueWorkOrders = overdue, MyOverdueWorkOrders = myOverdue, RequestsToTriage = triage, PartsBelowReorder = lowStock, WaitingForMyApproval = approvals });
         }).WithTags("Alerts").RequireAuthorization();
     }
 }
