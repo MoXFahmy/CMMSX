@@ -61,5 +61,6 @@ export const P = {
   pmView: 'pm.view', pmManage: 'pm.manage', pmGenerate: 'pm.generate', metersRecord: 'meters.record',
   inventoryView: 'inventory.view', inventoryManage: 'inventory.manage', inventoryTransact: 'inventory.transact',
   purchasingView: 'purchasing.view', purchasingCreate: 'purchasing.create', purchasingApprove: 'purchasing.approve', purchasingReceive: 'purchasing.receive',
+  purchasingRequest: 'purchasing.request', purchasingApproveRequests: 'purchasing.approveRequests',
   suppliersManage: 'suppliers.manage', reportsView: 'reports.view',
 } as const;

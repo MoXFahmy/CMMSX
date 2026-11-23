@@ -2,11 +2,12 @@ import { useEffect, useMemo, useState } from 'react';
 import { ActionIcon, Anchor, Button, Card, Group, Modal, NumberInput, Select, Stack, Table, Text, TextInput, Title, Tooltip } from '@mantine/core';
 import { useForm } from '@mantine/form';
 import { useTranslation } from 'react-i18next';
-import { Link } from 'react-router';
-import { IconEdit, IconPackageExport, IconPlus, IconTrash } from '@tabler/icons-react';
+import { Link, useNavigate } from 'react-router';
+import { IconEdit, IconPackageExport, IconPlus, IconShoppingCartPlus, IconTrash } from '@tabler/icons-react';
 import { del, post, put } from '@/api/client';
 import type { PlannedPart, WorkOrderDetail } from '@/api/types';
 import { confirmDelete } from '@/components/confirm';
+import { P, useAuth } from '@/auth/AuthContext';
 import { PartPicker, useStores } from '@/components/PartPicker';
 import { fmtMoney, fmtPrice, fmtQty, handleFormError, hoursText, notifyError, notifySuccess } from '@/components/utils';
 
@@ -15,8 +16,18 @@ export function PlannedPartsCard({ w, canPlan, canIssue, onChange, onIssue, curr
   w: WorkOrderDetail; canPlan: boolean; canIssue: boolean; onChange: () => Promise<void>; onIssue: (line: PlannedPart) => void; currency: string;
 }) {
   const { t } = useTranslation();
+  const { can } = useAuth();
+  const navigate = useNavigate();
   const { data: stores } = useStores();
   const [editing, setEditing] = useState<PlannedPart | 'new' | null>(null);
+  // 0.16.0: what's short becomes a purchase request for this job, needed by its due date.
+  const short = w.plannedParts.filter((p) => p.short > 0);
+  const requestPurchase = () => navigate('/purchasing/requests/new', { state: { draft: {
+    siteId: w.siteId,
+    lines: short.map((p) => ({ partId: p.partId, part: { id: p.partId, partNumber: p.partNumber, name: p.partName }, description: p.partName, unitOfMeasure: p.unitOfMeasure,
+      quantity: p.short, storeId: p.storeId ?? null, workOrderId: w.id, workOrder: { id: w.id, number: w.number }, neededBy: w.dueDate ? w.dueDate.slice(0, 10) : null,
+      estimatedUnitPrice: null, reason: '' })),
+  } } });
   const form = useForm({ initialValues: { partId: null as string | null, storeId: null as string | null, quantity: 1 as number | '', notes: '' } });
   useEffect(() => {
     if (!editing) return;
@@ -43,7 +54,11 @@ export function PlannedPartsCard({ w, canPlan, canIssue, onChange, onIssue, curr
     <Card p={0}>
       <Group justify="space-between" p="md" wrap="wrap">
         <Title order={5}>{t('plan.plannedParts')} · {fmtMoney(total, currency)}</Title>
-        {canPlan && <Button size="xs" variant="default" leftSection={<IconPlus size={14} />} onClick={() => setEditing('new')}>{t('plan.planPart')}</Button>}
+        <Group gap="xs">
+          {short.length > 0 && can(P.purchasingRequest) && <Tooltip label={t('pr.requestPurchaseHint')}>
+            <Button size="xs" variant="light" color="orange" leftSection={<IconShoppingCartPlus size={14} />} onClick={requestPurchase}>{t('pr.requestPurchase')}</Button></Tooltip>}
+          {canPlan && <Button size="xs" variant="default" leftSection={<IconPlus size={14} />} onClick={() => setEditing('new')}>{t('plan.planPart')}</Button>}
+        </Group>
       </Group>
       <Table.ScrollContainer minWidth={760}>
         <Table verticalSpacing="sm">

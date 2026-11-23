@@ -1,0 +1,64 @@
+/** Purchase requests (0.16.0): types and the small rules the screens share. */
+import type { PurchaseOrderStatus } from '@/api/types';
+
+export type PurchaseRequestStatus = 'Draft' | 'Submitted' | 'Approved' | 'Rejected' | 'PartlyOrdered' | 'Ordered' | 'Closed' | 'Cancelled';
+
+export type PurchaseRequestListItem = {
+  id: string; number: string; status: PurchaseRequestStatus; siteName: string; requestedByName?: string | null; neededBy?: string | null; lines: number;
+  estimatedTotal?: number | null; submittedAt?: string | null; isLate: boolean;
+};
+
+export type PurchaseRequestLine = {
+  id: string; lineNumber: number; partId?: string | null; part?: { id: string; partNumber: string; name: string; preferredSupplierId?: string | null } | null;
+  description: string; unitOfMeasure?: string | null; quantity: number; neededBy?: string | null;
+  workOrder?: { id: string; number: string; title: string } | null; asset?: { id: string; assetNumber: string; name: string } | null;
+  store?: { id: string; code: string; name: string } | null; estimatedUnitPrice?: number | null; reason?: string | null;
+  order?: { id: string; number: string; lineId: string; status: PurchaseOrderStatus } | null; ordered: number; received: number;
+};
+
+export type PurchaseRequestDetail = {
+  id: string; number: string; status: PurchaseRequestStatus; siteId: string; siteName?: string | null; requestedById?: string | null; requestedByName?: string | null;
+  neededBy?: string | null; notes?: string | null; recipientIds: string[]; submittedAt?: string | null; decidedAt?: string | null; decidedByName?: string | null;
+  rejectReason?: string | null; cancelledAt?: string | null; cancelReason?: string | null; closedAt?: string | null; createdAt: string;
+  lines: PurchaseRequestLine[];
+  comments: { id: string; body: string; userId?: string | null; userName?: string | null; createdAt: string }[];
+  actions: { edit: boolean; submit: boolean; approve: boolean; reject: boolean; cancel: boolean; delete: boolean; order: boolean; close: boolean; comment: boolean };
+  rowVersion: string;
+};
+
+/** A line as the request form and the "Request purchase" buttons send it. */
+export type PrLineDraft = {
+  partId: string | null; description: string; unitOfMeasure: string; quantity: number; storeId: string | null; workOrderId: string | null;
+  neededBy: string | null; estimatedUnitPrice: number | null; reason: string;
+};
+
+const colours: Record<PurchaseRequestStatus, string> = {
+  Draft: 'gray', Submitted: 'blue', Approved: 'teal', Rejected: 'red', PartlyOrdered: 'yellow', Ordered: 'green', Closed: 'dark', Cancelled: 'gray',
+};
+export const requestStatusColor = (s: PurchaseRequestStatus) => colours[s];
+
+/** Lines a buyer can still put on an order: the request is approved (or partly ordered) and the line isn't on a live order. */
+export const orderableLines = (d: PurchaseRequestDetail) =>
+  d.status === 'Approved' || d.status === 'PartlyOrdered' ? d.lines.filter((l) => !l.order) : [];
+
+/** How many draft orders the chosen lines make: one per supplier and site (lines without a supplier yet don't count). */
+export const previewGroups = (lines: { supplierId: string | null; siteId: string }[]) =>
+  new Set(lines.filter((l) => l.supplierId).map((l) => `${l.supplierId}|${l.siteId}`)).size;
+
+/** Short planned parts become one request per site, each line for its work order and needed by its due date. */
+export function draftFromShortages(rows: { partId: string; storeId: string; siteId: string; short: number; workOrderId?: string | null; dueDate?: string | null;
+  description: string; unitOfMeasure: string }[]): { siteId: string; lines: PrLineDraft[] }[] {
+  const bySite = new Map<string, PrLineDraft[]>();
+  for (const r of rows) {
+    const list = bySite.get(r.siteId) ?? [];
+    list.push({ partId: r.partId, description: r.description, unitOfMeasure: r.unitOfMeasure, quantity: r.short, storeId: r.storeId, workOrderId: r.workOrderId ?? null,
+      neededBy: r.dueDate ?? null, estimatedUnitPrice: null, reason: '' });
+    bySite.set(r.siteId, list);
+  }
+  return [...bySite.entries()].map(([siteId, lines]) => ({ siteId, lines }));
+}
+
+const closed: PurchaseRequestStatus[] = ['Ordered', 'Closed', 'Cancelled'];
+/** Needed before today and not yet ordered, closed or cancelled. Dates are ISO days. */
+export const isLate = (neededBy: string | null | undefined, today: string, status: PurchaseRequestStatus) =>
+  !!neededBy && neededBy < today && !closed.includes(status);
