@@ -24,6 +24,8 @@ export type TenantSettings = {
   followUpDefault?: FollowUpKind; followUpTemplateId?: string | null; requireReadingSteps?: boolean;
   /** The organization's logo (0.14.0): when it was uploaded, or null when there is none. */
   logoVersion?: number | null;
+  /** The AI assistant (0.15.0): on for this organization, and its monthly limit (empty = the server's ceiling). */
+  aiEnabled?: boolean; aiMonthlyLimit?: number | null;
   emailEnabled: boolean; disabledEmails: string[];
   /** Who gets each work and request e-mail (0.10.0): event key → recipient kinds; an event not listed uses its defaults. */
   emailRecipients?: Record<string, string[]>;

@@ -81,6 +81,10 @@ services.AddHostedService<PmSchedulerService>();
 // E-mail: queued in the database (outbox) and sent by a background job through SES or SMTP. Without a provider and a
 // From address, e-mail is unavailable: nothing is queued and Settings says so.
 services.Configure<EmailOptions>(builder.Configuration.GetSection("Email"));
+// The AI assistant (0.15.0): one CMX key (Ai:ApiKey), a monthly ceiling for every organization, and the price table.
+services.Configure<FourC.Cmms.Api.Features.Ai.AiOptions>(builder.Configuration.GetSection("Ai"));
+services.AddSingleton<FourC.Cmms.Api.Features.Ai.IAiClient, FourC.Cmms.Api.Features.Ai.AnthropicAiClient>();
+services.AddScoped<FourC.Cmms.Api.Features.Ai.AiService>();
 var emailOptions = builder.Configuration.GetSection("Email").Get<EmailOptions>() ?? new();
 if (emailOptions.Available)
 {
@@ -180,6 +184,7 @@ api.MapEmailEndpoints();
 api.MapViewEndpoints();
 api.MapDeviceEndpoints();
 api.MapTechEndpoints();
+FourC.Cmms.Api.Features.Ai.AiEndpoints.MapAiEndpoints(api);
 api.MapTechActions();
 api.MapLabelEndpoints();
 

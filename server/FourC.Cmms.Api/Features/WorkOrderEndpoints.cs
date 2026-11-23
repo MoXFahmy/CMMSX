@@ -21,7 +21,7 @@ public static class WorkOrderEndpoints
         Guid? SymptomId = null, bool? ManagesSymptom = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
-        DateTimeOffset? At = null, Guid? CancelReasonId = null, Guid? RemedyId = null);
+        DateTimeOffset? At = null, Guid? CancelReasonId = null, Guid? RemedyId = null, Guid? SymptomId = null);
     public sealed record AllOkInput(Guid? AssetId = null);
     public sealed record BulkInput(Guid[]? Ids, StatusInput? Status, WorkPriority? Priority, Guid[]? AddAssigneeIds);
     public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null, StepAnswer? Answer = null, decimal? Value = null,
@@ -594,6 +594,8 @@ public static class WorkOrderEndpoints
             // Cause and remedy (0.14.0): a phone's codes are accepted even if made inactive since its list was sent.
             if (await Codes.CheckAsync(db.FailureCodes, input.FailureCodeId, w.FailureCodeId, Codes.UnknownCause, ct, fromPhone) is { } cause) v.Add("failureCodeId", cause);
             if (await Codes.CheckAsync(db.Remedies, input.RemedyId, w.RemedyId, Codes.UnknownRemedy, ct, fromPhone) is { } remedy) v.Add("remedyId", remedy);
+            // The symptom (0.15.0, filled from notes by the AI report): set when given, otherwise left as it is.
+            if (await Codes.CheckAsync(db.Symptoms, input.SymptomId, w.SymptomId, Codes.UnknownSymptom, ct, fromPhone) is { } symptom) v.Add("symptomId", symptom);
             if (input.ActualStart is { } st && input.ActualEnd is { } en && en < st) v.Add("actualEnd", "Actual end cannot be before the actual start.");
             if (input.ActualEnd > DateTimeOffset.UtcNow.AddHours(1)) v.Add("actualEnd", "Actual end cannot be in the future.");
         }
@@ -627,6 +629,7 @@ public static class WorkOrderEndpoints
                 w.CauseNotes = input.CauseNotes.Clean() ?? w.CauseNotes;
                 w.FailureCodeId = input.FailureCodeId ?? w.FailureCodeId;
                 w.RemedyId = input.RemedyId ?? w.RemedyId;
+                w.SymptomId = input.SymptomId ?? w.SymptomId;
                 w.AssetWasDown = input.AssetWasDown ?? w.AssetWasDown;
                 w.DowntimeHours = input.DowntimeHours ?? w.DowntimeHours;
                 await Downtime.OnCompletedAsync(db, ctx, w, ct); // a linked stop ends now and fills the downtime fields

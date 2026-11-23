@@ -1,11 +1,11 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AccessWindowsList, StoppedBadge } from '@/components/AccessWindowsEditor';
-import { Alert, Anchor, Badge, Button, Card, Divider, Group, Modal, NumberInput, Select, Stack, Switch, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { ActionIcon, Alert, Anchor, Badge, Button, Card, Checkbox, Divider, Group, Modal, NumberInput, Select, Stack, Switch, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
-import { IconCamera, IconPhoto, IconCheck, IconChevronLeft, IconClock, IconPlayerPause, IconPlayerPlay } from '@tabler/icons-react';
+import { IconCamera, IconPhoto, IconCheck, IconChevronLeft, IconClock, IconMicrophone, IconPlayerPause, IconPlayerPlay, IconSparkles } from '@tabler/icons-react';
 import { HOLD_REASONS, type HoldReason } from '@/api/types';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, fmtDateTime, hoursText, notifyError } from '@/components/utils';
@@ -21,6 +21,10 @@ import { useTech } from './useTech';
 import { JobParts } from './StockPages';
 import { JobActions, StopCard } from './JobExtras';
 import type { TechJob } from './types';
+import type { AiReportResult } from '@/components/aiReport';
+import { aiChanges, aiEnabled, defaultTicks, partStore } from './aiFill';
+import { dictate, speechAvailable } from './speech';
+import { fillReport } from './api';
 
 /** One job: checklist, hours, photos, comments, and start / hold / complete — all of it works without signal. */
 export function JobPage() {
@@ -210,13 +214,41 @@ function HoldModal({ opened, noteRequired, onClose, onSave }: { opened: boolean;
 
 /** Completion: notes, cause, failure code, downtime, and up to two signatures. Signatures are queued first, then the completion. */
 function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job: TechJob; onClose: () => void; onDone: () => void }) {
-  const { t } = useTranslation();
-  const { bundle, add, queue, discard, fullName } = useTech();
+  const { t, i18n } = useTranslation();
+  const { bundle, add, queue, discard, fullName, online } = useTech();
   const rules = bundle?.completionRules;
   const [notes, setNotes] = useState('');
   const [cause, setCause] = useState('');
   const [failure, setFailure] = useState<string | null>(job.failureCodeId ?? null);
   const [remedy, setRemedy] = useState<string | null>(job.remedyId ?? null);
+  const [symptom, setSymptom] = useState<string | null>(job.symptomId ?? null);
+  // AI report (0.15.0): dictation adds to Work done; Fill with AI suggests the fields; hours and parts stay ticked boxes until completion.
+  const [ai, setAi] = useState<AiReportResult | null>(null);
+  const [ticks, setTicks] = useState<{ hours: boolean; parts: string[] }>({ hours: false, parts: [] });
+  const [filling, setFilling] = useState(false);
+  const [canDictate, setCanDictate] = useState(false);
+  const [listening, setListening] = useState(false);
+  useEffect(() => { if (opened) void speechAvailable().then(setCanDictate); }, [opened]);
+  const canIssue = !!bundle?.can?.issueStock;
+  const listen = async () => {
+    setListening(true);
+    try { const heard = await dictate(i18n.language === 'ar' ? 'ar' : 'en'); if (heard) setNotes((n) => (n.trim() ? `${n.trimEnd()} ${heard}` : heard)); }
+    finally { setListening(false); }
+  };
+  const fill = async () => {
+    setFilling(true);
+    try {
+      const r = await fillReport(job.id, notes);
+      setAi(r);
+      if (r.workDone?.trim()) setNotes(r.workDone);
+      if (r.causeDetails?.trim()) setCause(r.causeDetails);
+      if (r.symptom) setSymptom(r.symptom.id);
+      if (r.cause) setFailure(r.cause.id);
+      if (r.remedy) setRemedy(r.remedy.id);
+      setTicks(defaultTicks(job, r, canIssue));
+    } catch (e) { notifyError(e); } finally { setFilling(false); }
+  };
+  const logsHours = !!ai?.hours && ticks.hours;
   const [down, setDown] = useState(false);
   const [downtime, setDowntime] = useState<number | string>('');
   const [signer, setSigner] = useState('');
@@ -226,7 +258,7 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
   const problems = [
     rules?.notes && !notes.trim() && t('tech.rule.notes'),
     rules?.failureCodeOnBreakdown && job.type === 'Breakdown' && !failure && t('tech.rule.failureCode'),
-    rules?.labour && needsLabour(job) && t('tech.rule.labour'),
+    rules?.labour && needsLabour(job) && !logsHours && t('tech.rule.labour'),
     rules?.allSteps && job.tasks.some((x) => !x.isDone) && t('tech.rule.allSteps'),
     ...(() => { const sp = stepProblems(job, queue, { readings: rules?.readings });
       return [sp.safety.length > 0 && t('tech.rule.safety', { steps: sp.safety.join(', ') }), sp.photos.length > 0 && t('tech.rule.photos', { steps: sp.photos.join(', ') }), sp.readings.length > 0 && t('tech.rule.readings', { steps: sp.readings.join(', ') })]; })(),
@@ -237,12 +269,15 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
     try {
       // Completing again after a refusal: drop the refused completion, and don't send signatures already given.
       for (const old of staleCompletions(queue, job.id)) await discard(old);
+      // The AI's hours and parts the technician kept ticked go first, as the usual changes.
+      if (ai) for (const c of aiChanges(job, ai, ticks, canIssue, dayjs().format('YYYY-MM-DD'))) await add({ type: c.type, workOrderId: job.id, payload: c.payload });
       const a = alreadySigned(fullName ?? '', job.files, queue, job.id, fullName) ? null : await mine.current?.toBlob();
       if (a) await add({ type: 'photo.add', workOrderId: job.id, payload: { kind: 'signature' } }, { blob: a, fileName: 'signature-technician.png' });
       const b = alreadySigned(signer.trim(), job.files, queue, job.id, fullName) ? null : await theirs.current?.toBlob();
       if (b) await add({ type: 'photo.add', workOrderId: job.id, payload: { kind: 'signature', signedBy: signer.trim() || null } }, { blob: b, fileName: 'signature.png' });
       await add({ type: 'status.change', workOrderId: job.id, payload: {
         status: 'Completed', completionNotes: notes.trim() || null, causeNotes: cause.trim() || null, failureCodeId: failure, remedyId: remedy,
+        ...(symptom && symptom !== job.symptomId ? { symptomId: symptom } : {}),
         // With a stop on the asset's downtime log, the server fills the downtime from the stop.
         ...(job.downtime ? {} : { assetWasDown: down, downtimeHours: down && downtime !== '' ? Number(downtime) : null }),
       } });
@@ -253,8 +288,27 @@ function CompleteSheet({ opened, job, onClose, onDone }: { opened: boolean; job:
   return (
     <Modal opened={opened} onClose={onClose} title={t('tech.complete')} fullScreen>
       <Stack maw={560} mx="auto">
-        <Textarea label={t('tech.workDone')} autosize minRows={3} required={rules?.notes} value={notes} onChange={(e) => setNotes(e.currentTarget.value)} />
+        <Textarea label={t('tech.workDone')} autosize minRows={3} required={rules?.notes} value={notes} onChange={(e) => setNotes(e.currentTarget.value)}
+          rightSection={canDictate ? <ActionIcon variant="subtle" size="lg" loading={listening} aria-label={t('tech.dictate')} onClick={() => void listen()}><IconMicrophone size={20} /></ActionIcon> : undefined} />
+        {aiEnabled(bundle) && (
+          <Group justify="space-between" gap="xs">
+            {ai ? <Badge variant="light" color="violet" leftSection={<IconSparkles size={12} />}>{t('ai.fromAi')}</Badge> : <span />}
+            <Button size="xs" variant="light" color="violet" leftSection={<IconSparkles size={14} />} loading={filling}
+              disabled={!online || !notes.trim()} onClick={() => void fill()}>{t('tech.fillWithAi')}</Button>
+          </Group>
+        )}
+        {aiEnabled(bundle) && !online && <Text fz="xs" c="dimmed">{t('tech.aiNeedsConnection')}</Text>}
+        {ai && (ai.hours || ai.parts.length > 0) && (
+          <Card withBorder padding="sm"><Stack gap={6}>
+            {ai.hours ? <Checkbox label={t('tech.logHoursForMe', { hours: ai.hours })} checked={ticks.hours} onChange={(e) => { const on = e.currentTarget.checked; setTicks((x) => ({ ...x, hours: on })); }} /> : null}
+            {ai.parts.map((p) => canIssue && partStore(job, p.partId)
+              ? <Checkbox key={p.partId} label={t('ai.usePart', { qty: p.quantity, part: `${p.partNumber} · ${p.name}` })} checked={ticks.parts.includes(p.partId)}
+                  onChange={(e) => { const on = e.currentTarget.checked; setTicks((x) => ({ ...x, parts: on ? [...x.parts, p.partId] : x.parts.filter((y) => y !== p.partId) })); }} />
+              : <Text key={p.partId} fz="sm" c="dimmed">{t('ai.usePart', { qty: p.quantity, part: `${p.partNumber} · ${p.name}` })}</Text>)}
+          </Stack></Card>
+        )}
         <Textarea label={t('tech.cause')} autosize value={cause} onChange={(e) => setCause(e.currentTarget.value)} />
+        <Select label={t('codes.symptom')} clearable searchable data={codeOptions(bundle?.symptoms ?? [], [], null, t)} value={symptom} onChange={setSymptom} />
         {/* Causes most often found with the job's symptom, and remedies most often used for the cause, come first (0.14.0). */}
         <Select label={t('tech.failureCode')} clearable searchable data={codeOptions(bundle?.failureCodes ?? [], bundle?.codePairs?.symptomCause ?? [], job.symptomId, t)}
           value={failure} onChange={setFailure} required={rules?.failureCodeOnBreakdown && job.type === 'Breakdown'} />

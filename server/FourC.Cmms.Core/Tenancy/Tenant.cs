@@ -42,6 +42,10 @@ public class TenantSettings
     public long? LogoVersion { get; set; }
     /// <summary>The logo's media type (image/png, image/jpeg or image/webp), from its first bytes.</summary>
     public string? LogoContentType { get; set; }
+    /// <summary>The AI assistant (0.15.0) is on for this organization; it also needs the server's key.</summary>
+    public bool AiEnabled { get; set; }
+    /// <summary>AI actions a month; empty = the server's ceiling. Never above the ceiling.</summary>
+    public int? AiMonthlyLimit { get; set; }
     /// <summary>Completing breakdown work needs a failure code (a cause).</summary>
     public bool RequireFailureCodeForBreakdowns { get; set; }
     /// <summary>Logging labour or ticking a checklist step on an Open work order moves it to In progress.</summary>

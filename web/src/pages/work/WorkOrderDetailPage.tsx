@@ -8,10 +8,13 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { SlaText } from '@/components/SlaBadge';
 import dayjs from 'dayjs';
-import { IconAlertTriangle, IconCheck, IconCopy, IconDots, IconEdit, IconPrinter, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconCopy, IconDots, IconEdit, IconPrinter, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp, IconSparkles } from '@tabler/icons-react';
 import { del, get, post } from '@/api/client';
 import { HOLD_REASONS, type ActivityItem, type Lookup, type WorkOrderDetail, type WorkOrderStatus } from '@/api/types';
 import { CodeSelect } from '@/components/CodeSelect';
+import { DiagnosisPanel } from '@/components/DiagnosisPanel';
+import { aiOn, useAiStatus } from '@/components/aiStatus';
+import { applyReport, reportHints, type AiReportResult } from '@/components/aiReport';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { Attachments } from '@/components/Attachments';
@@ -128,6 +131,8 @@ export function WorkOrderDetailPage() {
             <Grid.Col span={{ base: 12, md: 8 }}>
               <Stack gap="lg">
                 {w.group && <GroupCard group={w.group} canComment={canExec} onChange={refresh} />}
+                <DiagnosisPanel kind="work-order" id={w.id} hasAsset={!!w.assetId} canRun={can(P.woExecute)} canPlan={canPlan}
+                  plannedPartIds={w.plannedParts.map((p) => p.partId)} onPlanned={refresh} />
                 {w.source && <SourceBanner source={w.source} />}
                 {w.asset?.underWarranty && !locked && (
                   <Alert variant="light" color="teal" icon={<IconShieldCheck size={18} />} title={t('wo.underWarrantyTitle', { type: t(`warrantyType.${w.asset.warrantyType}`) })}>
@@ -431,10 +436,23 @@ function CompleteModal({ opened, onClose, w, onDone }: { opened: boolean; onClos
     const earliestLabor = [...w.labor].sort((a, b) => a.workDate.localeCompare(b.workDate))[0];
     const start = w.startedAt ? new Date(w.startedAt) : earliestLabor ? new Date(`${earliestLabor.workDate}T08:00:00`) : null;
     return { completionNotes: w.completionNotes ?? '', causeNotes: w.causeNotes ?? '', preventionNotes: w.preventionNotes ?? '', failureCodeId: (w.failureCodeId ?? null) as string | null,
+      symptomId: (w.symptomId ?? null) as string | null,
       remedyId: (w.remedyId ?? null) as string | null, assetWasDown: w.assetWasDown || w.type === 'Breakdown', downtimeHours: (w.downtimeHours ?? '') as number | '', actualStart: start as Date | null, actualEnd: new Date() as Date | null };
   };
   const form = useForm({ initialValues: defaults() });
-  useEffect(() => { if (opened) { form.setValues(defaults()); form.clearErrors(); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [opened]);
+  // AI report (0.15.0): fills work done, cause details and the codes from what is typed in Work done; hours and parts are hints.
+  const { data: ai } = useAiStatus();
+  const [filling, setFilling] = useState(false);
+  const [aiHints, setAiHints] = useState<string[] | null>(null);
+  useEffect(() => { if (opened) { form.setValues(defaults()); form.clearErrors(); setAiHints(null); } /* eslint-disable-next-line react-hooks/exhaustive-deps */ }, [opened]);
+  const fillFromNotes = async () => {
+    setFilling(true);
+    try {
+      const r = await post<AiReportResult>('/ai/report', { workOrderId: w.id, notes: form.values.completionNotes });
+      form.setValues(applyReport(form.values, r));
+      setAiHints(reportHints(r, t));
+    } catch (e) { notifyError(e); } finally { setFilling(false); }
+  };
   const calcDowntime = () => { const { actualStart: s, actualEnd: e } = form.values; if (s && e && e > s) form.setFieldValue('downtimeHours', Math.round(((e.getTime() - s.getTime()) / 36e5) * 100) / 100); };
   const submit = form.onSubmit(async (v) => {
     try {
@@ -450,6 +468,16 @@ function CompleteModal({ opened, onClose, w, onDone }: { opened: boolean; onClos
       <form onSubmit={submit}><Stack>
         {open > 0 && <Alert color="yellow" icon={<IconAlertTriangle size={16} />}>{t('wo.tasksDone', { done: w.tasks.length - open, total: w.tasks.length })}</Alert>}
         <Textarea label={t('wo.completionNotes')} required autosize minRows={3} data-autofocus {...form.getInputProps('completionNotes')} />
+        {aiOn(ai) && (
+          <Group justify="space-between" gap="xs">
+            {aiHints ? <Badge variant="light" color="violet" leftSection={<IconSparkles size={12} />}>{t('ai.fromAi')}</Badge> : <span />}
+            <Button size="xs" variant="light" color="violet" leftSection={<IconSparkles size={14} />} loading={filling}
+              disabled={!form.values.completionNotes.trim()} onClick={() => void fillFromNotes()}>{t('ai.fillFromNotes')}</Button>
+          </Group>
+        )}
+        {aiHints && aiHints.length > 0 && (
+          <Alert color="violet" variant="light" title={t('ai.addYourself')}>{aiHints.map((h) => <Text key={h} fz="sm">{h}</Text>)}</Alert>
+        )}
         <SimpleGrid cols={2}>
           <DateTimePicker label={t('wo.actualStart')} valueFormat="DD MMM YYYY HH:mm" clearable {...form.getInputProps('actualStart')} />
           <DateTimePicker label={t('wo.actualEnd')} valueFormat="DD MMM YYYY HH:mm" maxDate={new Date()} {...form.getInputProps('actualEnd')} />
@@ -458,7 +486,9 @@ function CompleteModal({ opened, onClose, w, onDone }: { opened: boolean; onClos
           <Textarea label={t('wo.causeNotes')} autosize minRows={2} {...form.getInputProps('causeNotes')} />
           <Textarea label={t('wo.preventionNotes')} autosize minRows={2} {...form.getInputProps('preventionNotes')} />
         </SimpleGrid>
-        <SimpleGrid cols={{ base: 1, sm: 2 }}>
+        <SimpleGrid cols={{ base: 1, sm: 3 }}>
+          <CodeSelect path="/symptoms" label={t('codes.symptom')} value={form.values.symptomId} onChange={(v) => form.setFieldValue('symptomId', v)}
+            current={w.symptom ?? null} error={form.errors.symptomId} />
           <CodeSelect path="/failure-codes" label={t('codes.cause')} value={form.values.failureCodeId} onChange={(v) => form.setFieldValue('failureCodeId', v)}
             current={w.failureCode ?? null} pairing="symptomCause" pairedWith={w.symptomId} error={form.errors.failureCodeId} />
           <CodeSelect path="/remedies" label={t('codes.remedy')} value={form.values.remedyId} onChange={(v) => form.setFieldValue('remedyId', v)}

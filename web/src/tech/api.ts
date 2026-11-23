@@ -122,6 +122,20 @@ export async function sendPushToken(token: string): Promise<void> {
   try { await call('/tech/push-token', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ token }) }, SEND_MS); } catch { /* next start */ }
 }
 
+/** The AI report (0.15.0): suggestions for the completion sheet from the notes (needs a connection; throws Offline, or the server's reason). */
+export async function fillReport(workOrderId: string, notes: string): Promise<import('@/components/aiReport').AiReportResult> {
+  let res: Response;
+  try { res = await call('/ai/report', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ workOrderId, notes }) }, 60_000); }
+  catch (e) {
+    // The server (or CloudFront in front of it) gave up waiting for Claude: say so in the app's language, never a bare error.
+    if (e instanceof ServerError || e instanceof TimedOut) throw new Error(i18n.t('tech.aiNoAnswer'));
+    if (e instanceof Offline) throw new Error(i18n.t('tech.aiNeedsConnection'));
+    throw e;
+  }
+  if (!res.ok) throw new Error(await title(res));
+  return res.json();
+}
+
 export async function logout(): Promise<void> {
   await call('/auth/logout', { method: 'POST' }, SEND_MS);
 }

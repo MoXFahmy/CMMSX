@@ -928,5 +928,17 @@
  "Cause": "السبب",
  "Remedy": "المعالجة",
  "with its components": "مع مكوناته",
- "{0} · the first 5,000": "{0} · أول 5,000"
+ "{0} · the first 5,000": "{0} · أول 5,000",
+ "The limit can't be below 0.": "لا يمكن أن يقل الحد عن 0.",
+ "The limit can be at most {0} a month.": "لا يمكن أن يزيد الحد عن {0} في الشهر.",
+ "AI isn't set up on this server.": "المساعد الذكي غير مُعَدّ على هذا الخادم.",
+ "The AI assistant is off for this organization.": "المساعد الذكي متوقف في هذه المؤسسة.",
+ "This month's AI allowance ({0}) is used up. It renews on {1}.": "نفد رصيد المساعد الذكي لهذا الشهر ({0}). يتجدد في {1}.",
+ "The AI assistant didn't answer. Try again in a moment.": "لم يُجب المساعد الذكي. حاول مرة أخرى بعد قليل.",
+ "Type or dictate some notes first.": "اكتب ملاحظاتك أو أملِها أولًا.",
+ "Notes can be at most 8,000 characters.": "لا يمكن أن تزيد الملاحظات عن 8000 حرف.",
+ "The AI assistant couldn't help with these notes.": "لم يستطع المساعد الذكي المساعدة في هذه الملاحظات.",
+ "Choose an asset first: a diagnosis works from the asset's history.": "اختر الأصل أولًا: التشخيص يعتمد على سجل الأصل.",
+ "There are only {0} completed work orders on this asset and similar ones — too few for a diagnosis.": "يوجد {0} أوامر عمل مكتملة فقط على هذا الأصل والأصول المشابهة — وهذا قليل جدًا للتشخيص.",
+ "The AI assistant couldn't help with this one.": "لم يستطع المساعد الذكي المساعدة في هذا."
 }

@@ -148,7 +148,8 @@ public static class AdminEndpoints
         settings.MapGet("/", async (CmmsDbContext db, CancellationToken ct) =>
             await db.Tenants.AsNoTracking().Where(t => t.Id == db.CurrentTenantId).Select(t => new { t.Name, t.Slug, t.Settings }).FirstAsync(ct))
             .RequireAuthorization();
-        settings.MapPut("/", async (SettingsInput input, CmmsDbContext db, CancellationToken ct) =>
+        settings.MapPut("/", async (SettingsInput input, CmmsDbContext db, FourC.Cmms.Api.Features.Ai.IAiClient ai,
+            Microsoft.Extensions.Options.IOptions<FourC.Cmms.Api.Features.Ai.AiOptions> aiOptions, CancellationToken ct) =>
         {
             // A list sent as null means "none"; never store null where generation expects a list.
             input.Settings.PmNonWorkingDays ??= [];
@@ -183,8 +184,13 @@ public static class AdminEndpoints
             }
             foreach (var (k, val) in new[] { ("site", input.Settings.Terminology.Site), ("location", input.Settings.Terminology.Location), ("asset", input.Settings.Terminology.Asset) })
                 v.Required($"settings.terminology.{k}", val, "Label", 40);
-            if (!v.IsValid) return v.Problem();
+            // The AI assistant (0.15.0): a limit under the server's ceiling, and switching on needs the server's key.
+            var ceiling = Math.Max(0, aiOptions.Value.MonthlyCeiling);
+            v.When(input.Settings.AiMonthlyLimit < 0, "settings.aiMonthlyLimit", "The limit can't be below 0.")
+             .When(input.Settings.AiMonthlyLimit > ceiling, "settings.aiMonthlyLimit", string.Format("The limit can be at most {0} a month.", ceiling));
             var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
+            if (input.Settings.AiEnabled && !t.Settings.AiEnabled && !ai.Configured) v.Add("settings.aiEnabled", "AI isn't set up on this server.");
+            if (!v.IsValid) return v.Problem();
             t.Name = input.Name.Trim();
             // The logo (0.14.0) changes only through its own upload, whatever a page sends.
             input.Settings.LogoVersion = t.Settings.LogoVersion;

@@ -20,6 +20,8 @@ public sealed class ApiFixture : IAsyncLifetime
     /// <summary>Every e-mail the app sends in this fixture (the app's mail service is replaced by a recorder).</summary>
     public RecordingEmailSender Emails { get; } = new();
     public RecordingPushTransport Pushes { get; } = new();
+    /// <summary>Claude, faked (0.15.0): tests never reach Anthropic.</summary>
+    public FakeAiClient Ai { get; } = new();
 
     public Task InitializeAsync()
     {
@@ -44,6 +46,7 @@ public sealed class ApiFixture : IAsyncLifetime
             {
                 s.RemoveAll<FourC.Cmms.Api.Infrastructure.IEmailSender>(); s.AddSingleton<FourC.Cmms.Api.Infrastructure.IEmailSender>(Emails);
                 s.RemoveAll<FourC.Cmms.Api.Features.IPushTransport>(); s.AddSingleton<FourC.Cmms.Api.Features.IPushTransport>(Pushes);
+                s.RemoveAll<FourC.Cmms.Api.Features.Ai.IAiClient>(); s.AddSingleton<FourC.Cmms.Api.Features.Ai.IAiClient>(Ai);
             });
         });
         return Task.CompletedTask;

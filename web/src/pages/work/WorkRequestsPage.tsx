@@ -1,3 +1,4 @@
+import { DiagnosisPanel } from '@/components/DiagnosisPanel';
 import { useEffect } from 'react';
 import { Alert, Anchor, Badge, Button, Card, Checkbox, Drawer, Group, Modal, MultiSelect, Select, SimpleGrid, Stack, Tabs, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput, DateTimePicker } from '@mantine/dates';
@@ -223,6 +224,7 @@ function RequestDrawer({ id, onClose }: { id: string | null; onClose: () => void
             {r.extraRecipients.length > 0 && <Stack gap={2}><Text fz="xs" c="dimmed">{t('requestLoop.keepInformed')}</Text><Text fz="sm">{r.extraRecipients.map((p) => p.name).join(', ')}</Text></Stack>}
           </SimpleGrid></Card>
           <AccessWindowsList windows={r.accessWindows} />
+          <DiagnosisPanel kind="request" id={r.id} hasAsset={!!r.asset} canRun={can(P.requestsManage)} canPlan={false} />
           {r.status !== 'New' && (
             <Alert color={r.status === 'Approved' ? 'teal' : 'gray'} title={`${t('wr.decision')}: ${t(`wrStatus.${r.status}`)}`}>
               <Stack gap={4}>{r.decisionNote && <Text fz="sm">{r.decisionNote}</Text>}<Text fz="xs" c="dimmed">{r.decidedBy} · {fmtDateTime(r.decidedAt)}</Text>

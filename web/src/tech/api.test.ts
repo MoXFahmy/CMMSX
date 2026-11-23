@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { fetchBundle, fetchMe, Offline, refreshProblem, sendChange, ServerError, SignedOut, uploadTimeoutMs } from './api';
+import { fetchBundle, fetchMe, fillReport, Offline, refreshProblem, sendChange, ServerError, SignedOut, uploadTimeoutMs } from './api';
 import type { QueuedChange } from './outbox';
 
 const change = (extra: Partial<QueuedChange> = {}): QueuedChange => ({
@@ -99,5 +99,15 @@ describe('refreshProblem', () => {
     expect(refreshProblem(new ServerError())).toBe('server');
     expect(refreshProblem(new Offline())).toBeNull();
     expect(refreshProblem(new SignedOut(false))).toBeNull();
+  });
+
+  it('says the AI didn\'t answer when the server or the CDN gives up, instead of a bare error', async () => {
+    const noAnswer = "The AI assistant didn't answer. Try again in a moment.";
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ title: noAnswer }), { status: 502, headers: { 'Content-Type': 'application/problem+json' } }));
+    await expect(fillReport('w1', 'notes')).rejects.toThrow(noAnswer);
+    vi.stubGlobal('fetch', async () => new Response('<html>504 Gateway Timeout</html>', { status: 504 }));
+    await expect(fillReport('w1', 'notes')).rejects.toThrow(noAnswer);
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ title: 'This month\'s AI allowance (2) is used up.' }), { status: 429 }));
+    await expect(fillReport('w1', 'notes')).rejects.toThrow('This month\'s AI allowance (2) is used up.');
   });
 });
