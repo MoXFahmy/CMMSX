@@ -109,11 +109,14 @@ public static class PurchasingEndpoints
             var store = r.StoreId ?? line.StoreId;
             if (line.PartId is { } partId && store is { } storeId)
             {
-                var rx = await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, partId, storeId, r.Quantity, date, unitCost,
+                // Packs become the part's own units (0.18.0): 1 box of 100 books 100 pieces, each at the box's cost ÷ 100.
+                var pieces = r.Quantity * line.PackSize;
+                var pieceCost = PackMath.CostPerPiece(line.NetUnitPrice, o.ExchangeRate, line.PackSize);
+                var rx = await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, partId, storeId, pieces, date, pieceCost,
                     SupplierId: o.SupplierId, PurchaseOrderId: o.Id, PurchaseOrderLineId: line.Id, Reference: i.Reference.Clean() ?? o.Number,
                     BatchNumber: r.BatchNumber.Clean(), ExpiryDate: r.ExpiryDate), tk);
                 if (line.WorkOrderId is { } wo) // ordered for a job: receive and issue straight to it
-                    await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, r.Quantity, date, WorkOrderId: wo,
+                    await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, pieces, date, WorkOrderId: wo,
                         BatchNumber: r.BatchNumber.Clean(), Notes: $"Received on {o.Number}", RelatedTransactionId: rx.Id), tk);
             }
             else if (line.PartId is not null)
@@ -122,6 +125,7 @@ public static class PurchasingEndpoints
                 db.WorkOrderCosts.Add(new WorkOrderCost { TenantId = o.TenantId, WorkOrderId = wo, Description = line.Description, Quantity = r.Quantity, UnitCost = unitCost,
                     Vendor = o.Supplier?.Name, Reference = o.Number });
             line.QuantityReceived += r.Quantity;
+            if (line.PartId is { } paidPart) await RecordLastPaidAsync(db, o, line, paidPart, date, tk);
             if (line.WorkOrderId is { } forWo) forWork.Add((forWo, $"{line.Description}: {r.Quantity:0.###} {line.UnitOfMeasure}".Trim()));
             count++;
         }
@@ -565,6 +569,18 @@ public static class PurchasingEndpoints
     {
         if (o.Lines.Count == 0) throw new DomainException("Add at least one line.");
         if (!await db.Suppliers.AnyAsync(s => s.Id == o.SupplierId && s.IsActive, ct)) throw new DomainException("The supplier is inactive.");
+    }
+
+    /// <summary>
+    /// The order supplier's catalogue row remembers what this receipt paid (0.18.0): the gross price and discount per pack, in the order's currency,
+    /// converted through pieces to the row's own pack. The catalogue price itself never changes.
+    /// </summary>
+    private static async Task RecordLastPaidAsync(CmmsDbContext db, PurchaseOrder o, PurchaseOrderLine line, Guid partId, DateOnly date, CancellationToken ct)
+    {
+        var row = await db.SupplierParts.FirstOrDefaultAsync(r => r.PartId == partId && r.SupplierId == o.SupplierId, ct);
+        if (row is null) return;
+        row.LastPaidPrice = PackMath.PriceForPack(line.UnitPrice, line.PackSize, row.PackSize);
+        row.LastPaidDiscount = line.DiscountPercent; row.LastPaidCurrency = o.Currency.ToUpperInvariant(); row.LastPaidOn = date;
     }
 
     /// <summary>The checks that need no database (shared with the import).</summary>

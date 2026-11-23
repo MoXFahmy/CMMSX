@@ -74,7 +74,7 @@ public static class InventoryEndpoints
             Reserved = db.StockReservations.Where(r => r.PartId == p.Id && (storeId == null || r.StoreId == storeId)).Sum(r => (decimal?)r.Reserved) ?? 0,
             Low = db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0 && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel),
             OnOrder = db.PurchaseOrderLines.Where(x => x.PartId == p.Id && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId && OpenPo.Contains(o.Status)))
-                .Sum(x => (decimal?)(x.Quantity - x.QuantityReceived)) ?? 0,
+                .Sum(x => (decimal?)((x.Quantity - x.QuantityReceived) * x.PackSize)) ?? 0,
         }).ToPagedAsync(page, pageSize, ct, maxPageSize);
         return new PagedResult<PartListItem>(paged.Items.Select(p => new PartListItem(p.Id, p.PartNumber, p.Name, p.Manufacturer, p.UnitOfMeasure, p.GroupName,
             p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive, p.OnHand, p.Reserved, p.OnHand - p.Reserved, p.OnOrder, p.Low, Math.Round(p.OnHand * p.AverageCost, 2))).ToList(),
@@ -186,7 +186,7 @@ public static class InventoryEndpoints
             var alternates = await db.Parts.AsNoTracking().Where(x => p.AlternatePartIds.Contains(x.Id)).Select(x => new { x.Id, x.PartNumber, x.Name }).ToListAsync(ct);
             var supplier = p.PreferredSupplierId is { } sid ? await db.Suppliers.AsNoTracking().Where(x => x.Id == sid).Select(x => new { x.Id, x.Code, x.Name }).FirstOrDefaultAsync(ct) : null;
             var onOrder = await db.PurchaseOrderLines.Where(x => x.PartId == id && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId && OpenPo.Contains(o.Status)))
-                .SumAsync(x => (decimal?)(x.Quantity - x.QuantityReceived), ct) ?? 0;
+                .SumAsync(x => (decimal?)((x.Quantity - x.QuantityReceived) * x.PackSize), ct) ?? 0;
             var onHand = levels.Sum(l => l.QuantityOnHand);
             var reservedTotal = levels.Sum(l => l.Reserved);
             var usedOn = await db.AssetParts.AsNoTracking().Where(x => x.PartId == id).OrderBy(x => x.Asset!.AssetNumber)
@@ -399,7 +399,7 @@ public static class InventoryEndpoints
                 l.QuantityOnHand, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity, l.Part.PreferredSupplierId, Price = l.Part.LastPurchasePrice ?? l.Part.AverageCost,
                 Reserved = (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0),
                 OnOrder = db.PurchaseOrderLines.Where(x => x.PartId == l.PartId && x.StoreId == l.StoreId && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId &&
-                    (o.Status == PurchaseOrderStatus.Draft || o.Status == PurchaseOrderStatus.Submitted || OpenPo.Contains(o.Status)))).Sum(x => (decimal?)(x.Quantity - x.QuantityReceived)) ?? 0,
+                    (o.Status == PurchaseOrderStatus.Draft || o.Status == PurchaseOrderStatus.Submitted || OpenPo.Contains(o.Status)))).Sum(x => (decimal?)((x.Quantity - x.QuantityReceived) * x.PackSize)) ?? 0,
             }).ToListAsync(ct);
             var suppliers = await db.Suppliers.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.Name, ct);
             // A level is proposed when available stock plus what is on order is at or below its re-order level.
