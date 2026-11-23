@@ -1,22 +1,20 @@
-import { useEffect, useMemo, useState } from 'react';
-import { ActionIcon, Anchor, Badge, Button, Card, Checkbox, Group, Modal, NumberInput, Progress, Select, SimpleGrid, Stack, Switch, Tabs, Text, TextInput, Textarea, Tooltip, Alert } from '@mantine/core';
-import { useDebouncedValue, useDisclosure } from '@mantine/hooks';
-import { useForm } from '@mantine/form';
+import { useEffect, useState } from 'react';
+import { ActionIcon, Anchor, Badge, Button, Card, Checkbox, Group, NumberInput, Progress, Select, Stack, Tabs, Text, TextInput, Tooltip, Alert } from '@mantine/core';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
-import { IconEdit, IconFilterOff, IconPlus, IconSearch, IconShoppingCartPlus, IconTrash } from '@tabler/icons-react';
-import { del, get, post, put } from '@/api/client';
-import { PO_STATUSES, type Paged, type PoListItem, type ProposalItem, type PurchaseOrderStatus, type SupplierDetail, type SupplierItem, type SupplierLookup } from '@/api/types';
+import { IconFilterOff, IconPlus, IconSearch, IconShoppingCartPlus } from '@tabler/icons-react';
+import { get, post } from '@/api/client';
+import { PO_STATUSES, type Paged, type PoListItem, type ProposalItem, type PurchaseOrderStatus, type SupplierLookup } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { useHierarchy } from '@/components/LocationPicker';
 import { PoStatusBadge } from '@/components/InventoryBadges';
-import { confirmDelete } from '@/components/confirm';
-import { fmtDate, fmtPrice, fmtQty, handleFormError, notifyError, notifySuccess } from '@/components/utils';
+import { fmtDate, fmtPrice, fmtQty, notifyError, notifySuccess } from '@/components/utils';
 import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
 import { RequestsTab } from './RequestsTab';
+import { CompaniesTab } from './CompaniesTab';
 import { draftFromShortages } from './purchaseRequests';
 
 const VIEWS: { key: string; statuses: PurchaseOrderStatus[] | null }[] = [
@@ -30,7 +28,8 @@ export function PurchasingPage() {
   const navigate = useNavigate();
   const orders = can(P.purchasingView);
   const requests = can(P.purchasingRequest) || can(P.purchasingApproveRequests) || orders;
-  const { tab = orders ? 'orders' : 'requests' } = useParams();
+  const { tab: raw = orders ? 'orders' : 'requests' } = useParams();
+  const tab = raw === 'suppliers' ? 'companies' : raw; // the old address of Companies (before 0.17.0)
   return (
     <>
       <PageHeader title={t('po.title')} subtitle={t('po.subtitle')}
@@ -43,13 +42,13 @@ export function PurchasingPage() {
           {orders && <Tabs.Tab value="orders">{t('po.tabs.orders')}</Tabs.Tab>}
           {requests && <Tabs.Tab value="requests">{t('po.tabs.requests')}</Tabs.Tab>}
           {can(P.inventoryView) && <Tabs.Tab value="proposal">{t('po.tabs.proposal')}</Tabs.Tab>}
-          {orders && <Tabs.Tab value="suppliers">{t('po.tabs.suppliers')}</Tabs.Tab>}
+          {orders && <Tabs.Tab value="companies">{t('po.tabs.companies')}</Tabs.Tab>}
         </Tabs.List>
       </Tabs>
       {tab === 'orders' && orders && <OrdersTab />}
       {tab === 'requests' && requests && <RequestsTab />}
       {tab === 'proposal' && <ProposalTab />}
-      {tab === 'suppliers' && orders && <SuppliersTab />}
+      {tab === 'companies' && orders && <CompaniesTab />}
     </>
   );
 }
@@ -217,71 +216,6 @@ function ProposalTab() {
         />
       </Card>
     </>
-  );
-}
-
-const blankSupplier = { code: '', name: '', contactName: '', email: '', phone: '', address: '', city: '', country: '', taxNumber: '', paymentTerms: '', currency: '', isContractor: false, notes: '', isActive: true };
-
-function SuppliersTab() {
-  const { t } = useTranslation();
-  const { can, me } = useAuth();
-  const currency = me?.tenant.settings.currency ?? 'USD';
-  const qc = useQueryClient();
-  const [search, setSearch] = useState('');
-  const [debounced] = useDebouncedValue(search, 300);
-  const [page, setPage] = useState(1);
-  const [inactive, setInactive] = useState(false);
-  const { data, isFetching } = useQuery({ queryKey: ['suppliers', debounced, inactive, page], queryFn: () => get<Paged<SupplierItem>>('/suppliers', { search: debounced, activeOnly: inactive ? '' : 'true', page, pageSize: 25 }), placeholderData: (p) => p });
-  const [opened, m] = useDisclosure();
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const form = useForm({ initialValues: blankSupplier });
-  const open = async (id: string | null) => {
-    setEditingId(id); form.clearErrors();
-    if (id) { const s = await get<SupplierDetail>(`/suppliers/${id}`); form.setValues(Object.fromEntries(Object.keys(blankSupplier).map((k) => [k, (s as Record<string, unknown>)[k] ?? (blankSupplier as Record<string, unknown>)[k]])) as typeof blankSupplier); }
-    else form.setValues(blankSupplier);
-    m.open();
-  };
-  const submit = form.onSubmit(async (v) => {
-    try { if (editingId) await put(`/suppliers/${editingId}`, v); else await post('/suppliers', v); notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['suppliers'] }); m.close(); }
-    catch (e) { handleFormError(form, e); }
-  });
-  const manage = can(P.suppliersManage);
-  const rows = useMemo(() => data?.items ?? [], [data]);
-  return (
-    <Card p={0}>
-      <Group p="md" gap="xs" wrap="wrap">
-        <TextInput placeholder={t('po.searchSuppliers')} leftSection={<IconSearch size={16} />} value={search} onChange={(e) => { setSearch(e.currentTarget.value); setPage(1); }} w={260} />
-        <Checkbox label={t('common.showInactive')} checked={inactive} onChange={(e) => setInactive(e.currentTarget.checked)} />
-        {manage && <Button size="xs" ml="auto" leftSection={<IconPlus size={14} />} onClick={() => open(null)}>{t('po.newSupplier')}</Button>}
-      </Group>
-      <DataTable<SupplierItem> minHeight={200} withTableBorder={false} striped highlightOnHover verticalSpacing="xs" fetching={isFetching} records={rows} noRecordsText={t('po.noSuppliers')}
-        totalRecords={data?.total ?? 0} recordsPerPage={25} page={page} onPageChange={setPage}
-        rowClassName={() => (manage ? 'clickable-row' : '')} onRowClick={manage ? ({ record }) => open(record.id) : undefined}
-        columns={[
-          { accessor: 'code', title: t('common.code'), width: 110, render: (s) => <Text fz="sm" fw={600}>{s.code}</Text> },
-          { accessor: 'name', title: t('common.name'), render: (s) => <Group gap={6} wrap="nowrap"><Text fz="sm">{s.name}</Text>{s.isContractor && <Badge size="xs" variant="light">{t('po.contractor')}</Badge>}{!s.isActive && <Badge size="xs" color="gray">{t('common.inactive')}</Badge>}</Group> },
-          { accessor: 'contact', title: t('po.contact'), render: (s) => <Stack gap={0}><Text fz="sm">{s.contactName ?? '—'}</Text><Text fz="xs" c="dimmed">{[s.email, s.phone].filter(Boolean).join(' · ')}</Text></Stack> },
-          { accessor: 'city', title: t('po.city'), render: (s) => [s.city, s.country].filter(Boolean).join(', ') || '—' },
-          { accessor: 'paymentTerms', title: t('po.paymentTerms'), render: (s) => s.paymentTerms ?? '—' },
-          { accessor: 'openOrders', title: t('po.openOrders'), textAlign: 'right' },
-          { accessor: 'receivedYtd', title: t('po.receivedYtd'), textAlign: 'right', noWrap: true, render: (s) => fmtPrice(s.receivedYtd, currency, 0) },
-          { accessor: 'actions', title: '', width: 80, hidden: !manage, render: (s) => <Group gap={4} justify="flex-end" wrap="nowrap">
-            <ActionIcon variant="subtle" aria-label={t('common.edit')} onClick={(e) => { e.stopPropagation(); void open(s.id); }}><IconEdit size={16} /></ActionIcon>
-            <ActionIcon variant="subtle" color="red" aria-label={t('common.delete')} onClick={(e) => { e.stopPropagation(); confirmDelete(s.name, async () => { try { await del(`/suppliers/${s.id}`); await qc.invalidateQueries({ queryKey: ['suppliers'] }); } catch (err) { notifyError(err); } }); }}><IconTrash size={16} /></ActionIcon></Group> },
-        ]} />
-      <Modal opened={opened} onClose={m.close} title={editingId ? t('po.editSupplier') : t('po.newSupplier')} size="lg">
-        <form onSubmit={submit}><Stack>
-          <SimpleGrid cols={3}><TextInput label={t('common.code')} required {...form.getInputProps('code')} /><TextInput label={t('common.name')} required style={{ gridColumn: 'span 2' }} {...form.getInputProps('name')} /></SimpleGrid>
-          <SimpleGrid cols={{ base: 1, sm: 3 }}><TextInput label={t('po.contact')} {...form.getInputProps('contactName')} /><TextInput label={t('settings.email')} type="email" {...form.getInputProps('email')} /><TextInput label={t('settings.phone')} {...form.getInputProps('phone')} /></SimpleGrid>
-          <Textarea label={t('po.address')} autosize minRows={2} {...form.getInputProps('address')} />
-          <SimpleGrid cols={{ base: 1, sm: 3 }}><TextInput label={t('po.city')} {...form.getInputProps('city')} /><TextInput label={t('po.country')} {...form.getInputProps('country')} /><TextInput label={t('po.taxNumber')} {...form.getInputProps('taxNumber')} /></SimpleGrid>
-          <SimpleGrid cols={{ base: 1, sm: 2 }}><TextInput label={t('po.paymentTerms')} placeholder={t('po.termsPlaceholder')} {...form.getInputProps('paymentTerms')} /><TextInput label={t('po.currency')} placeholder={currency} maxLength={3} {...form.getInputProps('currency')} /></SimpleGrid>
-          <Textarea label={t('common.notes')} autosize minRows={2} {...form.getInputProps('notes')} />
-          <Group><Switch label={t('po.contractor')} {...form.getInputProps('isContractor', { type: 'checkbox' })} /><Switch label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} /></Group>
-          <Group justify="flex-end"><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>
-        </Stack></form>
-      </Modal>
-    </Card>
   );
 }
 

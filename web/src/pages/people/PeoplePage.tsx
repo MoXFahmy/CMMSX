@@ -7,7 +7,7 @@ import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
 import { IconPlus, IconSearch } from '@tabler/icons-react';
 import { del, get, post, put } from '@/api/client';
-import type { Employee, Lookup, Team, User } from '@/api/types';
+import type { Employee, Lookup, SupplierLookup, Team, User } from '@/api/types';
 import { WorkingHoursEditor, organizationHours } from '@/components/WorkingHoursEditor';
 import type { WorkingDay } from '@/components/workingHours';
 import { useTeams } from '@/components/teams';
@@ -45,23 +45,25 @@ function EmployeesTable() {
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
   const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => get<User[]>('/users'), enabled: can(P.usersManage) });
   const { data: h } = useHierarchy();
+  // Contractor companies (0.17.0): a person working for one counts as contractor cost.
+  const { data: companies } = useQuery({ queryKey: ['suppliers', 'lookup', 'contractor'], queryFn: () => get<SupplierLookup[]>('/suppliers/lookup', { role: 'contractor' }) });
   const [opened, m] = useDisclosure();
   const [editing, setEditing] = useState<Employee | null>(null);
   const currency = me?.tenant.settings.currency ?? 'USD';
   const blank = { code: '', fullName: '', jobTitle: '', email: '', phone: '', tradeIds: [] as string[], siteIds: [] as string[], hourlyRate: '' as number | '', overtimeRate: '' as number | '',
-    isContractor: false, company: '', userId: null as string | null, notes: '', isActive: true, workingHours: null as WorkingDay[] | null };
+    isContractor: false, company: '', companyId: null as string | null, userId: null as string | null, notes: '', isActive: true, workingHours: null as WorkingDay[] | null };
   const form = useForm({ initialValues: blank });
   const open = (e: Employee | null) => {
     setEditing(e);
     form.setValues(e ? { code: e.code, fullName: e.fullName, jobTitle: e.jobTitle ?? '', email: e.email ?? '', phone: e.phone ?? '', tradeIds: e.tradeIds, siteIds: e.siteIds,
-      hourlyRate: e.hourlyRate ?? '', overtimeRate: e.overtimeRate ?? '', isContractor: e.isContractor, company: e.company ?? '', userId: e.userId ?? null, notes: e.notes ?? '', isActive: e.isActive,
+      hourlyRate: e.hourlyRate ?? '', overtimeRate: e.overtimeRate ?? '', isContractor: e.isContractor, company: e.company ?? '', companyId: e.companyId ?? null, userId: e.userId ?? null, notes: e.notes ?? '', isActive: e.isActive,
       workingHours: e.workingHours?.length ? e.workingHours : null } : blank);
     form.clearErrors(); m.open();
   };
   const submit = form.onSubmit(async (v) => {
     // No hours of their own = an empty list (back to the site's or the organization's).
     const body = { ...v, hourlyRate: v.hourlyRate === '' ? null : v.hourlyRate, overtimeRate: v.overtimeRate === '' ? null : v.overtimeRate, rowVersion: editing?.rowVersion,
-      workingHours: v.workingHours ?? [] };
+      workingHours: v.workingHours ?? [], companyId: v.isContractor ? v.companyId : null };
     try { if (editing) await put(`/employees/${editing.id}`, body); else await post('/employees', body); notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['employees'] }); m.close(); }
     catch (e) { handleFormError(form, e); }
   });
@@ -78,7 +80,7 @@ function EmployeesTable() {
         columns={[
           { accessor: 'fullName', title: t('common.name'), render: (e) => <Stack gap={0}><Text fz="sm" fw={500}>{e.fullName}</Text><Text fz="xs" c="dimmed">{e.code}{e.jobTitle && ` · ${e.jobTitle}`}</Text></Stack> },
           { accessor: 'tradeIds', title: t('people.trades'), render: (e) => <Group gap={4}>{e.tradeIds.map((id) => <Badge key={id} variant="default">{tradeName(id)}</Badge>)}</Group> },
-          { accessor: 'isContractor', title: t('common.type'), render: (e) => (e.isContractor ? <Badge color="grape">{e.company ?? t('people.contractor')}</Badge> : <Text fz="sm" c="dimmed">{t('people.inHouse')}</Text>) },
+          { accessor: 'isContractor', title: t('common.type'), render: (e) => (e.isContractor ? <Badge color="grape">{e.companyName ?? e.company ?? t('people.contractor')}</Badge> : <Text fz="sm" c="dimmed">{t('people.inHouse')}</Text>) },
           { accessor: 'hourlyRate', title: t('people.hourlyRate'), textAlign: 'right', render: (e) => fmtMoney(e.hourlyRate, currency) },
           { accessor: 'openWorkOrders', title: t('people.openWork'), textAlign: 'right' },
           { accessor: 'isActive', title: t('common.status'), render: (e) => <Badge color={e.isActive ? 'teal' : 'gray'}>{e.isActive ? t('common.active') : t('common.inactive')}</Badge> },
@@ -104,6 +106,10 @@ function EmployeesTable() {
             <Switch label={t('people.contractor')} {...form.getInputProps('isContractor', { type: 'checkbox' })} />
             {form.values.isContractor && <TextInput label={t('people.company')} {...form.getInputProps('company')} />}
           </Group>
+          {form.values.isContractor && <Select label={t('people.companyLink')} description={t('people.companyLinkHint')} clearable searchable
+            data={[...(companies ?? []).map((c) => ({ value: c.id, label: c.name })),
+              ...(editing?.companyId && !(companies ?? []).some((c) => c.id === editing.companyId) ? [{ value: editing.companyId, label: editing.companyName ?? '—' }] : [])]}
+            {...form.getInputProps('companyId')} />}
           {users && <Select label={t('people.login')} description={t('people.loginHint')} clearable searchable data={users.map((u) => ({ value: u.id, label: `${u.fullName} (${u.email})` }))} {...form.getInputProps('userId')} />}
           <Textarea label={t('common.notes')} autosize {...form.getInputProps('notes')} />
           <Accordion variant="contained" chevronPosition="left">

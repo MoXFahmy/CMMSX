@@ -23,6 +23,8 @@ import { RequestTypesSettings } from './RequestTypesSettings';
 import { PageHeader } from '@/components/PageHeader';
 import { LookupTable } from '@/components/LookupTable';
 import { PurchasingSettings } from './PurchasingSettings';
+import { ContractorCategoriesSettings } from './ContractorCategoriesSettings';
+import { ContractSettings } from './ContractSettings';
 import { locationOptions } from '@/components/LocationPicker';
 import { confirmDelete } from '@/components/confirm';
 import { fromNow, handleFormError, notifyError, notifySuccess } from '@/components/utils';
@@ -43,6 +45,9 @@ export function SettingsPage() {
     { value: 'request-types', label: t('requestTypes.title'), show: can(P.settingsManage) },
     { value: 'cancel-reasons', label: t('settings.cancelReasons'), show: can(P.woView) },
     { value: 'purchasing', label: t('settings.purchasingTab'), show: can(P.settingsManage) },
+    { value: 'contractor-categories', label: t('contractorCategories.title'), show: can(P.purchasingView) || can(P.suppliersManage) },
+    { value: 'contract-types', label: t('contracts.types'), show: can(P.contractsView) },
+    { value: 'contracts', label: t('contracts.title'), show: can(P.settingsManage) },
     { value: 'users', label: t('settings.users'), show: can(P.usersManage) },
     { value: 'roles', label: t('settings.roles'), show: can(P.usersManage) },
     { value: 'import', label: t('settings.import'), show: can(P.settingsManage) },
@@ -68,6 +73,9 @@ export function SettingsPage() {
         <Tabs.Panel value="import"><ImportSettings /></Tabs.Panel>
         <Tabs.Panel value="ai-usage"><AiUsageSettings /></Tabs.Panel>
         <Tabs.Panel value="purchasing"><PurchasingSettings /></Tabs.Panel>
+        <Tabs.Panel value="contractor-categories"><ContractorCategoriesSettings editable={can(P.suppliersManage)} /></Tabs.Panel>
+        <Tabs.Panel value="contract-types"><LookupTable path="/contract-types" title={t('contracts.types')} newLabel={t('contracts.newType')} editable={can(P.contractsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="contracts"><ContractSettings editable={can(P.settingsManage)} /></Tabs.Panel>
       </Tabs>
     </>
   );

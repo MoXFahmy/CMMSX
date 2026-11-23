@@ -488,7 +488,9 @@
     "openWork": "Open work",
     "newTrade": "New trade",
     "tradesTab": "Trades",
-    "peopleTab": "People"
+    "peopleTab": "People",
+    "companyLink": "Contractor company",
+    "companyLinkHint": "Their logged hours count as this company's contractor cost."
   },
   "wo": {
     "title": "Work orders",
@@ -942,7 +944,8 @@
       "orders": "Purchase orders",
       "proposal": "Re-order proposal",
       "suppliers": "Suppliers",
-      "requests": "Purchase requests"
+      "requests": "Purchase requests",
+      "companies": "Companies"
     },
     "views": {
       "open": "Open",
@@ -1247,6 +1250,10 @@
       "po_approvalWaiting": {
         "label": "Order waiting for my signature",
         "description": "With approval levels: to the approvers of the level whose turn it is."
+      },
+      "contract_alert": {
+        "label": "Contract needs attention",
+        "description": "A contract's last day to stop its renewal, or its end, is near."
       }
     },
     "notAllowedTitle": "E-mail isn't available for this organization yet",
@@ -2354,5 +2361,48 @@
     "order": "Order",
     "request": "Request",
     "returnTitle": "Return {{number}}"
+  },
+  "companies": {
+    "all": "All",
+    "new": "New company",
+    "edit": "Edit company",
+    "none": "No companies",
+    "roles": "Roles",
+    "role": {
+      "supplier": "Supplier",
+      "contractor": "Contractor",
+      "manufacturer": "Manufacturer"
+    },
+    "chooseRole": "Choose at least one role.",
+    "contacts": "Other contacts",
+    "addContact": "Add contact",
+    "noContacts": "No other contacts.",
+    "contactRole": "Role",
+    "addresses": "Other addresses",
+    "addAddress": "Add address",
+    "noAddresses": "No other addresses.",
+    "addressLabel": "Label (e.g. Workshop)",
+    "rates": "Hourly rates by category",
+    "addRate": "Add rate",
+    "ratesHint": "The company's own rate; categories without one use the category's default.",
+    "noCategories": "Add contractor categories in Settings first.",
+    "category": "Category",
+    "hourlyRate": "Hourly rate"
+  },
+  "contractorCategories": {
+    "title": "Contractor categories",
+    "hint": "Kinds of contractor work with a default hourly rate. A company can have its own rate per category.",
+    "new": "New category",
+    "edit": "Edit category",
+    "none": "No contractor categories yet.",
+    "defaultRate": "Default hourly rate",
+    "rateHint": "In {{currency}}; used when the company has no rate of its own."
+  },
+  "contracts": {
+    "title": "Contracts",
+    "types": "Contract types",
+    "newType": "New contract type",
+    "alertRecipients": "Contract alert recipients",
+    "alertRecipientsHint": "Told when a contract's notice deadline or end is near, besides its manager. With nobody named and no manager, everyone who may manage contracts is told."
   }
 }

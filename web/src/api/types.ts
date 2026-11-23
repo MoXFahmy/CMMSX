@@ -174,6 +174,8 @@ export type Lookup = { id: string; code: string; name: string; color?: string; i
 export type Employee = {
   id: string; code: string; fullName: string; jobTitle?: string; email?: string; phone?: string; tradeIds: string[]; siteIds: string[];
   hourlyRate?: number; overtimeRate?: number; isContractor: boolean; company?: string; userId?: string; notes?: string; isActive: boolean;
+  /** The contractor company this person works for (0.17.0); their hours count as contractor cost. */
+  companyId?: string; companyName?: string;
   openWorkOrders: number; rowVersion: string;
   /** Their own weekly working hours (0.9.0); none = their site's or the organization's. */
   workingHours?: WorkingDay[] | null;
@@ -422,9 +424,16 @@ export type WoPartItem = { id: string; type: StockTransactionType; date: string;
 // ---------------- Purchasing ----------------
 export type PurchaseOrderStatus = 'Draft' | 'Submitted' | 'Approved' | 'PartiallyReceived' | 'Received' | 'Closed' | 'Cancelled';
 export const PO_STATUSES: PurchaseOrderStatus[] = ['Draft', 'Submitted', 'Approved', 'PartiallyReceived', 'Received', 'Closed', 'Cancelled'];
-export type SupplierItem = { id: string; code: string; name: string; contactName?: string; email?: string; phone?: string; city?: string; country?: string; currency?: string; paymentTerms?: string; isContractor: boolean; isActive: boolean; openOrders: number; receivedYtd: number };
-export type SupplierDetail = { id: string; code: string; name: string; contactName?: string; email?: string; phone?: string; address?: string; city?: string; country?: string; taxNumber?: string; paymentTerms?: string; currency?: string; isContractor: boolean; notes?: string; isActive: boolean };
-export type SupplierLookup = { id: string; code: string; name: string; currency?: string; paymentTerms?: string };
+export type SupplierItem = { id: string; code: string; name: string; contactName?: string; email?: string; phone?: string; city?: string; country?: string; currency?: string; paymentTerms?: string; isSupplier: boolean; isContractor: boolean; isManufacturer: boolean; isActive: boolean; openOrders: number; receivedYtd: number };
+export type SupplierContact = { id?: string; name: string; role?: string | null; phone?: string | null; email?: string | null };
+export type SupplierAddress = { id?: string; label?: string | null; address: string; city?: string | null; country?: string | null };
+export type SupplierRate = { categoryId: string; rate: number; categoryName?: string };
+export type SupplierDetail = { id: string; code: string; name: string; contactName?: string; email?: string; phone?: string; address?: string; city?: string; country?: string; taxNumber?: string; paymentTerms?: string; currency?: string;
+  isSupplier: boolean; isContractor: boolean; isManufacturer: boolean; notes?: string; isActive: boolean; contacts: SupplierContact[]; addresses: SupplierAddress[]; rates: SupplierRate[] };
+/** Picker rows (0.17.0: by role; contractor pickers use the contacts and rates). */
+export type SupplierLookup = { id: string; code: string; name: string; currency?: string; paymentTerms?: string; contacts: { id: string; name: string; role?: string }[]; rates: { categoryId: string; rate: number }[] };
+/** A kind of contractor work with a default hourly rate (0.17.0). */
+export type ContractorCategory = { id: string; code: string; name: string; defaultRate: number; isActive: boolean };
 export type PoListItem = { id: string; number: string; status: PurchaseOrderStatus; orderTypeName?: string | null; orderDate: string; expectedDate?: string; supplierId: string; supplierName: string; siteName: string; currency: string; requestedBy?: string; lines: number; total: number; receivedPercent: number; isOverdue: boolean };
 export type PoLine = {
   id: string; lineNumber: number; partId?: string; partNumber?: string; isShelfItem: boolean; description: string; unitOfMeasure?: string; quantity: number; unitPrice: number; discountPercent: number;
