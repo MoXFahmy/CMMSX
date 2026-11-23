@@ -14,6 +14,7 @@ import { Attachments } from '@/components/Attachments';
 import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtPrice, fmtQty, notifyError } from '@/components/utils';
 import { TransactionsTable } from './InventoryPage';
+import { PartSuppliers } from './PartSuppliers';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={0}><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{label}</Text><Text fz="sm" component="div">{children ?? '—'}</Text></Stack>;
@@ -79,6 +80,7 @@ export function PartDetailPage() {
       <Tabs value={tab} onChange={setTab} keepMounted={false}>
         <Tabs.List mb="md">
           <Tabs.Tab value="stock">{t('inv.stockLevels')}</Tabs.Tab>
+          <Tabs.Tab value="suppliers">{t('catalogue.title')}</Tabs.Tab>
           <Tabs.Tab value="history">{t('inv.tabs.transactions')}</Tabs.Tab>
           <Tabs.Tab value="details">{t('common.details')}</Tabs.Tab>
           <Tabs.Tab value="files">{t('wo.files')}</Tabs.Tab>
@@ -155,6 +157,7 @@ export function PartDetailPage() {
             </Card>
           )}
         </Tabs.Panel>
+        <Tabs.Panel value="suppliers"><PartSuppliers partId={p.id} unit={p.unitOfMeasure} /></Tabs.Panel>
         <Tabs.Panel value="history"><TransactionsTable partId={p.id} /></Tabs.Panel>
         <Tabs.Panel value="details">
           <Grid>

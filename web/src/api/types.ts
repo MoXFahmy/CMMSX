@@ -424,7 +424,10 @@ export type StockTransactionItem = {
 export type ProposalItem = {
   partId: string; partNumber: string; partName: string; unitOfMeasure: string; isCritical: boolean; storeId: string; storeCode: string; siteId: string; quantityOnHand: number;
   reserved: number; available: number; onOrder: number; minLevel: number; reorderLevel: number; maxLevel: number; suggestedQuantity: number; preferredSupplierId?: string; supplierName?: string; unitPrice: number; belowMinimum: boolean;
+  /** The part's catalogue suppliers (0.18.0), preferred first. */
+  catalogue?: CatalogueOption[];
 };
+export type CatalogueOption = { supplierId: string; supplierName: string; packName: string; packSize: number; packPrice?: number | null; currency: string; minPacks: number; discountPercent: number; isPreferred: boolean };
 export type WoPartItem = { id: string; type: StockTransactionType; date: string; partId: string; partNumber: string; partName: string; unitOfMeasure: string; storeId: string; storeCode: string; quantity: number; unitCost: number; total: number; batchNumber?: string; notes?: string; createdByName?: string };
 
 // ---------------- Purchasing ----------------
@@ -445,6 +448,8 @@ export type PoLine = {
   id: string; lineNumber: number; partId?: string; partNumber?: string; isShelfItem: boolean; description: string; unitOfMeasure?: string; quantity: number; unitPrice: number; discountPercent: number;
   netUnitPrice: number; lineTotal: number; quantityReceived: number; outstanding: number; storeId?: string; storeCode?: string; workOrderId?: string; workOrderNumber?: string; accountCode?: string;
   purchaseRequestLineId?: string | null; request?: { id: string; number: string } | null;
+  /** 0.18.0: pieces per ordered unit and the supplier's part number. */
+  packSize: number; supplierPartNumber?: string | null; partUnit?: string | null;
 };
 export type PoDetail = {
   id: string; number: string; status: PurchaseOrderStatus; siteId: string; siteName: string; supplierId: string;
@@ -499,3 +504,12 @@ export type ContractOption = { id: string; number: string; title: string; compan
 export type CoveredBy = { id: string; number: string; title: string; companyName: string };
 export type ContractorLine = { id: string; supplierId: string; companyName: string; categoryId?: string | null; categoryName?: string | null; contactId?: string | null; personName?: string | null;
   plannedHours: number; hoursDone: number; doneOn?: string | null; rate: number; cost: number; plannedCost: number; notes?: string | null };
+
+/** A part's supplier with their pack and price (0.18.0). */
+export type SupplierPartRow = {
+  id: string; supplierId: string; supplierCode: string; supplierName: string; supplierActive: boolean; supplierPartNumber?: string | null; packName: string; packSize: number;
+  packPrice?: number | null; currency: string; discountPercent: number; leadTimeDays?: number | null; minPacks: number; notes?: string | null; isActive: boolean; isPreferred: boolean;
+  lastPaidPrice?: number | null; lastPaidDiscount?: number | null; lastPaidCurrency?: string | null; lastPaidOn?: string | null;
+};
+/** An order line as the catalogue fills it (0.18.0). */
+export type FilledLine = { partId: string; unitOfMeasure: string; packSize: number; quantity: number; unitPrice: number; discountPercent: number; supplierPartNumber?: string | null; leadTimeDays?: number | null; cataloguePrice: boolean };

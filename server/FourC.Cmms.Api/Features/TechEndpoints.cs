@@ -219,7 +219,7 @@ public static partial class TechEndpoints
                         {
                             o.Id, o.Number, Supplier = o.Supplier!.Name,
                             Lines = o.Lines.Where(l => l.PartId != null && l.QuantityReceived < l.Quantity).OrderBy(l => l.LineNumber)
-                                .Select(l => new { l.Id, l.LineNumber, l.PartId, l.Description, l.UnitOfMeasure, Outstanding = l.Quantity - l.QuantityReceived, l.StoreId }),
+                                .Select(l => new { l.Id, l.LineNumber, l.PartId, l.Description, l.UnitOfMeasure, Outstanding = l.Quantity - l.QuantityReceived, l.StoreId, l.PackSize }),
                         }).ToListAsync(ct)
                     : null,
             };

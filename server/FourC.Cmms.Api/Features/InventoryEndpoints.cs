@@ -74,7 +74,7 @@ public static class InventoryEndpoints
             Reserved = db.StockReservations.Where(r => r.PartId == p.Id && (storeId == null || r.StoreId == storeId)).Sum(r => (decimal?)r.Reserved) ?? 0,
             Low = db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0 && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel),
             OnOrder = db.PurchaseOrderLines.Where(x => x.PartId == p.Id && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId && OpenPo.Contains(o.Status)))
-                .Sum(x => (decimal?)(x.Quantity - x.QuantityReceived)) ?? 0,
+                .Sum(x => (decimal?)((x.Quantity - x.QuantityReceived) * x.PackSize)) ?? 0,
         }).ToPagedAsync(page, pageSize, ct, maxPageSize);
         return new PagedResult<PartListItem>(paged.Items.Select(p => new PartListItem(p.Id, p.PartNumber, p.Name, p.Manufacturer, p.UnitOfMeasure, p.GroupName,
             p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive, p.OnHand, p.Reserved, p.OnHand - p.Reserved, p.OnOrder, p.Low, Math.Round(p.OnHand * p.AverageCost, 2))).ToList(),
@@ -186,7 +186,7 @@ public static class InventoryEndpoints
             var alternates = await db.Parts.AsNoTracking().Where(x => p.AlternatePartIds.Contains(x.Id)).Select(x => new { x.Id, x.PartNumber, x.Name }).ToListAsync(ct);
             var supplier = p.PreferredSupplierId is { } sid ? await db.Suppliers.AsNoTracking().Where(x => x.Id == sid).Select(x => new { x.Id, x.Code, x.Name }).FirstOrDefaultAsync(ct) : null;
             var onOrder = await db.PurchaseOrderLines.Where(x => x.PartId == id && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId && OpenPo.Contains(o.Status)))
-                .SumAsync(x => (decimal?)(x.Quantity - x.QuantityReceived), ct) ?? 0;
+                .SumAsync(x => (decimal?)((x.Quantity - x.QuantityReceived) * x.PackSize), ct) ?? 0;
             var onHand = levels.Sum(l => l.QuantityOnHand);
             var reservedTotal = levels.Sum(l => l.Reserved);
             var usedOn = await db.AssetParts.AsNoTracking().Where(x => x.PartId == id).OrderBy(x => x.Asset!.AssetNumber)
@@ -209,6 +209,8 @@ public static class InventoryEndpoints
             if (!v.IsValid) return v.Problem();
             var p = CreatePart(db, i);
             foreach (var l in i.Levels ?? []) db.StockLevels.Add(new StockLevel { PartId = p.Id, StoreId = l.StoreId, Bin = l.Bin.Clean(), MinLevel = l.MinLevel, ReorderLevel = l.ReorderLevel, MaxLevel = l.MaxLevel, ReorderQuantity = l.ReorderQuantity });
+            // The preferred supplier always has a catalogue row (0.18.0).
+            if (p.PreferredSupplierId is { } preferred) await CatalogueEndpoints.EnsureRowAsync(db, p, preferred, ct);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/parts/{p.Id}", new { p.Id });
         }).RequirePermission(Permissions.InventoryManage);
@@ -221,6 +223,7 @@ public static class InventoryEndpoints
             if (!v.IsValid) return v.Problem();
             if (i.RowVersion is not null) db.Entry(p).Property(x => x.RowVersion).OriginalValue = i.RowVersion.ToVersion();
             UpdatePart(p, i);
+            if (p.PreferredSupplierId is { } preferred) await CatalogueEndpoints.EnsureRowAsync(db, p, preferred, ct);
             if (i.Levels is not null)
             {
                 var existing = await db.StockLevels.Where(l => l.PartId == id).ToListAsync(ct);
@@ -254,6 +257,7 @@ public static class InventoryEndpoints
             if (await db.AssetParts.AllSites().AnyAsync(x => x.PartId == id, ct))
                 throw new DomainException("This part is on assets' spare-parts lists. Remove it from them, or mark it inactive instead.");
             await db.StockLevels.AllSites().Where(l => l.PartId == id).ExecuteDeleteAsync(ct);
+            db.SupplierParts.RemoveRange(await db.SupplierParts.Where(r => r.PartId == id).ToListAsync(ct)); // its catalogue goes with it (0.18.0)
             db.Parts.Remove(p);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
@@ -395,15 +399,30 @@ public static class InventoryEndpoints
                 l.QuantityOnHand, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity, l.Part.PreferredSupplierId, Price = l.Part.LastPurchasePrice ?? l.Part.AverageCost,
                 Reserved = (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0),
                 OnOrder = db.PurchaseOrderLines.Where(x => x.PartId == l.PartId && x.StoreId == l.StoreId && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId &&
-                    (o.Status == PurchaseOrderStatus.Draft || o.Status == PurchaseOrderStatus.Submitted || OpenPo.Contains(o.Status)))).Sum(x => (decimal?)(x.Quantity - x.QuantityReceived)) ?? 0,
+                    (o.Status == PurchaseOrderStatus.Draft || o.Status == PurchaseOrderStatus.Submitted || OpenPo.Contains(o.Status)))).Sum(x => (decimal?)((x.Quantity - x.QuantityReceived) * x.PackSize)) ?? 0,
             }).ToListAsync(ct);
             var suppliers = await db.Suppliers.AsNoTracking().ToDictionaryAsync(s => s.Id, s => s.Name, ct);
+            // The supplier catalogue (0.18.0): each part's active rows from active suppliers, preferred first, and who it was last received from.
+            var partIds = rows.Select(r => r.PartId).Distinct().ToList();
+            var catalogue = (await db.SupplierParts.AsNoTracking().Where(c => partIds.Contains(c.PartId) && c.IsActive && c.Supplier!.IsActive && c.Supplier.IsSupplier)
+                    .Select(c => new { c.PartId, c.SupplierId, SupplierName = c.Supplier!.Name, c.PackName, c.PackSize, c.PackPrice, c.Currency, c.MinPacks, c.DiscountPercent })
+                    .ToListAsync(ct)).ToLookup(c => c.PartId);
+            var lastFrom = (await db.StockTransactions.AllSites().AsNoTracking()
+                    .Where(t => partIds.Contains(t.PartId) && t.Type == StockTransactionType.Receipt && t.SupplierId != null)
+                    .GroupBy(t => t.PartId).Select(g => new { PartId = g.Key, SupplierId = g.OrderByDescending(t => t.Date).ThenByDescending(t => t.CreatedAt).First().SupplierId })
+                    .ToListAsync(ct)).ToDictionary(x => x.PartId, x => x.SupplierId);
+            Guid? Suggested(Guid partId, Guid? preferred) =>
+                preferred ?? (catalogue[partId].Select(c => c.SupplierId).Distinct().Count() == 1 ? (Guid?)catalogue[partId].First().SupplierId : null) ?? lastFrom.GetValueOrDefault(partId);
             // A level is proposed when available stock plus what is on order is at or below its re-order level.
             return rows.Where(r => r.QuantityOnHand - r.Reserved + r.OnOrder <= r.ReorderLevel).Select(r =>
             {
+                var supplier = Suggested(r.PartId, r.PreferredSupplierId);
+                var options = catalogue[r.PartId].OrderByDescending(c => c.SupplierId == r.PreferredSupplierId).ThenBy(c => c.SupplierName)
+                    .Select(c => new { c.SupplierId, c.SupplierName, c.PackName, c.PackSize, c.PackPrice, c.Currency, c.MinPacks, c.DiscountPercent, IsPreferred = c.SupplierId == r.PreferredSupplierId })
+                    .ToList();
                 return new { r.PartId, r.PartNumber, r.PartName, r.UnitOfMeasure, r.IsCritical, r.StoreId, r.StoreCode, r.SiteId, r.QuantityOnHand, r.Reserved, Available = r.QuantityOnHand - r.Reserved,
                     r.OnOrder, r.MinLevel, r.ReorderLevel, r.MaxLevel,
-                    SuggestedQuantity = SuggestedQuantity(r.QuantityOnHand, r.Reserved, r.OnOrder, r.ReorderQuantity, r.MaxLevel), r.PreferredSupplierId, SupplierName = r.PreferredSupplierId is { } sid ? suppliers.GetValueOrDefault(sid) : null, UnitPrice = r.Price,
+                    SuggestedQuantity = SuggestedQuantity(r.QuantityOnHand, r.Reserved, r.OnOrder, r.ReorderQuantity, r.MaxLevel), PreferredSupplierId = supplier, SupplierName = supplier is { } sid ? suppliers.GetValueOrDefault(sid) : null, Catalogue = options, UnitPrice = r.Price,
                     BelowMinimum = r.QuantityOnHand < r.MinLevel };
             }).OrderByDescending(r => r.IsCritical).ThenByDescending(r => r.BelowMinimum).ThenBy(r => r.PartNumber);
         }).RequirePermission(Permissions.InventoryView);

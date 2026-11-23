@@ -6,9 +6,7 @@ import { useTranslation } from 'react-i18next';
 import { get, post } from '@/api/client';
 import type { SupplierLookup } from '@/api/types';
 import { fmtQty, notifyError, notifySuccess } from '@/components/utils';
-import { previewGroups, type OrderableLine } from './purchaseRequests';
-
-type Row = { lineId: string; on: boolean; supplierId: string | null; quantity: number | ''; unitPrice: number | '' };
+import { orderRows, previewGroups, type OrderableLine, type OrderRow as Row } from './purchaseRequests';
 
 /** Approved request lines (from one request or several) become draft orders grouped by supplier and site. */
 export function OrderFromRequestsModal({ lines, opened, onClose }: { lines: OrderableLine[]; opened: boolean; onClose: () => void }) {
@@ -19,7 +17,7 @@ export function OrderFromRequestsModal({ lines, opened, onClose }: { lines: Orde
   const [rows, setRows] = useState<Row[]>([]);
   const [busy, setBusy] = useState(false);
   useEffect(() => {
-    if (opened) setRows(lines.map((l) => ({ lineId: l.id, on: true, supplierId: l.part?.preferredSupplierId ?? null, quantity: l.quantity, unitPrice: l.estimatedUnitPrice ?? '' })));
+    if (opened) setRows(orderRows(lines));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened, lines.map((l) => l.id).join(',')]); // the same lines again (a fresh array each render) keep the edits
   const chosen = rows.filter((r) => r.on);
@@ -62,7 +60,7 @@ export function OrderFromRequestsModal({ lines, opened, onClose }: { lines: Orde
                   <Table.Td><Select size="xs" searchable placeholder={t('pr.chooseSupplier')} data={(suppliers ?? []).map((s) => ({ value: s.id, label: s.name }))}
                     value={r.supplierId} onChange={(v) => set(i, { supplierId: v })} error={r.on && !r.supplierId ? ' ' : undefined} disabled={!r.on} /></Table.Td>
                   <Table.Td><NumberInput size="xs" min={0} decimalScale={3} value={r.quantity} onChange={(v) => set(i, { quantity: v === '' ? '' : Number(v) })} disabled={!r.on} /></Table.Td>
-                  <Table.Td><NumberInput size="xs" min={0} decimalScale={4} thousandSeparator value={r.unitPrice} onChange={(v) => set(i, { unitPrice: v === '' ? '' : Number(v) })} disabled={!r.on} /></Table.Td>
+                  <Table.Td><NumberInput size="xs" min={0} decimalScale={4} thousandSeparator value={r.unitPrice} placeholder={r.estimate != null ? String(r.estimate) : t('pr.priceFromCatalogue')} onChange={(v) => set(i, { unitPrice: v === '' ? '' : Number(v) })} disabled={!r.on} /></Table.Td>
                 </Table.Tr>
               );
             })}

@@ -58,7 +58,7 @@ export type TechStock = {
   cancelReasons: { id: string; name: string }[];
   pmTasks: { id: string; code: string; name: string; steps: string[] }[];
   counts: { id: string; name: string; storeId: string }[];
-  purchaseOrders: { id: string; number: string; supplier: string; lines: { id: string; lineNumber: number; partId: string; description: string; unitOfMeasure?: string | null; outstanding: number; storeId?: string | null }[] }[] | null;
+  purchaseOrders: { id: string; number: string; supplier: string; lines: { id: string; lineNumber: number; partId: string; description: string; unitOfMeasure?: string | null; outstanding: number; storeId?: string | null; packSize?: number }[] }[] | null;
 };
 
 export type TechBundle = {

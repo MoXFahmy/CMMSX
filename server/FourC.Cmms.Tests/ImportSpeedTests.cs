@@ -60,4 +60,16 @@ public class ImportSpeedTests(ApiFixture fx, ITestOutputHelper output) : IClassF
         Assert.Equal(5000, Count(SheetOf(result, "Stock"), "new"));
         Assert.True(took < Target, $"took {took.TotalSeconds:0.0} s");
     }
+
+    [SkippableFact]
+    public async Task Five_thousand_parts_with_a_preferred_supplier_import_in_time()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        await RunAsync(c, Book(new Sheet("Suppliers", ["Code", "Name"], ["SKF", "SKF Ltd"], ["FAG", "FAG Ltd"])));
+        var rows = Enumerable.Range(1, 5000).Select(i => new object?[] { $"P{i}", $"Part {i}", "EA", 2m, i % 2 == 0 ? "SKF" : "FAG" }).ToArray();
+        var (result, took) = await TimedRunAsync(c, Book(new Sheet("Parts", ["Part number", "Name", "Unit", "Standard price", "Preferred supplier code"], rows)), "5,000 parts with a preferred supplier");
+        Assert.Equal(5000, Count(SheetOf(result, "Parts"), "new"));
+        Assert.True(took < Target, $"took {took.TotalSeconds:0.0} s");
+    }
 }

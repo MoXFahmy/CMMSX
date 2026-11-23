@@ -1,5 +1,6 @@
 import { useMemo, useState } from 'react';
-import { ActionIcon, Badge, Button, Card, Checkbox, Divider, Group, Modal, NumberInput, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { ActionIcon, Anchor, Badge, Button, Card, Checkbox, Divider, Group, Modal, NumberInput, SegmentedControl, Select, SimpleGrid, Stack, Switch, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { Link } from 'react-router';
 import { useDebouncedValue, useDisclosure } from '@mantine/hooks';
 import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +19,8 @@ const blank = {
   isSupplier: true, isContractor: false, isManufacturer: false, notes: '', isActive: true,
   contacts: [] as SupplierContact[], addresses: [] as SupplierAddress[], rates: [] as SupplierRate[],
 };
+
+type SuppliedPart = { partId: string; partNumber: string; partName: string; supplierPartNumber?: string | null; packName: string; packSize: number; packPrice?: number | null; currency: string };
 
 const ROLE_COLOR: Record<CompanyRole, string> = { supplier: 'blue', contractor: 'grape', manufacturer: 'teal' };
 
@@ -62,6 +65,8 @@ export function CompaniesTab() {
   const manage = can(P.suppliersManage);
   const rows = useMemo(() => data?.items ?? [], [data]);
   const catOptions = (categories ?? []).map((c) => ({ value: c.id, label: `${c.code} · ${c.name}` }));
+  // The parts this company supplies (0.18.0), edited on each part's Suppliers tab.
+  const { data: supplied } = useQuery({ queryKey: ['supplier-parts', editingId], queryFn: () => get<SuppliedPart[]>(`/suppliers/${editingId}/parts`), enabled: !!editingId && opened });
   return (
     <Card p={0}>
       <Group p="md" gap="xs" wrap="wrap">
@@ -148,6 +153,20 @@ export function CompaniesTab() {
             ))}
           </>}
 
+          {form.values.isSupplier && editingId && <>
+            <Title order={6}>{t('catalogue.partsSupplied')}</Title>
+            {(supplied ?? []).length === 0 ? <Text fz="sm" c="dimmed">{t('catalogue.noPartsSupplied')}</Text> : (
+              <Stack gap={2}>
+                {(supplied ?? []).map((p) => (
+                  <Group key={p.partId} gap={6} wrap="nowrap">
+                    <Anchor component={Link} to={`/inventory/parts/${p.partId}`} fz="sm" fw={500}>{p.partNumber}</Anchor>
+                    <Text fz="sm" c="dimmed" lineClamp={1}>{p.partName}</Text>
+                    <Text fz="xs" c="dimmed" ms="auto">{p.packName}{p.packPrice != null ? ` · ${fmtPrice(p.packPrice, p.currency)}` : ''}</Text>
+                  </Group>
+                ))}
+              </Stack>
+            )}
+          </>}
           <Textarea label={t('common.notes')} autosize minRows={2} {...form.getInputProps('notes')} />
           <Switch label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
           <Group justify="flex-end"><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>

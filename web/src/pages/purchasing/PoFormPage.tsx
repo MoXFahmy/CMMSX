@@ -7,24 +7,29 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { get, post, put } from '@/api/client';
-import type { PartDetail, PoDetail, SupplierLookup, WorkOrderDetail } from '@/api/types';
+import type { FilledLine, PartDetail, PoDetail, SupplierLookup, WorkOrderDetail } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { useHierarchy } from '@/components/LocationPicker';
 import { PartPicker, useStores } from '@/components/PartPicker';
 import { WorkOrderPicker } from '@/components/WorkOrderPicker';
-import { fmtPrice, handleFormError, notifySuccess, toIsoDate } from '@/components/utils';
+import { fmtPrice, fmtQty, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import dayjs from 'dayjs';
+import { perPieceOf, piecesOf, refill } from './packs';
 
 type Line = {
   id?: string; partId: string | null; part?: { id: string; partNumber: string; name: string } | null; description: string; unitOfMeasure: string; quantity: number | '';
   unitPrice: number | ''; discountPercent: number | ''; storeId: string | null; workOrderId: string | null; workOrder?: { id: string; number: string } | null; accountCode: string;
+  /** 0.18.0: pieces per ordered unit, the supplier's part number, the part's own unit, its lead time and whether the price came from the catalogue. */
+  packSize: number; supplierPartNumber: string; partUnit: string; leadTimeDays: number | null; notCatalogue: boolean;
 };
 type Values = {
   siteId: string | null; supplierId: string | null; orderDate: Date | string | null; expectedDate: Date | string | null; requestedBy: string; currency: string; exchangeRate: number | '';
   paymentTerms: string; shippingMethod: string; deliverTo: string; supplierQuoteRef: string; taxPercent: number | ''; shippingCost: number | ''; notes: string; lines: Line[];
   orderTypeId: string | null;
 };
-const blankLine = (): Line => ({ partId: null, part: null, description: '', unitOfMeasure: '', quantity: 1, unitPrice: '', discountPercent: 0, storeId: null, workOrderId: null, workOrder: null, accountCode: '' });
+const blankLine = (): Line => ({ partId: null, part: null, description: '', unitOfMeasure: '', quantity: 1, unitPrice: '', discountPercent: 0, storeId: null, workOrderId: null, workOrder: null, accountCode: '',
+  packSize: 1, supplierPartNumber: '', partUnit: '', leadTimeDays: null, notCatalogue: false });
 const n = (v: number | '') => (v === '' ? 0 : v);
 const lineTotal = (l: Line) => Math.round(n(l.quantity) * n(l.unitPrice) * (1 - n(l.discountPercent) / 100) * 100) / 100;
 
@@ -54,7 +59,8 @@ export function PoFormPage() {
       paymentTerms: po.paymentTerms ?? '', shippingMethod: po.shippingMethod ?? '', deliverTo: po.deliverTo ?? '', supplierQuoteRef: po.supplierQuoteRef ?? '', taxPercent: po.taxPercent, shippingCost: po.shippingCost,
       notes: po.notes ?? '', orderTypeId: po.orderTypeId ?? null, lines: po.lines.map((l) => ({ id: l.id, partId: l.partId ?? null, part: l.partId ? { id: l.partId, partNumber: l.partNumber ?? '', name: l.description } : null, description: l.description,
         unitOfMeasure: l.unitOfMeasure ?? '', quantity: l.quantity, unitPrice: l.unitPrice, discountPercent: l.discountPercent, storeId: l.storeId ?? null, workOrderId: l.workOrderId ?? null,
-        workOrder: l.workOrderId ? { id: l.workOrderId, number: l.workOrderNumber ?? '' } : null, accountCode: l.accountCode ?? '' })),
+        workOrder: l.workOrderId ? { id: l.workOrderId, number: l.workOrderNumber ?? '' } : null, accountCode: l.accountCode ?? '',
+        packSize: l.packSize ?? 1, supplierPartNumber: l.supplierPartNumber ?? '', partUnit: l.partUnit ?? l.unitOfMeasure ?? '', leadTimeDays: null, notCatalogue: false })),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [po]);
@@ -69,7 +75,7 @@ export function PoFormPage() {
         const p = await get<PartDetail>(`/parts/${partId}`);
         const store = p.levels[0]?.storeId ?? null;
         form.setFieldValue('lines', [{ ...blankLine(), partId: p.id, part: { id: p.id, partNumber: p.partNumber, name: p.name }, description: p.name, unitOfMeasure: p.unitOfMeasure,
-          unitPrice: p.lastPurchasePrice ?? p.averageCost, storeId: store, quantity: p.levels[0]?.reorderQuantity || 1 }]);
+          unitPrice: p.lastPurchasePrice ?? p.averageCost, storeId: store, quantity: p.levels[0]?.reorderQuantity || 1, partUnit: p.unitOfMeasure, leadTimeDays: p.leadTimeDays ?? null }]);
         if (p.preferredSupplierId) onSupplier(p.preferredSupplierId);
         const site = stores.find((s) => s.id === store)?.siteId;
         form.setFieldValue('siteId', site ?? h.sites[0]?.id ?? null);
@@ -89,11 +95,43 @@ export function PoFormPage() {
     if (parts) form.setFieldValue('orderTypeId', parts.id);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [orderTypes]);
+  /**
+   * Fills part lines from the supplier's catalogue (0.18.0): each keeps at least its pieces, in the supplier's whole packs at its price. The
+   * expected date, when not typed, becomes the order date + the longest lead time.
+   */
+  const fill = async (supplierId: string | null, only?: number) => {
+    if (!supplierId) return;
+    const lines = form.getValues().lines;
+    const wanted = lines.map((l, i) => ({ l, i })).filter(({ l, i }) => l.partId && (only === undefined || i === only));
+    if (!wanted.length) return;
+    const currency = form.getValues().currency || null;
+    try {
+      // Each line sends its own price per piece: kept when the new supplier's catalogue has no price for it.
+      const filled = await post<FilledLine[]>('/purchase-orders/fill', { supplierId, currency,
+        lines: wanted.map(({ l }) => ({ partId: l.partId, pieces: piecesOf(n(l.quantity) || 1, l.packSize), perPiece: perPieceOf(l) })) });
+      // An answer for a supplier or currency changed since is dropped; a line is written back only when it is still the same line.
+      if (form.getValues().supplierId !== supplierId || (form.getValues().currency || null) !== currency) return;
+      const changed: string[] = [];
+      wanted.forEach(({ l, i }, k) => {
+        const f = filled[k];
+        const cur = form.getValues().lines[i];
+        if (!f || f.partId !== l.partId || !cur || cur.partId !== l.partId || (cur.id ?? null) !== (l.id ?? null)) return;
+        const r = refill(cur, f);
+        form.setFieldValue(`lines.${i}`, r.line);
+        if (r.changed) changed.push(cur.part?.partNumber ?? cur.description);
+      });
+      if (only === undefined && changed.length) notifySuccess(t('catalogue.refilled', { parts: changed.join(', ') }));
+      const x = form.getValues();
+      const lead = Math.max(0, ...x.lines.map((l) => l.leadTimeDays ?? 0));
+      if (!x.expectedDate && lead > 0 && x.orderDate) form.setFieldValue('expectedDate', dayjs(x.orderDate).add(lead, 'day').toDate());
+    } catch (e) { notifyError(e); }
+  };
   const onSupplier = (sid: string | null) => {
     form.setFieldValue('supplierId', sid);
     const s = suppliers?.find((x) => x.id === sid);
     if (s?.currency) form.setFieldValue('currency', s.currency);
     if (s?.paymentTerms) form.setFieldValue('paymentTerms', s.paymentTerms);
+    void fill(sid);
   };
   const v = form.getValues();
   const subtotal = v.lines.reduce((a, l) => a + lineTotal(l), 0);
@@ -107,7 +145,8 @@ export function PoFormPage() {
       ...x, orderDate: toIsoDate(x.orderDate), expectedDate: toIsoDate(x.expectedDate), exchangeRate: x.exchangeRate === '' ? 1 : x.exchangeRate, taxPercent: n(x.taxPercent), shippingCost: n(x.shippingCost),
       rowVersion: po?.rowVersion,
       lines: x.lines.filter((l) => l.partId || l.description.trim()).map((l) => ({ id: l.id ?? null, partId: l.partId, description: l.description, unitOfMeasure: l.unitOfMeasure, quantity: n(l.quantity),
-        unitPrice: n(l.unitPrice), discountPercent: n(l.discountPercent), storeId: l.partId ? l.storeId : null, workOrderId: l.workOrderId, accountCode: l.accountCode })),
+        unitPrice: n(l.unitPrice), discountPercent: n(l.discountPercent), storeId: l.partId ? l.storeId : null, workOrderId: l.workOrderId, accountCode: l.accountCode,
+        packSize: l.partId ? l.packSize || 1 : 1, supplierPartNumber: l.supplierPartNumber || null })),
       orderTypeId: x.orderTypeId,
     };
     try {
@@ -171,16 +210,21 @@ export function PoFormPage() {
                   <Table.Td><PartPicker placeholder={t('po.nonStock')} value={l.partId} initial={l.part} withStock={false} onChange={(pid, p) => {
                     form.setFieldValue(`lines.${i}.partId`, pid); form.setFieldValue(`lines.${i}.part`, p ? { id: p.id, partNumber: p.partNumber, name: p.name } : null);
                     if (p) { form.setFieldValue(`lines.${i}.description`, p.name); form.setFieldValue(`lines.${i}.unitOfMeasure`, p.unitOfMeasure); form.setFieldValue(`lines.${i}.unitPrice`, p.lastPurchasePrice ?? p.averageCost);
+                      form.setFieldValue(`lines.${i}.partUnit`, p.unitOfMeasure); form.setFieldValue(`lines.${i}.packSize`, 1); form.setFieldValue(`lines.${i}.supplierPartNumber`, '');
                       if (!form.getValues().lines[i].storeId && siteStores.length) form.setFieldValue(`lines.${i}.storeId`, siteStores[0].id);
-                      if (!form.getValues().siteId && siteStores.length) form.setFieldValue('siteId', siteStores[0].siteId); }
+                      if (!form.getValues().siteId && siteStores.length) form.setFieldValue('siteId', siteStores[0].siteId);
+                      void fill(form.getValues().supplierId, i); }
                   }} />
                   {l.partId && <Select mt={4} size="xs" placeholder={t('inv.store')} aria-label={t('inv.store')} data={siteStores.map((s) => ({ value: s.id, label: `${t('po.intoStore')} ${s.code}` }))} {...form.getInputProps(`lines.${i}.storeId`)} error={form.errors[`lines[${i}].storeId`]} />}
                   </Table.Td>
                   <Table.Td><TextInput aria-label={t('common.description')} {...form.getInputProps(`lines.${i}.description`)} error={form.errors[`lines[${i}].description`]} />
+                    {l.supplierPartNumber && <Text fz="xs" c="dimmed" mt={2}>{t('catalogue.theirNumber', { number: l.supplierPartNumber })}</Text>}
                     <TextInput mt={4} size="xs" placeholder={t('po.accountCode')} aria-label={t('po.accountCode')} {...form.getInputProps(`lines.${i}.accountCode`)} /></Table.Td>
                   <Table.Td><NumberInput min={0} decimalScale={3} aria-label={t('inv.quantity')} {...form.getInputProps(`lines.${i}.quantity`)} error={form.errors[`lines[${i}].quantity`]} /></Table.Td>
-                  <Table.Td><TextInput aria-label={t('inv.unit')} {...form.getInputProps(`lines.${i}.unitOfMeasure`)} /></Table.Td>
-                  <Table.Td><NumberInput min={0} decimalScale={4} thousandSeparator aria-label={t('po.unitPrice')} {...form.getInputProps(`lines.${i}.unitPrice`)} error={form.errors[`lines[${i}].unitPrice`]} /></Table.Td>
+                  <Table.Td><TextInput aria-label={t('inv.unit')} {...form.getInputProps(`lines.${i}.unitOfMeasure`)} />
+                    {l.packSize !== 1 && <Text fz="xs" c="dimmed" mt={2}>= {fmtQty(piecesOf(n(l.quantity), l.packSize))} {l.partUnit}</Text>}</Table.Td>
+                  <Table.Td><NumberInput min={0} decimalScale={4} thousandSeparator aria-label={t('po.unitPrice')} {...form.getInputProps(`lines.${i}.unitPrice`)} error={form.errors[`lines[${i}].unitPrice`]} />
+                    {l.notCatalogue && <Text fz="xs" c="orange" mt={2}>{t('catalogue.notCataloguePrice')}</Text>}</Table.Td>
                   <Table.Td><NumberInput min={0} max={100} suffix="%" aria-label={t('po.discount')} {...form.getInputProps(`lines.${i}.discountPercent`)} /></Table.Td>
                   <Table.Td><WorkOrderPicker placeholder={t('po.forWorkOrder')} value={l.workOrderId} initial={l.workOrder} onChange={(x) => form.setFieldValue(`lines.${i}.workOrderId`, x)} /></Table.Td>
                   <Table.Td ta="right" pt={12}><Text fz="sm" fw={600}>{fmtPrice(lineTotal(l), cur)}</Text></Table.Td>

@@ -898,7 +898,7 @@ public static class ReportEndpoints
             Reserved = (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0),
             l.PartId, l.Part!.PartNumber, l.Part.Name, l.Part.UnitOfMeasure, l.Part.IsCritical, Store = l.Store!.Code, l.QuantityOnHand, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity,
             OnOrder = db.PurchaseOrderLines.Where(x => x.PartId == l.PartId && x.StoreId == l.StoreId && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId && open.Contains(o.Status)))
-                .Sum(x => (decimal?)(x.Quantity - x.QuantityReceived)) ?? 0,
+                .Sum(x => (decimal?)((x.Quantity - x.QuantityReceived) * x.PackSize)) ?? 0,
             Price = l.Part.LastPurchasePrice ?? l.Part.AverageCost,
         }).ToListAsync(ct);
         var rows = xs.OrderByDescending(x => x.IsCritical).ThenBy(x => x.QuantityOnHand - x.MinLevel).Select(x =>

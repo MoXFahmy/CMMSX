@@ -20,7 +20,7 @@ internal static class SheetImporters
         new SiteImporter(), new LocationImporter(), new CategoryImporter(), new TradeImporter(), new PartGroupImporter(),
         new SymptomImporter(), new CauseImporter(), new RemedyImporter(),
         new SupplierImporter(), new StoreImporter(), new AssetImporter(), new PeopleImporter(), new PartImporter(), new StockImporter(),
-        new AssetPartImporter(), new PmTaskImporter(), new MeasurementPointImporter(), new PmStepImporter(), new PmPartImporter(), new PmScheduleImporter(),
+        new SupplierCatalogueImporter(), new AssetPartImporter(), new PmTaskImporter(), new MeasurementPointImporter(), new PmStepImporter(), new PmPartImporter(), new PmScheduleImporter(),
     ];
 
     /// <summary>The Assets sheet with one more column per custom field, headed by the field's label.</summary>
@@ -726,7 +726,14 @@ internal sealed class PartImporter : RecordImporter<Part>
     {
         var numbers = Codes(rows, "partNumber");
         Keep(await ByKey(c.Db.Parts.Where(p => numbers.Contains(p.PartNumber)), p => p.PartNumber, ct));
+        // The preferred suppliers' catalogue rows (0.18.0): the pairs there are and every company's currency, read once for the sheet.
+        _pairs = [.. (await c.Db.SupplierParts.AsNoTracking().Where(r => numbers.Contains(r.Part!.PartNumber)).Select(r => new { r.PartId, r.SupplierId }).ToListAsync(ct))
+            .Select(r => (r.PartId, r.SupplierId))];
+        _currencies = await c.Db.Suppliers.AsNoTracking().ToDictionaryAsync(s => s.Id, s => (string?)s.Currency, ct);
     }
+
+    private HashSet<(Guid PartId, Guid SupplierId)> _pairs = [];
+    private Dictionary<Guid, string?> _currencies = [];
 
     protected override Dictionary<string, object?> Values(ImportContext c, Part p) => new()
     {
@@ -751,8 +758,20 @@ internal sealed class PartImporter : RecordImporter<Part>
         if (row.HasProblems || !Accept(row, InventoryEndpoints.PartRules(input))) return Task.FromResult<Part?>(null);
         // A new group is added only once the row is known to be good.
         if (groupCode is not null && groupId is null) input = input with { GroupId = c.EnsureLookup(c.PartGroups, groupCode, "PartGroups") };
-        if (existing is not null) { InventoryEndpoints.UpdatePart(existing, input); return Task.FromResult<Part?>(null); }
-        return Task.FromResult<Part?>(InventoryEndpoints.CreatePart(c.Db, input));
+        var part = existing ?? InventoryEndpoints.CreatePart(c.Db, input);
+        if (existing is not null) InventoryEndpoints.UpdatePart(existing, input);
+        return Task.FromResult(WithCatalogue(c, part, existing is null ? part : null));
+    }
+
+    /// <summary>The preferred supplier always has a catalogue row (0.18.0); a company added earlier in this run is found among the new ones.</summary>
+    private Part? WithCatalogue(ImportContext c, Part part, Part? created)
+    {
+        if (part.PreferredSupplierId is { } preferred && _pairs.Add((part.Id, preferred)))
+        {
+            if (!_currencies.TryGetValue(preferred, out var currency)) currency = c.Db.Suppliers.Local.FirstOrDefault(s => s.Id == preferred)?.Currency;
+            c.Db.SupplierParts.Add(CatalogueEndpoints.PreferredRow(part, preferred, currency, c.Settings.Currency));
+        }
+        return created;
     }
 
     protected override void Remember(ImportContext c, Part p, Dictionary<string, object?> v) => c.Remember(c.Parts, p.PartNumber, p.Id);
@@ -1240,6 +1259,85 @@ internal sealed class AssetPartImporter : ListSheetImporter
         foreach (var id in changed)
             AssetPartEndpoints.Replace(c.Db, tracked[id].ToList(), id, _wanted[id].Select(x => new AssetPartInput(x.Key, x.Value.Quantity, x.Value.Note)).ToList());
     }
+}
+
+/// <summary>
+/// The Supplier catalogue sheet (0.18.0): one row per part and supplier, checked as on the part page. Rows are added or changed; a supplier
+/// left off the sheet keeps its row (removing is done on the part page, so a sheet never wipes the prices paid).
+/// </summary>
+internal sealed class SupplierCatalogueImporter : ISheetImporter
+{
+    private readonly Dictionary<(Guid Part, Guid Supplier), SupplierPart> _before = [];
+    private readonly Dictionary<(Guid Part, Guid Supplier), CatalogueEndpoints.SupplierPartInput> _wanted = [];
+    private Dictionary<Guid, string> _units = [];
+    private Dictionary<Guid, (bool IsSupplier, string? Currency)> _companies = [];
+
+    public string Sheet => "SupplierCatalogue";
+    public IReadOnlyList<string> KeyColumns => ["partNumber", "supplierCode"];
+    public string KeyOf(ImportRow row) => string.Join('|', KeyColumns.Select(k => ImportValues.Show(row.Value(k))?.Trim() ?? ""));
+
+    public async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var parts = rows.Select(r => r.Get<string>("partNumber")?.Trim()).OfType<string>().Select(n => c.Parts.TryGetValue(n, out var id) ? id : Guid.Empty)
+            .Where(id => id != Guid.Empty).Distinct().ToList();
+        _units = await c.Db.Parts.AsNoTracking().Where(p => parts.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.UnitOfMeasure, ct);
+        foreach (var r in await c.Db.SupplierParts.AsNoTracking().Where(r => parts.Contains(r.PartId)).ToListAsync(ct)) _before[(r.PartId, r.SupplierId)] = r;
+        _companies = await c.Db.Suppliers.AsNoTracking().ToDictionaryAsync(s => s.Id, s => (s.IsSupplier, s.Currency), ct);
+    }
+
+    public Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        var partNumber = row.Get<string>("partNumber")?.Trim();
+        var code = row.Get<string>("supplierCode")?.Trim();
+        var shown = $"{partNumber} · {code}";
+        Guid partId = Guid.Empty, supplierId = Guid.Empty;
+        if (partNumber is null) row.Problem(Translator.T($"{row.Sheet.Column("partNumber").Heading} is required."));
+        else if (!c.Parts.TryGetValue(partNumber, out partId)) row.Problem(Translator.T($"Part {partNumber} not found."));
+        if (code is null) row.Problem(Translator.T($"{row.Sheet.Column("supplierCode").Heading} is required."));
+        else if (!c.Suppliers.TryGetValue(code, out supplierId)) row.Problem(Translator.T($"Supplier {code} not found."));
+        var old = _before.GetValueOrDefault((partId, supplierId));
+        if (supplierId != Guid.Empty && old is null && !_companies.GetValueOrDefault(supplierId).IsSupplier) row.Problem(Translator.T("Choose a company with the Supplier role."));
+        if (row.HasProblems) return Task.FromResult(Result(row, shown, RowOutcome.Problem));
+        // Left out (no column): kept as it is; a new row starts from the part's unit, a pack of 1 and the company's (else the base) currency.
+        // A blank cell keeps what is there, as on every other sheet; a new row takes the default.
+        T Keep<T>(string key, T kept, T fresh) => row.Has(key) ? row.Get<T>(key)! : old is null ? fresh : kept;
+        var currency = (row.Get<string>("currency")?.Trim().ToUpperInvariant()) ?? old?.Currency ?? _companies[supplierId].Currency.Clean()?.ToUpperInvariant() ?? c.Settings.Currency.ToUpperInvariant();
+        var input = new CatalogueEndpoints.SupplierPartInput(supplierId,
+            Keep<string?>("supplierPartNumber", old?.SupplierPartNumber, null), Keep<string?>("packName", old?.PackName, null) ?? old?.PackName ?? _units.GetValueOrDefault(partId),
+            Keep<decimal?>("packSize", old?.PackSize, 1m) ?? 1m, Keep<decimal?>("packPrice", old?.PackPrice, null), currency,
+            Keep<decimal?>("discountPercent", old?.DiscountPercent, 0m) ?? 0m, Keep<int?>("leadTimeDays", old?.LeadTimeDays, null), Keep<int?>("minPacks", old?.MinPacks, 1) ?? 1,
+            Keep<string?>("notes", old?.Notes, null), old?.IsActive ?? true);
+        foreach (var m in CatalogueEndpoints.Rules(input).Messages) row.Problem(Translator.T(m));
+        if (row.HasProblems) return Task.FromResult(Result(row, shown, RowOutcome.Problem));
+        _wanted[(partId, supplierId)] = input;
+        if (old is null) return Task.FromResult(Result(row, shown, RowOutcome.New));
+        var changes = new List<FieldChange>();
+        void Diff<TV>(string key, TV before, TV after) { if (!Equals(before, after)) changes.Add(new(row.Sheet.Column(key).Heading, ImportValues.Show(before), ImportValues.Show(after))); }
+        Diff("supplierPartNumber", old.SupplierPartNumber, input.SupplierPartNumber.Clean()); Diff("packName", old.PackName, input.PackName.Clean() ?? old.PackName);
+        Diff("packSize", old.PackSize, input.PackSize); Diff("packPrice", old.PackPrice, input.PackPrice); Diff("currency", old.Currency, input.Currency);
+        Diff("discountPercent", old.DiscountPercent, input.DiscountPercent); Diff("leadTimeDays", old.LeadTimeDays, input.LeadTimeDays); Diff("minPacks", old.MinPacks, input.MinPacks);
+        Diff("notes", old.Notes, input.Notes.Clean());
+        return Task.FromResult(Result(row, shown, changes.Count == 0 ? RowOutcome.Unchanged : RowOutcome.Changed, changes));
+    }
+
+    /// <summary>Adds and changes the rows the sheet asked for.</summary>
+    public async Task FinishAsync(ImportContext c, CancellationToken ct)
+    {
+        if (_wanted.Count == 0) return;
+        var partIds = _wanted.Keys.Select(k => k.Part).Distinct().ToList();
+        var tracked = await c.Db.SupplierParts.Where(r => partIds.Contains(r.PartId)).ToListAsync(ct);
+        foreach (var ((partId, supplierId), i) in _wanted)
+        {
+            var row = tracked.FirstOrDefault(r => r.PartId == partId && r.SupplierId == supplierId);
+            if (row is null) { row = new SupplierPart { PartId = partId, SupplierId = supplierId, PackName = "", Currency = i.Currency! }; c.Db.SupplierParts.Add(row); }
+            row.SupplierPartNumber = i.SupplierPartNumber.Clean(); row.PackName = i.PackName.Clean() ?? _units.GetValueOrDefault(partId) ?? row.PackName;
+            row.PackSize = i.PackSize; row.PackPrice = i.PackPrice; row.Currency = i.Currency!; row.DiscountPercent = i.DiscountPercent; row.LeadTimeDays = i.LeadTimeDays;
+            row.MinPacks = i.MinPacks; row.Notes = i.Notes.Clean();
+        }
+    }
+
+    private static RowResult Result(ImportRow row, string key, RowOutcome outcome, List<FieldChange>? changes = null) =>
+        row.HasProblems ? ImportRun.Problem(row, key) : new RowResult(row.Number, key, outcome, changes ?? [], []);
 }
 
 internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>

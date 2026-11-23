@@ -1888,7 +1888,13 @@
     "outstanding": "متبقٍ {{qty}}",
     "receiveButton": "استلام",
     "shelfCount": "تُجرد الأصناف ذات مدة الصلاحية حسب الدفعة من المكتب.",
-    "used": "استُخدم {{qty}} {{unit}}"
+    "used": "استُخدم {{qty}} {{unit}}",
+    "piecesPerPack_zero": "{{count}} في العبوة: {{pieces}} إلى المخزون",
+    "piecesPerPack_one": "{{count}} في العبوة: {{pieces}} إلى المخزون",
+    "piecesPerPack_two": "{{count}} في العبوة: {{pieces}} إلى المخزون",
+    "piecesPerPack_few": "{{count}} في العبوة: {{pieces}} إلى المخزون",
+    "piecesPerPack_many": "{{count}} في العبوة: {{pieces}} إلى المخزون",
+    "piecesPerPack_other": "{{count}} في العبوة: {{pieces}} إلى المخزون"
   },
   "techJob": {
     "downSince": "الأصل متوقف منذ {{when}}",
@@ -2376,7 +2382,8 @@
     "viewRequests": "الطلبات",
     "viewLines": "بنود للطلب",
     "orderSelected": "طلب المحدد ({{count}})",
-    "noLinesToOrder": "لا توجد بنود معتمدة تنتظر الطلب."
+    "noLinesToOrder": "لا توجد بنود معتمدة تنتظر الطلب.",
+    "priceFromCatalogue": "سعر الكتالوج"
   },
   "approvals": {
     "levels": "مستويات الاعتماد",
@@ -2586,5 +2593,47 @@
     "doneOn": "تاريخ التنفيذ",
     "doneOnHint": "اليوم إذا تُرك فارغًا.",
     "techHint": "يمكنك تسجيل الساعات المنفذة والتاريخ والشخص. يغيّر المخطِّط الباقي."
+  },
+  "catalogue": {
+    "title": "الموردون",
+    "hint": "من يبيع هذه القطعة، وبأي عبوة وبأي سعر. المخزون يُحسب دائمًا بوحدة {{unit}}.",
+    "add": "إضافة مورد",
+    "edit": "تعديل المورد",
+    "supplier": "المورد",
+    "pack": "العبوة",
+    "price": "السعر",
+    "discount": "الخصم %",
+    "leadTime": "مدة التوريد",
+    "minPacks": "أقل عدد عبوات",
+    "lastPaid": "آخر سعر مدفوع",
+    "none": "لا يوجد موردون بعد. أضف موردًا، أو اختر موردًا مفضلًا في بيانات القطعة.",
+    "preferred": "مفضل",
+    "makePreferred": "اجعله المفضل",
+    "piecesPerPack_zero": "{{count}} {{unit}} في العبوة",
+    "piecesPerPack_one": "{{count}} {{unit}} في العبوة",
+    "piecesPerPack_two": "{{count}} {{unit}} في العبوة",
+    "piecesPerPack_few": "{{count}} {{unit}} في العبوة",
+    "piecesPerPack_many": "{{count}} {{unit}} في العبوة",
+    "piecesPerPack_other": "{{count}} {{unit}} في العبوة",
+    "days_zero": "{{count}} يوم",
+    "days_one": "يوم واحد",
+    "days_two": "يومان",
+    "days_few": "{{count}} أيام",
+    "days_many": "{{count}} يومًا",
+    "days_other": "{{count}} يوم",
+    "daysShort": "يوم",
+    "useLastPrice": "استخدم آخر سعر",
+    "supplierPartNumber": "رقم القطعة لدى المورد",
+    "packHint": "ما يبيعه المورد، مثل علبة 100",
+    "packSize": "عدد القطع في العبوة ({{unit}})",
+    "pricePerPack": "لعبوة واحدة قبل الخصم",
+    "currencyHint": "فارغ = عملة الشركة",
+    "partsSupplied": "القطع التي يوردها",
+    "noPartsSupplied": "لا توجد قطع في كتالوج هذا المورد بعد.",
+    "theirNumber": "رقمهم: {{number}}",
+    "notCataloguePrice": "ليس سعر الكتالوج: تقدير من تكلفة القطعة اليوم.",
+    "receivesPieces": "يُضاف {{pieces}} {{unit}} إلى المخزون",
+    "refilled": "تم تحديث البنود من كتالوج المورد: {{parts}}",
+    "yourNumber": "رقم القطعة لديكم {{number}}"
   }
 }

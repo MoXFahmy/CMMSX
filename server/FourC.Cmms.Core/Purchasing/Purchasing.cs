@@ -130,7 +130,15 @@ public class PurchaseOrderLine : Entity
     public string? AccountCode { get; set; }
     /// <summary>The purchase request line this order line was made from (0.16.0).</summary>
     public Guid? PurchaseRequestLineId { get; set; }
+    /// <summary>How many of the part's own units one ordered unit holds (0.18.0): 100 for a box of 100; 1 for lines before packs.</summary>
+    public decimal PackSize { get; set; } = 1;
+    /// <summary>The supplier's own number for the part, copied from the catalogue (0.18.0).</summary>
+    public string? SupplierPartNumber { get; set; }
 
+    /// <summary>The ordered quantity in the part's own units.</summary>
+    public decimal Pieces => Quantity * PackSize;
+    /// <summary>The received quantity in the part's own units.</summary>
+    public decimal PiecesReceived => QuantityReceived * PackSize;
     public decimal NetUnitPrice => Math.Round(UnitPrice * (1 - DiscountPercent / 100m), 4);
     public decimal LineTotal => Math.Round(Quantity * NetUnitPrice, 2);
 }

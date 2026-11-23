@@ -162,6 +162,15 @@ public static class ImportWorkbook
                 return (await (from p in db.PmTaskParts.AsNoTracking() join t in db.PmTasks on p.PmTaskId equals t.Id join part in db.Parts on p.PartId equals part.Id
                                orderby t.Code, part.PartNumber select new { t.Code, part.PartNumber, p.Quantity }).Take(take + 200).ToListAsync(ct))
                     .Select(p => new Dictionary<string, object?> { ["taskCode"] = p.Code, ["partNumber"] = p.PartNumber, ["quantity"] = p.Quantity }).ToList();
+            case "SupplierCatalogue":
+                return (await (from r in db.SupplierParts.AsNoTracking() join p in db.Parts on r.PartId equals p.Id join s in db.Suppliers on r.SupplierId equals s.Id
+                               orderby p.PartNumber, s.Code select new { p.PartNumber, s.Code, r }).Take(take).ToListAsync(ct))
+                    .Select(x => new Dictionary<string, object?>
+                    {
+                        ["partNumber"] = x.PartNumber, ["supplierCode"] = x.Code, ["supplierPartNumber"] = x.r.SupplierPartNumber, ["packName"] = x.r.PackName,
+                        ["packSize"] = x.r.PackSize, ["packPrice"] = x.r.PackPrice, ["currency"] = x.r.Currency, ["discountPercent"] = x.r.DiscountPercent,
+                        ["leadTimeDays"] = x.r.LeadTimeDays, ["minPacks"] = x.r.MinPacks, ["notes"] = x.r.Notes,
+                    }).ToList();
             case "AssetParts":
                 // Ordered by asset number, with room to finish the asset's list at the 5,000-row boundary.
                 return (await (from l in db.AssetParts.AsNoTracking() join a in db.Assets on l.AssetId equals a.Id join p in db.Parts on l.PartId equals p.Id

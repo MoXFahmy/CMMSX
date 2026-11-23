@@ -22,7 +22,9 @@ public static class PurchasingEndpoints
     public sealed record SupplierAddressInput(Guid? Id, string? Label, string Address, string? City, string? Country);
     public sealed record SupplierRateInput(Guid CategoryId, decimal Rate);
     public sealed record LineInput(Guid? Id, Guid? PartId, string? Description, string? UnitOfMeasure, decimal Quantity, decimal UnitPrice, decimal DiscountPercent,
-        Guid? StoreId, Guid? WorkOrderId, string? AccountCode, Guid? PurchaseRequestLineId = null);
+        Guid? StoreId, Guid? WorkOrderId, string? AccountCode, Guid? PurchaseRequestLineId = null,
+        // The pack (0.18.0): pieces per ordered unit and the supplier's part number; left out (older pages) keeps the line's, 1 on a new line.
+        decimal? PackSize = null, string? SupplierPartNumber = null);
     public sealed record PoInput(Guid? SiteId, Guid? SupplierId, DateOnly? OrderDate, DateOnly? ExpectedDate, string? RequestedBy, string? Currency, decimal? ExchangeRate,
         string? PaymentTerms, string? ShippingMethod, string? DeliverTo, string? SupplierQuoteRef, decimal? TaxPercent, decimal ShippingCost, string? Notes,
         List<LineInput> Lines, Guid? OrderTypeId = null, string? RowVersion = null);
@@ -107,11 +109,14 @@ public static class PurchasingEndpoints
             var store = r.StoreId ?? line.StoreId;
             if (line.PartId is { } partId && store is { } storeId)
             {
-                var rx = await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, partId, storeId, r.Quantity, date, unitCost,
+                // Packs become the part's own units (0.18.0): 1 box of 100 books 100 pieces, each at the box's cost ÷ 100.
+                var pieces = r.Quantity * line.PackSize;
+                var pieceCost = PackMath.CostPerPiece(line.NetUnitPrice, o.ExchangeRate, line.PackSize);
+                var rx = await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, partId, storeId, pieces, date, pieceCost,
                     SupplierId: o.SupplierId, PurchaseOrderId: o.Id, PurchaseOrderLineId: line.Id, Reference: i.Reference.Clean() ?? o.Number,
                     BatchNumber: r.BatchNumber.Clean(), ExpiryDate: r.ExpiryDate), tk);
                 if (line.WorkOrderId is { } wo) // ordered for a job: receive and issue straight to it
-                    await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, r.Quantity, date, WorkOrderId: wo,
+                    await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, pieces, date, WorkOrderId: wo,
                         BatchNumber: r.BatchNumber.Clean(), Notes: $"Received on {o.Number}", RelatedTransactionId: rx.Id), tk);
             }
             else if (line.PartId is not null)
@@ -120,6 +125,7 @@ public static class PurchasingEndpoints
                 db.WorkOrderCosts.Add(new WorkOrderCost { TenantId = o.TenantId, WorkOrderId = wo, Description = line.Description, Quantity = r.Quantity, UnitCost = unitCost,
                     Vendor = o.Supplier?.Name, Reference = o.Number });
             line.QuantityReceived += r.Quantity;
+            if (line.PartId is { } paidPart) await RecordLastPaidAsync(db, o, line, paidPart, date, tk);
             if (line.WorkOrderId is { } forWo) forWork.Add((forWo, $"{line.Description}: {r.Quantity:0.###} {line.UnitOfMeasure}".Trim()));
             count++;
         }
@@ -207,6 +213,7 @@ public static class PurchasingEndpoints
                 || await db.Contracts.AllSites().AnyAsync(c => c.SupplierId == id, ct) || await db.Employees.AnyAsync(e => e.CompanyId == id, ct))
                 throw new DomainException("This company is used on work orders, contracts or employees. Mark it inactive instead.");
             await db.Parts.Where(p => p.PreferredSupplierId == id).ExecuteUpdateAsync(u => u.SetProperty(p => p.PreferredSupplierId, (Guid?)null), ct);
+            db.SupplierParts.RemoveRange(await db.SupplierParts.Where(r => r.SupplierId == id).ToListAsync(ct)); // its catalogue rows go with it (0.18.0)
             db.Suppliers.Remove(x);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
@@ -226,7 +233,7 @@ public static class PurchasingEndpoints
             var o = await db.PurchaseOrders.AsNoTracking().Include(x => x.Supplier).Include(x => x.Site).Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (o is null) return Results.NotFound();
             var partIds = o.Lines.Where(l => l.PartId is not null).Select(l => l.PartId!.Value).ToList();
-            var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => new { p.PartNumber, p.Name, p.IsShelfItem }, ct);
+            var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => new { p.PartNumber, p.Name, p.IsShelfItem, p.UnitOfMeasure }, ct);
             var storeIds = o.Lines.Where(l => l.StoreId is not null).Select(l => l.StoreId!.Value).ToList();
             var stores = await db.Stores.AsNoTracking().Where(x => storeIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Code, ct);
             var woIds = o.Lines.Where(l => l.WorkOrderId is not null).Select(l => l.WorkOrderId!.Value).ToList();
@@ -255,8 +262,8 @@ public static class PurchasingEndpoints
                 o.SubmittedAt, o.ApprovedAt, o.ApprovedByName, o.CancelledAt, o.CancelReason, o.CreatedAt, o.LegacyRef, o.OrderTypeId, OrderType = orderType,
                 Lines = o.Lines.OrderBy(l => l.LineNumber).Select(l => new
                 {
-                    l.Id, l.LineNumber, l.PartId, PartNumber = l.PartId is { } p ? parts.GetValueOrDefault(p)?.PartNumber : null, IsShelfItem = l.PartId is { } p2 && (parts.GetValueOrDefault(p2)?.IsShelfItem ?? false),
-                    l.Description, l.UnitOfMeasure, l.Quantity, l.UnitPrice, l.DiscountPercent, l.NetUnitPrice, l.LineTotal, l.QuantityReceived, Outstanding = Math.Max(l.Quantity - l.QuantityReceived, 0),
+                    l.Id, l.LineNumber, l.PartId, PartNumber = l.PartId is { } p ? parts.GetValueOrDefault(p)?.PartNumber : null, IsShelfItem = l.PartId is { } p2 && (parts.GetValueOrDefault(p2)?.IsShelfItem ?? false), PartUnit = l.PartId is { } p3 ? parts.GetValueOrDefault(p3)?.UnitOfMeasure : null,
+                    l.Description, l.UnitOfMeasure, l.Quantity, l.UnitPrice, l.DiscountPercent, l.NetUnitPrice, l.LineTotal, l.QuantityReceived, Outstanding = Math.Max(l.Quantity - l.QuantityReceived, 0), l.PackSize, l.SupplierPartNumber,
                     l.StoreId, StoreCode = l.StoreId is { } sid ? stores.GetValueOrDefault(sid) : null, l.WorkOrderId, WorkOrderNumber = l.WorkOrderId is { } wid ? wos.GetValueOrDefault(wid) : null, l.AccountCode,
                     l.PurchaseRequestLineId,
                     Request = l.PurchaseRequestLineId is { } rl && requests.GetValueOrDefault(rl) is { } rq ? new { Id = rq.RequestId, rq.Number } : null,
@@ -440,7 +447,7 @@ public static class PurchasingEndpoints
                 var store = stores.GetValueOrDefault(l.StoreId) ?? throw new DomainException("Unknown store.");
                 var supplier = l.SupplierId ?? part.PreferredSupplierId ?? throw new DomainException($"Choose a supplier for {part.PartNumber}.");
                 if (l.Quantity <= 0) throw new DomainException($"Enter a quantity for {part.PartNumber}.");
-                return (Part: part, Store: store, SupplierId: supplier, l.Quantity, Price: l.UnitPrice ?? part.LastPurchasePrice ?? part.AverageCost);
+                return (Part: part, Store: store, SupplierId: supplier, l.Quantity, l.UnitPrice);
             }).ToList();
             var supplierIds = resolved.Select(r => r.SupplierId).Distinct().ToList();
             var suppliers = await db.Suppliers.AsNoTracking().Where(x => supplierIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, ct);
@@ -451,8 +458,18 @@ public static class PurchasingEndpoints
                 foreach (var grp in resolved.GroupBy(r => (r.SupplierId, r.Store.SiteId)))
                 {
                     var sup = suppliers[grp.Key.SupplierId];
-                    var input = new PoInput(grp.Key.SiteId, sup.Id, Today, null, ctx.UserName, sup.Currency, null, sup.PaymentTerms, null, null, null, null, 0,
-                        "Created from the purchase proposal.", grp.Select(r => new LineInput(null, r.Part.Id, r.Part.Name, r.Part.UnitOfMeasure, r.Quantity, r.Price, 0, r.Store.Id, null, null)).ToList(),
+                    // The proposal's quantities are pieces: the catalogue turns them into the supplier's whole packs at its price (0.18.0).
+                    var currency = sup.Currency.Clean()?.ToUpperInvariant() ?? await CatalogueEndpoints.BaseCurrencyAsync(db, tk);
+                    var lines = new List<(LineInput Line, int? Lead)>();
+                    foreach (var r in grp)
+                    {
+                        // The proposal page has no price box: its price per piece only stands in when the catalogue has no price (0.18.0).
+                        var f = await CatalogueEndpoints.FillAsync(db, r.Part, sup.Id, currency, r.Quantity, null, tk, fallbackPerPiece: r.UnitPrice);
+                        lines.Add((new LineInput(null, r.Part.Id, r.Part.Name, f.UnitOfMeasure, f.Quantity, f.UnitPrice, f.DiscountPercent, r.Store.Id, null, null,
+                            PackSize: f.PackSize, SupplierPartNumber: f.SupplierPartNumber), f.LeadTimeDays));
+                    }
+                    var input = new PoInput(grp.Key.SiteId, sup.Id, Today, CatalogueEndpoints.ExpectedFrom(Today, lines.Select(l => l.Lead)), ctx.UserName, currency, null,
+                        sup.PaymentTerms, null, null, null, null, 0, "Created from the purchase proposal.", lines.Select(l => l.Line).ToList(),
                         await DefaultTypeAsync(db, "PARTS", tk));
                     var o = await CreateDraftAsync(db, ctx, input, tk);
                     list.Add(new { o.Id, o.Number, Supplier = sup.Name, Lines = o.Lines.Count });
@@ -505,6 +522,8 @@ public static class PurchasingEndpoints
             line.UnitOfMeasure = x.UnitOfMeasure.Clean() ?? part?.UnitOfMeasure; line.Quantity = x.Quantity; line.UnitPrice = x.UnitPrice; line.DiscountPercent = x.DiscountPercent;
             line.StoreId = x.StoreId; line.WorkOrderId = x.WorkOrderId; line.AccountCode = x.AccountCode.Clean();
             if (x.PurchaseRequestLineId is not null) line.PurchaseRequestLineId = x.PurchaseRequestLineId; // edits keep the line's request (0.16.0)
+            if (x.PackSize is { } pack) line.PackSize = pack;
+            if (x.SupplierPartNumber is not null || x.PackSize is not null) line.SupplierPartNumber = x.SupplierPartNumber.Clean();
         }
     }
 
@@ -527,6 +546,7 @@ public static class PurchasingEndpoints
             if (l.UnitPrice < 0) v.Add($"lines[{k}].unitPrice", "Price cannot be negative.");
             if (l.DiscountPercent is < 0 or > 100) v.Add($"lines[{k}].discountPercent", "Discount must be between 0 and 100%.");
             if (l.PartId is not null && l.StoreId is null) v.Add($"lines[{k}].storeId", "Choose the receiving store.");
+            if (l.PackSize is <= 0) v.Add($"lines[{k}].packSize", "Pieces per pack must be more than 0.");
         }
         var partIds = lines.Where(l => l.PartId is not null).Select(l => l.PartId!.Value).Distinct().ToList();
         if (partIds.Count > 0 && await db.Parts.CountAsync(p => partIds.Contains(p.Id), ct) != partIds.Count) v.Add("lines", "Unknown part.");
@@ -550,6 +570,18 @@ public static class PurchasingEndpoints
     {
         if (o.Lines.Count == 0) throw new DomainException("Add at least one line.");
         if (!await db.Suppliers.AnyAsync(s => s.Id == o.SupplierId && s.IsActive, ct)) throw new DomainException("The supplier is inactive.");
+    }
+
+    /// <summary>
+    /// The order supplier's catalogue row remembers what this receipt paid (0.18.0): the gross price and discount per pack, in the order's currency,
+    /// converted through pieces to the row's own pack. The catalogue price itself never changes.
+    /// </summary>
+    private static async Task RecordLastPaidAsync(CmmsDbContext db, PurchaseOrder o, PurchaseOrderLine line, Guid partId, DateOnly date, CancellationToken ct)
+    {
+        var row = await db.SupplierParts.FirstOrDefaultAsync(r => r.PartId == partId && r.SupplierId == o.SupplierId, ct);
+        if (row is null) return;
+        row.LastPaidPrice = PackMath.PriceForPack(line.UnitPrice, line.PackSize, row.PackSize);
+        row.LastPaidDiscount = line.DiscountPercent; row.LastPaidCurrency = o.Currency.ToUpperInvariant(); row.LastPaidOn = date;
     }
 
     /// <summary>The checks that need no database (shared with the import).</summary>

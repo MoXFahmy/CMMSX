@@ -44,7 +44,7 @@ public class ImportExportTests(ApiFixture fx) : IClassFixture<ApiFixture>
             Assert.True(Count(sheet, "new") == 0 && Count(sheet, "changed") == 0 && Count(sheet, "problems") == 0,
                 $"{name}: {sheet.GetProperty("rows")}");
         }
-        Assert.Equal(20, check.GetProperty("sheets").GetArrayLength());
+        Assert.Equal(21, check.GetProperty("sheets").GetArrayLength()); // 0.18.0 added the Supplier catalogue
     }
 
     [SkippableFact]
@@ -64,7 +64,7 @@ public class ImportExportTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
         var c = await WithCustomFieldAsync();
         var book = Read(await (await c.GetAsync("/api/import/template")).Content.ReadAsByteArrayAsync());
-        Assert.Equal(21, book.Sheets.Count);
+        Assert.Equal(22, book.Sheets.Count); // 0.18.0 added the Supplier catalogue
         Assert.Equal("Help", book.Sheets[^1].Name);
         var assets = book.Sheets.Single(s => s.Name == "Assets");
         Assert.Contains("Power (kW)", assets.Rows[0]);

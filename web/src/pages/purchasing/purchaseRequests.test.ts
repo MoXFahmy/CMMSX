@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { draftFromShortages, isLate, orderableLines, previewGroups, proposalMode, requestStatusColor, type PurchaseRequestDetail } from './purchaseRequests';
+import { draftFromShortages, orderRows, isLate, orderableLines, previewGroups, proposalMode, requestStatusColor, type PurchaseRequestDetail } from './purchaseRequests';
 
 const detail = (status: PurchaseRequestDetail['status'], ordered: boolean[]): PurchaseRequestDetail => ({
   id: 'r1', number: 'PR-00001', status, siteId: 's1', lines: ordered.map((o, i) => ({
@@ -56,5 +56,12 @@ describe('purchase requests', () => {
     expect(proposalMode(true, true)).toBe('order');
     expect(proposalMode(false, true)).toBe('request');
     expect(proposalMode(false, false)).toBe('view');
+  });
+});
+
+describe('ordering approved request lines', () => {
+  it('starts without a price so the catalogue, else the estimate, prices the order', () => {
+    const rows = orderRows([{ id: 'l1', siteId: 's', description: 'Bearing', quantity: 20, estimatedUnitPrice: 0.5, part: { id: 'p', partNumber: 'BRG-1', name: 'Bearing', preferredSupplierId: 'skf' } }]);
+    expect(rows).toEqual([{ lineId: 'l1', on: true, supplierId: 'skf', quantity: 20, unitPrice: '', estimate: 0.5 }]);
   });
 });

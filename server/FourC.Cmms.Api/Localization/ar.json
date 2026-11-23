@@ -1054,5 +1054,14 @@
  "Upcoming": "قادم",
  "Expired": "منتهٍ",
  "Terminated": "مُنهى",
- "Each contract's value, spend and completed work in the period against what it expects.": "قيمة كل عقد وإنفاقه والأعمال المنجزة في الفترة مقارنة بالمتوقع."
+ "Each contract's value, spend and completed work in the period against what it expects.": "قيمة كل عقد وإنفاقه والأعمال المنجزة في الفترة مقارنة بالمتوقع.",
+ "This supplier is already in the part's catalogue.": "هذا المورّد موجود بالفعل في كتالوج القطعة.",
+ "Pieces per pack must be more than 0.": "يجب أن يكون عدد القطع في العبوة أكبر من 0.",
+ "The price can't be below 0.": "لا يمكن أن يكون السعر أقل من 0.",
+ "Minimum order must be at least 1 pack.": "يجب ألا يقل الحد الأدنى للطلب عن عبوة واحدة.",
+ "Lead time must be between 0 and 3650 days.": "يجب أن تكون مدة التوريد بين 0 و3650 يومًا.",
+ "Nothing has been received from this supplier yet.": "لم يُستلم شيء من هذا المورّد بعد.",
+ "The last price was paid in another currency.": "دُفع آخر سعر بعملة أخرى.",
+ "Discount must be between 0 and 100%.": "يجب أن يكون الخصم بين 0 و100%.",
+ "Your part no. {0}": "رقم القطعة لديكم {0}"
 }
