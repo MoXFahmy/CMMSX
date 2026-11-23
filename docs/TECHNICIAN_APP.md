@@ -101,6 +101,20 @@ The phone keeps a copy of the parts and stock of the stores at your sites, refre
 
 Both need the Android app from 0.11.0 on; older apps and the browser keep working without them.
 
+## Dictation and Fill with AI (0.15.0)
+
+When the organization switched the AI assistant on (Settings › Organization › AI assistant), the completion sheet has:
+
+- a **microphone** next to *Work done* (Android app 0.15.0 and later): it listens once in the app's language, Arabic or
+  English, and adds what it heard. It uses the phone's own speech recognition; the audio never leaves the phone. The first
+  time, Android asks for the microphone.
+- **Fill with AI** (needs a connection): fills work done, cause details, symptom, cause and remedy from the notes, marked
+  *From AI — check before completing*. Suggested hours show as a ticked *Log N h for me* and parts as ticked *Use N ×
+  part*; untick what isn't right. The ticked ones are sent with the completion as ordinary hours and parts, offline too.
+
+Offline the button says it needs a connection and the notes stay; completing never needs AI. On a server older than 0.15.0
+the button doesn't show. See [AI_ASSISTANT.md](AI_ASSISTANT.md).
+
 ## Safety
 
 - Each change is sent once, even if the connection drops halfway and the phone tries again.

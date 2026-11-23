@@ -59,12 +59,24 @@ Parameters:
     Description: >-
       ARN of a Secrets Manager secret (in this region) holding the Firebase service account key file, for push
       notifications to the Android app. You create the secret yourself; leave empty for no push.
+  AnthropicSecretArn:
+    Type: String
+    Default: ""
+    Description: >-
+      ARN of a Secrets Manager secret (in this region) holding the Claude API key (plain text) for the AI assistant. You
+      create the secret yourself with your own key; leave empty for no AI.
+  AiMonthlyCeiling:
+    Type: Number
+    Default: 300
+    MinValue: 0
+    Description: AI actions a month that any organization may use at most (each organization can set a lower limit).
 
 Conditions:
   HasDomain: !And [!Not [!Equals [!Ref Domain, ""]], !Not [!Equals [!Ref DomainCertificateArn, ""]]]
   HasMailDomain: !Not [!Equals [!Ref MailDomain, ""]]
   HasMailFrom: !Not [!Equals [!Ref MailFromAddress, ""]]
   HasPush: !Not [!Equals [!Ref PushSecretArn, ""]]
+  HasAi: !Not [!Equals [!Ref AnthropicSecretArn, ""]]
 
 Resources:
   # ---------------------------------------------------------------- Network
@@ -299,7 +311,10 @@ Resources:
             Statement:
               - Effect: Allow
                 Action: secretsmanager:GetSecretValue
-                Resource: !If [HasPush, [!Ref DatabaseSecret, !Ref PushSecretArn], !Ref DatabaseSecret]
+                Resource:
+                  - !Ref DatabaseSecret
+                  - !If [HasPush, !Ref PushSecretArn, !Ref AWS::NoValue]
+                  - !If [HasAi, !Ref AnthropicSecretArn, !Ref AWS::NoValue]
 
   # Used by the app itself: attachments in its own bucket only.
   TaskRole:
@@ -380,11 +395,15 @@ Resources:
             - !If [HasMailFrom, { Name: Email__From, Value: !Ref MailFromAddress }, !Ref AWS::NoValue]
             - !If [HasMailFrom, { Name: Email__Region, Value: !Ref AWS::Region }, !Ref AWS::NoValue]
             - !If [HasMailFrom, { Name: Email__AllowedOrganizations, Value: !Ref MailAllowedOrganizations }, !Ref AWS::NoValue]
+            # The AI assistant (0.15.0): the most AI actions a month any organization may use.
+            - { Name: Ai__MonthlyCeiling, Value: !Ref AiMonthlyCeiling }
           Secrets:
             - { Name: Database__User, ValueFrom: !Sub "${DatabaseSecret}:username::" }
             - { Name: Database__Password, ValueFrom: !Sub "${DatabaseSecret}:password::" }
             # Push notifications (0.11.0): the Firebase key, from the secret you created. Never in an environment variable.
             - !If [HasPush, { Name: Push__ServiceAccountJson, ValueFrom: !Ref PushSecretArn }, !Ref AWS::NoValue]
+            # The AI assistant (0.15.0): the Claude API key, from the secret you created. Never in an environment variable.
+            - !If [HasAi, { Name: Ai__ApiKey, ValueFrom: !Ref AnthropicSecretArn }, !Ref AWS::NoValue]
           LogConfiguration:
             LogDriver: awslogs
             Options:
