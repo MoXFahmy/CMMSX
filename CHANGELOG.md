@@ -4,6 +4,30 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.19.0] - 2026-11-23
+
+Calendars, availability and the daily timesheet. Planning stays by the day on the planning board, which now counts time away
+and extra time in each person's day, warns when work lands on a day someone is away or over their hours, and has a contractor
+view. Technicians and supervisors get a daily timesheet on the web and My day on the phone, over the labour already logged on
+work orders. Organizations that enter no availability see the board as before. See docs/CALENDARS_AND_TIMESHEET.md.
+
+### Added
+- **Availability** (Maintenance › Availability): time away (holiday, sick leave, training, a meeting) and extra time (an extra
+  shift) for a person or a team, for a day or a date range, on chosen weekdays, for the whole day or some hours. Types are
+  edited in Settings › Availability types (every organization starts with five).
+- **Planning board:**
+  - Each person's day shows planned against available hours (working pattern − time away + extra time), tinted when they
+    are away. Planned hours count all of the person's open work you can see, whatever the board's filters.
+  - A warning, never a block, when work is moved onto a day someone is away or past their hours.
+  - "Assign to me" on unassigned work for people linked to an employee; two people pressing at once can't both get it.
+  - Asset rows show the expected stop from the work template.
+- **Contractor visits:** a visit date on contractor lines (Contractors tab), and a "By contractor" board view where visits
+  are dragged to another day and recorded (hours done, date, person).
+- **Timesheet** (Maintenance › Timesheet): one person's day with hours and overtime per work order, edited in place
+  through the same labour entries as each work order, against the hours available; a week view for supervisors.
+- **My day** on the phone: a day of the last 30 with my hours per job (including jobs completed since), added offline,
+  against the hours I have that day.
+
 ## [0.18.1] - 2026-11-23
 
 ### Fixed
