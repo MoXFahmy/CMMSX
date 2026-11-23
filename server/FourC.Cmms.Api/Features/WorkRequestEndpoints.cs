@@ -14,7 +14,8 @@ public static class WorkRequestEndpoints
 {
     public sealed record RequestInput(string Title, string? Description, Guid SiteId, Guid? LocationId, Guid? AssetId, WorkPriority Priority, WorkType Type,
         string? RequesterName, string? RequesterEmail, string? RequesterPhone, DateOnly? RequiredBy, bool AssetIsDown = false,
-        Guid? RequestTypeId = null, List<Guid>? ExtraRecipientIds = null, List<AccessWindow>? AccessWindows = null, Guid? SymptomId = null);
+        Guid? RequestTypeId = null, List<Guid>? ExtraRecipientIds = null, List<AccessWindow>? AccessWindows = null, Guid? SymptomId = null,
+        Guid? CostCentreId = null);
     public sealed record ApproveInput(WorkType? Type, WorkPriority? Priority, Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? DueDate, string? Note, DateTimeOffset? DueAt = null,
         Guid? TeamId = null);
 
@@ -241,7 +242,7 @@ public static class WorkRequestEndpoints
         // The clock started when the requester asked: the deadline counts from the request, even with a new priority.
         var (dueAt, fromTarget) = Deadlines.OnApprove(r, priority, input.DueAt, input.DueDate, settings);
         var woInput = new WorkOrderEndpoints.WorkOrderInput(r.Title, r.Description, input.Type ?? r.Type, priority, r.SiteId, r.LocationId, r.AssetId,
-            input.TradeId, input.AssigneeIds, null, null, null, null, DueAt: dueAt, TeamId: input.TeamId);
+            input.TradeId, input.AssigneeIds, null, null, null, null, DueAt: dueAt, TeamId: input.TeamId, CostCentreId: r.CostCentreId);
         var v = await WorkOrderEndpoints.ValidateAsync(woInput, db, ct);
         if (!v.IsValid) return (v, null);
         // The request's stop (if it said the asset is down) carries over: completing the work order ends it.
@@ -295,7 +296,7 @@ public static class WorkRequestEndpoints
             Priority = input.Priority, Type = input.Type, RequiredBy = input.RequiredBy,
             RequesterName = input.RequesterName.Clean() ?? me?.FullName, RequesterEmail = input.RequesterEmail.Clean() ?? me?.Email, RequesterPhone = input.RequesterPhone.Clean() ?? me?.Phone,
             RequestTypeId = input.RequestTypeId, ExtraRecipientIds = (input.ExtraRecipientIds ?? []).Distinct().ToList(), AccessWindows = AccessWindows.Clean(input.AccessWindows),
-            SymptomId = input.SymptomId,
+            SymptomId = input.SymptomId, CostCentreId = input.CostCentreId,
         };
         if (r.AssetId is { } assetId)
         {

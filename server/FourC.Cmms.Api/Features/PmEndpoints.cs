@@ -33,7 +33,8 @@ public static class PmEndpoints
         bool? ManagesTeam = null, bool? OnlyWhenStopped = null, List<Guid>? RecipientIds = null,
         bool? ManagesRules = null, List<Core.Assets.AssetStatus>? SkipStatusesOverride = null, List<DayOfWeek>? NonWorkingDaysOverride = null, bool? NoStackingOverride = null,
         List<AssetTemplateInput>? AssetTemplates = null, List<Guid>? CalendarIds = null, List<ExtraMeterInput>? ExtraMeters = null,
-        MultiAssetMode? MultiAssetMode = null, GroupPlan? GroupPlan = null, int? SpreadParts = null, Guid? ContractId = null, bool? ManagesContract = null);
+        MultiAssetMode? MultiAssetMode = null, GroupPlan? GroupPlan = null, int? SpreadParts = null, Guid? ContractId = null, bool? ManagesContract = null,
+        Guid? CostCentreId = null, bool? ManagesCostCentre = null);
     /// <summary>A meter trigger on top of the PM's own (0.12.0), whichever comes first.</summary>
     public sealed record ExtraMeterInput(Guid MeterId, decimal Interval, decimal? NextDueReading = null);
     /// <summary>A multi-asset PM's asset with its own template (empty = the PM's).</summary>
@@ -842,6 +843,8 @@ public static class PmEndpoints
         s.Description = i.Description.Clean(); s.SiteId = i.SiteId; s.LocationId = i.LocationId; s.AssetId = i.AssetId; s.TradeId = i.TradeId; s.TeamId = i.TeamId; s.Priority = i.Priority;
         if (i.OnlyWhenStopped is { } stopped) s.OnlyWhenStopped = stopped; // left out (older pages, the import): unchanged
         if (i.ManagesContract == true) s.ContractId = i.ContractId; // the contract (0.17.0), passed to the work it creates
+        // A cost centre for its work (0.20.0); none = each work order's asset's or location's. Pages from before leave it as it is.
+        if (i.ManagesCostCentre == true || s.CreatedAt == default) s.CostCentreId = i.CostCentreId;
         if (i.RecipientIds is not null) s.RecipientIds = i.RecipientIds.Distinct().ToList(); // left out: unchanged
         if (i.SpreadParts is { } spread && (spread >= 2 ? spread : (int?)null) != s.SpreadParts)
         {

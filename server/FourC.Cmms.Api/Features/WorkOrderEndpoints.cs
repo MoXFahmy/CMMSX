@@ -18,7 +18,7 @@ public static class WorkOrderEndpoints
         Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? PlannedStart, DateOnly? DueDate, decimal? EstimatedHours, List<string>? Tasks, string? RowVersion = null,
         string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null, bool? AssetIsDown = null, Guid? TeamId = null,
         bool? ManagesTeam = null, List<AccessWindow>? AccessWindows = null, bool? OnlyWhenStopped = null, Guid? TemplateId = null,
-        Guid? SymptomId = null, bool? ManagesSymptom = null, Guid? ContractId = null, bool? ManagesContract = null);
+        Guid? SymptomId = null, bool? ManagesSymptom = null, Guid? ContractId = null, bool? ManagesContract = null, Guid? CostCentreId = null, bool? ManagesCostCentre = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
         DateTimeOffset? At = null, Guid? CancelReasonId = null, Guid? RemedyId = null, Guid? SymptomId = null);
@@ -241,6 +241,7 @@ public static class WorkOrderEndpoints
                 Source = await Checklists.SourceAsync(db, w.SourceWorkOrderId, w.SourceTaskId, ct), Points = stepPoints,
                 Labor = labor, Costs = costs, Parts = parts, PlannedParts = planned, Signatures = signatures, Contractors = contractors,
                 w.ContractId, Contract = contract, CoveredBy = coveredBy,
+                w.CostCentreId, CostCentrePath = w.CostCentreId is { } cc ? (await CostCentreEndpoints.PathsAsync(db, ct)).GetValueOrDefault(cc) : null,
                 Planned = new
                 {
                     LaborHours = labour.Hours, LaborCost = labour.Cost, PartsCost = plannedParts, ContractorHours = contractors.Sum(l => l.PlannedHours),
@@ -807,6 +808,7 @@ public static class WorkOrderEndpoints
         var who = (i.AssigneeIds ?? []).Distinct().ToList();
         if (who.Count > 0 && await db.Employees.CountAsync(e => who.Contains(e.Id), ct) != who.Count) v.Add("assigneeIds", "Unknown person.");
         if (i.TemplateId is { } tpl && !await db.PmTasks.AnyAsync(t => t.Id == tpl, ct)) v.Add("templateId", "Unknown work template.");
+        if (i.CostCentreId is { } cc && !await db.CostCentres.AnyAsync(c => c.Id == cc, ct)) v.Add("costCentreId", "Choose an active cost centre.");
         return v;
     }
 
@@ -826,6 +828,8 @@ public static class WorkOrderEndpoints
         // "Only while stopped" comes from the asset unless the form says otherwise (a request's or PM's own flag is set by the caller).
         if (input.OnlyWhenStopped is null && w.AssetId is { } stopAsset)
             w.OnlyWhenStopped = await db.Assets.AllSites().Where(a => a.Id == stopAsset).Select(a => a.OnlyWhenStopped).FirstOrDefaultAsync(ct);
+        // The cost centre (0.20.0): the one given (the form's, a request's or PM's), else the one in force for the asset, else the location.
+        w.CostCentreId = input.CostCentreId ?? await CostCentreQueries.InForceAsync(db, w.AssetId, w.LocationId, ct);
         Deadlines.OnCreate(w, input.DueAt, input.DueDate, settings, raisedAt ?? DateTimeOffset.UtcNow, requestId is not null, applyTargets);
         SyncAssignees(w, input.AssigneeIds);
         // From a work template (0.12.0): linked (its documents show on the work order), its parts planned, its recipients told.
@@ -872,6 +876,7 @@ public static class WorkOrderEndpoints
         if (i.AccessWindows is not null) w.AccessWindows = AccessWindows.Clean(i.AccessWindows);
         if (i.OnlyWhenStopped is { } stopped) w.OnlyWhenStopped = stopped;
         if (i.ManagesContract == true) w.ContractId = i.ContractId; // pages from before contracts (0.17.0) leave it as it is
+        if (i.ManagesCostCentre == true) w.CostCentreId = i.CostCentreId; // likewise before cost centres (0.20.0)
     }
 
     private static void SyncAssignees(WorkOrder w, List<Guid>? ids)

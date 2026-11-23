@@ -1079,5 +1079,6 @@
  "A cost centre can't be its own parent or under one of its own.": "لا يمكن أن يكون مركز التكلفة أبًا لنفسه أو تحت أحد فروعه.",
  "Choose an active parent.": "اختر أصلًا نشطًا.",
  "This cost centre is in use. Make it inactive instead.": "مركز التكلفة هذا مستخدم. اجعله غير نشط بدلًا من ذلك.",
- "A site's cost centre can only sit under a cost centre of the same site or for all sites.": "مركز تكلفة الموقع يمكن أن يكون فقط تحت مركز تكلفة للموقع نفسه أو لكل المواقع."
+ "A site's cost centre can only sit under a cost centre of the same site or for all sites.": "مركز تكلفة الموقع يمكن أن يكون فقط تحت مركز تكلفة للموقع نفسه أو لكل المواقع.",
+ "Choose an active cost centre.": "اختر مركز تكلفة نشطًا."
 }

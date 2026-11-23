@@ -269,7 +269,7 @@ public static class PmGenerator
         // A round's work order has no single asset: it lists the covered assets and repeats the steps for each of them.
         var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description.Length == 0 ? null : description, task.WorkType, task.Priority ?? s.Priority,
             s.SiteId, round is null ? s.LocationId : s.LocationId ?? PmRound.CommonLocationId(round), round is null ? s.AssetId : null, s.TradeId ?? task.TradeId, assignees,
-            start, PmCalendar.DueDate(s, start, nonWorkingDays ?? []), task.EstimatedHours, null, TeamId: s.TeamId);
+            start, PmCalendar.DueDate(s, start, nonWorkingDays ?? []), task.EstimatedHours, null, TeamId: s.TeamId, CostCentreId: s.CostCentreId);
         // The template's parts come along as planned parts (once per covered asset on a round, from that asset's own template where
         // it has one), reserved in the default store for the site.
         var taskParts = await db.PmTaskParts.AsNoTracking().Where(p => p.PmTaskId == task.Id).Select(p => new { p.PartId, p.Quantity }).ToListAsync(ct);
