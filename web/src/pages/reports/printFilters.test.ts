@@ -21,4 +21,9 @@ describe('printed report filters (0.14.0)', () => {
   it('says all sites when none is chosen, and leaves out what a report doesn\'t ask', () => {
     expect(printFilters({ ...def, params: [{ name: 'siteId', type: 'site' }] }, {}, {}, t)).toEqual(['rep.printSite: common.all']);
   });
+  it('names the cost centre, or all of them (0.20.0)', () => {
+    const cc: ReportDef = { ...def, params: [{ name: 'costCentreId', type: 'costCentre' }] };
+    expect(printFilters(cc, { costCentreId: 'c1' }, { costCentre: 'Production › Line 1' }, t)).toEqual(['costCentres.one: Production › Line 1']);
+    expect(printFilters(cc, {}, {}, t)).toEqual(['costCentres.one: common.all']);
+  });
 });

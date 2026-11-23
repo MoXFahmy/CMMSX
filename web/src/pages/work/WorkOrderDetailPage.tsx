@@ -8,7 +8,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { SlaText } from '@/components/SlaBadge';
 import dayjs from 'dayjs';
-import { IconAlertTriangle, IconCheck, IconCopy, IconDots, IconEdit, IconPrinter, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp, IconSparkles } from '@tabler/icons-react';
+import { IconAlertTriangle, IconCheck, IconCopy, IconDots, IconEdit, IconPrinter, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp, IconSparkles, IconCoin } from '@tabler/icons-react';
 import { del, get, post } from '@/api/client';
 import { HOLD_REASONS, type ActivityItem, type Lookup, type WorkOrderDetail, type WorkOrderStatus } from '@/api/types';
 import { CodeSelect } from '@/components/CodeSelect';
@@ -33,6 +33,7 @@ import { GroupCard, TemplateCard } from './WorkOrderGroupBits';
 import { ChecklistPanel } from './ChecklistPanel';
 import { SourceBanner } from './SourceBanner';
 import { ContractorsPanel } from './ContractorsPanel';
+import { ChangeCostCentreModal } from './ChangeCostCentre';
 import { costLines } from './woTotals';
 import { CoveredBanner } from '@/components/CoveredBanner';
 import { BackRunningButton } from '@/pages/assets/AssetDowntime';
@@ -53,6 +54,7 @@ export function WorkOrderDetailPage() {
   const [tab, setTab] = useState<string | null>('details');
   const [completeOpen, complete] = useDisclosure();
   const [holdOpen, hold] = useDisclosure();
+  const [costCentreOpened, costCentre] = useDisclosure();
   const [noteFor, setNoteFor] = useState<WorkOrderStatus | null>(null);
   const { data: w, isLoading, error } = useQuery({ queryKey: ['work-order', id], queryFn: () => get<WorkOrderDetail>(`/work-orders/${id}`) });
   const currency = me?.tenant.settings.currency ?? 'USD';
@@ -104,6 +106,7 @@ export function WorkOrderDetailPage() {
               <Menu.Target><ActionIcon variant="default" size="lg" aria-label={t('common.actions')}><IconDots size={16} /></ActionIcon></Menu.Target>
               <Menu.Dropdown>
                 {can(P.woEdit) && !locked && <Menu.Item leftSection={<IconEdit size={16} />} component={Link} to={`/work-orders/${w.id}/edit`}>{t('common.edit')}</Menu.Item>}
+                {can(P.woEdit) && <Menu.Item leftSection={<IconCoin size={16} />} onClick={costCentre.open}>{t('costCentres.change')}</Menu.Item>}
                 {/* A PM round's asset list can't be set from the form, so rounds aren't duplicated. */}
                 {can(P.woCreate) && w.assets.length === 0 && <Menu.Item leftSection={<IconCopy size={16} />} component={Link} to={`/work-orders/new?copyFrom=${w.id}`}>{t('wo.duplicate')}</Menu.Item>}
                 {secondary.map((s) => <Menu.Item key={s} color={s === 'Cancelled' ? 'red' : undefined} leftSection={s === 'Cancelled' ? <IconX size={16} /> : <IconRefresh size={16} />} onClick={() => move(s)}>{label(s)}</Menu.Item>)}
@@ -213,6 +216,7 @@ export function WorkOrderDetailPage() {
                     ? <Anchor component={Link} to={`/contracts/${w.contract.id}`} fz="sm">{w.contract.number} · {w.contract.companyName}</Anchor>
                     : `${w.contract.number} · ${w.contract.companyName}`}</Field>}
                   {w.team && <Field label={t('teams.team')}>{w.team.name}</Field>}
+                  <Field label={t('costCentres.one')}>{w.costCentrePath}</Field>
                   <Field label={t('codes.symptom')}>{w.symptom ? `${w.symptom.code} · ${w.symptom.name}` : null}</Field>
                   <Field label={t('wo.requestedBy')}>{w.requestedBy ?? w.request?.requesterName}</Field>
                   <Field label={t('wo.plannedStart')}>{fmtDate(w.plannedStart)}</Field>
@@ -261,6 +265,7 @@ export function WorkOrderDetailPage() {
         <Tabs.Panel value="files"><Card><Attachments entityType="WorkOrder" entityId={w.id} canEdit={canExec} /></Card></Tabs.Panel>
       </Tabs>
       <CompleteModal opened={completeOpen} onClose={complete.close} w={w} onDone={refresh} />
+      <ChangeCostCentreModal ids={[w.id]} current={w.costCentreId} opened={costCentreOpened} onClose={costCentre.close} />
       <HoldModal opened={holdOpen} onClose={hold.close} w={w} onDone={refresh} />
       {noteFor && <StatusNoteModal to={noteFor} onClose={() => setNoteFor(null)} w={w} onDone={refresh} />}
     </>

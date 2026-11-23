@@ -91,12 +91,18 @@ public static class BudgetReport
             foreach (var (k, v) in own) if (where(k)) f.Add(v);
             return f;
         }
-        static Dictionary<string, object?> RowOf(string group, int depth, Figures f) => new()
+        // A tree row carries its level (as the 0.14.0 tree reports do), so the page indents it and keeps the order; month rows don't.
+        static Dictionary<string, object?> RowOf(string group, int? level, Figures f)
         {
-            ["group"] = group, ["depth"] = depth, ["budget"] = Math.Round(f.Budget, 2), ["committed"] = Math.Round(f.Committed, 2), ["labor"] = Math.Round(f.Labor, 2),
-            ["parts"] = Math.Round(f.Parts, 2), ["contractor"] = Math.Round(f.Contractor, 2), ["other"] = Math.Round(f.Other, 2), ["directIssues"] = Math.Round(f.Direct, 2),
-            ["actual"] = Math.Round(f.Actual, 2), ["variance"] = Math.Round(f.Budget - f.Actual - f.Committed, 2),
-        };
+            var row = new Dictionary<string, object?>
+            {
+                ["group"] = group, ["budget"] = Math.Round(f.Budget, 2), ["committed"] = Math.Round(f.Committed, 2), ["labor"] = Math.Round(f.Labor, 2),
+                ["parts"] = Math.Round(f.Parts, 2), ["contractor"] = Math.Round(f.Contractor, 2), ["other"] = Math.Round(f.Other, 2), ["directIssues"] = Math.Round(f.Direct, 2),
+                ["actual"] = Math.Round(f.Actual, 2), ["variance"] = Math.Round(f.Budget - f.Actual - f.Committed, 2),
+            };
+            if (level is not null) row["level"] = level;
+            return row;
+        }
 
         var rows = new List<Dictionary<string, object?>>();
         Figures total;
@@ -108,7 +114,7 @@ public static class BudgetReport
             {
                 int y = m / 12, mo = m % 12 + 1;
                 var f = Sum(k => k.Y == y && k.M == mo && (scope is null || (k.Cc is { } id && scope.Contains(id))));
-                rows.Add(RowOf(new DateOnly(y, mo, 1).ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture), 0, f));
+                rows.Add(RowOf(new DateOnly(y, mo, 1).ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture), null, f));
                 total.Add(f);
             }
         }

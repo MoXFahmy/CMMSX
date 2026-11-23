@@ -28,7 +28,8 @@
     "myApprovals": "My approvals",
     "contracts": "Contracts",
     "availability": "Availability",
-    "timesheet": "Timesheet"
+    "timesheet": "Timesheet",
+    "budgets": "Budgets"
   },
   "unit": {
     "overtime": "overtime",
@@ -91,7 +92,8 @@
     "toggleNavigation": "Show or hide the menu",
     "toggleColorScheme": "Switch between light and dark",
     "listSeparator": ", ",
-    "confirm": "Confirm"
+    "confirm": "Confirm",
+    "total": "Total"
   },
   "auth": {
     "signIn": "Sign in",
@@ -2617,5 +2619,44 @@
     "finished": "Finished",
     "hours": "{{hours}} h",
     "addHours": "Hours"
+  },
+  "costCentres": {
+    "one": "Cost centre",
+    "title": "Cost centres",
+    "hint": "Where maintenance cost is charged. Work orders take the cost centre of their asset or location; budgets are set per cost centre and month.",
+    "new": "New cost centre",
+    "edit": "Edit cost centre",
+    "none": "No cost centres yet.",
+    "allSites": "All sites",
+    "parent": "Parent",
+    "topLevel": "None (top level)",
+    "siteHint": "Leave empty to use it at every site.",
+    "inactiveHint": "Inactive cost centres aren't offered for new records but stay on old ones.",
+    "fillIn": "Fill in past work",
+    "fillInHint": "Work orders and parts issued to locations from this date that have no cost centre get the one in force today. Nothing that already has a cost centre changes, and you can run it again.",
+    "fillInFrom": "From",
+    "fillInCount": "Work orders to fill in: {{workOrders}} · direct issues: {{issues}}",
+    "fillInCheck": "Count",
+    "fillInApply": "Fill in",
+    "filled": "Filled in: {{workOrders}} work orders, {{issues}} direct issues",
+    "change": "Change cost centre",
+    "changeHint_one": "The work order's labour, parts, contractors, other costs and orders move with it. It works in any status and shows in its history.",
+    "changeHint_other": "The {{count}} work orders' labour, parts, contractors, other costs and orders move with them. It works in any status and shows in their history.",
+    "changed_one": "{{count}} work order changed",
+    "changed_other": "{{count}} work orders changed",
+    "locationHint": "Its assets and places under it use this unless they have their own.",
+    "assetHint": "Empty uses its parent asset's, else its location's.",
+    "overrideHint": "Empty follows the asset or location.",
+    "workOrderHint": "Empty takes the asset's or location's cost centre.",
+    "directHint": "Empty takes the location's cost centre.",
+    "withChildren": "With the cost centres under it"
+  },
+  "budgets": {
+    "title": "Budgets",
+    "subtitle": "One amount per cost centre per month, in {{currency}}",
+    "againstActual": "Budget against actual",
+    "discard": "Discard the changes you haven't saved?",
+    "noCostCentres": "Add cost centres first.",
+    "hint": "Type a total to spread it evenly over the months. In the report, a cost centre's budget includes the cost centres under it."
   }
 }

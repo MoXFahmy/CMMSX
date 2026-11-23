@@ -8,6 +8,7 @@ import { ApiError, get, post } from '@/api/client';
 import type { PartDetail, PartLookup, ReservedConflict, SupplierLookup } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { locationOptions, useHierarchy } from './LocationPicker';
+import { CostCentrePicker } from './CostCentrePicker';
 import { PartPicker, useStores } from './PartPicker';
 import { WorkOrderPicker } from './WorkOrderPicker';
 import { fmtPrice, fmtQty, handleFormError, notifySuccess, toIsoDate } from './utils';
@@ -37,12 +38,13 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
     initialValues: {
       partId: '' as string | null, storeId: '' as string | null, toStoreId: '' as string | null, quantity: '' as number | '', unitCost: '' as number | '', date: new Date() as Date | string | null,
       supplierId: null as string | null, reference: '', batchNumber: '', expiryDate: null as Date | string | null, workOrderId: null as string | null, locationId: null as string | null, notes: '',
+      costCentreId: null as string | null,
     },
   });
   useEffect(() => {
     if (!opened) return;
     form.setValues({ partId: defaults?.partId ?? null, storeId: defaults?.storeId ?? (stores?.length === 1 ? stores[0].id : null), toStoreId: null, quantity: defaults?.quantity ?? '', unitCost: '', date: new Date(),
-      supplierId: null, reference: '', batchNumber: '', expiryDate: null, workOrderId: defaults?.workOrderId ?? null, locationId: null, notes: '' });
+      supplierId: null, reference: '', batchNumber: '', expiryDate: null, workOrderId: defaults?.workOrderId ?? null, locationId: null, notes: '', costCentreId: null });
     form.clearErrors(); setPart(null); setTarget('wo'); setDirection('remove'); setConflict(null);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
@@ -68,7 +70,8 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
     try {
       if (kind === 'receive') await post('/inventory/receive', { ...base, storeId: x.storeId, unitCost: x.unitCost === '' ? null : x.unitCost, supplierId: x.supplierId, reference: x.reference || null, expiryDate: toIsoDate(x.expiryDate) });
       else if (kind === 'issue' || kind === 'return')
-        await post(`/inventory/${kind}`, { ...base, storeId: x.storeId, workOrderId: target === 'wo' ? x.workOrderId : null, locationId: target === 'location' ? x.locationId : null });
+        await post(`/inventory/${kind}`, { ...base, storeId: x.storeId, workOrderId: target === 'wo' ? x.workOrderId : null, locationId: target === 'location' ? x.locationId : null,
+          costCentreId: target === 'location' ? x.costCentreId : null });
       else if (kind === 'adjust') await post('/inventory/adjust', { ...base, storeId: x.storeId, quantity: (direction === 'remove' ? -1 : 1) * Number(x.quantity || 0), notes: x.notes });
       else await post('/inventory/transfer', { ...base, fromStoreId: x.storeId, toStoreId: x.toStoreId });
       notifySuccess(t(`inv.done.${kind}`));
@@ -107,6 +110,8 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
               {target === 'wo'
                 ? <WorkOrderPicker label={t('inv.workOrder')} required value={v.workOrderId} initial={defaults?.workOrder} onChange={(x) => form.setFieldValue('workOrderId', x)} error={form.errors.workOrderId} />
                 : <Select label={t('inv.location')} required data={locOpts} searchable {...form.getInputProps('locationId')} />}
+              {target === 'location' && <CostCentrePicker value={v.costCentreId} onChange={(x) => form.setFieldValue('costCentreId', x)}
+                siteId={(h?.locations ?? []).find((l) => l.id === v.locationId)?.siteId} description={t('costCentres.directHint')} error={form.errors.costCentreId} />}
             </>
           )}
           {kind === 'receive' && (

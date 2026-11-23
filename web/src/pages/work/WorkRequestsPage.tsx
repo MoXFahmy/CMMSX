@@ -18,6 +18,7 @@ import { WORK_PRIORITIES, WORK_TYPES, type AccessWindow, type AssetDetail, type 
 import { AccessWindowsEditor, AccessWindowsList, StoppedBadge } from '@/components/AccessWindowsEditor';
 import { windowProblem } from '@/components/accessWindows';
 import { CodeSelect } from '@/components/CodeSelect';
+import { CostCentrePicker } from '@/components/CostCentrePicker';
 import { FeedbackPanel, RequestComments } from './RequestLoop';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
@@ -124,7 +125,8 @@ export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean
   const { data: asset } = useQuery({ queryKey: ['asset', assetId], queryFn: () => get<AssetDetail>(`/assets/${assetId}`), enabled: !!assetId && opened });
   const blank = { title: '', description: '', siteId: null as string | null, locationId: null as string | null, assetId: null as string | null, priority: 'Medium', type: 'Corrective',
     requesterName: me?.user.fullName ?? '', requesterPhone: '', requiredBy: null as Date | null, assetIsDown: false,
-    requestTypeId: null as string | null, extraRecipientIds: [] as string[], accessWindows: [] as AccessWindow[], symptomId: null as string | null };
+    requestTypeId: null as string | null, extraRecipientIds: [] as string[], accessWindows: [] as AccessWindow[], symptomId: null as string | null,
+    costCentreId: null as string | null };
   const form = useForm({ initialValues: blank, validate: { accessWindows: (v) => (windowProblem(v) ? t(windowProblem(v)!) : null) } });
   const { data: types } = useQuery({ queryKey: ['request-types'], queryFn: () => get<RequestType[]>('/request-types'), enabled: opened });
   const { data: people } = useQuery({ queryKey: ['request-people', form.values.siteId], queryFn: () => get<{ id: string; name: string }[]>('/work-requests/people', { siteId: form.values.siteId! }),
@@ -161,6 +163,8 @@ export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean
         <AssetPicker label={t('wo.asset')} value={form.values.assetId} onChange={(v) => form.setFieldValue('assetId', v)} error={form.errors.assetId}
           initial={asset ? { id: asset.id, assetNumber: asset.assetNumber, name: asset.name } : null} />
         <AssetCheck assetId={form.values.assetId} />
+        <CostCentrePicker value={form.values.costCentreId} onChange={(v) => form.setFieldValue('costCentreId', v)} siteId={form.values.siteId}
+          description={t('costCentres.overrideHint')} error={form.errors.costCentreId} />
         <CodeSelect path="/symptoms" label={t('codes.symptom')} description={t('codes.symptomHint')} value={form.values.symptomId}
           onChange={(v) => form.setFieldValue('symptomId', v)} error={form.errors.symptomId} />
         {form.values.assetId && <Checkbox label={t('downtime.assetIsDown')} description={t('downtime.assetIsDownHint')} color="red"

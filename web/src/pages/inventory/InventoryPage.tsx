@@ -16,6 +16,7 @@ import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { LookupTable } from '@/components/LookupTable';
 import { useHierarchy } from '@/components/LocationPicker';
+import { CostCentrePicker, useCostCentres } from '@/components/CostCentrePicker';
 import { useStores } from '@/components/PartPicker';
 import { StockTxModal, type StockTxKind } from '@/components/StockTxModal';
 import { TxTypeBadge } from '@/components/InventoryBadges';
@@ -211,6 +212,39 @@ function StoresTab() {
   );
 }
 
+/** 0.20.0: a direct issue's (or return's) cost centre, changed from the movements list with Manage inventory. */
+function TxCostCentre({ tx }: { tx: StockTransactionItem }) {
+  const { t } = useTranslation();
+  const { can } = useAuth();
+  const qc = useQueryClient();
+  const { data: centres } = useCostCentres();
+  const [opened, m] = useDisclosure();
+  const [value, setValue] = useState<string | null>(tx.costCentreId ?? null);
+  const [busy, setBusy] = useState(false);
+  const path = (centres ?? []).find((c) => c.id === tx.costCentreId)?.path;
+  const save = async () => {
+    setBusy(true);
+    try {
+      await put(`/inventory/transactions/${tx.id}/cost-centre`, { costCentreId: value });
+      notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['stock-tx'] }); m.close();
+    } catch (e) { notifyError(e); } finally { setBusy(false); }
+  };
+  return (
+    <>
+      <Group gap={4} wrap="nowrap">
+        <Text fz="xs" c="dimmed" lineClamp={1}>{t('costCentres.one')}: {path ?? t('costCentres.none')}</Text>
+        {can(P.inventoryManage) && <ActionIcon size="xs" variant="subtle" aria-label={t('costCentres.change')} onClick={() => { setValue(tx.costCentreId ?? null); m.open(); }}><IconEdit size={12} /></ActionIcon>}
+      </Group>
+      <Modal opened={opened} onClose={m.close} title={t('costCentres.change')}>
+        <Stack>
+          <CostCentrePicker value={value} onChange={setValue} />
+          <Group justify="flex-end"><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button loading={busy} onClick={save}>{t('common.save')}</Button></Group>
+        </Stack>
+      </Modal>
+    </>
+  );
+}
+
 export function TransactionsTable({ partId, workOrderId, purchaseOrderId, compact }: { partId?: string; workOrderId?: string; purchaseOrderId?: string; compact?: boolean }) {
   const { t } = useTranslation();
   const { me } = useAuth();
@@ -255,7 +289,8 @@ export function TransactionsTable({ partId, workOrderId, purchaseOrderId, compac
             {x.workOrderId && <Anchor component={Link} to={`/work-orders/${x.workOrderId}`} fz="sm">{x.workOrderNumber}</Anchor>}
             {x.purchaseOrderId && <Anchor component={Link} to={`/purchasing/orders/${x.purchaseOrderId}`} fz="sm">{x.reference}</Anchor>}
             {!x.purchaseOrderId && x.reference && <Text fz="sm">{x.reference}</Text>}
-            {(x.notes || x.batchNumber) && <Text fz="xs" c="dimmed" lineClamp={2}>{[x.batchNumber && `${t('inv.batch')} ${x.batchNumber}`, x.notes].filter(Boolean).join(' · ')}</Text>}</Stack> },
+            {(x.notes || x.batchNumber) && <Text fz="xs" c="dimmed" lineClamp={2}>{[x.batchNumber && `${t('inv.batch')} ${x.batchNumber}`, x.notes].filter(Boolean).join(' · ')}</Text>}
+            {!x.workOrderId && x.locationId && (x.type === 'Issue' || x.type === 'Return') && <TxCostCentre tx={x} />}</Stack> },
           { accessor: 'createdByName', title: t('inv.by'), noWrap: true, render: (x) => <Text fz="sm" c="dimmed">{x.createdByName ?? '—'}</Text> },
         ]}
       />

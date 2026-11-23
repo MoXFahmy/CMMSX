@@ -8,7 +8,7 @@ import { Link, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { SlaText } from '@/components/SlaBadge';
 import { DataTable } from 'mantine-datatable';
-import { IconAdjustmentsHorizontal, IconFilterOff, IconFlag, IconPlus, IconSearch, IconUserPlus, IconArrowsExchange } from '@tabler/icons-react';
+import { IconAdjustmentsHorizontal, IconFilterOff, IconFlag, IconPlus, IconSearch, IconUserPlus, IconCoin, IconArrowsExchange } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
 import { HOLD_REASONS, WORK_PRIORITIES, WORK_TYPES, type HoldReason, type Lookup, type Paged, type WorkOrderListItem, type WorkOrderStatus, type WorkPriority } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -20,6 +20,7 @@ import { EmployeePicker, useEmployees } from '@/components/EmployeePicker';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, notifyError } from '@/components/utils';
 import { StoppedBadge } from '@/components/AccessWindowsEditor';
+import { ChangeCostCentreModal } from './ChangeCostCentre';
 import { BulkBar, FilterChips, ListTools, listText, rangeText, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 
 /** Filters behind "More filters"; they live in the address like the others. */
@@ -159,6 +160,7 @@ export function WorkOrdersPage() {
   const activeReasons = (cancelReasons ?? []).filter((x) => x.isActive);
   const [holdReason, setHoldReason] = useState<HoldReason | null>(null);
   const [notes, setNotes] = useState('');
+  const [costCentreOpen, setCostCentreOpen] = useState(false);
   const [techOpen, setTechOpen] = useState(false);
   const [techs, setTechs] = useState<string[]>([]);
   const bulk = useMutation({
@@ -247,7 +249,9 @@ export function WorkOrdersPage() {
             <Menu.Dropdown>{WORK_PRIORITIES.map((x) => <Menu.Item key={x} onClick={() => bulk.mutate({ priority: x })}>{t(`priority.${x}`)}</Menu.Item>)}</Menu.Dropdown></Menu>
         )}
         {canBulkEdit && <Button size="xs" variant="white" leftSection={<IconUserPlus size={14} />} onClick={() => setTechOpen(true)}>{t('list.addTechnicians')}</Button>}
+        {canBulkEdit && <Button size="xs" variant="white" leftSection={<IconCoin size={14} />} onClick={() => setCostCentreOpen(true)}>{t('costCentres.change')}</Button>}
       </BulkBar>
+      <ChangeCostCentreModal ids={selected.map((s) => s.id)} opened={costCentreOpen} onClose={() => setCostCentreOpen(false)} onDone={() => setSelected([])} />
       <Card p={0}>
         <DataTable<WorkOrderListItem>
           minHeight={260} withTableBorder={false} highlightOnHover striped verticalSpacing="xs" fetching={isFetching} records={data?.items ?? []} columns={cols.columns}

@@ -13,7 +13,7 @@ import { SiteSwitch } from '@/components/SiteSwitch';
 import { EmailPreferences } from '@/components/EmailPreferences';
 import {
   IconLayoutDashboard, IconMapPin, IconBox, IconClipboardText, IconTool, IconCalendarRepeat, IconPackage, IconShoppingCart,
-  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices, IconCloudOff, IconCalendarWeek, IconStack2, IconSignature, IconFileCertificate, IconBeach, IconClockHour4 } from '@tabler/icons-react';
+  IconChartBar, IconSettings, IconLogout, IconKey, IconMoon, IconSun, IconChevronDown, IconUsers, IconMail, IconDeviceMobile, IconDevices, IconCloudOff, IconCalendarWeek, IconStack2, IconSignature, IconFileCertificate, IconBeach, IconClockHour4, IconCoin } from '@tabler/icons-react';
 import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { handleFormError, notifySuccess } from './utils';
@@ -56,6 +56,7 @@ export function AppLayout() {
     ] },
     { title: t('nav.insights'), items: [
       { label: t('nav.reports'), to: '/reports', icon: IconChartBar, perm: P.reportsView },
+      { label: t('nav.budgets'), to: '/reports/budgets', icon: IconCoin, perm: P.reportsView },
     ] },
     { title: t('nav.administration'), items: [
       { label: t('nav.people'), to: '/people', icon: IconUsers, perm: P.peopleView },
@@ -63,7 +64,10 @@ export function AppLayout() {
     ] },
   ];
 
-  const isActive = (to: string) => (to === '/' ? pathname === '/' : pathname.startsWith(to));
+  // The most specific item wins: Budgets (/reports/budgets) lights up instead of Reports.
+  const allTo = sections.flatMap((x) => x.items.map((i) => i.to));
+  const isActive = (to: string) => (to === '/' ? pathname === '/'
+    : pathname.startsWith(to) && !allTo.some((o) => o !== to && o.startsWith(to) && pathname.startsWith(o)));
   const logout = async () => {
     await post('/auth/logout');
     // A shared phone keeps nothing of this person's jobs (the technician view's copy); their unsent changes stay for them.

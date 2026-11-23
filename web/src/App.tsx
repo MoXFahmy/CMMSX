@@ -33,6 +33,7 @@ import { ContractDetailPage } from './pages/contracts/ContractDetailPage';
 import { MyApprovalsPage } from './pages/approvals/MyApprovalsPage';
 import { WorkOrderPrintPage } from './pages/work/WorkOrderPrintPage';
 import { ReportsPage, ReportViewPage } from './pages/reports/ReportsPage';
+import { BudgetsPage } from './pages/reports/BudgetsPage';
 
 import { TechApp } from './tech/TechApp';
 import { LabelsPage } from './pages/labels/LabelsPage';
@@ -106,6 +107,7 @@ export function App() {
         <Route path="purchasing/requests/:id/edit" element={<RequestFormPage />} />
         <Route path="purchasing/:tab" element={<PurchasingPage />} />
         <Route path="reports" element={<ReportsPage />} />
+        <Route path="reports/budgets" element={<BudgetsPage />} />
         <Route path="reports/:key" element={<ReportViewPage />} />
         <Route path="settings/*" element={<SettingsPage />} />
         <Route path="soon/:module" element={<ComingSoonPage />} />

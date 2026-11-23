@@ -42,7 +42,7 @@ public class BudgetReportTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var cost = await WorkOrderAsync(o.Admin, o.Site, await AssetAsync(o.Admin, o.Site, "Wrapper", costCentre: prod), "Other cost");
         await Ok(await o.Admin.PostAsJsonAsync($"/api/work-orders/{cost}/costs", new { description = "Crane hire", quantity = 1m, unitCost = 40m }));
         var budget = await ReportAsync(o.Admin, "budget-vs-actual");
-        var top = Rows(budget).Where(r => r.GetProperty("depth").GetInt32() == 0).ToList();
+        var top = Rows(budget).Where(r => r.GetProperty("level").GetInt32() == 0).ToList();
         var onWork = top.Sum(r => N(r, "labor") + N(r, "parts") + N(r, "contractor") + N(r, "other"));
         var costs = await ReportAsync(o.Admin, "maintenance-costs");
         var total = costs.GetProperty("summary").EnumerateArray().First().GetProperty("value").GetDecimal();
@@ -107,7 +107,7 @@ public class BudgetReportTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var p = RowOf(r, "Production");
         Assert.Equal((1500m, 130m, 30m), (N(p, "budget"), N(p, "actual"), N(p, "directIssues")));
         Assert.Equal(1370m, N(p, "variance"));
-        Assert.Equal(1, RowOf(r, "Line 1").GetProperty("depth").GetInt32());
+        Assert.Equal(1, RowOf(r, "Line 1").GetProperty("level").GetInt32());
         Assert.Equal(100m, N(RowOf(r, "Line 1"), "actual"));
     }
 
