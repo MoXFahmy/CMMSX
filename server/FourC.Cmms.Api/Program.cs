@@ -123,6 +123,8 @@ if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
     if (await FourC.Cmms.Core.Services.DatabaseSettings.EnsureReadCommittedSnapshotAsync(db))
         app.Logger.LogInformation("Turned on READ_COMMITTED_SNAPSHOT: reads no longer wait for other people's unsaved work.");
     await FourC.Cmms.Core.Services.DueBackfill.RunAsync(db);
+    // Brands, models and units from the texts records carry (0.21.0): builds the starting lists on upgrade, then a few queries.
+    await FourC.Cmms.Core.Services.ReferenceLists.ReconcileAllAsync(db);
 }
 
 // The app says which language it shows (Accept-Language); messages come back in it. Only the wording changes: numbers
@@ -177,6 +179,7 @@ api.MapTimesheetEndpoints();
 api.MapCostCentreEndpoints();
 api.MapBudgetEndpoints();
 api.MapBrandEndpoints();
+api.MapUnitEndpoints();
 api.MapPmEndpoints();
 api.MapPmCalendarEndpoints();
 api.MapMeasurementPointEndpoints();

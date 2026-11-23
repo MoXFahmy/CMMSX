@@ -1111,5 +1111,13 @@
  "Choose a brand for this model.": "اختر علامة تجارية لهذا الطراز.",
  "Choose an active brand.": "اختر علامة تجارية نشطة.",
  "Choose a model of the chosen brand.": "اختر طرازًا من العلامة التجارية المختارة.",
- "Choose an active model.": "اختر طرازًا نشطًا."
+ "Choose an active model.": "اختر طرازًا نشطًا.",
+ "This symbol is already used.": "هذا الرمز مستخدم بالفعل.",
+ "Another unit has this symbol. Merge the two?": "توجد وحدة أخرى بهذا الرمز. هل تريد دمجهما؟",
+ "This unit is in use. Make it inactive instead.": "هذه الوحدة مستخدمة. اجعلها غير نشطة بدلًا من ذلك.",
+ "A symbol can be at most 30 characters.": "يمكن أن يكون الرمز 30 حرفًا على الأكثر.",
+ "Enter a symbol.": "أدخل رمزًا.",
+ "New brands: {0}": "علامات تجارية جديدة: {0}",
+ "New models: {0}": "طرازات جديدة: {0}",
+ "New units: {0}": "وحدات جديدة: {0}"
 }

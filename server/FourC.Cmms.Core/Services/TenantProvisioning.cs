@@ -104,6 +104,8 @@ public static partial class TenantProvisioning
         db.CancelReasons.AddRange(DefaultCancelReasons.Select(r => new FourC.Cmms.Core.Work.CancelReason { TenantId = tenantId, Code = r.Code, Name = r.Name }));
         db.OrderTypes.AddRange(DefaultOrderTypes.Select(o => new FourC.Cmms.Core.Purchasing.OrderType { TenantId = tenantId, Code = o.Code, Name = o.Name }));
         db.ContractTypes.AddRange(DefaultContractTypes.Select(o => new FourC.Cmms.Core.Contracts.ContractType { TenantId = tenantId, Code = o.Code, Name = o.Name }));
+        // A starter list of units (0.21.0); the reconcile adds the ones records already use.
+        db.Units.AddRange(ReferenceLists.StarterUnits.Select(u => new Inventory.Unit { TenantId = tenantId, Symbol = u.Symbol, Name = u.Name, NameAr = u.NameAr }));
         db.AvailabilityTypes.AddRange(DefaultAvailabilityTypes.Select(a => new Planning.AvailabilityType { TenantId = tenantId, Code = a.Code, Name = a.Name, Color = a.Color, Kind = a.Kind }));
         var admin = NewUser(tenantId, adminName, adminEmail);
         admin.PasswordHash = hasher.HashPassword(admin, adminPassword);

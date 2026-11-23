@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using FourC.Cmms.Api.Infrastructure;
+using FourC.Cmms.Core.Services;
 using FourC.Cmms.Core.Assets;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
@@ -191,6 +192,13 @@ public static class ImportRun
             try
             {
                 var result = await RunSheetsAsync(db, ctx, plan, clock, budget, token);
+                // New brands, models and units from the rows (0.21.0), counted in the check and kept only when the import saves.
+                var (brands, models, units) = await ReferenceLists.ReconcileAsync(db, db.CurrentTenantId!.Value, token);
+                var listNotes = new List<string>();
+                if (brands > 0) listNotes.Add(Translator.T($"New brands: {brands}"));
+                if (models > 0) listNotes.Add(Translator.T($"New models: {models}"));
+                if (units > 0) listNotes.Add(Translator.T($"New units: {units}"));
+                if (listNotes.Count > 0) result = result with { Notes = [.. result.Notes, .. listNotes] };
                 // The last word on time: nothing is committed once the page may have given up waiting.
                 if (clock() > budget) throw new Stopped();
                 if (save) { await tx.CommitAsync(CancellationToken.None); Infrastructure.AccessService.LocationsChanged(); } // locations may have moved

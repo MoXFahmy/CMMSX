@@ -276,6 +276,9 @@ var baseCurrency = (await db.Tenants.IgnoreQueryFilters().Where(t => t.Id == ten
 await InventoryImport.RunAsync(db, tenantId, materials, report, SiteFor, baseCurrency);
 Console.WriteLine($"Legacy PM parts: {work.ChecklistParts.Count} rows");
 await PmPartsImport.RunAsync(db, tenantId, work, report);
+// Brands, models and units from what was migrated (0.21.0): the tool writes texts straight to the database.
+var (newBrands, newModels, newUnits) = await ReferenceLists.ReconcileAsync(db, tenantId, CancellationToken.None);
+Console.WriteLine($"Lists: {newBrands} brands, {newModels} models, {newUnits} units added");
 
 Console.WriteLine();
 report.Print();
