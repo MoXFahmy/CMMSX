@@ -60,9 +60,13 @@ public static class ImportSheets
     [
         new("Sites", "Sites", "المواقع", [Code, Name, T("address", "Address", "العنوان"), T("city", "City", "المدينة"), T("country", "Country", "الدولة"),
             T("timeZone", "Time zone", "المنطقة الزمنية"), Active]),
+        // Cost centres and budgets (0.20.0): before the sheets that name them.
+        new("CostCentres", "Cost centres", "مراكز التكلفة", [Code, Name, T("parentCode", "Parent code", "رمز المركز الأعلى"), T("siteCode", "Site code", "رمز الموقع"), Active]),
+        new("Budgets", "Budgets", "الموازنات", [T("costCentreCode", "Cost centre code", "رمز مركز التكلفة", true), I("year", "Year", "السنة", true),
+            I("month", "Month", "الشهر", true), N("amount", "Amount", "المبلغ")]),
         new("Locations", "Locations", "الأماكن", [SiteCode, Code, Name, T("parentCode", "Parent code", "رمز المكان الأعلى"),
             C<LocationType>("type", "Type", "النوع"), C<Criticality>("criticality", "Criticality", "الأهمية"), Description,
-            T("notesToTechnician", "Notes to technician", "ملاحظات للفني"), Active]),
+            T("notesToTechnician", "Notes to technician", "ملاحظات للفني"), T("costCentreCode", "Cost centre code", "رمز مركز التكلفة"), Active]),
         new("Categories", "Categories", "الفئات", [Code, Name, T("color", "Color", "اللون"), N("downtimeCostPerHour", "Downtime cost per hour", "تكلفة التوقف للساعة"), Active]),
         new("Trades", "Trades", "التخصصات", [Code, Name, T("color", "Color", "اللون"), Active]),
         new("PartGroups", "Part groups", "مجموعات القطع", [Code, Name, Active]),
@@ -84,7 +88,7 @@ public static class ImportSheets
             N("expectedLifeYears", "Expected life (years)", "العمر المتوقع (سنوات)"), N("downtimeCostPerHour", "Downtime cost per hour", "تكلفة التوقف للساعة"),
             C<WarrantyType>("warrantyType", "Warranty type", "نوع الضمان"), D("warrantyExpiresOn", "Warranty expires on", "انتهاء الضمان"),
             T("warrantyNotes", "Warranty notes", "ملاحظات الضمان"), Description, Notes, T("notesToTechnician", "Notes to technician", "ملاحظات للفني"),
-            N("runsHoursPerDay", "Runs hours a day", "ساعات التشغيل في اليوم"), CL<DayOfWeek>("runsOn", "Runs on", "يعمل في")]),
+            N("runsHoursPerDay", "Runs hours a day", "ساعات التشغيل في اليوم"), CL<DayOfWeek>("runsOn", "Runs on", "يعمل في"), T("costCentreCode", "Cost centre code", "رمز مركز التكلفة")]),
         new("People", "People", "الأفراد", [Code, T("fullName", "Full name", "الاسم الكامل", true), T("jobTitle", "Job title", "المسمى الوظيفي"),
             T("email", "Email", "البريد الإلكتروني"), T("phone", "Phone", "الهاتف"), L("trades", "Trades", "التخصصات"), L("sites", "Sites", "المواقع"),
             N("hourlyRate", "Hourly rate", "أجر الساعة"), N("overtimeRate", "Overtime rate", "أجر الساعة الإضافية"), Y("contractor", "Contractor", "مقاول"),
@@ -131,7 +135,7 @@ public static class ImportSheets
             C<WeekOfMonth>("weekOfMonth", "Week of month", "أسبوع الشهر"), C<DayOfWeek>("weekday", "Weekday", "يوم الأسبوع"),
             I("dayOfMonth", "Day of month", "يوم الشهر"), D("startDate", "Start date", "تاريخ البدء", true), I("leadDays", "Lead days", "أيام التقديم"),
             I("workPeriodDays", "Work period days", "أيام فترة العمل"), L("assignees", "Assignees", "المكلفون"),
-            C<MultiAssetMode>("multiAssetMode", "Multi-asset mode", "وضع الأصول المتعددة"), Description, Active]),
+            C<MultiAssetMode>("multiAssetMode", "Multi-asset mode", "وضع الأصول المتعددة"), Description, T("costCentreCode", "Cost centre code", "رمز مركز التكلفة"), Active]),
     ];
 
     /// <summary>
