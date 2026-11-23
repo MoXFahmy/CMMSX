@@ -284,6 +284,15 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         }
     }
 
+    /// <summary>An order is waiting for these approvers' signatures at a level (0.16.0).</summary>
+    public async Task PoApprovalWaitingAsync(CmmsDbContext db, ITenantContext ctx, PurchaseOrder po, IReadOnlyCollection<Guid> userIds, string levelName, CancellationToken ct)
+    {
+        if (!Available || userIds.Count == 0) return;
+        var facts = await FactsAsync(db, po, ct);
+        await QueueAsync(db, ctx, EmailEvents.PoApprovalWaiting, await UsersAsync(db, userIds, ct),
+            o => EmailTemplates.PoApprovalWaiting(o, facts, levelName, Link($"/purchasing/orders/{po.Id}")), "PurchaseOrder", po.Id, ct, siteId: po.SiteId, siteLevel: true);
+    }
+
     // ---------------- Purchase requests (0.16.0) ----------------
 
     /// <summary>Submitted: the site's purchase-request recipients (else the organization's, else everyone who may approve requests), plus the request's own.</summary>

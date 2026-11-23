@@ -79,6 +79,10 @@ public static class EmailTemplates
         $"Approve purchase order {po.Number} ({po.Total})", "A purchase order is waiting for your approval",
         [("Order", po.Number), ("Supplier", po.Supplier), ("Total", po.Total), ("Requested by", po.RequestedBy)], null, link, "Review the order");
 
+    public static EmailContent PoApprovalWaiting(string org, PoFacts po, string level, string? link) => Layout(org,
+        $"Sign purchase order {po.Number} ({po.Total})", "A purchase order is waiting for your signature",
+        [("Order", po.Number), ("Supplier", po.Supplier), ("Total", po.Total), ("Requested by", po.RequestedBy), ("Level", level)], null, link, "Review the order");
+
     public static EmailContent PoApproved(string org, PoFacts po, string? link) => Layout(org,
         $"Purchase order {po.Number} approved", "Your purchase order was approved",
         [("Order", po.Number), ("Supplier", po.Supplier), ("Total", po.Total)], "You can now send it to the supplier.", link, "Open the order");

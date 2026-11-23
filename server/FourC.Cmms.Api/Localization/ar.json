@@ -992,5 +992,18 @@
  "The minimum can't be below 0.": "لا يمكن أن يقل الحد الأدنى عن 0.",
  "Choose whether all or any one of the approvers must sign.": "اختر هل يجب أن يعتمد جميع المعتمِدين أم أيٌّ منهم.",
  "Choose an active order type.": "اختر نوع أمر نشطًا.",
- "Another level in this set already starts at {0}.": "يوجد مستوى آخر في هذه المجموعة يبدأ بالفعل عند {0}."
+ "Another level in this set already starts at {0}.": "يوجد مستوى آخر في هذه المجموعة يبدأ بالفعل عند {0}.",
+ "Level '{0}' has nobody who can sign orders for {1}. Ask an administrator to fix the approval levels.": "المستوى '{0}' ليس به من يستطيع اعتماد أوامر {1}. اطلب من المسؤول إصلاح مستويات الاعتماد.",
+ "Sign in first.": "سجّل الدخول أولًا.",
+ "This step is already signed off.": "تم اعتماد هذه المرحلة بالفعل.",
+ "This order isn't waiting for approval.": "هذا الأمر لا ينتظر الاعتماد.",
+ "It isn't your turn to sign this order.": "لم يحن دورك لاعتماد هذا الأمر.",
+ "You aren't an approver of this order.": "لست من معتمِدي هذا الأمر.",
+ "You submitted this order, so someone else must sign it.": "أنت من أرسل هذا الأمر، لذا يجب أن يعتمده شخص آخر.",
+ "You have already signed this step.": "لقد اعتمدت هذه المرحلة بالفعل.",
+ "You can't sign this order any more.": "لم يعد بإمكانك اعتماد هذا الأمر.",
+ "This order isn't being signed by approval levels.": "هذا الأمر لا يُعتمد عبر مستويات الاعتماد.",
+ "Submit the order for approval first.": "أرسل الأمر للاعتماد أولًا.",
+ "Sign purchase order {0} ({1})": "اعتماد أمر الشراء {0} ({1})",
+ "A purchase order is waiting for your signature": "أمر شراء في انتظار اعتمادك"
 }

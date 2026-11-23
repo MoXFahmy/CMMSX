@@ -187,7 +187,7 @@ public static class PurchasingEndpoints
             ListExport.FileAsync(http, db, "purchase-orders", (page, size) => ListAsync(db, f, page, size, ct, ListExport.MaxRows), ct))
             .RequirePermission(Permissions.PurchasingView);
 
-        g.MapGet("/{id:guid}", async (Guid id, HttpContext http, CmmsDbContext db, PermissionService perms, CancellationToken ct) =>
+        g.MapGet("/{id:guid}", async (Guid id, HttpContext http, CmmsDbContext db, PermissionService perms, AccessService access, CancellationToken ct) =>
         {
             var o = await db.PurchaseOrders.AsNoTracking().Include(x => x.Supplier).Include(x => x.Site).Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (o is null) return Results.NotFound();
@@ -209,6 +209,11 @@ public static class PurchasingEndpoints
             var totalBase = PurchaseOrderMath.TotalInBase(o);
             var canApproveAmount = limit is null || totalBase <= limit;
             var hasReceipts = o.Lines.Any(l => l.QuantityReceived > 0);
+            // Approval levels (0.16.0): the panel, and who may sign; approving a draft isn't offered when levels would apply.
+            var approval = await PurchaseApprovals.PanelAsync(db, perms, access, o, UserId(http), ct);
+            var byLevels = approval.Waiting;
+            var iCanSign = approval.ICanSign;
+            var draftNeedsLevels = o.Status == PurchaseOrderStatus.Draft && (await PurchaseApprovals.LevelsForAsync(db, o, ct)).Count > 0;
             return Results.Ok(new
             {
                 o.Id, o.Number, o.Status, o.SiteId, SiteName = o.Site!.Name, o.SupplierId, Supplier = new { o.Supplier!.Id, o.Supplier.Code, o.Supplier.Name, o.Supplier.ContactName, o.Supplier.Email, o.Supplier.Phone, o.Supplier.Address, o.Supplier.City, o.Supplier.Country, o.Supplier.TaxNumber },
@@ -222,6 +227,7 @@ public static class PurchasingEndpoints
                     l.PurchaseRequestLineId,
                     Request = l.PurchaseRequestLineId is { } rl && requests.GetValueOrDefault(rl) is { } rq ? new { Id = rq.RequestId, rq.Number } : null,
                 }),
+                Approval = approval.View,
                 Totals = new { Subtotal = PurchaseOrderMath.Subtotal(o), Tax = PurchaseOrderMath.Tax(o), o.ShippingCost, Total = PurchaseOrderMath.Total(o), TotalInBase = totalBase },
                 Receipts = receipts,
                 IsOverdue = Receivable.Contains(o.Status) && o.ExpectedDate < Today,
@@ -229,9 +235,12 @@ public static class PurchasingEndpoints
                 {
                     Edit = o.Status == PurchaseOrderStatus.Draft && mine.Contains(Permissions.PurchasingCreate),
                     Submit = o.Status == PurchaseOrderStatus.Draft && mine.Contains(Permissions.PurchasingCreate),
-                    Approve = o.Status is PurchaseOrderStatus.Draft or PurchaseOrderStatus.Submitted && mine.Contains(Permissions.PurchasingApprove) && canApproveAmount,
-                    ApprovalLimitExceeded = o.Status is PurchaseOrderStatus.Draft or PurchaseOrderStatus.Submitted && mine.Contains(Permissions.PurchasingApprove) && !canApproveAmount,
-                    Reject = o.Status == PurchaseOrderStatus.Submitted && mine.Contains(Permissions.PurchasingApprove),
+                    Approve = byLevels ? iCanSign
+                        : o.Status is PurchaseOrderStatus.Draft or PurchaseOrderStatus.Submitted && !draftNeedsLevels && mine.Contains(Permissions.PurchasingApprove) && canApproveAmount,
+                    ApprovalLimitExceeded = !byLevels && !draftNeedsLevels && o.Status is PurchaseOrderStatus.Draft or PurchaseOrderStatus.Submitted
+                        && mine.Contains(Permissions.PurchasingApprove) && !canApproveAmount,
+                    Reject = byLevels ? iCanSign : o.Status == PurchaseOrderStatus.Submitted && mine.Contains(Permissions.PurchasingApprove),
+                    RestartApproval = byLevels && mine.Contains(Permissions.PurchasingApprove),
                     Receive = Receivable.Contains(o.Status) && mine.Contains(Permissions.PurchasingReceive),
                     Close = o.Status is PurchaseOrderStatus.PartiallyReceived or PurchaseOrderStatus.Received && mine.Contains(Permissions.PurchasingApprove),
                     Cancel = o.Status is PurchaseOrderStatus.Draft or PurchaseOrderStatus.Submitted or PurchaseOrderStatus.Approved && !hasReceipts
@@ -277,22 +286,31 @@ public static class PurchasingEndpoints
             return Results.NoContent();
         }).RequirePermission(Permissions.PurchasingCreate);
 
-        g.MapPost("/{id:guid}/submit", async (Guid id, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/submit", async (Guid id, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, PermissionService perms, AccessService access, CancellationToken ct) =>
         {
             var o = await LoadAsync(db, id, ct);
             Require(o, PurchaseOrderStatus.Draft);
             await RequireReadyAsync(db, o, ct);
-            o.Status = PurchaseOrderStatus.Submitted; o.SubmittedAt = DateTimeOffset.UtcNow;
-            await mail.PoSubmittedAsync(db, ctx, o, ct);
+            o.Status = PurchaseOrderStatus.Submitted; o.SubmittedAt = DateTimeOffset.UtcNow; o.SubmittedById = ctx.UserId;
+            // Approval levels (0.16.0): the levels this order needs are copied onto it and their first signers told; else today's rule.
+            if (!await PurchaseApprovals.StartAsync(db, ctx, perms, access, mail, o, ct)) await mail.PoSubmittedAsync(db, ctx, o, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { o.Id, o.Status });
         }).RequirePermission(Permissions.PurchasingCreate);
 
-        g.MapPost("/{id:guid}/approve", async (Guid id, HttpContext http, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/approve", async (Guid id, HttpContext http, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, PermissionService perms, AccessService access,
+            CancellationToken ct) =>
         {
             var o = await LoadAsync(db, id, ct);
             Require(o, PurchaseOrderStatus.Draft, PurchaseOrderStatus.Submitted);
             await RequireReadyAsync(db, o, ct);
+            if (o.Status == PurchaseOrderStatus.Submitted && (await PurchaseApprovals.StepsAsync(db, o, ct)).Count > 0)
+            {
+                await PurchaseApprovals.SignAsync(db, ctx, perms, access, mail, id, approve: true, null, ct);
+                return Results.Ok(new { o.Id, (await db.PurchaseOrders.AsNoTracking().FirstAsync(x => x.Id == id, ct)).Status });
+            }
+            if (o.Status == PurchaseOrderStatus.Draft && (await PurchaseApprovals.LevelsForAsync(db, o, ct)).Count > 0)
+                throw new DomainException("Submit the order for approval first.");
             var limit = await db.Users.Where(u => u.Id == UserId(http)).Select(u => u.PurchaseApprovalLimit).FirstOrDefaultAsync(ct);
             var total = PurchaseOrderMath.TotalInBase(o);
             if (limit is not null && total > limit) throw new DomainException($"This order ({total:N2}) is above your approval limit of {limit:N2}.");
@@ -303,16 +321,30 @@ public static class PurchasingEndpoints
             return Results.Ok(new { o.Id, o.Status });
         }).RequirePermission(Permissions.PurchasingApprove);
 
-        g.MapPost("/{id:guid}/reject", async (Guid id, ReasonInput i, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/reject", async (Guid id, ReasonInput i, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, PermissionService perms, AccessService access,
+            CancellationToken ct) =>
         {
             var o = await LoadAsync(db, id, ct);
             Require(o, PurchaseOrderStatus.Submitted);
+            if ((await PurchaseApprovals.StepsAsync(db, o, ct)).Count > 0)
+            {
+                await PurchaseApprovals.SignAsync(db, ctx, perms, access, mail, id, approve: false, i.Reason, ct);
+                return Results.Ok(new { o.Id, Status = PurchaseOrderStatus.Draft });
+            }
             if (i.Reason.Clean() is not { } reason) return new Validator().Required("reason", i.Reason, "Reason").Problem();
             o.Status = PurchaseOrderStatus.Draft; o.SubmittedAt = null;
             o.Notes = $"{o.Notes}{(o.Notes is null ? "" : "\n")}Returned by {ctx.UserName} on {Today:yyyy-MM-dd}: {reason}";
             await mail.PoDecidedAsync(db, ctx, o, approved: false, reason, ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { o.Id, o.Status });
+        }).RequirePermission(Permissions.PurchasingApprove);
+
+        // Approval levels (0.16.0): a new round from today's levels, for when an approver left or the levels changed.
+        g.MapPost("/{id:guid}/restart-approval", async (Guid id, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, PermissionService perms, AccessService access,
+            CancellationToken ct) =>
+        {
+            await PurchaseApprovals.RestartAsync(db, ctx, perms, access, mail, id, ct);
+            return Results.Ok(new { Id = id });
         }).RequirePermission(Permissions.PurchasingApprove);
 
         g.MapPost("/{id:guid}/cancel", async (Guid id, ReasonInput i, HttpContext http, CmmsDbContext db, PermissionService perms, CancellationToken ct) =>
