@@ -24,6 +24,8 @@ public static class WorkOrderEndpoints
         DateTimeOffset? At = null, Guid? CancelReasonId = null, Guid? RemedyId = null, Guid? SymptomId = null);
     public sealed record AllOkInput(Guid? AssetId = null);
     public sealed record BulkInput(Guid[]? Ids, StatusInput? Status, WorkPriority? Priority, Guid[]? AddAssigneeIds);
+    /// <summary>A cost-centre correction (0.20.0) on one or many work orders, in any status.</summary>
+    public sealed record CostCentreChangeInput(Guid[]? Ids, Guid? CostCentreId);
     public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null, StepAnswer? Answer = null, decimal? Value = null,
         string? Text = null, Guid? MeterId = null, bool Confirm = false);
     public sealed record LaborInput(Guid EmployeeId, DateOnly WorkDate, decimal Hours, decimal OvertimeHours, string? Notes);
@@ -355,6 +357,19 @@ public static class WorkOrderEndpoints
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { w.Id, w.Status });
         }).RequirePermission(Permissions.WorkOrdersExecute);
+
+        // Correcting the cost centre (0.20.0): any status, closed and cancelled included, without reopening; logged in each work
+        // order's history. Its labour, parts, contractors, other costs and purchase commitments move with it.
+        g.MapPost("/cost-centre", async (CostCentreChangeInput input, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var ids = Bulk.Ids(input.Ids, "work orders");
+            if (input.CostCentreId is { } cc && !await db.CostCentres.AnyAsync(c => c.Id == cc && c.IsActive, ct)) throw new DomainException("Choose an active cost centre.");
+            var orders = await db.WorkOrders.Where(w => ids.Contains(w.Id)).ToListAsync(ct);
+            var changed = 0;
+            foreach (var w in orders.Where(w => w.CostCentreId != input.CostCentreId)) { w.CostCentreId = input.CostCentreId; changed++; }
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { Changed = changed });
+        }).RequirePermission(Permissions.WorkOrdersEdit);
 
         // Many work orders at once: one change (status, priority or more technicians), the same rules as one at a time.
         // Rows that can't change are skipped with the reason; the rest are saved together.

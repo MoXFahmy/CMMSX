@@ -11,6 +11,7 @@ namespace FourC.Cmms.Api.Features;
 public static class CostCentreEndpoints
 {
     public sealed record CostCentreInput(string Code, string Name, Guid? ParentId, Guid? SiteId, bool IsActive = true);
+    public sealed record FillInInput(DateOnly From);
 
     /// <summary>"Production › Line 1 › Packing" for every cost centre (names of hidden parents included), by id.</summary>
     internal static async Task<Dictionary<Guid, string>> PathsAsync(CmmsDbContext db, CancellationToken ct)
@@ -40,6 +41,13 @@ public static class CostCentreEndpoints
                 c.Id, c.Code, c.Name, c.ParentId, c.SiteId, SiteName = c.SiteId is { } s ? sites.GetValueOrDefault(s) : null, c.IsActive, Path = paths.GetValueOrDefault(c.Id),
             }).OrderBy(c => c.Path);
         }).RequireAuthorization();
+
+        // Fill in past work (0.20.0): work orders created on or after a date, and direct issues dated on or after it, with no cost
+        // centre get the one in force today. Never overwrites; the GET counts what the POST would change.
+        g.MapGet("/fill-in", async (DateOnly from, CmmsDbContext db, CancellationToken ct) =>
+            Results.Ok(await FillInAsync(db, from, apply: false, ct))).RequirePermission(Permissions.SettingsManage);
+        g.MapPost("/fill-in", async (FillInInput i, CmmsDbContext db, CancellationToken ct) =>
+            Results.Ok(await FillInAsync(db, i.From, apply: true, ct))).RequirePermission(Permissions.SettingsManage);
 
         g.MapPost("/", async (CostCentreInput i, CmmsDbContext db, CancellationToken ct) =>
         {
@@ -72,6 +80,25 @@ public static class CostCentreEndpoints
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.SettingsManage);
+    }
+
+    private static async Task<object> FillInAsync(CmmsDbContext db, DateOnly from, bool apply, CancellationToken ct)
+    {
+        var since = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
+        var orders = await db.WorkOrders.Where(w => w.CostCentreId == null && w.CreatedAt >= since).ToListAsync(ct);
+        var issues = await db.StockTransactions.Where(t => t.CostCentreId == null && t.WorkOrderId == null && t.LocationId != null && t.Date >= from
+            && (t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Issue || t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Return)).ToListAsync(ct);
+        var cache = new Dictionary<(Guid?, Guid?), Guid?>();
+        async Task<Guid?> Resolve(Guid? asset, Guid? location)
+        {
+            if (!cache.TryGetValue((asset, location), out var cc)) cache[(asset, location)] = cc = await CostCentreQueries.InForceAsync(db, asset, location, ct);
+            return cc;
+        }
+        int workOrders = 0, directIssues = 0;
+        foreach (var w in orders) if (await Resolve(w.AssetId, w.LocationId) is { } cc) { workOrders++; if (apply) w.CostCentreId = cc; }
+        foreach (var t in issues) if (await Resolve(null, t.LocationId) is { } cc) { directIssues++; if (apply) t.CostCentreId = cc; }
+        if (apply) await db.SaveChangesAsync(ct);
+        return new { WorkOrders = workOrders, Issues = directIssues };
     }
 
     /// <summary>Referenced anywhere, at any site: a child, a location, an asset, a request, a PM, a work order, an issue or a budget.</summary>

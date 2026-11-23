@@ -11,7 +11,7 @@ public sealed record StockPost(
     StockTransactionType Type, Guid PartId, Guid StoreId, decimal Quantity, DateOnly Date,
     decimal? UnitCost = null, Guid? WorkOrderId = null, Guid? LocationId = null, Guid? SupplierId = null,
     Guid? PurchaseOrderId = null, Guid? PurchaseOrderLineId = null, string? Reference = null, string? BatchNumber = null,
-    DateOnly? ExpiryDate = null, string? Notes = null, Guid? RelatedTransactionId = null, string? LegacyRef = null);
+    DateOnly? ExpiryDate = null, string? Notes = null, Guid? RelatedTransactionId = null, string? LegacyRef = null, Guid? CostCentreId = null);
 
 /// <summary>
 /// The only place stock quantities change. Each call writes one immutable ledger entry and moves the store balance with a
@@ -96,6 +96,7 @@ public static class StockLedger
         {
             Type = p.Type, PartId = part.Id, StoreId = store.Id, Quantity = delta, UnitCost = Math.Round(unitCost, 4), Date = p.Date,
             WorkOrderId = p.WorkOrderId, LocationId = p.LocationId, SupplierId = p.SupplierId, PurchaseOrderId = p.PurchaseOrderId, PurchaseOrderLineId = p.PurchaseOrderLineId,
+            CostCentreId = p.WorkOrderId is null ? p.CostCentreId : null,
             Reference = Trim(p.Reference, 100), BatchNumber = Trim(batch, 100), ExpiryDate = p.ExpiryDate, Notes = Trim(p.Notes, 1000), RelatedTransactionId = p.RelatedTransactionId,
             CreatedAt = DateTimeOffset.UtcNow, CreatedById = ctx.UserId, CreatedByName = ctx.UserName, LegacyRef = p.LegacyRef,
         };

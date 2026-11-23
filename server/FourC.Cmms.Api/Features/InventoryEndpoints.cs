@@ -21,8 +21,10 @@ public static class InventoryEndpoints
     public sealed record LevelInput(Guid StoreId, string? Bin, decimal MinLevel, decimal ReorderLevel, decimal MaxLevel, decimal ReorderQuantity);
     public sealed record ReceiveInput(Guid? PartId, Guid? StoreId, decimal Quantity, decimal UnitCost, DateOnly? Date, Guid? SupplierId, string? Reference, string? BatchNumber, DateOnly? ExpiryDate, string? Notes);
     /// <param name="ConfirmReserved">Issue even if it takes stock reserved for other work (the answer to "Issue anyway?").</param>
+    /// <param name="CostCentreId">For parts issued to or returned from a location without a work order (0.20.0); none = the location's in force.</param>
     public sealed record IssueInput(Guid? PartId, Guid? StoreId, decimal Quantity, DateOnly? Date, Guid? WorkOrderId, Guid? LocationId, string? BatchNumber, string? Notes,
-        bool ConfirmReserved = false);
+        bool ConfirmReserved = false, Guid? CostCentreId = null);
+    public sealed record CostCentreChange(Guid? CostCentreId);
     public sealed record AdjustInput(Guid? PartId, Guid? StoreId, decimal Quantity, DateOnly? Date, string? BatchNumber, string Notes);
     public sealed record TransferInput(Guid? PartId, Guid? FromStoreId, Guid? ToStoreId, decimal Quantity, DateOnly? Date, string? BatchNumber, string? Notes,
         bool ConfirmReserved = false);
@@ -280,7 +282,7 @@ public static class InventoryEndpoints
             {
                 x.Id, x.Type, x.Date, x.PartId, PartNumber = x.Part!.PartNumber, PartName = x.Part.Name, Unit = x.Part.UnitOfMeasure, x.StoreId, StoreCode = x.Store!.Code,
                 x.Quantity, x.UnitCost, Total = Math.Round(x.Quantity * x.UnitCost, 2), x.WorkOrderId, WorkOrderNumber = db.WorkOrders.Where(w => w.Id == x.WorkOrderId).Select(w => w.Number).FirstOrDefault(),
-                x.PurchaseOrderId, x.Reference, x.BatchNumber, x.ExpiryDate, x.Notes, x.CreatedByName, x.CreatedAt,
+                x.PurchaseOrderId, x.Reference, x.BatchNumber, x.ExpiryDate, x.Notes, x.CreatedByName, x.CreatedAt, x.LocationId, x.CostCentreId,
             }).ToPagedAsync(page ?? 1, pageSize ?? 50, ct);
         }).RequirePermission(Permissions.InventoryView);
 
@@ -298,7 +300,7 @@ public static class InventoryEndpoints
             if (Missing(i.PartId, i.StoreId) is { } bad) return bad;
             await RequireIssueTargetAsync(db, i.WorkOrderId, i.LocationId, ct);
             var post = new StockPost(StockTransactionType.Issue, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
-                WorkOrderId: i.WorkOrderId, LocationId: i.LocationId, BatchNumber: i.BatchNumber, Notes: i.Notes);
+                WorkOrderId: i.WorkOrderId, LocationId: i.LocationId, BatchNumber: i.BatchNumber, Notes: i.Notes, CostCentreId: await DirectCostCentreAsync(db, i, ct));
             await StockLedger.CheckAsync(db, post, ct); // a batch that expired or ran out is said before "Issue anyway?"
             if (!i.ConfirmReserved && await ReservedConflictAsync(db, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.WorkOrderId, ct) is { } reserved) return reserved;
             var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, post, tk), ct);
@@ -317,10 +319,25 @@ public static class InventoryEndpoints
                 if (i.Quantity > -net) throw new DomainException($"Only {-net:0.###} were issued to this work order and not yet returned.");
                 lastIssue = await db.StockTransactions.Where(x => x.WorkOrderId == wo && x.PartId == i.PartId && x.Type == StockTransactionType.Issue).OrderByDescending(x => x.CreatedAt).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
             }
+            var costCentre = await DirectCostCentreAsync(db, i, ct);
             var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Return, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
-                WorkOrderId: i.WorkOrderId, LocationId: i.LocationId, BatchNumber: i.BatchNumber, Notes: i.Notes, RelatedTransactionId: lastIssue), tk), ct);
+                WorkOrderId: i.WorkOrderId, LocationId: i.LocationId, BatchNumber: i.BatchNumber, Notes: i.Notes, RelatedTransactionId: lastIssue,
+                CostCentreId: costCentre), tk), ct);
             return Results.Ok(new { tx.Id });
         }).RequirePermission(Permissions.InventoryTransact);
+
+        // A direct issue's or return's cost centre (0.20.0); work-order issues follow their work order's.
+        t.MapPut("/transactions/{id:guid}/cost-centre", async (Guid id, CostCentreChange i, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var tx = await db.StockTransactions.FirstOrDefaultAsync(x => x.Id == id, ct);
+            if (tx is null) return Results.NotFound();
+            if (tx.WorkOrderId is not null || tx.Type is not (StockTransactionType.Issue or StockTransactionType.Return))
+                throw new DomainException("Only parts issued to a location have their own cost centre.");
+            if (i.CostCentreId is { } cc && !await db.CostCentres.AnyAsync(c => c.Id == cc, ct)) throw new DomainException("Choose an active cost centre.");
+            tx.CostCentreId = i.CostCentreId;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { tx.Id, tx.CostCentreId });
+        }).RequirePermission(Permissions.InventoryManage);
 
         t.MapPost("/adjust", async (AdjustInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
@@ -577,5 +594,14 @@ public static class InventoryEndpoints
         p.StandardPrice = i.StandardPrice; p.LeadTimeDays = i.LeadTimeDays; p.IsCritical = i.IsCritical; p.IsShelfItem = i.IsShelfItem; p.AllowNegativeStock = i.AllowNegativeStock;
         p.PreferredSupplierId = i.PreferredSupplierId; p.Barcode = i.Barcode.Clean(); p.AlternatePartIds = (i.AlternatePartIds ?? []).Where(x => x != p.Id).Distinct().ToList();
         p.Notes = i.Notes.Clean(); p.IsActive = i.IsActive;
+    }
+
+    /// <summary>The cost centre of parts issued to or returned from a location without a work order (0.20.0): the one chosen, else the location's in force.</summary>
+    private static async Task<Guid?> DirectCostCentreAsync(CmmsDbContext db, IssueInput i, CancellationToken ct)
+    {
+        if (i.WorkOrderId is not null) return null;
+        if (i.CostCentreId is { } cc)
+            return await db.CostCentres.AnyAsync(c => c.Id == cc, ct) ? cc : throw new DomainException("Choose an active cost centre.");
+        return i.LocationId is { } l ? await CostCentreQueries.InForceAsync(db, null, l, ct) : null;
     }
 }
