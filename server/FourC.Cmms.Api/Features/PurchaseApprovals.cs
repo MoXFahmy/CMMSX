@@ -18,10 +18,15 @@ internal static class PurchaseApprovals
     public static async Task<List<PurchaseOrderApprovalStep>> StepsAsync(CmmsDbContext db, PurchaseOrder po, CancellationToken ct) =>
         po.ApprovalRound == 0 ? [] : await db.PurchaseOrderApprovalSteps.Where(s => s.PurchaseOrderId == po.Id && s.Round == po.ApprovalRound).OrderBy(s => s.Step).ToListAsync(ct);
 
-    /// <summary>The order is being signed by levels right now: its current round has a waiting step.</summary>
-    public static async Task<bool> SigningAsync(CmmsDbContext db, PurchaseOrder po, CancellationToken ct) =>
-        po.Status == PurchaseOrderStatus.Submitted && po.ApprovalRound > 0
-        && await db.PurchaseOrderApprovalSteps.AnyAsync(s => s.PurchaseOrderId == po.Id && s.Round == po.ApprovalRound && s.Status == ApprovalStepStatus.Waiting, ct);
+    /// <summary>
+    /// The order's current round is signed by levels (it has steps), whatever their state — so approve and reject always go through
+    /// <see cref="SignAsync"/>, which decides under the order's lock. Deciding from a step's state here instead would race: a second
+    /// approver who read the order just before the first signature was saved would land on the old single-approver path (0.16.1).
+    /// A returned order (Draft) isn't being signed; an order resubmitted when no level applied has an empty current round.
+    /// </summary>
+    public static async Task<bool> ByLevelsAsync(CmmsDbContext db, PurchaseOrder po, CancellationToken ct) =>
+        po.Status != PurchaseOrderStatus.Draft && po.ApprovalRound > 0
+        && await db.PurchaseOrderApprovalSteps.AnyAsync(s => s.PurchaseOrderId == po.Id && s.Round == po.ApprovalRound, ct);
 
     /// <summary>Whether levels would apply to this order now (to refuse approving a draft straight away).</summary>
     public static async Task<IReadOnlyList<ApprovalLevel>> LevelsForAsync(CmmsDbContext db, PurchaseOrder po, CancellationToken ct) =>

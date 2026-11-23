@@ -303,13 +303,14 @@ public static class PurchasingEndpoints
             CancellationToken ct) =>
         {
             var o = await LoadAsync(db, id, ct);
-            Require(o, PurchaseOrderStatus.Draft, PurchaseOrderStatus.Submitted);
-            await RequireReadyAsync(db, o, ct);
-            if (await PurchaseApprovals.SigningAsync(db, o, ct))
+            // Signed by levels: the locked signing step decides, whatever this read saw (0.16.1).
+            if (await PurchaseApprovals.ByLevelsAsync(db, o, ct))
             {
                 await PurchaseApprovals.SignAsync(db, ctx, perms, access, mail, id, approve: true, null, ct);
                 return Results.Ok(new { o.Id, (await db.PurchaseOrders.AsNoTracking().FirstAsync(x => x.Id == id, ct)).Status });
             }
+            Require(o, PurchaseOrderStatus.Draft, PurchaseOrderStatus.Submitted);
+            await RequireReadyAsync(db, o, ct);
             if (o.Status == PurchaseOrderStatus.Draft && (await PurchaseApprovals.LevelsForAsync(db, o, ct)).Count > 0)
                 throw new DomainException("Submit the order for approval first.");
             var limit = await db.Users.Where(u => u.Id == UserId(http)).Select(u => u.PurchaseApprovalLimit).FirstOrDefaultAsync(ct);
@@ -326,12 +327,12 @@ public static class PurchasingEndpoints
             CancellationToken ct) =>
         {
             var o = await LoadAsync(db, id, ct);
-            Require(o, PurchaseOrderStatus.Submitted);
-            if (await PurchaseApprovals.SigningAsync(db, o, ct))
+            if (await PurchaseApprovals.ByLevelsAsync(db, o, ct))
             {
                 await PurchaseApprovals.SignAsync(db, ctx, perms, access, mail, id, approve: false, i.Reason, ct);
                 return Results.Ok(new { o.Id, Status = PurchaseOrderStatus.Draft });
             }
+            Require(o, PurchaseOrderStatus.Submitted);
             if (i.Reason.Clean() is not { } reason) return new Validator().Required("reason", i.Reason, "Reason").Problem();
             o.Status = PurchaseOrderStatus.Draft; o.SubmittedAt = null;
             o.Notes = $"{o.Notes}{(o.Notes is null ? "" : "\n")}Returned by {ctx.UserName} on {Today:yyyy-MM-dd}: {reason}";
