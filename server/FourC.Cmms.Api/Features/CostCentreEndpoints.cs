@@ -82,23 +82,64 @@ public static class CostCentreEndpoints
         }).RequirePermission(Permissions.SettingsManage);
     }
 
+    /// <summary>
+    /// Fill in past work. The asset and location trees are read once and resolved in memory, and the changes are written in
+    /// batches, so a legacy-sized history finishes within a web request. Only rows still without a cost centre are touched.
+    /// </summary>
     private static async Task<object> FillInAsync(CmmsDbContext db, DateOnly from, bool apply, CancellationToken ct)
     {
         var since = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero);
-        var orders = await db.WorkOrders.Where(w => w.CostCentreId == null && w.CreatedAt >= since).ToListAsync(ct);
-        var issues = await db.StockTransactions.Where(t => t.CostCentreId == null && t.WorkOrderId == null && t.LocationId != null && t.Date >= from
-            && (t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Issue || t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Return)).ToListAsync(ct);
-        var cache = new Dictionary<(Guid?, Guid?), Guid?>();
-        async Task<Guid?> Resolve(Guid? asset, Guid? location)
+        var assets = await db.Assets.AllSites().AsNoTracking().Select(a => new { a.Id, a.ParentAssetId, a.LocationId, a.CostCentreId }).ToDictionaryAsync(a => a.Id, ct);
+        var locations = await db.Locations.AllSites().AsNoTracking().Select(l => new { l.Id, l.ParentId, l.CostCentreId }).ToDictionaryAsync(l => l.Id, ct);
+        // The same walk as CostCentreQueries.InForceAsync: the asset, up its parents, then the location tree.
+        Guid? InForce(Guid? assetId, Guid? locationId)
         {
-            if (!cache.TryGetValue((asset, location), out var cc)) cache[(asset, location)] = cc = await CostCentreQueries.InForceAsync(db, asset, location, ct);
-            return cc;
+            var seen = new HashSet<Guid>();
+            for (var a = assetId; a is { } id && seen.Add(id) && assets.TryGetValue(id, out var asset); a = asset.ParentAssetId)
+            {
+                if (asset.CostCentreId is { } own) return own;
+                locationId ??= asset.LocationId;
+            }
+            for (var l = locationId; l is { } id && seen.Add(id) && locations.TryGetValue(id, out var location); l = location.ParentId)
+                if (location.CostCentreId is { } own) return own;
+            return null;
         }
-        int workOrders = 0, directIssues = 0;
-        foreach (var w in orders) if (await Resolve(w.AssetId, w.LocationId) is { } cc) { workOrders++; if (apply) w.CostCentreId = cc; }
-        foreach (var t in issues) if (await Resolve(null, t.LocationId) is { } cc) { directIssues++; if (apply) t.CostCentreId = cc; }
-        if (apply) await db.SaveChangesAsync(ct);
-        return new { WorkOrders = workOrders, Issues = directIssues };
+
+        var orders = await db.WorkOrders.AsNoTracking().Where(w => w.CostCentreId == null && w.CreatedAt >= since)
+            .Select(w => new { w.Id, w.AssetId, w.LocationId }).ToListAsync(ct);
+        // A round's work order (no asset) takes the cost centre its covered assets share, else its location's — as when generated.
+        var roundIds = orders.Where(o => o.AssetId == null).Select(o => o.Id).ToList();
+        var covered = new List<(Guid WorkOrderId, Guid AssetId)>();
+        foreach (var chunk in roundIds.Chunk(1000))
+            covered.AddRange((await db.WorkOrderAssets.AsNoTracking().Where(x => chunk.Contains(x.WorkOrderId)).Select(x => new { x.WorkOrderId, x.AssetId }).ToListAsync(ct))
+                .Select(x => (x.WorkOrderId, x.AssetId)));
+        var coveredBy = covered.ToLookup(x => x.WorkOrderId, x => x.AssetId);
+        Guid? Shared(IEnumerable<Guid> ids)
+        {
+            var found = ids.Distinct().Select(id => InForce(id, null)).Distinct().ToList();
+            return found is [{ } one] ? one : null;
+        }
+        var workTargets = orders.Select(o => (o.Id, Cc: o.AssetId is null && coveredBy[o.Id].Any() ? Shared(coveredBy[o.Id]) ?? InForce(null, o.LocationId) : InForce(o.AssetId, o.LocationId)))
+            .Where(x => x.Cc is not null).ToList();
+
+        var issues = await db.StockTransactions.AsNoTracking().Where(t => t.CostCentreId == null && t.WorkOrderId == null && t.LocationId != null && t.Date >= from
+            && (t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Issue || t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Return))
+            .Select(t => new { t.Id, t.LocationId }).ToListAsync(ct);
+        var issueTargets = issues.Select(t => (t.Id, Cc: InForce(null, t.LocationId))).Where(x => x.Cc is not null).ToList();
+
+        if (apply)
+        {
+            var now = DateTimeOffset.UtcNow;
+            foreach (var group in workTargets.GroupBy(x => x.Cc!.Value))
+                foreach (var chunk in group.Select(x => x.Id).Chunk(1000))
+                    await db.WorkOrders.Where(w => chunk.Contains(w.Id) && w.CostCentreId == null)
+                        .ExecuteUpdateAsync(u => u.SetProperty(w => w.CostCentreId, group.Key).SetProperty(w => w.UpdatedAt, now), ct);
+            foreach (var group in issueTargets.GroupBy(x => x.Cc!.Value))
+                foreach (var chunk in group.Select(x => x.Id).Chunk(1000))
+                    await db.StockTransactions.Where(t => chunk.Contains(t.Id) && t.CostCentreId == null)
+                        .ExecuteUpdateAsync(u => u.SetProperty(t => t.CostCentreId, group.Key), ct);
+        }
+        return new { WorkOrders = workTargets.Count, Issues = issueTargets.Count };
     }
 
     /// <summary>Referenced anywhere, at any site: a child, a location, an asset, a request, a PM, a work order, an issue or a budget.</summary>

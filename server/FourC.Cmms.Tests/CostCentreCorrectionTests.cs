@@ -109,4 +109,48 @@ public class CostCentreCorrectionTests(ApiFixture fx) : IClassFixture<ApiFixture
         Assert.Null(await CostCentreOf(o.Admin, old));
         Assert.Equal(0, (await Ok(await o.Admin.PostAsJsonAsync("/api/cost-centres/fill-in", new { from = D(from) }))).GetProperty("workOrders").GetInt32());
     }
+
+    /// <summary>
+    /// A legacy-sized history: fill-in must finish well inside a web request's time (the load balancer gives up after about a
+    /// minute, and a cancelled request fills in nothing). Timed, so it runs only with CMMS_TEST_PERF set.
+    /// </summary>
+    [SkippableFact]
+    public async Task Fill_in_handles_a_large_history_quickly()
+    {
+        Skip.IfNot(fx.Enabled);
+        Skip.If(string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("CMMS_TEST_PERF")), "Set CMMS_TEST_PERF to time fill-in over a large history.");
+        var o = await OrgAsync(fx);
+        var fac = await CostCentreAsync(o.Admin, "FAC", "Facilities");
+        var hall = await LocationAsync(o.Admin, o.Site, "HALL", costCentre: fac);
+        var room = await LocationAsync(o.Admin, o.Site, "ROOM", hall);
+        var templateAsset = await AssetAsync(o.Admin, o.Site, "Template", room);
+        var templateWork = await WorkOrderAsync(o.Admin, o.Site, templateAsset);
+        const int count = 20000;
+        // Each old work order is on its own asset, in a room under a hall with a cost centre (the template already has it).
+        var sample = await Loop.DbAsync(fx, async db =>
+        {
+            var asset = await db.Assets.IgnoreQueryFilters().AsNoTracking().FirstAsync(x => x.Id == templateAsset);
+            var work = await db.WorkOrders.IgnoreQueryFilters().AsNoTracking().FirstAsync(x => x.Id == templateWork);
+            var first = Guid.Empty;
+            for (var i = 0; i < count; i++)
+            {
+                var a = (FourC.Cmms.Core.Assets.Asset)db.Entry(asset).CurrentValues.ToObject();
+                a.Id = Guid.NewGuid(); a.AssetNumber = $"OLD-{i:00000}";
+                db.Assets.Add(a);
+                var w = (FourC.Cmms.Core.Work.WorkOrder)db.Entry(work).CurrentValues.ToObject();
+                w.Id = Guid.NewGuid(); w.Number = $"OLD-WO-{i:00000}"; w.AssetId = a.Id; w.CostCentreId = null;
+                db.WorkOrders.Add(w);
+                if (i == 0) first = w.Id;
+            }
+            await db.SaveChangesAsync();
+            return first;
+        });
+        var from = D(Today.AddDays(-30));
+        Assert.Equal(count, (await Ok(await o.Admin.GetAsync($"/api/cost-centres/fill-in?from={from}"))).GetProperty("workOrders").GetInt32());
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        Assert.Equal(count, (await Ok(await o.Admin.PostAsJsonAsync("/api/cost-centres/fill-in", new { from }))).GetProperty("workOrders").GetInt32());
+        clock.Stop();
+        Assert.Equal(fac, await CostCentreOf(o.Admin, sample));
+        Assert.True(clock.Elapsed < TimeSpan.FromSeconds(8), $"Fill-in took {clock.Elapsed.TotalSeconds:0.0} s for {count} work orders.");
+    }
 }
