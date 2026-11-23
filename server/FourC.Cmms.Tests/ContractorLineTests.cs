@@ -13,9 +13,10 @@ public class ContractorLineTests(ApiFixture fx) : IClassFixture<ApiFixture>
     /// <summary>An organization with ELEC (default 100), contractor C (its ELEC rate 150), employee E linked to C at 80, staff S at 50 and an open work order.</summary>
     internal sealed record Setup(PurchaseRequestTests.Org O, Guid Elec, Guid C, Guid E, Guid S, Guid Wo);
 
-    internal static async Task<Setup> SetupAsync(ApiFixture fx, Guid? assetId = null)
+    internal static async Task<Setup> SetupAsync(ApiFixture fx) => await SetupOnAsync(fx, await OrgAsync(fx), null);
+
+    internal static async Task<Setup> SetupOnAsync(ApiFixture fx, PurchaseRequestTests.Org o, Guid? assetId)
     {
-        var o = await OrgAsync(fx);
         var elec = await CategoryAsync(o.Admin, "ELEC", 100);
         var c = await ContractorAsync(o.Admin, "LIFT", (elec, 150m));
         var e = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/employees", new { code = "E1", fullName = "Lift tech", isContractor = true, hourlyRate = 80m, companyId = c })));

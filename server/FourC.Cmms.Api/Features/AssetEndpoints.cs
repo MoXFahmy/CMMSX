@@ -109,10 +109,10 @@ public static class AssetEndpoints
                     if (x.Cost is { } cph) { downCost += cph * hours; priced = true; }
                 }
                 var mine = lines.Where(l => l.Y == y).ToList();
-                decimal labor = mine.Sum(l => l.Labor), parts = mine.Sum(l => l.Parts), other = mine.Sum(l => l.Other);
+                decimal labor = mine.Sum(l => l.Labor), parts = mine.Sum(l => l.Parts), other = mine.Sum(l => l.Other), contractor = mine.Sum(l => l.Contractor);
                 decimal? cost = priced ? Math.Round(downCost, 2) : null;
-                rows.Add(new { Year = y, Labor = Math.Round(labor, 2), Parts = Math.Round(parts, 2), Other = Math.Round(other, 2), DowntimeHours = Math.Round(down, 2), DowntimeCost = cost,
-                    Total = Math.Round(labor + parts + other + (cost ?? 0), 2) });
+                rows.Add(new { Year = y, Labor = Math.Round(labor, 2), Parts = Math.Round(parts, 2), Other = Math.Round(other, 2), Contractor = Math.Round(contractor, 2),
+                    DowntimeHours = Math.Round(down, 2), DowntimeCost = cost, Total = Math.Round(labor + parts + other + contractor + (cost ?? 0), 2) });
             }
             return Results.Ok(new { Years = rows, CostPerHour = CostMath.DowntimeCostPerHour(root.Own, root.FromCategory), FromCategory = root.Own is null && root.FromCategory is not null,
                 Components = components == true });

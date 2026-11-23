@@ -529,7 +529,7 @@ public static class ReportEndpoints
             w.RemedyId, RemedyCode = w.Remedy!.Code, RemedyName = w.Remedy.Name, w.DowntimeHours, w.DowntimeEventId, w.CompletedAt, w.CreatedAt,
         }).ToListAsync(ct);
         var costs = (await CostLinesAsync(db, wos, null, null, ct)).GroupBy(c => c.WoId)
-            .ToDictionary(g => g.Key, g => (Hours: g.Sum(x => x.Hours), Cost: g.Sum(x => x.Labor + x.Parts + x.Other)));
+            .ToDictionary(g => g.Key, g => (Hours: g.Sum(x => x.Hours), Cost: g.Sum(x => x.Total)));
         // Work orders sharing one stop carry its hours once, as in the failure analysis.
         var counted = items.Where(x => x.DowntimeEventId != null).GroupBy(x => x.DowntimeEventId)
             .Select(g => g.OrderBy(x => x.CompletedAt ?? DateTimeOffset.MaxValue).ThenBy(x => x.CreatedAt).First().Id).ToHashSet();
@@ -645,7 +645,14 @@ public static class ReportEndpoints
 
     // ---------------------------------------------------------------- costs
     /// <summary>A work order's labour, parts and other costs in one month (and its labour hours, 0.14.0).</summary>
-    internal sealed record CostLine(Guid WoId, int Y, int M, decimal Labor, decimal Parts, decimal Other, decimal Hours = 0);
+    /// <summary>
+    /// Costs of one work order in one month. <see cref="Contractor"/> (0.17.0) is contractor lines plus labour of employees linked to a company,
+    /// moved out of <see cref="Labor"/> so nothing counts twice; <see cref="Hours"/> stays all logged labour hours.
+    /// </summary>
+    internal sealed record CostLine(Guid WoId, int Y, int M, decimal Labor, decimal Parts, decimal Other, decimal Hours = 0, decimal Contractor = 0, decimal ContractorHours = 0)
+    {
+        public decimal Total => Labor + Parts + Other + Contractor;
+    }
 
     /// <summary>
     /// The cost lines of <paramref name="wos"/> per work order and month: labour by its work date, parts issued (net of returns) by their date,
@@ -657,8 +664,16 @@ public static class ReportEndpoints
         if (from is { } lf) lq = lq.Where(l => l.WorkDate >= lf);
         if (to is { } lt) lq = lq.Where(l => l.WorkDate <= lt);
         var labor = await lq.GroupBy(l => new { l.WorkOrderId, l.WorkDate.Year, l.WorkDate.Month })
-            .Select(g => new CostLine(g.Key.WorkOrderId, g.Key.Year, g.Key.Month, g.Sum(x => x.Hours * x.Rate + x.OvertimeHours * x.OvertimeRate), 0, 0, g.Sum(x => x.Hours + x.OvertimeHours)))
+            .Select(g => new CostLine(g.Key.WorkOrderId, g.Key.Year, g.Key.Month,
+                g.Sum(x => x.Employee!.CompanyId == null ? x.Hours * x.Rate + x.OvertimeHours * x.OvertimeRate : 0), 0, 0, g.Sum(x => x.Hours + x.OvertimeHours),
+                g.Sum(x => x.Employee!.CompanyId != null ? x.Hours * x.Rate + x.OvertimeHours * x.OvertimeRate : 0), 0))
             .ToListAsync(ct);
+        // Contractor lines (0.17.0), dated by the day the hours were done.
+        var kq = from k in db.WorkOrderContractors.AsNoTracking() join w in wos on k.WorkOrderId equals w.Id where k.HoursDone > 0 && k.DoneOn != null select k;
+        if (from is { } kf) kq = kq.Where(k => k.DoneOn >= kf);
+        if (to is { } kt) kq = kq.Where(k => k.DoneOn <= kt);
+        var contractor = await kq.GroupBy(k => new { k.WorkOrderId, k.DoneOn!.Value.Year, k.DoneOn.Value.Month })
+            .Select(g => new CostLine(g.Key.WorkOrderId, g.Key.Year, g.Key.Month, 0, 0, 0, 0, g.Sum(x => x.HoursDone * x.Rate), g.Sum(x => x.HoursDone))).ToListAsync(ct);
         var tq = from t in db.StockTransactions.AsNoTracking() join w in wos on t.WorkOrderId equals w.Id
                  where t.Type == StockTransactionType.Issue || t.Type == StockTransactionType.Return select t;
         if (from is { } tf) tq = tq.Where(t => t.Date >= tf);
@@ -670,7 +685,7 @@ public static class ReportEndpoints
         if (to is { } ctd) { var ce = End(ctd); cq = cq.Where(c => c.CreatedAt < ce); }
         var other = await cq.GroupBy(c => new { c.WorkOrderId, c.CreatedAt.Year, c.CreatedAt.Month })
             .Select(g => new CostLine(g.Key.WorkOrderId, g.Key.Year, g.Key.Month, 0, 0, g.Sum(x => x.Quantity * x.UnitCost), 0)).ToListAsync(ct);
-        return labor.Concat(parts).Concat(other).ToList();
+        return labor.Concat(parts).Concat(other).Concat(contractor).ToList();
     }
 
     private static async Task<ReportResult> CostsAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
@@ -688,17 +703,19 @@ public static class ReportEndpoints
             "month" => $"{l.Y:0000}-{l.M:00}", _ => dims[l.WoId].Asset,
         };
         var grouped = a.GroupBy == "technician" ? await ByTechnicianAsync(db, a, ct) : lines.GroupBy(Key).Select(g => Row(("group", a.GroupBy == "month" ? MonthLabel(int.Parse(g.Key[..4]), int.Parse(g.Key[5..])) : g.Key), ("sortKey", g.Key),
-            ("labor", R2(g.Sum(x => x.Labor))), ("parts", R2(g.Sum(x => x.Parts))), ("other", R2(g.Sum(x => x.Other))), ("total", R2(g.Sum(x => x.Labor + x.Parts + x.Other))),
+            ("labor", R2(g.Sum(x => x.Labor))), ("parts", R2(g.Sum(x => x.Parts))), ("other", R2(g.Sum(x => x.Other))), ("contractor", R2(g.Sum(x => x.Contractor))),
+            ("total", R2(g.Sum(x => x.Total))),
             ("workOrders", g.Select(x => x.WoId).Distinct().Count()), ("hours", R2(g.Sum(x => x.Hours)))));
         var rows = (a.GroupBy == "month" ? grouped.OrderBy(r => (string)r["sortKey"]!) : grouped.OrderByDescending(r => (decimal)r["total"]!)).Take(a.GroupBy == "asset" ? 200 : 1000).ToList();
         foreach (var r in rows) r.Remove("sortKey");
-        var total = lines.Sum(x => x.Labor + x.Parts + x.Other);
+        var total = lines.Sum(x => x.Total);
         var label = a.GroupBy switch { "site" => "Site", "type" => "Work type", "trade" => "Trade", "team" => "Team", "category" => "Asset category", "technician" => "Technician", "month" => "Month", _ => "Asset" };
         return new("maintenance-costs", "Maintenance costs", Period(a),
-            [new("group", label), new("labor", "Labour", "currency"), new("parts", "Parts", "currency"), new("other", "Other", "currency"), new("total", "Total", "currency"), new("workOrders", "Work orders", "number"),
-             new("hours", "Labour hours", "hours")],
-            rows, new Chart("bar", "group", ["labor", "parts", "other"], true),
-            [new("Total cost", R2(total), "currency"), new("Labour", R2(lines.Sum(x => x.Labor)), "currency"), new("Parts", R2(lines.Sum(x => x.Parts)), "currency"), new("Other", R2(lines.Sum(x => x.Other)), "currency")]);
+            [new("group", label), new("labor", "Labour", "currency"), new("parts", "Parts", "currency"), new("other", "Other", "currency"), new("contractor", "Contractor", "currency"),
+             new("total", "Total", "currency"), new("workOrders", "Work orders", "number"), new("hours", "Labour hours", "hours")],
+            rows, new Chart("bar", "group", ["labor", "parts", "other", "contractor"], true),
+            [new("Total cost", R2(total), "currency"), new("Labour", R2(lines.Sum(x => x.Labor)), "currency"), new("Parts", R2(lines.Sum(x => x.Parts)), "currency"), new("Other", R2(lines.Sum(x => x.Other)), "currency"),
+             new("Contractor", R2(lines.Sum(x => x.Contractor)), "currency")]);
     }
 
     /// <summary>Maintenance costs by technician (0.14.0): each person's labour hours and cost and the work orders they logged hours on; parts and other costs aren't per person.</summary>
@@ -778,7 +795,7 @@ public static class ReportEndpoints
             Remedy = w.Remedy == null ? null : w.Remedy.Code + " · " + w.Remedy.Name,
         }).Take(5000).ToListAsync(ct);
         var costs = (await CostLinesAsync(db, wos, null, null, ct)).GroupBy(c => c.WoId)
-            .ToDictionary(g => g.Key, g => (Hours: g.Sum(x => x.Hours), Cost: g.Sum(x => x.Labor + x.Parts + x.Other)));
+            .ToDictionary(g => g.Key, g => (Hours: g.Sum(x => x.Hours), Cost: g.Sum(x => x.Total)));
         var rows = items.Select(w => Row(("number", w.Number), ("date", w.CreatedAt), ("asset", w.Asset), ("type", Translator.T(w.Type.ToString())), ("title", w.Title),
             ("symptom", w.Symptom), ("cause", w.Cause), ("remedy", w.Remedy), ("hours", R2(costs.GetValueOrDefault(w.Id).Hours)), ("cost", R2(costs.GetValueOrDefault(w.Id).Cost)),
             ("downtime", w.DowntimeHours), ("workOrderId", w.Id))).ToList();

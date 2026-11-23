@@ -1022,5 +1022,6 @@
  "Date done cannot be in the future.": "لا يمكن أن يكون تاريخ التنفيذ في المستقبل.",
  "Choose a contact of this company.": "اختر جهة اتصال من هذه الشركة.",
  "Choose an active contractor category.": "اختر فئة مقاولين نشطة.",
- "Hours are too large.": "الساعات كبيرة جدًا."
+ "Hours are too large.": "الساعات كبيرة جدًا.",
+ "Contractor": "المقاولون"
 }
