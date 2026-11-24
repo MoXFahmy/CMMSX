@@ -4,6 +4,40 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.26.1] - 2026-11-24
+
+A fix release: 21 issues left by the reviews of 0.24.0–0.26.0, and three older places where people could see records outside their
+organization or sites.
+
+### Security
+- **Meters (PM › Meters)** listed every organization's meters to anyone who could view PM (since 0.12.0). The list now shows only
+  the organization's own meters.
+- **Serial units** (Inventory › Units, a part's Units tab, a unit's page) showed every site's units to site-limited people (since
+  0.24.0). They now follow site limits.
+- **Purchase requests › lines to order** showed approved lines from every site to a site-limited buyer (since 0.16.0). They now
+  follow site limits.
+- An asset's fitted units, Settings › Storage's list of largest files and the activity log's record names now follow site and
+  organization limits; the storage totals stay organization-wide.
+- API keys can't reach people's devices (any request under `/api/users/{id}/devices`).
+
+### Fixed
+- **Serial-numbered parts:** a part can't be both serial-tracked and a shelf-life item ("A serial-tracked part can't also be a
+  shelf-life item."); parts already both work as serial parts and no longer ask for a batch. A repair line is received whole
+  ("Receive a repair line whole."). The units list applies its filters before the 500-unit limit and says "Showing the first 500
+  units." when there are more. Units fitted to an asset move with it when it changes site, with or without its other child assets.
+  Serial lines on a purchase order's receive form no longer say "then issue to WO-…". Fitting a unit and adding a repair line no
+  longer need View inventory.
+- **Activity log and privacy:** anonymising someone also replaces their address and name in Settings › E-mail log, and e-mails
+  still waiting for them are not sent. Naming an employee to anonymise acts on that employee and their own sign-in only. The log
+  finds Arabic values, and its From/To dates are the organization's days in its time zone. A wrong current password when renewing
+  an expired one is logged as "Sign-in failed" (and the try that locks the account as "Locked out"). The log's person filter works
+  for anyone who may open the log.
+- **API keys and imports:** an import is marked done in the same save as its data, so a crash right after can't show "Nothing was
+  saved" for an import that saved. Long errors are cut to fit, so a failed import can't stay stuck. Old import files are cleared
+  from the history only once they are really deleted. PM schedule e-mail recipients and a contract's manager can't be service
+  accounts, and the People page's sign-in list leaves them out. Service accounts can be limited to branches like people. The import
+  history keeps itself up to date while a check or import runs, and opening a finished import no longer reloads every screen.
+
 ## [0.26.0] - 2026-11-24
 
 API keys and background imports. Other systems (an ERP, a BI tool, a sensor gateway) can read and change CMX data with an API key
