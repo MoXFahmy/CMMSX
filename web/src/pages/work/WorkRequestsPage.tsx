@@ -10,7 +10,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
-import { IconCheck, IconPlus, IconSearch, IconX } from '@tabler/icons-react';
+import { IconCheck, IconPlus, IconPrinter, IconSearch, IconX } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
 import { SourceBanner } from './SourceBanner';
 import { CoveredBanner } from '@/components/CoveredBanner';
@@ -237,6 +237,9 @@ function RequestDrawer({ id, onClose }: { id: string | null; onClose: () => void
                 {r.workOrder && <Anchor component={Link} to={`/work-orders/${r.workOrder.id}`} fz="sm">{t('wr.workOrder')} {r.workOrder.number} ({t(`woStatus.${r.workOrder.status}`)})</Anchor>}</Stack>
             </Alert>
           )}
+          <Group justify="flex-end">
+            <Button variant="subtle" size="xs" leftSection={<IconPrinter size={14} />} component="a" href={`/work-requests/${r.id}/print`} target="_blank">{t('print.printReceipt')}</Button>
+          </Group>
           {r.status === 'New' && (
             <Group>
               {can(P.requestsManage) && <Button color="teal" leftSection={<IconCheck size={16} />} onClick={openApprove}>{t('wr.approve')}</Button>}

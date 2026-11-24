@@ -3020,6 +3020,18 @@
     "terms": "الشروط",
     "layout": "التخطيط",
     "automatic": "تلقائي",
-    "builtIn": "المدمج"
+    "builtIn": "المدمج",
+    "submitted": "تاريخ التقديم",
+    "requester": "مقدّم الطلب",
+    "phone": "الهاتف",
+    "requestType": "نوع الطلب",
+    "requiredBy": "مطلوب بحلول",
+    "accessWindows": "أوقات إمكان تنفيذ العمل",
+    "progress": "المتابعة",
+    "workOrderLine": "أمر العمل {{number}} · {{status}}",
+    "dueOn": "الاستحقاق {{date}}",
+    "requestTitle": "إيصال طلب",
+    "printReceipt": "طباعة الإيصال",
+    "firstLabelDecides": "تستخدم هذه الملصقات تخطيط أولها."
   }
 }

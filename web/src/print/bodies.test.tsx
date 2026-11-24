@@ -4,6 +4,8 @@ import { renderHtml } from '@/test/render';
 import { builtInLayout, type PrintLayout } from './layouts';
 import { JobCardBody } from './JobCardBody';
 import { PoBody } from './PoBody';
+import { RequestBody } from './RequestBody';
+import type { WorkRequestDetail } from '@/api/types';
 import { chooseLayout } from './usePrintLayout';
 
 const ctx = { orgName: 'Cairo Hotel', terms: { site: 'Site', sites: 'Sites', location: 'Location', locations: 'Locations', asset: 'Asset', assets: 'Assets' }, logoUrl: null, language: 'en' };
@@ -85,5 +87,22 @@ describe('print bodies', () => {
     expect(chooseLayout(other, matched)).toBe(other);
     expect(chooseLayout(null, matched)).toBe(matched);
     expect(chooseLayout(undefined, matched)).toBe(matched);
+  });
+
+  it('the request receipt shows its blocks', () => {
+    const r = {
+      id: 'r1', number: 'WR-00009', title: 'Warm room', description: 'Room 204 is hot', status: 'Approved', priority: 'Low', type: 'Corrective',
+      site: { id: 's1', name: 'Cairo Hotel' }, locationName: 'Room 204', requesterName: 'Mona', requesterPhone: '0100', createdAt: '2026-11-24T08:00:00Z',
+      accessWindows: [{ start: '2026-11-25T09:00:00Z', end: '2026-11-25T11:00:00Z', note: 'Guest out' }],
+      workOrder: { id: 'w1', number: 'WO-00042', status: 'Open', dueDate: '2026-11-27' }, extraRecipients: [], feedback: [],
+    } as unknown as WorkRequestDetail;
+    const html = renderHtml(<RequestBody r={r} layout={builtInLayout('request')} {...ctx} />);
+    for (const text of ['WR-00009', 'Warm room', 'Mona', '0100', 'Room 204 is hot', 'Guest out', 'WO-00042']) expect(html).toContain(text);
+    const layout: PrintLayout = { ...builtInLayout('request'), blocks: builtInLayout('request').blocks.map((b) =>
+      b.key === 'details' ? { ...b, fields: ['requester', 'status'] } : b.key === 'progress' ? { ...b, shown: false } : b) };
+    const short = renderHtml(<RequestBody r={r} layout={layout} {...ctx} />);
+    expect(short).toContain('Mona');
+    expect(short).not.toContain('0100');
+    expect(short).not.toContain('WO-00042');
   });
 });

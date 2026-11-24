@@ -2884,6 +2884,18 @@
     "terms": "Terms",
     "layout": "Layout",
     "automatic": "automatic",
-    "builtIn": "Built-in"
+    "builtIn": "Built-in",
+    "submitted": "Submitted",
+    "requester": "Requester",
+    "phone": "Phone",
+    "requestType": "Request type",
+    "requiredBy": "Required by",
+    "accessWindows": "When the work can be done",
+    "progress": "Progress",
+    "workOrderLine": "Work order {{number}} · {{status}}",
+    "dueOn": "due {{date}}",
+    "requestTitle": "REQUEST RECEIPT",
+    "printReceipt": "Print receipt",
+    "firstLabelDecides": "These labels use the layout of the first one."
   }
 }
