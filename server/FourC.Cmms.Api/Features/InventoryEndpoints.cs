@@ -125,7 +125,8 @@ public static class InventoryEndpoints
             var s = await db.Stores.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (s is null) return Results.NotFound();
             if (await db.StockTransactions.AnyAsync(t => t.StoreId == id, ct)) throw new DomainException("This store has stock history. Mark it inactive instead.");
-            await db.StockLevels.Where(l => l.StoreId == id).ExecuteDeleteAsync(ct);
+            db.StockLevels.RemoveRange(await db.StockLevels.Where(l => l.StoreId == id).ToListAsync(ct)); // each level logged (0.25.0)
+            await db.SaveChangesAsync(ct);
             db.Stores.Remove(s);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
@@ -267,7 +268,8 @@ public static class InventoryEndpoints
                 throw new DomainException("This part is planned on work orders or PM tasks. Remove it from them, or mark it inactive instead.");
             if (await db.AssetParts.AllSites().AnyAsync(x => x.PartId == id, ct))
                 throw new DomainException("This part is on assets' spare-parts lists. Remove it from them, or mark it inactive instead.");
-            await db.StockLevels.AllSites().Where(l => l.PartId == id).ExecuteDeleteAsync(ct);
+            db.StockLevels.RemoveRange(await db.StockLevels.AllSites().Where(l => l.PartId == id).ToListAsync(ct)); // each level logged (0.25.0)
+            await db.SaveChangesAsync(ct);
             db.SupplierParts.RemoveRange(await db.SupplierParts.Where(r => r.PartId == id).ToListAsync(ct)); // its catalogue goes with it (0.18.0)
             db.Parts.Remove(p);
             await db.SaveChangesAsync(ct);

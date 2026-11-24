@@ -1,5 +1,6 @@
 import i18n from '@/i18n';
 import { SITE_HEADER, siteHeader } from '@/components/siteSwitch';
+import { markPasswordExpired } from '@/pages/auth/signIn';
 export class ApiError extends Error {
   status: number;
   fieldErrors: Record<string, string>;
@@ -50,6 +51,8 @@ async function request(path: string, init?: RequestInit & { json?: unknown }): P
   // No answer at all (no signal, or the connection dropped): say so, not the browser's "Failed to fetch".
   try { res = await fetch(`/api${path}`, { ...init, headers, body, credentials: 'same-origin' }); }
   catch { throw new ApiError(0, NO_CONNECTION); }
+  // An expired password (0.25.0) signs the person out; the sign-in page says why and asks for a new one.
+  if (res.status === 401 && res.headers.get('X-Password-Expired') === '1') markPasswordExpired();
   if (res.status === 401 && !path.startsWith('/auth/')) window.dispatchEvent(new Event('cmms:unauthorized'));
   if (!res.ok) throw await parseError(res);
   return res;

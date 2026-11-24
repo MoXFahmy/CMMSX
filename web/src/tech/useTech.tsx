@@ -9,9 +9,10 @@ import { registerTechWorker } from './worker';
 import { keepData } from './persist';
 import i18n from '@/i18n';
 import { applyListLabels } from '@/components/listLabels';
+import { markPasswordExpired } from '@/pages/auth/signIn';
 
 /** starting → ready; or why the technician view can't show jobs. */
-export type Phase = 'starting' | 'ready' | 'signedOut' | 'revoked' | 'locked' | 'noCopy';
+export type Phase = 'starting' | 'ready' | 'signedOut' | 'passwordExpired' | 'revoked' | 'locked' | 'noCopy';
 
 const LOCK_AFTER_MS = 30 * 24 * 3600_000;
 const identity: IdentityDeps = { fetchMe, getMeta, setMeta, wipeCopy };
@@ -71,6 +72,16 @@ export function TechProvider({ children }: { children: ReactNode }) {
     setBundle(undefined); setPlaces(undefined); setStock(undefined); setSent([]); setPhase('revoked');
   }, []);
 
+  /**
+   * The sign-in ended. Revoked: forget the copy (the queue stays). Expired password (0.25.0): nothing is wiped; the sign-in
+   * page asks for a new one, and the waiting changes go once the person is back.
+   */
+  const ended = useCallback(async (e: { revoked: boolean; passwordExpired?: boolean }) => {
+    if (e.revoked) { await revoked(); return; }
+    if (e.passwordExpired) { markPasswordExpired(); setPhase('passwordExpired'); return; }
+    setPhase('signedOut');
+  }, [revoked]);
+
   const contact = useCallback(async () => { setOnline(true); await setMeta('lastContactAt', Date.now()); }, []);
 
   /**
@@ -93,10 +104,10 @@ export function TechProvider({ children }: { children: ReactNode }) {
       return true;
     } catch (e) {
       if (e instanceof Offline) setOnline(false);
-      else if (e instanceof SignedOut) { if (e.revoked) await revoked(); else setPhase('signedOut'); }
+      else if (e instanceof SignedOut) await ended(e);
       return false;
     }
-  }, [contact, reloadQueue, revoked]);
+  }, [contact, ended, reloadQueue]);
 
   const refresh = useCallback(async () => {
     if (!(await ensureUser())) return;
@@ -125,9 +136,9 @@ export function TechProvider({ children }: { children: ReactNode }) {
     } catch (e) {
       setProblem(refreshProblem(e) ?? undefined);
       if (e instanceof Offline && !(e instanceof ServerError)) setOnline(false);
-      else if (e instanceof SignedOut) { if (e.revoked) await revoked(); else setPhase('signedOut'); }
+      else if (e instanceof SignedOut) await ended(e);
     } finally { setBusy(false); }
-  }, [contact, ensureUser, revoked]);
+  }, [contact, ended, ensureUser]);
 
   /** Sends the queue; `now` skips the wait between tries (start, signal back, "Refresh now", a new change). */
   const drainNow = useCallback(async (now = false) => {
@@ -143,13 +154,13 @@ export function TechProvider({ children }: { children: ReactNode }) {
       if (r.sent > 0) { await contact(); void refresh(); }
       if (r.stoppedBy === 'retry') setOnline(false);
       if (r.stoppedBy === 'serverError') await contact(); // there is signal; the server failed
-      if (r.stoppedBy === 'signedOut' && last?.kind === 'signedOut') { if (last.revoked) await revoked(); else setPhase('signedOut'); }
+      if (r.stoppedBy === 'signedOut' && last?.kind === 'signedOut') await ended(last);
       if (r.stoppedBy === 'otherUser') confirmed.current = false; // someone else signed in meanwhile: check again next time
     } finally {
       draining.current = false;
       await reloadQueue();
     }
-  }, [contact, ensureUser, refresh, reloadQueue, revoked]);
+  }, [contact, ended, ensureUser, refresh, reloadQueue]);
 
   // Start: who is signed in (with signal) or who used this phone last (without).
   useEffect(() => {
@@ -171,7 +182,7 @@ export function TechProvider({ children }: { children: ReactNode }) {
         await refresh();
         await drainNow(true);
       } catch (e) {
-        if (e instanceof SignedOut && !e.revoked) { window.location.replace('/login?next=%2Ftech%2F'); return; }
+        if (e instanceof SignedOut && !e.revoked) { if (e.passwordExpired) markPasswordExpired(); window.location.replace('/login?next=%2Ftech%2F'); return; }
         const id = await getMeta<string>('userId');
         user.current = id; setUserId(id); setFullName(await getMeta<string>('fullName') ?? undefined);
         if (e instanceof SignedOut) { await revoked(); return; }

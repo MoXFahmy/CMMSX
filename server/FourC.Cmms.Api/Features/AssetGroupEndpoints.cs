@@ -69,7 +69,7 @@ public static class AssetGroupEndpoints
             // A shared group reaches sites a limited person can't see: only people who see every site delete one.
             if (group.SiteId is null && db.CurrentSiteIds is not null) throw new DomainException("Only people who see every site can delete a shared asset group.");
             if (await db.PmSchedules.AllSites().AnyAsync(s => s.AssetGroupId == id, ct)) throw new DomainException("This asset group is used by a PM. Make it inactive instead.");
-            await db.AssetGroupMembers.Where(m => m.AssetGroupId == id).ExecuteDeleteAsync(ct);
+            db.AssetGroupMembers.RemoveRange(await db.AssetGroupMembers.Where(m => m.AssetGroupId == id).ToListAsync(ct)); // each logged (0.25.0)
             db.AssetGroups.Remove(group);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
@@ -94,7 +94,9 @@ public static class AssetGroupEndpoints
             var added = 0;
             foreach (var a in adding.Where(a => !existing.Contains(a.Id))) { db.AssetGroupMembers.Add(new AssetGroupMember { AssetGroupId = id, AssetId = a.Id }); added++; }
             var seen = db.Assets.Where(a => remove.Contains(a.Id)).Select(a => a.Id);
-            var removed = await db.AssetGroupMembers.Where(m => m.AssetGroupId == id && seen.Contains(m.AssetId)).ExecuteDeleteAsync(ct);
+            var leaving = await db.AssetGroupMembers.Where(m => m.AssetGroupId == id && seen.Contains(m.AssetId)).ToListAsync(ct);
+            db.AssetGroupMembers.RemoveRange(leaving); // each logged (0.25.0)
+            var removed = leaving.Count;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { Added = added, Removed = removed });
         }).RequirePermission(Permissions.AssetsEdit);
@@ -133,7 +135,7 @@ public static class AssetGroupEndpoints
         if (visible.Any(x => wanted.Contains(x.Id) && !current.Contains(x.Id) && x.SiteId is { } s && s != siteId)) throw new DomainException("Choose groups of the asset's site or shared groups.");
         foreach (var g in wanted.Except(current)) db.AssetGroupMembers.Add(new AssetGroupMember { AssetGroupId = g, AssetId = assetId });
         var leaving = current.Except(wanted).ToList();
-        if (leaving.Count > 0) await db.AssetGroupMembers.Where(m => m.AssetId == assetId && leaving.Contains(m.AssetGroupId)).ExecuteDeleteAsync(ct);
+        if (leaving.Count > 0) db.AssetGroupMembers.RemoveRange(await db.AssetGroupMembers.Where(m => m.AssetId == assetId && leaving.Contains(m.AssetGroupId)).ToListAsync(ct)); // the caller saves; each logged (0.25.0)
     }
 
     /// <summary>The assets of a group, for list and report filters.</summary>

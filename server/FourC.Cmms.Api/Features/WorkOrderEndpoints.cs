@@ -342,10 +342,11 @@ public static class WorkOrderEndpoints
             if (await db.WorkOrderLabor.AnyAsync(l => l.WorkOrderId == id, ct)) throw new DomainException("Work with logged labour cannot be deleted. Cancel it instead.");
             db.WorkOrders.Remove(w);
             // Its request waits again for a decision (an accepted one stays closed); nothing waits for the requester any more, and their link stops working.
-            await db.WorkRequests.Where(r => r.WorkOrderId == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.WorkOrderId, (Guid?)null)
+            var unlinked = await db.WorkRequests.Where(r => r.WorkOrderId == id).ExecuteUpdateAsync(s => s.SetProperty(r => r.WorkOrderId, (Guid?)null)
                 .SetProperty(r => r.Status, r => r.Status == WorkRequestStatus.Closed ? WorkRequestStatus.Closed : WorkRequestStatus.New)
                 .SetProperty(r => r.AwaitingFeedbackSince, (DateTimeOffset?)null).SetProperty(r => r.FeedbackTokenHash, (string?)null)
                 .SetProperty(r => r.FeedbackTokenExpiresAt, (DateTimeOffset?)null), ct);
+            if (unlinked > 0) FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "WorkOrder", id, "Deleted", $"{FourC.Cmms.Core.Auditing.AuditLog.Count(unlinked, "request", "requests")} unlinked");
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.WorkOrdersDelete);
@@ -521,7 +522,8 @@ public static class WorkOrderEndpoints
         g.MapDelete("/{id:guid}/tasks/{taskId:guid}", async (Guid id, Guid taskId, CmmsDbContext db, CancellationToken ct) =>
         {
             await RequireOpenAsync(db, id, ct);
-            await db.WorkOrderTasks.Where(x => x.Id == taskId && x.WorkOrderId == id).ExecuteDeleteAsync(ct);
+            db.WorkOrderTasks.RemoveRange(await db.WorkOrderTasks.Where(x => x.Id == taskId && x.WorkOrderId == id).ToListAsync(ct)); // each line logged (0.25.0)
+            await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
@@ -551,7 +553,8 @@ public static class WorkOrderEndpoints
         g.MapDelete("/{id:guid}/labor/{laborId:guid}", async (Guid id, Guid laborId, CmmsDbContext db, CancellationToken ct) =>
         {
             await RequireOpenAsync(db, id, ct);
-            await db.WorkOrderLabor.Where(x => x.Id == laborId && x.WorkOrderId == id).ExecuteDeleteAsync(ct);
+            db.WorkOrderLabor.RemoveRange(await db.WorkOrderLabor.Where(x => x.Id == laborId && x.WorkOrderId == id).ToListAsync(ct)); // each line logged (0.25.0)
+            await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
@@ -570,7 +573,8 @@ public static class WorkOrderEndpoints
         g.MapDelete("/{id:guid}/costs/{costId:guid}", async (Guid id, Guid costId, CmmsDbContext db, CancellationToken ct) =>
         {
             await RequireOpenAsync(db, id, ct);
-            await db.WorkOrderCosts.Where(x => x.Id == costId && x.WorkOrderId == id).ExecuteDeleteAsync(ct);
+            db.WorkOrderCosts.RemoveRange(await db.WorkOrderCosts.Where(x => x.Id == costId && x.WorkOrderId == id).ToListAsync(ct)); // each line logged (0.25.0)
+            await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
@@ -812,6 +816,13 @@ public static class WorkOrderEndpoints
             .SetProperty(x => x.StartedAt, x => x.StartedAt ?? started)
             .SetProperty(x => x.RespondedAt, x => x.RespondedAt ?? started)
             .SetProperty(x => x.UpdatedAt, now).SetProperty(x => x.UpdatedById, ctx.UserId), ct);
+        if (moved > 0)
+        {
+            // The guarded update skips the save pipeline: the status change is logged by hand (0.25.0).
+            // Saved with the caller's own change (the labour line or the step), not before it.
+            FourC.Cmms.Core.Auditing.AuditLog.Event(db, "WorkOrder", workOrderId, "Updated",
+                new Dictionary<string, object?> { ["Status"] = new { from = nameof(WorkOrderStatus.Open), to = nameof(WorkOrderStatus.InProgress) }, ["Reason"] = new { to = reason } });
+        }
         // A copy of the work order this request already loaded is now out of date (status, row version): refresh it.
         if (db.ChangeTracker.Entries<WorkOrder>().FirstOrDefault(e => e.Entity.Id == workOrderId) is { } loaded) await loaded.ReloadAsync(ct);
         if (moved == 0) return;

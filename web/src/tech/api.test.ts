@@ -110,4 +110,22 @@ describe('refreshProblem', () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ title: 'This month\'s AI allowance (2) is used up.' }), { status: 429 }));
     await expect(fillReport('w1', 'notes')).rejects.toThrow('This month\'s AI allowance (2) is used up.');
   });
+
+  it('a 401 with X-Password-Expired says the password expired (0.25.0)', async () => {
+    vi.stubGlobal('fetch', async () => new Response('{}', { status: 401, headers: { 'X-Password-Expired': '1' } }));
+    const e = await fetchMe().catch((x: unknown) => x);
+    expect(e).toBeInstanceOf(SignedOut);
+    expect((e as SignedOut).passwordExpired).toBe(true);
+    expect((e as SignedOut).revoked).toBe(false);
+    const r = await sendChange({ clientId: 'c1', userId: 'u1', seq: 1, at: '2026-11-24T08:00:00Z', type: 'comment.add', payload: {}, state: 'waiting', tries: 0 });
+    expect(r).toEqual({ kind: 'signedOut', revoked: false, passwordExpired: true });
+    vi.unstubAllGlobals();
+  });
+
+  it('a plain 401 is just signed out', async () => {
+    vi.stubGlobal('fetch', async () => new Response('{}', { status: 401, headers: { 'X-Session-Revoked': '1' } }));
+    const e = (await fetchMe().catch((x: unknown) => x)) as SignedOut;
+    expect([e.revoked, e.passwordExpired]).toEqual([true, false]);
+    vi.unstubAllGlobals();
+  });
 });

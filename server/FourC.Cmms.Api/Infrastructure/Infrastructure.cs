@@ -37,6 +37,23 @@ public sealed class HttpTenantContext(IHttpContextAccessor accessor) : ITenantCo
     private AccessScope? Scope => accessor.HttpContext?.Items[Access.ScopeKey] as AccessScope;
     public IReadOnlyList<Guid>? SiteIds => Scope?.SiteIds;
     public IReadOnlyList<string>? BranchPaths => Scope?.BranchPaths;
+    /// <summary>The technician app's calls are the phone's; the import's are the import's; the rest are the web's (0.25.0).</summary>
+    public string Source => accessor.HttpContext?.Request.Path is { } p
+        ? p.StartsWithSegments("/api/tech") ? "Phone" : p.StartsWithSegments("/api/import") ? "Import" : "Web"
+        : "Web";
+    /// <summary>One change number per request.</summary>
+    public Guid ChangeId
+    {
+        get
+        {
+            if (accessor.HttpContext is not { } http) return Guid.Empty;
+            if (http.Items[ChangeKey] is Guid id) return id;
+            var made = Guid.CreateVersion7();
+            http.Items[ChangeKey] = made;
+            return made;
+        }
+    }
+    private const string ChangeKey = "cmx.changeId";
 }
 
 public sealed class AppClaimsFactory(UserManager<AppUser> users, IOptions<IdentityOptions> options)

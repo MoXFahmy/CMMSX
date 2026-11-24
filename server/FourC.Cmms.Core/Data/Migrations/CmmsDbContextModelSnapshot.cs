@@ -1022,6 +1022,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<Guid>("ChangeId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Changes")
                         .HasColumnType("nvarchar(max)");
 
@@ -1032,6 +1035,18 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ParentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
@@ -1047,6 +1062,12 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ChangeId");
+
+                    b.HasIndex("TenantId", "Timestamp");
+
+                    b.HasIndex("TenantId", "ParentType", "ParentId");
 
                     b.HasIndex("TenantId", "EntityType", "EntityId", "Timestamp");
 
@@ -1576,6 +1597,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("int");
 
+                    b.Property<DateTimeOffset?>("AnonymisedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("nvarchar(max)");
@@ -1639,6 +1663,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(256)
                         .HasColumnType("nvarchar(256)");
 
+                    b.Property<DateTimeOffset?>("PasswordChangedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("PasswordHash")
                         .HasColumnType("nvarchar(max)");
 
@@ -1691,6 +1718,34 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasIndex("TenantId");
 
                     b.ToTable("AspNetUsers", (string)null);
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Identity.PasswordHistory", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Hash")
+                        .IsRequired()
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<DateTimeOffset>("SetAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("UserId", "SetAt");
+
+                    b.ToTable("PasswordHistories");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Identity.Role", b =>
@@ -2805,6 +2860,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("AnonymisedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("Code")
                         .IsRequired()

@@ -97,7 +97,7 @@ public static class PeopleEndpoints
     private static object ToDto(Employee e, int openWork) => new
     {
         e.Id, e.Code, e.FullName, e.JobTitle, e.Email, e.Phone, e.TradeIds, e.SiteIds, e.HourlyRate, e.OvertimeRate, e.IsContractor, e.Company,
-        e.CompanyId, CompanyName = e.CompanyRecord?.Name, e.UserId, e.Notes, e.IsActive, e.WorkingHours, OpenWorkOrders = openWork, RowVersion = Convert.ToBase64String(e.RowVersion),
+        e.CompanyId, CompanyName = e.CompanyRecord?.Name, e.UserId, e.Notes, e.IsActive, e.AnonymisedAt, e.WorkingHours, OpenWorkOrders = openWork, RowVersion = Convert.ToBase64String(e.RowVersion),
     };
 
     /// <summary>The checks that need no database (shared with the import).</summary>

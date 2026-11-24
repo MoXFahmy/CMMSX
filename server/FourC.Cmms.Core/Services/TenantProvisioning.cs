@@ -109,7 +109,10 @@ public static partial class TenantProvisioning
         db.AvailabilityTypes.AddRange(DefaultAvailabilityTypes.Select(a => new Planning.AvailabilityType { TenantId = tenantId, Code = a.Code, Name = a.Name, Color = a.Color, Kind = a.Kind }));
         var admin = NewUser(tenantId, adminName, adminEmail);
         admin.PasswordHash = hasher.HashPassword(admin, adminPassword);
+        admin.PasswordChangedAt = DateTimeOffset.UtcNow;
         db.Users.Add(admin);
+        // The first password counts towards "not one of the last N" (0.25.0).
+        db.PasswordHistories.Add(new Identity.PasswordHistory { TenantId = tenantId, UserId = admin.Id, Hash = admin.PasswordHash, SetAt = admin.PasswordChangedAt.Value });
         db.UserRoles.Add(new UserRole { UserId = admin.Id, RoleId = roles[0].Id });
         await db.SaveChangesAsync(token);
         return (tenant, admin);

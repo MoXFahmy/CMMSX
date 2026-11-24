@@ -9,7 +9,8 @@ export class ServerError extends Offline {}
 /** The request got no answer in time (a slow connection rather than none). */
 export class TimedOut extends Offline {}
 /** Thrown on 401: the sign-in ended, or (revoked) this device was signed out. */
-export class SignedOut extends Error { constructor(public revoked: boolean) { super('Signed out'); } }
+/** The sign-in ended: `revoked` when the device was signed out (by an administrator, or one session per person); `passwordExpired` (0.25.0) when a new password is needed. */
+export class SignedOut extends Error { constructor(public revoked: boolean, public passwordExpired = false) { super('Signed out'); } }
 
 /**
  * What to tell the technician when refreshing the jobs failed: the server's reason (e.g. the account isn't linked to an
@@ -40,7 +41,7 @@ async function call(path: string, init: RequestInit | undefined, timeoutMs: numb
   try { res = await fetch(`/api${path}`, { credentials: 'same-origin', ...init, signal: abort.signal, headers: { Accept: 'application/json', 'Accept-Language': i18n.language || 'en', ...(init?.headers ?? {}) } }); }
   catch { throw timedOut ? new TimedOut() : new Offline(); }
   finally { clearTimeout(timer); }
-  if (res.status === 401) throw new SignedOut(res.headers.get('X-Session-Revoked') === '1');
+  if (res.status === 401) throw new SignedOut(res.headers.get('X-Session-Revoked') === '1', res.headers.get('X-Password-Expired') === '1');
   if (res.status >= 500) throw new ServerError();
   return res;
 }
@@ -110,7 +111,7 @@ export async function sendChange(c: QueuedChange, file?: Blob): Promise<SendResu
     const a = (await res.json()) as { status: 'done' | 'rejected'; message?: string; code?: string };
     return a.status === 'done' ? { kind: 'done', message: a.message } : { kind: 'rejected', message: a.message ?? 'Not accepted.', code: a.code };
   } catch (e) {
-    if (e instanceof SignedOut) return { kind: 'signedOut', revoked: e.revoked };
+    if (e instanceof SignedOut) return { kind: 'signedOut', revoked: e.revoked, passwordExpired: e.passwordExpired };
     if (e instanceof ServerError) return { kind: 'retry', serverError: true };
     return e instanceof TimedOut && c.fileKey ? { kind: 'retry', timedOut: true } : { kind: 'retry' };
   }

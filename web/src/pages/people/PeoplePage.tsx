@@ -16,6 +16,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { LookupTable } from '@/components/LookupTable';
 import { useHierarchy } from '@/components/LocationPicker';
 import { confirmDelete } from '@/components/confirm';
+import { AnonymiseModal } from '@/components/AnonymiseModal';
 import { fmtMoney, handleFormError, notifyError, notifySuccess } from '@/components/utils';
 
 export function PeoplePage() {
@@ -49,6 +50,7 @@ function EmployeesTable() {
   const { data: companies } = useQuery({ queryKey: ['suppliers', 'lookup', 'contractor'], queryFn: () => get<SupplierLookup[]>('/suppliers/lookup', { role: 'contractor' }) });
   const [opened, m] = useDisclosure();
   const [editing, setEditing] = useState<Employee | null>(null);
+  const [anonymise, setAnonymise] = useState<{ employeeId: string } | null>(null);
   const currency = me?.tenant.settings.currency ?? 'USD';
   const blank = { code: '', fullName: '', jobTitle: '', email: '', phone: '', tradeIds: [] as string[], siteIds: [] as string[], hourlyRate: '' as number | '', overtimeRate: '' as number | '',
     isContractor: false, company: '', companyId: null as string | null, userId: null as string | null, notes: '', isActive: true, workingHours: null as WorkingDay[] | null };
@@ -83,8 +85,10 @@ function EmployeesTable() {
           { accessor: 'isContractor', title: t('common.type'), render: (e) => (e.isContractor ? <Badge color="grape">{e.companyName ?? e.company ?? t('people.contractor')}</Badge> : <Text fz="sm" c="dimmed">{t('people.inHouse')}</Text>) },
           { accessor: 'hourlyRate', title: t('people.hourlyRate'), textAlign: 'right', render: (e) => fmtMoney(e.hourlyRate, currency) },
           { accessor: 'openWorkOrders', title: t('people.openWork'), textAlign: 'right' },
-          { accessor: 'isActive', title: t('common.status'), render: (e) => <Badge color={e.isActive ? 'teal' : 'gray'}>{e.isActive ? t('common.active') : t('common.inactive')}</Badge> },
+          { accessor: 'isActive', title: t('common.status'), render: (e) => (e.anonymisedAt ? <Badge color="dark" variant="light">{t('anonymise.badge')}</Badge>
+            : <Badge color={e.isActive ? 'teal' : 'gray'}>{e.isActive ? t('common.active') : t('common.inactive')}</Badge>) },
         ]} />
+      <AnonymiseModal who={anonymise} onClose={() => setAnonymise(null)} onDone={m.close} />
       <Modal opened={opened} onClose={m.close} title={editing ? t('people.edit') : t('people.new')} size="lg">
         <form onSubmit={submit}><Stack>
           <SimpleGrid cols={{ base: 1, sm: 3 }}>
@@ -123,7 +127,11 @@ function EmployeesTable() {
           </Accordion>
           <Checkbox label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
           <Group justify="space-between">
-            {editing ? <Button variant="subtle" color="red" onClick={() => confirmDelete(editing.fullName, async () => { try { await del(`/employees/${editing.id}`); await qc.invalidateQueries({ queryKey: ['employees'] }); m.close(); } catch (e) { notifyError(e); } })}>{t('common.delete')}</Button> : <span />}
+            {editing ? <Group gap={4}>
+              <Button variant="subtle" color="red" onClick={() => confirmDelete(editing.fullName, async () => { try { await del(`/employees/${editing.id}`); await qc.invalidateQueries({ queryKey: ['employees'] }); m.close(); } catch (e) { notifyError(e); } })}>{t('common.delete')}</Button>
+              {/* 0.25.0: someone who has left can be anonymised once they (and their sign-in) are inactive. */}
+              {can(P.usersManage) && !editing.isActive && !editing.anonymisedAt && <Button variant="subtle" color="gray" onClick={() => setAnonymise({ employeeId: editing.id })}>{t('anonymise.action')}</Button>}
+            </Group> : <span />}
             <Group><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>
           </Group>
         </Stack></form>

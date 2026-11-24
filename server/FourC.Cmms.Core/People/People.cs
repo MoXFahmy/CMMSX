@@ -36,6 +36,8 @@ public class Employee : TenantEntity
     public Guid? UserId { get; set; }
     public string? Notes { get; set; }
     public bool IsActive { get; set; } = true;
+    /// <summary>When this person, who had left, was anonymised (0.25.0): their name was replaced everywhere and contact details cleared.</summary>
+    public DateTimeOffset? AnonymisedAt { get; set; }
     /// <summary>This person's weekly working hours; null = their site's (when they work at one site that has its own), else the organization's.</summary>
     public List<WorkingDay>? WorkingHours { get; set; }
 }

@@ -14,8 +14,29 @@ public class Tenant : Entity
 }
 
 /// <summary>Per-tenant configuration stored as JSON. Replaces the legacy keyvalue / relable / tblFeatures tables.</summary>
+/// <summary>
+/// The organization's security rules (0.25.0). Saved on their own (Settings › Security): the organization settings page keeps
+/// them as they are, so a page from before 0.25.0 can't reset them. The defaults change nothing.
+/// </summary>
+public class SecuritySettings
+{
+    /// <summary>8–64.</summary>
+    public int PasswordMinLength { get; set; } = 8;
+    /// <summary>0 = never; otherwise 30–730 days after a password was set.</summary>
+    public int PasswordExpiryDays { get; set; }
+    /// <summary>A new password can't be one of the last N (0 = no check, up to 24).</summary>
+    public int PasswordHistory { get; set; }
+    /// <summary>Signing in on another device asks whether to end the other session.</summary>
+    public bool OneSessionPerUser { get; set; }
+    /// <summary>Activity older than this many months is deleted nightly; null = keep everything (12–120 otherwise).</summary>
+    public int? ActivityRetentionMonths { get; set; }
+}
+
 public class TenantSettings
 {
+    /// <summary>0.25.0: password rules, one session per person and activity retention.</summary>
+    public SecuritySettings Security { get; set; } = new();
+
     public Terminology Terminology { get; set; } = new();
     /// <summary>The same terms shown in Arabic.</summary>
     public Terminology TerminologyArabic { get; set; } = Terminology.Arabic();

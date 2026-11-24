@@ -146,13 +146,19 @@ export type CustomField = {
   isRequired: boolean; sortOrder: number; categoryIds: string[]; showInList: boolean;
 };
 export type Attachment = { id: string; fileName: string; contentType: string; size: number; description?: string; isPrimaryImage: boolean; createdAt: string; createdBy?: string };
-export type AuditItem = { id: string; action: string; changes?: string; userName?: string; timestamp: string };
+export type AuditItem = {
+  id: string; action: string; changes?: string; userName?: string; timestamp: string;
+  /** 0.25.0: where the change came from, the action it was part of, and the row it was on (a child line of the record, e.g. a labour line). */
+  source?: 'Web' | 'Phone' | 'Import' | 'Job'; changeId?: string; entityType?: string; entityId?: string;
+};
 export type Transfer = { id: string; transferredAt: string; reason?: string; fromSite?: string; fromLocation?: string; toSite?: string; toLocation?: string; transferredBy?: string };
 export type User = {
   id: string; fullName: string; email: string; jobTitle?: string; phone?: string; isActive: boolean; lastLoginAt?: string; createdAt: string;
   roles: { roleId: string; name: string }[]; purchaseApprovalLimit?: number | null;
   /** Sites this person may see (empty = every site) and branches of the location tree they are limited to (0.9.0). */
   siteIds?: string[]; locationIds?: string[];
+  /** When this sign-in was anonymised (0.25.0); it stays closed. */
+  anonymisedAt?: string | null;
 };
 /** A named group of technicians that work can be given to (0.9.0). */
 export type Team = {
@@ -196,6 +202,8 @@ export type Employee = {
   /** The contractor company this person works for (0.17.0); their hours count as contractor cost. */
   companyId?: string; companyName?: string;
   openWorkOrders: number; rowVersion: string;
+  /** When this person, who had left, was anonymised (0.25.0). */
+  anonymisedAt?: string | null;
   /** Their own weekly working hours (0.9.0); none = their site's or the organization's. */
   workingHours?: WorkingDay[] | null;
 };
@@ -589,3 +597,35 @@ export type FittedUnits = {
   now: { unitId: string; assetNumber: string; serialNumber?: string | null; partName?: string | null; since?: string | null }[];
   before: { unitId: string; assetNumber: string; serialNumber?: string | null; partName?: string | null; from?: string | null; to: string; outcome?: UnitOutcome | null }[];
 };
+
+/** Settings › Security (0.25.0): the organization's password rules, one session per person and how long the activity log keeps changes. */
+export interface SecuritySettings {
+  passwordMinLength: number;
+  /** 0 = passwords don't expire. */
+  passwordExpiryDays: number;
+  /** How many recent passwords can't be used again (0 = only the current one). */
+  passwordHistory: number;
+  oneSessionPerUser: boolean;
+  /** null = keep every change. */
+  activityRetentionMonths: number | null;
+}
+
+/** One activity log entry (0.25.0). `changes` is the stored JSON of changed fields; masked values read "••••". */
+export type ActivityRow = {
+  id: string; timestamp: string; userId?: string | null; userName?: string | null; source: 'Web' | 'Phone' | 'Import' | 'Job'; changeId: string;
+  entityType: string; entityId: string; parentType?: string | null; parentId?: string | null; recordLabel: string; action: string; changes?: string | null;
+};
+
+/** Settings › Storage (0.25.0). */
+export type StorageOverview = {
+  totalBytes: number; files: number; deletedBytes: number;
+  byKind: { kind: 'Images' | 'Videos' | 'Documents' | 'Signatures' | 'Other'; bytes: number; files: number }[];
+  byRecord: { entityType: string; bytes: number; files: number }[];
+};
+export type StorageFile = {
+  id: string; fileName: string; contentType: string; size: number; entityType: string; entityId: string; kind: string;
+  recordLabel?: string | null; uploadedBy?: string | null; uploadedAt: string;
+};
+
+/** What anonymising a person would do (0.25.0); `blocked` says why it can't be done yet. */
+export type AnonymisePreview = { placeholder: string; confirmWith: string; records: number; sameNameAs: string[]; blocked: string | null };

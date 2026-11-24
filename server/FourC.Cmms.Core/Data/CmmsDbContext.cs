@@ -25,7 +25,7 @@ namespace FourC.Cmms.Core.Data;
 public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantContext tenant)
     : IdentityUserContext<AppUser, Guid>(options), IDataProtectionKeyContext
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
+    internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
 
     /// <summary>Evaluated per query; EF parameterizes it so each context instance sees its own tenant.</summary>
     public Guid? CurrentTenantId => tenant.TenantId;
@@ -57,6 +57,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<DowntimeEvent> DowntimeEvents => Set<DowntimeEvent>();
     public DbSet<CustomFieldDefinition> CustomFields => Set<CustomFieldDefinition>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<PasswordHistory> PasswordHistories => Set<PasswordHistory>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<NumberSequence> NumberSequences => Set<NumberSequence>();
     public DbSet<Trade> Trades => Set<Trade>();
@@ -332,12 +333,23 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasIndex(x => new { x.TenantId, x.EntityType, x.Key }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
 
+        b.Entity<PasswordHistory>(e =>
+        {
+            e.HasIndex(x => new { x.UserId, x.SetAt });
+            e.HasIndex(x => x.TenantId);
+        });
+
         b.Entity<AuditEntry>(e =>
         {
             e.Property(x => x.EntityType).HasMaxLength(100);
             e.Property(x => x.Action).HasMaxLength(20);
             e.Property(x => x.UserName).HasMaxLength(200);
             e.HasIndex(x => new { x.TenantId, x.EntityType, x.EntityId, x.Timestamp });
+            e.Property(x => x.Source).HasMaxLength(10);
+            e.Property(x => x.ParentType).HasMaxLength(100);
+            e.HasIndex(x => new { x.TenantId, x.Timestamp });
+            e.HasIndex(x => new { x.TenantId, x.ChangeId });
+            e.HasIndex(x => new { x.TenantId, x.ParentType, x.ParentId });
         });
 
         b.Entity<Attachment>(e =>
@@ -1242,7 +1254,17 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     // ---------- Save pipeline: tenant stamping, audit fields, soft delete, audit trail ----------
 
     private static readonly HashSet<string> IgnoredAuditProps =
-        [nameof(TenantEntity.RowVersion), nameof(TenantEntity.UpdatedAt), nameof(TenantEntity.UpdatedById), nameof(TenantEntity.CreatedAt), nameof(TenantEntity.CreatedById), "Path", "Depth"];
+        [nameof(TenantEntity.RowVersion), nameof(TenantEntity.UpdatedAt), nameof(TenantEntity.UpdatedById), nameof(TenantEntity.CreatedAt), nameof(TenantEntity.CreatedById), "Path", "Depth",
+         // A sign-in's bookkeeping on the user (0.25.0: sign-ins are logged as events of their own).
+         nameof(AppUser.LastLoginAt), nameof(AppUser.AccessFailedCount), nameof(AppUser.ConcurrencyStamp), nameof(AppUser.SecurityStamp),
+         nameof(AppUser.NormalizedEmail), nameof(AppUser.NormalizedUserName), nameof(AppUser.LockoutEnd)];
+
+    /// <summary>Who this context acts for (0.25.0: hand-written change entries take it).</summary>
+    public ITenantContext Actor => tenant;
+
+    private Guid? _changeId;
+    /// <summary>This save's change number: the request's or job run's, else one for this context.</summary>
+    private Guid ChangeNumber => tenant.ChangeId != Guid.Empty ? tenant.ChangeId : _changeId ??= Guid.CreateVersion7();
 
     public override async Task<int> SaveChangesAsync(CancellationToken ct = default)
     {
@@ -1268,41 +1290,75 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
                 if (entry.State == EntityState.Added) { if (a.CreatedAt == default) a.CreatedAt = now; a.CreatedById ??= tenant.UserId; } // imports keep legacy dates
                 else if (entry.State == EntityState.Modified) { a.UpdatedAt = now; a.UpdatedById = tenant.UserId; }
             }
-            if (entry.Entity is TenantEntity te && entry.State is EntityState.Added or EntityState.Modified)
-                audits.Add(BuildAudit(entry, te, now));
+            if (entry.Entity is AuditEntry written && entry.State == EntityState.Added && written.ChangeId == Guid.Empty)
+            {
+                written.ChangeId = ChangeNumber;
+                written.Source = tenant.Source;
+            }
+            else if (entry.State is EntityState.Added or EntityState.Modified or EntityState.Deleted && AuditScope.IsRecorded(entry.Metadata.ClrType)
+                     && BuildAudit(entry, now) is { } audit)
+                audits.Add(audit);
         }
         AuditEntries.AddRange(audits.Where(x => x.Action != "None"));
         return await base.SaveChangesAsync(ct);
     }
 
-    private AuditEntry BuildAudit(EntityEntry entry, TenantEntity te, DateTimeOffset now)
+    /// <summary>
+    /// The change entry for one tracked row (0.25.0: every recorded entity, with its source, change number and parent). A record
+    /// of its own logs its changed fields; a child row (a labour line, a comment) also logs its fields when added or deleted.
+    /// Sensitive values are written masked. Null when the row can't be placed in an organization.
+    /// </summary>
+    private AuditEntry? BuildAudit(EntityEntry entry, DateTimeOffset now)
     {
+        var entity = entry.Entity;
+        var tenantId = entity is ITenantOwned owned ? owned.TenantId
+            : entry.Metadata.FindProperty("TenantId") is { } tp && entry.Property(tp.Name).CurrentValue is Guid g && g != Guid.Empty ? g
+            : tenant.TenantId;
+        if (tenantId is not { } tid || tid == Guid.Empty) return null;
+        var parent = AuditScope.ParentOf(entity);
+        var ownId = entry.Metadata.FindProperty("Id") is { } idp && entry.Property(idp.Name).CurrentValue is Guid gid ? gid : (Guid?)null;
+        var child = entity is not TenantEntity;
         string action;
         Dictionary<string, object?>? changes = null;
-        if (entry.State == EntityState.Added) action = "Created";
-        else if (te.IsDeleted && entry.Property(nameof(ISoftDeletable.IsDeleted)).IsModified) action = "Deleted";
+        object? Value(PropertyEntry p, object? v) => AuditScope.IsSensitive(p.Metadata.Name) && v is not null ? AuditScope.Masked : v;
+        var fields = entry.Properties.Where(p => !IgnoredAuditProps.Contains(p.Metadata.Name) && p.Metadata.Name is not "TenantId" and not "Id");
+        if (entry.State == EntityState.Added)
+        {
+            action = "Created";
+            if (child) changes = fields.Where(p => p.CurrentValue is not null).ToDictionary(p => p.Metadata.Name, p => (object?)new { to = Value(p, p.CurrentValue) });
+        }
+        else if (entry.State == EntityState.Deleted || (entity is ISoftDeletable { IsDeleted: true } && entry.Property(nameof(ISoftDeletable.IsDeleted)).IsModified))
+        {
+            action = "Deleted";
+            if (child && entry.State == EntityState.Deleted)
+                changes = fields.Where(p => p.OriginalValue is not null).ToDictionary(p => p.Metadata.Name, p => (object?)new { from = Value(p, p.OriginalValue) });
+        }
         else
         {
             action = "Updated";
             changes = [];
-            foreach (var p in entry.Properties.Where(p => p.IsModified && !IgnoredAuditProps.Contains(p.Metadata.Name)))
+            foreach (var p in fields.Where(p => p.IsModified))
             {
                 var from = p.OriginalValue; var to = p.CurrentValue;
                 if (Equals(from, to) || (p.Metadata.GetValueComparer() is { } cmp && cmp.Equals(from, to))) continue;
-                changes[p.Metadata.Name] = new { from, to };
+                changes[p.Metadata.Name] = new { from = Value(p, from), to = Value(p, to) };
             }
             if (changes.Count == 0) action = "None";
         }
         return new AuditEntry
         {
-            TenantId = te.TenantId,
+            TenantId = tid,
             EntityType = entry.Metadata.ClrType.Name,
-            EntityId = te.Id,
+            EntityId = ownId ?? parent?.Id ?? Guid.Empty,
             Action = action,
             Changes = changes is { Count: > 0 } ? JsonSerializer.Serialize(changes, Json) : null,
             UserId = tenant.UserId,
             UserName = tenant.UserName,
             Timestamp = now,
+            Source = tenant.Source,
+            ChangeId = ChangeNumber,
+            ParentType = parent?.Type,
+            ParentId = parent?.Id,
         };
     }
 

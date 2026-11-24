@@ -40,7 +40,7 @@ public static class AdminEndpoints
             await db.Users.AsNoTracking().Where(u => u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
                 .Select(u => new
                 {
-                    u.Id, u.FullName, u.Email, u.JobTitle, u.Phone, u.IsActive, u.LastLoginAt, u.CreatedAt, u.PurchaseApprovalLimit, u.SiteIds, u.LocationIds,
+                    u.Id, u.FullName, u.Email, u.JobTitle, u.Phone, u.IsActive, u.AnonymisedAt, u.LastLoginAt, u.CreatedAt, u.PurchaseApprovalLimit, u.SiteIds, u.LocationIds,
                     Roles = db.UserRoles.Where(r => r.UserId == u.Id).Select(r => new { r.RoleId, r.Role!.Name }).ToList(),
                 }).ToListAsync(ct));
 
@@ -51,9 +51,13 @@ public static class AdminEndpoints
             var access = await CheckAccessAsync(input, null, db, Access.Of(http) ?? UserAccess.Everything, v, ct);
             if (!v.IsValid) return v.Problem();
             var user = TenantProvisioning.NewUser(db.CurrentTenantId!.Value, input.FullName, input.Email);
+            // The organization's password rules (0.25.0).
+            foreach (var p in await PasswordRules.ProblemsAsync(db, hasher, user, input.Password!, ct)) v.Add("password", p);
+            if (!v.IsValid) return v.Problem();
             user.JobTitle = input.JobTitle.Clean(); user.Phone = input.Phone.Clean(); user.IsActive = input.IsActive; user.PurchaseApprovalLimit = input.PurchaseApprovalLimit;
             (user.SiteIds, user.LocationIds) = access;
             user.PasswordHash = hasher.HashPassword(user, input.Password!);
+            await PasswordRules.RecordAsync(db, user, ct);
             db.Users.Add(user);
             db.UserRoles.AddRange(input.RoleIds.Distinct().Select(r => new UserRole { UserId = user.Id, RoleId = r }));
             await db.SaveChangesAsync(ct);
@@ -66,6 +70,7 @@ public static class AdminEndpoints
             if (user is null) return Results.NotFound();
             var editor = Access.Of(http) ?? UserAccess.Everything;
             if (await UserAccessRules.OutsideAsync(db, editor, user, ct) is { } outside) throw new DomainException(outside);
+            if (user.AnonymisedAt is not null) throw new DomainException(AnonymiseEndpoints.Closed);
             var v = await ValidateUserAsync(input, id, db, um, ct);
             var access = await CheckAccessAsync(input, user, db, editor, v, ct);
             if (id == ctx.UserId && !input.IsActive) v.Add("isActive", "You cannot deactivate your own account.");
@@ -96,11 +101,14 @@ public static class AdminEndpoints
             var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id && u.TenantId == db.CurrentTenantId, ct);
             if (user is null) return Results.NotFound();
             if (await UserAccessRules.OutsideAsync(db, Access.Of(http) ?? UserAccess.Everything, user, ct) is { } outside) throw new DomainException(outside);
+            if (user.AnonymisedAt is not null) throw new DomainException(AnonymiseEndpoints.Closed);
             var v = new Validator();
             foreach (var pv in um.PasswordValidators)
                 foreach (var e in (await pv.ValidateAsync(um, user, input.Password ?? "")).Errors) v.Add("password", e.Description);
+            if (v.IsValid) foreach (var p in await PasswordRules.ProblemsAsync(db, um.PasswordHasher, user, input.Password!, ct)) v.Add("password", p);
             if (!v.IsValid) return v.Problem();
             user.PasswordHash = um.PasswordHasher.HashPassword(user, input.Password!);
+            await PasswordRules.RecordAsync(db, user, ct);
             user.SecurityStamp = Guid.NewGuid().ToString("N");
             user.LockoutEnd = null; user.AccessFailedCount = 0;
             await db.SaveChangesAsync(ct);
@@ -189,7 +197,8 @@ public static class AdminEndpoints
         roles.MapDelete("/{id:guid}/columns/{list}", async (Guid id, string list, CmmsDbContext db, CancellationToken ct) =>
         {
             if (!ListKeys.IsValid(list)) throw new DomainException("Unknown list.");
-            await db.RoleListSettings.Where(x => x.RoleId == id && x.List == list).ExecuteDeleteAsync(ct);
+            db.RoleListSettings.RemoveRange(await db.RoleListSettings.Where(x => x.RoleId == id && x.List == list).ToListAsync(ct)); // logged (0.25.0)
+            await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
 
@@ -269,12 +278,18 @@ public static class AdminEndpoints
             var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
             if (input.Settings.AiEnabled && !t.Settings.AiEnabled && !ai.Configured) v.Add("settings.aiEnabled", "AI isn't set up on this server.");
             if (!v.IsValid) return v.Problem();
+            var nameBefore = t.Name;
             t.Name = input.Name.Trim();
             // The logo (0.14.0) changes only through its own upload, whatever a page sends.
             input.Settings.LogoVersion = t.Settings.LogoVersion;
             input.Settings.LogoContentType = t.Settings.LogoContentType;
             // The lists' wording (0.21.0) changes only through its own page, whatever this page sends.
             input.Settings.ListLabels = t.Settings.ListLabels ?? [];
+            // The security rules (0.25.0) change only through Settings › Security, whatever this page sends.
+            input.Settings.Security = t.Settings.Security ?? new();
+            var changed = SettingsDiff.Changes(t.Settings, input.Settings);
+            if (nameBefore != t.Name) changed["name"] = new { from = nameBefore, to = t.Name };
+            if (changed.Count > 0) FourC.Cmms.Core.Auditing.AuditLog.Event(db, "Tenant", t.Id, "SettingsChanged", changed);
             t.Settings = input.Settings;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { t.Name, t.Settings });
@@ -288,6 +303,9 @@ public static class AdminEndpoints
             var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
             var copy = System.Text.Json.JsonSerializer.Deserialize<TenantSettings>(System.Text.Json.JsonSerializer.Serialize(t.Settings))!;
             copy.ListLabels = labels;
+            // The lists' wording in the activity log (0.25.0), like the other settings.
+            if (SettingsDiff.Changes(t.Settings, copy, keep: "listLabels") is { Count: > 0 } wording)
+                FourC.Cmms.Core.Auditing.AuditLog.Event(db, "Tenant", t.Id, "SettingsChanged", wording);
             t.Settings = copy;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { ListLabels = labels });
@@ -305,13 +323,18 @@ public static class AdminEndpoints
             await using (var m = new MemoryStream(bytes)) await storage.SaveAsync(Logos.Key(db.CurrentTenantId), m, ct);
             var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
             t.Settings = Logos.With(t.Settings, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), type);
+            FourC.Cmms.Core.Auditing.AuditLog.Event(db, "Tenant", t.Id, "SettingsChanged", new Dictionary<string, object?> { ["settings.logo"] = new { to = "New logo" } });
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { t.Settings.LogoVersion });
         }).RequirePermission(Permissions.SettingsManage).DisableAntiforgery();
         settings.MapDelete("/logo", async (CmmsDbContext db, IFileStorage storage, CancellationToken ct) =>
         {
             var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
-            if (t.Settings.LogoVersion is not null) await storage.DeleteAsync(Logos.Key(db.CurrentTenantId), ct);
+            if (t.Settings.LogoVersion is not null)
+            {
+                await storage.DeleteAsync(Logos.Key(db.CurrentTenantId), ct);
+                FourC.Cmms.Core.Auditing.AuditLog.Event(db, "Tenant", t.Id, "SettingsChanged", new Dictionary<string, object?> { ["settings.logo"] = new { from = "Logo", to = (string?)null } });
+            }
             t.Settings = Logos.With(t.Settings, null, null);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();

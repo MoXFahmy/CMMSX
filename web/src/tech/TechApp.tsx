@@ -180,7 +180,7 @@ function PhaseScreen({ phase }: { phase: Phase }) {
   const { queue } = useTech();
   if (phase === 'starting') return <Center h="100vh"><Loader /></Center>;
   const text: Record<Exclude<Phase, 'starting' | 'ready'>, string> = {
-    noCopy: t('tech.noCopy'), locked: t('tech.locked'), revoked: t('tech.revoked'), signedOut: t('tech.signedOutBody'),
+    noCopy: t('tech.noCopy'), locked: t('tech.locked'), revoked: t('tech.revoked'), signedOut: t('tech.signedOutBody'), passwordExpired: t('tech.passwordExpired'),
   };
   return (
     <Center mih="100vh" p="md">
