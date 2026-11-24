@@ -4,6 +4,26 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.23.0] - 2026-11-24
+
+Print layouts. Each organization can make its job card, purchase order, request receipt and labels look like its own forms, in
+English and Arabic, with several layouts chosen by site and type. With no layout, every paper prints exactly as before. See
+docs/PRINT_LAYOUTS.md.
+
+### Added
+- **Settings › Print layouts:** a tab per paper (job card, purchase order, request receipt, labels), with today's paper as a
+  read-only "Built-in" layout to copy. A layout chooses which blocks print and in what order, the fields each block shows, header,
+  footer and terms text in English and Arabic, the paper size (A4, A5, Letter) and the logo; the job card can show asset custom
+  fields. A live preview prints a real record with the layout before saving.
+- **Label sizes:** today's A4 sheet (3 × 8), two other A4 sheets (3 × 7, 2 × 7) and one label per page for 50 × 25 mm and
+  100 × 50 mm label printers, with the details each label shows.
+- **Which layout prints:** the one for the record's site and type, then its site, then its type, then the default, then the
+  built-in paper. Layouts with neither are picked by hand. Every print page has a "Layout" choice, kept in the page's address.
+- **Request receipt:** "Print receipt" on a request: what was asked, by whom, when the work can be done, and the work order that
+  followed.
+- **Supplier e-mail:** "Send to supplier" follows the purchase order's layout (details, columns, totals, notes, terms, header and
+  footer). With the discount column hidden, the unit price is the price after discount. With no layout the e-mail is unchanged.
+
 ## [0.22.0] - 2026-11-24
 
 Home pages and roles. Each role can open CMX on what it needs, and everyone can pin the numbers they watch. A role with no home
