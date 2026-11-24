@@ -1162,5 +1162,11 @@
  "Choose an asset field from the list.": "اختر حقلًا من حقول الأصل من القائمة.",
  "Keep the header to {0} characters.": "اجعل الترويسة في حدود {0} حرف.",
  "Keep the footer to {0} characters.": "اجعل التذييل في حدود {0} حرف.",
- "Keep the terms to 4,000 characters.": "اجعل الشروط في حدود 4,000 حرف."
+ "Keep the terms to 4,000 characters.": "اجعل الشروط في حدود 4,000 حرف.",
+ "Your part no.": "رقم القطعة لديكم",
+ "Discount": "الخصم",
+ "Terms": "الشروط",
+ "Tax number": "الرقم الضريبي",
+ "Shipping method": "طريقة الشحن",
+ "Order type": "نوع الأمر"
 }

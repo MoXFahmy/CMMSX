@@ -13,7 +13,8 @@ namespace FourC.Cmms.Api.Features;
 public static class LabelEndpoints
 {
     public sealed record LabelInput(string? Type, List<Guid>? Ids, bool IncludeChildren = false);
-    public sealed record Label(Guid Id, string Number, string Name, string? Detail, string Url);
+    /// <summary>One label. <c>Site</c> (0.23.0) is the site's name for assets and locations; parts have none.</summary>
+    public sealed record Label(Guid Id, string Number, string Name, string? Detail, string Url, string? Site = null);
 
     public const int MaxLabels = 500;
 
@@ -40,8 +41,8 @@ public static class LabelEndpoints
             {
                 case "asset":
                     labels = (await db.Assets.AsNoTracking().Where(a => ids.Contains(a.Id))
-                            .Select(a => new { a.Id, a.AssetNumber, a.Name, Path = a.Location != null ? a.Location.Path : null }).ToListAsync(ct))
-                        .Select(a => new Label(a.Id, a.AssetNumber, a.Name, PathText(a.Path), Link(a.Id))).ToList();
+                            .Select(a => new { a.Id, a.AssetNumber, a.Name, Path = a.Location != null ? a.Location.Path : null, Site = a.Site!.Name }).ToListAsync(ct))
+                        .Select(a => new Label(a.Id, a.AssetNumber, a.Name, PathText(a.Path), Link(a.Id), a.Site)).ToList();
                     break;
                 case "location":
                 {
@@ -56,8 +57,8 @@ public static class LabelEndpoints
                         if (below.Count > MaxLabels) return Results.Problem(title: Translator.T($"That is {below.Count} locations; print at most {MaxLabels} labels at a time."), statusCode: 400);
                         q = db.Locations.AsNoTracking().Where(l => below.Contains(l.Id));
                     }
-                    labels = (await q.Select(l => new { l.Id, l.Code, l.Name, l.Path, l.ParentId }).ToListAsync(ct))
-                        .Select(l => new Label(l.Id, l.Code, l.Name, l.ParentId is null ? null : PathText(l.Path) is { } p && p.LastIndexOf(" › ", StringComparison.Ordinal) is var i && i > 0 ? p[..i] : null, Link(l.Id)))
+                    labels = (await q.Select(l => new { l.Id, l.Code, l.Name, l.Path, l.ParentId, Site = l.Site!.Name }).ToListAsync(ct))
+                        .Select(l => new Label(l.Id, l.Code, l.Name, l.ParentId is null ? null : PathText(l.Path) is { } p && p.LastIndexOf(" › ", StringComparison.Ordinal) is var i && i > 0 ? p[..i] : null, Link(l.Id), l.Site))
                         .ToList();
                     break;
                 }
