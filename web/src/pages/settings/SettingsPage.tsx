@@ -3,6 +3,8 @@ import { AiUsageSettings } from './AiUsageSettings';
 import { SecuritySettings } from './SecuritySettings';
 import { ActivityLog } from './ActivityLog';
 import { StorageSettings } from './StorageSettings';
+import { ApiKeysSettings } from './ApiKeysSettings';
+import { ServiceAccountModal } from './ServiceAccountModal';
 import { useEffect, useState } from 'react';
 import { ActionIcon, Badge, Button, Card, Checkbox, ColorInput, FileButton, Group, Modal, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Tabs, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
@@ -69,6 +71,7 @@ export function SettingsPage() {
     { value: 'contracts', label: t('contracts.title'), show: can(P.settingsManage) },
     { value: 'users', label: t('settings.users'), show: can(P.usersManage) },
     { value: 'roles', label: t('settings.roles'), show: can(P.usersManage) },
+    { value: 'api-keys', label: t('apiKeys.title'), show: can(P.usersManage) },
     { value: 'security', label: t('security.title'), show: can(P.settingsManage) },
     { value: 'activity', label: t('activity.title'), show: can(P.settingsManage) },
     { value: 'storage', label: t('storage.title'), show: can(P.settingsManage) },
@@ -95,6 +98,7 @@ export function SettingsPage() {
         <Tabs.Panel value="cancel-reasons"><LookupTable path="/cancel-reasons" title={t('settings.cancelReasons')} newLabel={t('settings.newCancelReason')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="users"><UserSettings /></Tabs.Panel>
         <Tabs.Panel value="roles"><RoleSettings /></Tabs.Panel>
+        <Tabs.Panel value="api-keys"><ApiKeysSettings account={new URLSearchParams(window.location.search).get('account')} /></Tabs.Panel>
         <Tabs.Panel value="security"><SecuritySettings editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="activity"><ActivityLog /></Tabs.Panel>
         <Tabs.Panel value="storage"><StorageSettings /></Tabs.Panel>
@@ -365,6 +369,8 @@ function UserSettings() {
   const { t } = useTranslation();
   const qc = useQueryClient();
   const [anonymiseUser, setAnonymiseUser] = useState<string | null>(null);
+  const [serviceAccount, setServiceAccount] = useState<User | null | undefined>(undefined);
+  const navigate = useNavigate();
   const { data, isFetching } = useQuery({ queryKey: ['users'], queryFn: () => get<User[]>('/users') });
   const { data: roles } = useQuery({ queryKey: ['roles'], queryFn: () => get<Role[]>('/roles') });
   // Every site and place the editor may see, whatever site the header switch is on.
@@ -397,9 +403,15 @@ function UserSettings() {
   });
   return (
     <Card p={0}>
-      <Group justify="space-between" p="md"><Title order={5}>{t('settings.users')}</Title><Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => open(null)}>{t('settings.newUser')}</Button></Group>
+      <Group justify="space-between" p="md"><Title order={5}>{t('settings.users')}</Title>
+        <Group gap="xs">
+          <Button size="xs" variant="default" leftSection={<IconPlus size={14} />} onClick={() => setServiceAccount(null)}>{t('serviceAccounts.new')}</Button>
+          <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => open(null)}>{t('settings.newUser')}</Button>
+        </Group>
+      </Group>
       <DataTable minHeight={150} fetching={isFetching} records={data ?? []} noRecordsText={t('common.noRecords')} columns={[
-        { accessor: 'fullName', title: t('common.name'), render: (u) => <Stack gap={0}><Text fz="sm" fw={500}>{u.fullName}</Text><Text fz="xs" c="dimmed">{u.email}</Text></Stack> },
+        { accessor: 'fullName', title: t('common.name'), render: (u) => <Stack gap={0}><Text fz="sm" fw={500}>{u.fullName}</Text>
+          {u.isServiceAccount ? <Badge size="xs" variant="light" color="violet" w="fit-content">{t('serviceAccounts.badge')}</Badge> : <Text fz="xs" c="dimmed">{u.email}</Text>}</Stack> },
         { accessor: 'jobTitle', title: t('settings.jobTitle') },
         { accessor: 'roles', title: t('settings.rolesLabel'), render: (u) => <Group gap={4}>{u.roles.map((r) => <Badge key={r.roleId} variant="default">{r.name}</Badge>)}</Group> },
         { accessor: 'siteIds', title: terms.sites, render: (u) => (u.locationIds?.length
@@ -409,7 +421,17 @@ function UserSettings() {
         { accessor: 'lastLoginAt', title: t('settings.lastLogin'), render: (u) => (u.lastLoginAt ? fromNow(u.lastLoginAt) : t('settings.never')) },
         { accessor: 'isActive', title: t('common.status'), render: (u) => (u.anonymisedAt ? <Badge color="dark" variant="light">{t('anonymise.badge')}</Badge>
           : <Badge color={u.isActive ? 'teal' : 'gray'}>{u.isActive ? t('common.active') : t('common.inactive')}</Badge>) },
-        { accessor: 'actions', title: '', width: 150, render: (u) => (u.anonymisedAt ? null : (
+        { accessor: 'actions', title: '', width: 150, render: (u) => (u.anonymisedAt ? null : u.isServiceAccount ? (
+          // 0.26.0: a service account is edited in its own dialog; its keys are under API keys; deleting it revokes them.
+          <Group gap={4} justify="flex-end" wrap="nowrap">
+            <ActionIcon variant="subtle" onClick={() => setServiceAccount(u)} aria-label={t('common.edit')}><IconEdit size={16} /></ActionIcon>
+            <ActionIcon variant="subtle" color="gray" onClick={() => navigate(`/settings/api-keys?account=${u.id}`)} aria-label={t('apiKeys.title')}><IconKey size={16} /></ActionIcon>
+            <ActionIcon variant="subtle" color="red" aria-label={t('common.delete')} onClick={() => confirmDelete(u.fullName, async () => {
+              try { await del(`/service-accounts/${u.id}`); await qc.invalidateQueries({ queryKey: ['users'] }); await qc.invalidateQueries({ queryKey: ['api-keys'] }); }
+              catch (e) { notifyError(e); }
+            }, t('serviceAccounts.deleteBody'))}><IconTrash size={16} /></ActionIcon>
+          </Group>
+        ) : (
           <Group gap={4} justify="flex-end" wrap="nowrap">
             <ActionIcon variant="subtle" onClick={() => open(u)} aria-label={t('common.edit')}><IconEdit size={16} /></ActionIcon>
             <ActionIcon variant="subtle" color="gray" onClick={() => setPwUser(u)} aria-label={t('settings.resetPassword')}><IconKey size={16} /></ActionIcon>
@@ -419,6 +441,8 @@ function UserSettings() {
           </Group>)) },
       ]} />
       <AnonymiseModal who={anonymiseUser ? { userId: anonymiseUser } : null} onClose={() => setAnonymiseUser(null)} />
+      <ServiceAccountModal account={serviceAccount ?? null} opened={serviceAccount !== undefined} onClose={() => setServiceAccount(undefined)} roles={roles ?? []}
+        sites={(h?.sites ?? []).map((x) => ({ value: x.id, label: x.name }))} />
       <Modal opened={opened} onClose={m.close} title={editing ? t('settings.editUser') : t('settings.newUser')} size="lg">
         <form onSubmit={submit}><Stack>
           <SimpleGrid cols={2}>
