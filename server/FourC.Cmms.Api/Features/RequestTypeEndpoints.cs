@@ -71,7 +71,7 @@ public static class RequestTypeEndpoints
         if (i.DefaultTradeId is { } trade && !await db.Trades.AnyAsync(x => x.Id == trade, ct)) v.Add("defaultTradeId", "Unknown trade.");
         if (i.TeamId is { } team && !await db.Teams.AllSites().AnyAsync(x => x.Id == team, ct)) v.Add("teamId", "Unknown team.");
         var people = (i.RecipientIds ?? []).Distinct().ToList();
-        if (people.Count > 0 && await db.Users.CountAsync(u => people.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId, ct) != people.Count)
+        if (people.Count > 0 && await db.Users.People().CountAsync(u => people.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId, ct) != people.Count)
             v.Add("recipientIds", "Choose active people of this organization.");
         return v;
     }

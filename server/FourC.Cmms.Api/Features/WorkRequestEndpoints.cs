@@ -138,7 +138,7 @@ public static class WorkRequestEndpoints
         g.MapGet("/people", async (Guid siteId, CmmsDbContext db, AccessService access, CancellationToken ct) =>
         {
             if (!await db.Sites.AnyAsync(s => s.Id == siteId, ct)) return Results.Ok(Array.Empty<object>());
-            var users = await db.Users.AsNoTracking().Where(u => u.IsActive && u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
+            var users = await db.Users.AsNoTracking().People().Where(u => u.IsActive && u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
                 .Select(u => new { u.Id, Name = u.FullName }).Take(1000).ToListAsync(ct);
             var seen = new List<object>();
             foreach (var u in users)
@@ -352,7 +352,7 @@ public static class WorkRequestEndpoints
             // Everyone kept informed must be able to see the place (else the e-mail would never reach them).
             var locationId = i.LocationId ?? (i.AssetId is { } a ? await db.Assets.Where(x => x.Id == a).Select(x => x.LocationId).FirstOrDefaultAsync(ct) : null);
             var path = locationId is { } l ? await db.Locations.AllSites().Where(x => x.Id == l).Select(x => x.Path).FirstOrDefaultAsync(ct) : null;
-            var active = await db.Users.Where(u => extra.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId).Select(u => u.Id).ToListAsync(ct);
+            var active = await db.Users.People().Where(u => extra.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId).Select(u => u.Id).ToListAsync(ct);
             var ok = active.Count == extra.Count;
             foreach (var id in active) ok &= Access.Covers(await access.GetAsync(id, ct), i.SiteId, path);
             if (!ok) v.Add("extraRecipientIds", "Choose people who can see this place.");

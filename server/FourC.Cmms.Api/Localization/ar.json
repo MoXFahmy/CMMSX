@@ -1240,5 +1240,8 @@
  "Make their sign-in inactive first.": "اجعل حساب الدخول الخاص به غير نشط أولاً.",
  "This person is already anonymised.": "تمت إزالة هوية هذا الشخص بالفعل.",
  "Type {0} to confirm.": "اكتب {0} للتأكيد.",
- "This sign-in was anonymised and can't be used again.": "تمت إزالة هوية حساب الدخول هذا ولا يمكن استخدامه مرة أخرى."
+ "This sign-in was anonymised and can't be used again.": "تمت إزالة هوية حساب الدخول هذا ولا يمكن استخدامه مرة أخرى.",
+ "Edit service accounts under Service accounts.": "عدّل حسابات الخدمة من قسم حسابات الخدمة.",
+ "Service accounts have no password.": "حسابات الخدمة ليس لها كلمة مرور.",
+ "Service accounts aren't people.": "حسابات الخدمة ليست أشخاصًا."
 }

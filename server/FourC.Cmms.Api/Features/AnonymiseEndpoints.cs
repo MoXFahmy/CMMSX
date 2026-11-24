@@ -78,6 +78,7 @@ public static class AnonymiseEndpoints
     /// <summary>Like every other change to a person's sign-in: only someone whose access covers theirs (a site-limited manager can't).</summary>
     private static async Task InsideAsync(HttpContext http, CmmsDbContext db, Person p, CancellationToken ct)
     {
+        if (p.User is { IsServiceAccount: true }) throw new DomainException(ServiceAccountEndpoints.NotPeople);
         if (p.User is not null && await UserAccessRules.OutsideAsync(db, Access.Of(http) ?? UserAccess.Everything, p.User, ct) is { } outside)
             throw new DomainException(outside);
     }

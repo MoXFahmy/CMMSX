@@ -1628,6 +1628,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<bool>("IsActive")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsServiceAccount")
+                        .HasColumnType("bit");
+
                     b.Property<string>("JobTitle")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");

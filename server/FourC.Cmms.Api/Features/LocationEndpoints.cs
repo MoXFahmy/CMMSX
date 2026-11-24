@@ -120,10 +120,10 @@ public static class SiteEndpoints
             if (st.DefaultStoreId is { } store && (id is null || !await db.Stores.AnyAsync(s => s.Id == store && s.SiteId == id && s.IsActive, ct)))
                 v.Add("settings.defaultStoreId", "Choose one of this site's stores.");
             var buyers = (st.PurchaseRequestRecipientIds ?? []).Distinct().ToList();
-            if (buyers.Count > 0 && await db.Users.CountAsync(u => buyers.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != buyers.Count)
+            if (buyers.Count > 0 && await db.Users.People().CountAsync(u => buyers.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != buyers.Count)
                 v.Add("settings.purchaseRequestRecipientIds", "Choose active users.");
             var who = (st.RequestRecipientIds ?? []).Distinct().ToList();
-            if (who.Count > 0 && await db.Users.CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != who.Count)
+            if (who.Count > 0 && await db.Users.People().CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != who.Count)
                 v.Add("settings.requestRecipientIds", "Choose active users.");
             else if (who.Count > 0 && access is not null)
             {

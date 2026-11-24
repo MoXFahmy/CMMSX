@@ -109,7 +109,7 @@ public static class ApprovalLevelEndpoints
             .When(who.Count > MaxApprovers, "approverIds", "A level can have at most 5 approvers.")
             .When(i.MinAmount < 0, "minAmount", "The minimum can't be below 0.")
             .When(!Enum.IsDefined(i.Rule), "rule", "Choose whether all or any one of the approvers must sign.");
-        if (who.Count is > 0 and <= MaxApprovers && await db.Users.CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != who.Count)
+        if (who.Count is > 0 and <= MaxApprovers && await db.Users.People().CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != who.Count)
             v.Add("approverIds", "Choose active users.");
         if (i.SiteId is { } site && !await db.Sites.AllSites().AnyAsync(s => s.Id == site, ct)) v.Add("siteId", "Choose a site.");
         if (i.OrderTypeId is { } type && !await db.OrderTypes.AnyAsync(t => t.Id == type && t.IsActive, ct)) v.Add("orderTypeId", "Choose an active order type.");

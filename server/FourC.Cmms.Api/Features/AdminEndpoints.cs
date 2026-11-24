@@ -30,7 +30,7 @@ public static class AdminEndpoints
     {
         // Active people to pick (a site's request recipients) without the right to manage users.
         api.MapGet("/users/lookup", async (CmmsDbContext db, CancellationToken ct) =>
-            await db.Users.AsNoTracking().Where(u => u.TenantId == db.CurrentTenantId && u.IsActive).OrderBy(u => u.FullName)
+            await db.Users.AsNoTracking().People().Where(u => u.TenantId == db.CurrentTenantId && u.IsActive).OrderBy(u => u.FullName)
                 .Select(u => new { u.Id, u.FullName, u.Email }).ToListAsync(ct))
             .WithTags("Users").RequirePermission(Permissions.LocationsManage);
 
@@ -40,7 +40,7 @@ public static class AdminEndpoints
             await db.Users.AsNoTracking().Where(u => u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
                 .Select(u => new
                 {
-                    u.Id, u.FullName, u.Email, u.JobTitle, u.Phone, u.IsActive, u.AnonymisedAt, u.LastLoginAt, u.CreatedAt, u.PurchaseApprovalLimit, u.SiteIds, u.LocationIds,
+                    u.Id, u.FullName, u.Email, u.JobTitle, u.Phone, u.IsActive, u.IsServiceAccount, u.AnonymisedAt, u.LastLoginAt, u.CreatedAt, u.PurchaseApprovalLimit, u.SiteIds, u.LocationIds,
                     Roles = db.UserRoles.Where(r => r.UserId == u.Id).Select(r => new { r.RoleId, r.Role!.Name }).ToList(),
                 }).ToListAsync(ct));
 
@@ -71,6 +71,7 @@ public static class AdminEndpoints
             var editor = Access.Of(http) ?? UserAccess.Everything;
             if (await UserAccessRules.OutsideAsync(db, editor, user, ct) is { } outside) throw new DomainException(outside);
             if (user.AnonymisedAt is not null) throw new DomainException(AnonymiseEndpoints.Closed);
+            if (user.IsServiceAccount) throw new DomainException(ServiceAccountEndpoints.EditThere);
             var v = await ValidateUserAsync(input, id, db, um, ct);
             var access = await CheckAccessAsync(input, user, db, editor, v, ct);
             if (id == ctx.UserId && !input.IsActive) v.Add("isActive", "You cannot deactivate your own account.");
@@ -102,6 +103,7 @@ public static class AdminEndpoints
             if (user is null) return Results.NotFound();
             if (await UserAccessRules.OutsideAsync(db, Access.Of(http) ?? UserAccess.Everything, user, ct) is { } outside) throw new DomainException(outside);
             if (user.AnonymisedAt is not null) throw new DomainException(AnonymiseEndpoints.Closed);
+            if (user.IsServiceAccount) throw new DomainException(ServiceAccountEndpoints.NoPassword);
             var v = new Validator();
             foreach (var pv in um.PasswordValidators)
                 foreach (var e in (await pv.ValidateAsync(um, user, input.Password ?? "")).Errors) v.Add("password", e.Description);
@@ -378,7 +380,7 @@ public static class AdminEndpoints
     /// The person's new site and branch lists (null input keeps what they have). Branches decide the sites (theirs), so the
     /// two never disagree. Someone whose own access is limited can only give access inside it; unchanged lists always pass.
     /// </summary>
-    private static async Task<(List<Guid> Sites, List<Guid> Locations)> CheckAccessAsync(UserInput i, AppUser? current, CmmsDbContext db, UserAccess editor,
+    internal static async Task<(List<Guid> Sites, List<Guid> Locations)> CheckAccessAsync(UserInput i, AppUser? current, CmmsDbContext db, UserAccess editor,
         Validator v, CancellationToken ct)
     {
         var sites = (i.SiteIds ?? current?.SiteIds ?? []).Distinct().ToList();

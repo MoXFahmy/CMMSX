@@ -519,7 +519,8 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         {
             EmailContent content;
             using (Translator.Use(group.Key)) content = build(tenant.Name);
-            foreach (var r in group)
+            // Service accounts and anonymised sign-ins have .invalid addresses: never written to (0.26.0).
+            foreach (var r in group.Where(r => !Undeliverable(r.Email)))
                 db.OutboundEmails.Add(new OutboundEmail
                 {
                     TenantId = tenant.Id, EventKey = eventKey, ToAddress = r.Email!, FromName = fromName,
@@ -562,8 +563,11 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         return kept;
     }
 
+    /// <summary>An address CMX made up (a service account's, an anonymised sign-in's): never written to.</summary>
+    internal static bool Undeliverable(string? address) => address is not null && address.Trim().EndsWith(".invalid", StringComparison.OrdinalIgnoreCase);
+
     internal static async Task<List<EmailRecipient>> UsersAsync(CmmsDbContext db, IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
-        await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId)
+        await db.Users.AsNoTracking().People().Where(u => ids.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId)
             .Select(u => new EmailRecipient(u.Email, u.FullName, u.Id)).ToListAsync(ct);
 
     /// <summary>Active users holding <paramref name="permission"/> through any of their roles.</summary>
