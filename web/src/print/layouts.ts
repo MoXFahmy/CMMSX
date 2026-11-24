@@ -101,3 +101,18 @@ export function poUnitPrice(line: { unitPrice: number; discountPercent?: number 
   if (discountShown) return line.unitPrice;
   return line.quantity ? line.lineTotal / line.quantity : line.unitPrice * (1 - (line.discountPercent ?? 0) / 100);
 }
+
+/**
+ * Rows of blocks for printing: two blocks that sit side by side on today's paper (labour and parts; supplier and details) stay
+ * together when they follow each other, in either order; every other block has its own row.
+ */
+export function pairRows(blocks: PrintBlock[], pairs: [string, string][]): PrintBlock[][] {
+  const rows: PrintBlock[][] = [];
+  for (let i = 0; i < blocks.length; i++) {
+    const a = blocks[i];
+    const next = blocks[i + 1];
+    if (next && pairs.some(([x, y]) => (a.key === x && next.key === y) || (a.key === y && next.key === x))) { rows.push([a, next]); i++; }
+    else rows.push([a]);
+  }
+  return rows;
+}

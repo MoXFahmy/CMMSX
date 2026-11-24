@@ -2876,5 +2876,14 @@
       "location-tree": "The sites and locations, with buttons to report, create work or add assets there.",
       "shortcuts": "Coloured tiles that open CMX pages."
     }
+  },
+  "print": {
+    "team": "Team",
+    "costCentre": "Cost centre",
+    "orderType": "Order type",
+    "terms": "Terms",
+    "layout": "Layout",
+    "automatic": "automatic",
+    "builtIn": "Built-in"
   }
 }

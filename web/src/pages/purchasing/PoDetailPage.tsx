@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react';
-import { ActionIcon, Alert, Anchor, Badge, Button, Card, Center, Grid, Group, Loader, Menu, Modal, NumberInput, Progress, Select, Stack, Table, Tabs, Text, TextInput, Textarea, Title, Timeline } from '@mantine/core';
+import { useEffect, useRef, useState } from 'react';
+import { ActionIcon, Alert, Anchor, Badge, Button, Card, Center, Grid, Group, Loader, Menu, Modal, NumberInput, Progress, Select, Stack, Table, Tabs, Text, TextInput, Textarea, Timeline } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
@@ -17,8 +17,10 @@ import { Attachments } from '@/components/Attachments';
 import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtDateTime, fmtPrice, fmtQty, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { ApprovalPanel } from './ApprovalPanel';
-import { printsSignatures } from './approvals';
 import { piecesOf } from './packs';
+import { PoBody } from '@/print/PoBody';
+import { PageSize } from '@/print/PrintTexts';
+import { LayoutChooser, usePrintLayout } from '@/print/usePrintLayout';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={0}><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{label}</Text><Text fz="sm" component="div">{children || '—'}</Text></Stack>;
@@ -264,52 +266,26 @@ function ReceiveModal({ o, onClose, onDone }: { o: PoDetail; onClose: () => void
 }
 
 export function PoPrintPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { id = '' } = useParams();
-  const { me } = useAuth();
+  const { me, terms } = useAuth();
   const { data: o } = useQuery({ queryKey: ['purchase-order', id], queryFn: () => get<PoDetail>(`/purchase-orders/${id}`) });
-  useEffect(() => { if (o) { document.title = o.number; const h = setTimeout(() => window.print(), 400); return () => clearTimeout(h); } }, [o]);
-  if (!o) return <Center h={300}><Loader /></Center>;
+  const { layout, matched, layouts, ready, choose } = usePrintLayout('purchase-order', id);
+  const printed = useRef(false);
+  useEffect(() => {
+    if (!o || !ready || printed.current) return;
+    printed.current = true;
+    document.title = o.number;
+    const h = setTimeout(() => window.print(), 400);
+    return () => clearTimeout(h);
+  }, [o, ready]);
+  if (!o || !layout) return <Center h={300}><Loader /></Center>;
+  const logoUrl = me?.tenant.settings.logoVersion ? `/api/settings/logo?v=${me.tenant.settings.logoVersion}` : null;
   return (
     <div className="print-doc">
-      <Group justify="space-between" align="flex-start" mb="xl">
-        <Stack gap={2}><Title order={2}>{me?.tenant.name}</Title><Text c="dimmed">{o.siteName}</Text>{o.deliverTo && <Text fz="sm" style={{ whiteSpace: 'pre-wrap' }}>{t('po.deliveryAddress')}: {o.deliverTo}</Text>}</Stack>
-        <Stack gap={2} align="flex-end"><Title order={3}>{t('po.printTitle')}</Title><Text fw={700} fz="lg">{o.number}</Text>
-          <Text fz="sm">{t('po.orderDate')}: {fmtDate(o.orderDate)}</Text>{o.expectedDate && <Text fz="sm">{t('po.expected')}: {fmtDate(o.expectedDate)}</Text>}
-          {o.status === 'Draft' || o.status === 'Submitted' ? <Badge color="orange" variant="outline">{t(`poStatus.${o.status}`)} — {t('po.notApproved')}</Badge> : null}</Stack>
-      </Group>
-      <Group align="flex-start" grow mb="lg">
-        <Card withBorder><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{t('po.supplier')}</Text><Text fw={600}>{o.supplier.name}</Text>
-          <Text fz="sm" style={{ whiteSpace: 'pre-wrap' }}>{[o.supplier.contactName, o.supplier.address, [o.supplier.city, o.supplier.country].filter(Boolean).join(', '), o.supplier.email, o.supplier.phone, o.supplier.taxNumber && `${t('po.taxNumber')}: ${o.supplier.taxNumber}`].filter(Boolean).join('\n')}</Text></Card>
-        <Card withBorder><Stack gap={4}>
-          <Text fz="sm"><b>{t('po.paymentTerms')}:</b> {o.paymentTerms ?? '—'}</Text><Text fz="sm"><b>{t('po.quoteRef')}:</b> {o.supplierQuoteRef ?? '—'}</Text>
-          <Text fz="sm"><b>{t('po.shippingMethod')}:</b> {o.shippingMethod ?? '—'}</Text><Text fz="sm"><b>{t('po.requestedBy')}:</b> {o.requestedBy ?? '—'}</Text>
-          <Text fz="sm"><b>{t('po.currency')}:</b> {o.currency}</Text></Stack></Card>
-      </Group>
-      <Table withTableBorder withColumnBorders verticalSpacing={6}>
-        <Table.Thead><Table.Tr><Table.Th w={36}>#</Table.Th><Table.Th>{t('inv.partNumber')}</Table.Th><Table.Th>{t('common.description')}</Table.Th><Table.Th ta="right">{t('inv.quantity')}</Table.Th><Table.Th>{t('inv.unit')}</Table.Th><Table.Th ta="right">{t('po.unitPrice')}</Table.Th><Table.Th ta="right">{t('po.discount')}</Table.Th><Table.Th ta="right">{t('po.lineTotal')}</Table.Th></Table.Tr></Table.Thead>
-        <Table.Tbody>{o.lines.map((l) => <Table.Tr key={l.id}><Table.Td>{l.lineNumber}</Table.Td><Table.Td>{l.partNumber ?? ''}</Table.Td><Table.Td>{l.description}{l.supplierPartNumber && <Text fz="xs">{t('catalogue.yourNumber', { number: l.supplierPartNumber })}</Text>}</Table.Td><Table.Td ta="right">{fmtQty(l.quantity)}</Table.Td><Table.Td>{l.unitOfMeasure}</Table.Td>
-          <Table.Td ta="right">{fmtPrice(l.unitPrice, o.currency)}</Table.Td><Table.Td ta="right">{l.discountPercent ? `${l.discountPercent}%` : ''}</Table.Td><Table.Td ta="right">{fmtPrice(l.lineTotal, o.currency)}</Table.Td></Table.Tr>)}</Table.Tbody>
-      </Table>
-      <Group justify="flex-end" mt="md"><Stack gap={2} w={280}>
-        <Group justify="space-between"><Text fz="sm">{t('po.subtotal')}</Text><Text fz="sm">{fmtPrice(o.totals.subtotal, o.currency)}</Text></Group>
-        <Group justify="space-between"><Text fz="sm">{t('po.tax')} ({o.taxPercent}%)</Text><Text fz="sm">{fmtPrice(o.totals.tax, o.currency)}</Text></Group>
-        <Group justify="space-between"><Text fz="sm">{t('po.shipping')}</Text><Text fz="sm">{fmtPrice(o.totals.shippingCost, o.currency)}</Text></Group>
-        <Group justify="space-between" style={{ borderTop: '2px solid #000' }} pt={4}><Text fw={700}>{t('po.total')}</Text><Text fw={700}>{fmtPrice(o.totals.total, o.currency)}</Text></Group>
-      </Stack></Group>
-      {o.notes && <Text mt="lg" fz="sm" style={{ whiteSpace: 'pre-wrap' }}><b>{t('common.notes')}:</b> {o.notes}</Text>}
-      {o.approval && printsSignatures(o.approval) && (
-        <Table mt="lg" fz="xs" withTableBorder>
-          <Table.Thead><Table.Tr><Table.Th>{t('approvals.level')}</Table.Th><Table.Th>{t('approvals.signedBy')}</Table.Th><Table.Th>{t('approvals.date')}</Table.Th><Table.Th>{t('approvals.comment')}</Table.Th></Table.Tr></Table.Thead>
-          <Table.Tbody>{o.approval.steps.flatMap((s) => s.approvers.filter((x) => x.signed).map((x) => (
-            <Table.Tr key={`${s.step}-${x.id}`}><Table.Td>{s.name}</Table.Td><Table.Td>{x.name}{x.approved === false ? ` (${t('approvals.returned')})` : ''}</Table.Td>
-              <Table.Td>{fmtDate(x.at ?? undefined)}</Table.Td><Table.Td>{x.comment}</Table.Td></Table.Tr>)))}</Table.Tbody>
-        </Table>
-      )}
-      <Group mt={60} grow>
-        {!printsSignatures(o.approval) && <Stack gap={2}><div style={{ borderTop: '1px solid #000' }} /><Text fz="xs">{t('po.approvedBy')}{o.approvedByName ? `: ${o.approvedByName} · ${fmtDate(o.approvedAt)}` : ''}</Text></Stack>}
-        <Stack gap={2}><div style={{ borderTop: '1px solid #000' }} /><Text fz="xs">{t('po.supplierAcceptance')}</Text></Stack>
-      </Group>
+      <PageSize size={layout.paperSize} />
+      <LayoutChooser layout={layout} matched={matched} layouts={layouts} onChange={choose} />
+      <PoBody o={o} layout={layout} orgName={me?.tenant.name ?? ''} terms={terms} logoUrl={logoUrl} language={i18n.language} />
       <Group justify="center" mt="xl" className="no-print"><Button onClick={() => window.print()} leftSection={<IconPrinter size={16} />}>{t('po.print')}</Button></Group>
     </div>
   );
