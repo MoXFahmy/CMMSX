@@ -6,7 +6,8 @@ import { JobCardBody } from './JobCardBody';
 import { PoBody } from './PoBody';
 import { RequestBody } from './RequestBody';
 import type { WorkRequestDetail } from '@/api/types';
-import { chooseLayout } from './usePrintLayout';
+import { chooseLayout, readyToPrint } from './usePrintLayout';
+import { PlainText } from './PrintTexts';
 
 const ctx = { orgName: 'Cairo Hotel', terms: { site: 'Site', sites: 'Sites', location: 'Location', locations: 'Locations', asset: 'Asset', assets: 'Assets' }, logoUrl: null, language: 'en' };
 
@@ -104,5 +105,28 @@ describe('print bodies', () => {
     expect(short).toContain('Mona');
     expect(short).not.toContain('0100');
     expect(short).not.toContain('WO-00042');
+  });
+
+  it("never uses another paper's layout", () => {
+    const matched = builtInLayout('job-card');
+    expect(chooseLayout(builtInLayout('purchase-order'), matched)).toBe(matched);
+  });
+
+  it('warns that an order is not approved even without the header', () => {
+    const layout: PrintLayout = { ...builtInLayout('purchase-order'), blocks: builtInLayout('purchase-order').blocks.map((b) => (b.key === 'header' ? { ...b, shown: false } : b)) };
+    const html = renderHtml(<PoBody o={{ ...po, status: 'Draft' } as unknown as PoDetail} layout={layout} {...ctx} />);
+    expect(html).toContain('not approved');
+    expect(html).toContain('PO-00007');
+  });
+
+  it('waits for the asset fields before printing a job card that shows them', () => {
+    expect(readyToPrint({ record: true, layoutReady: true, wantsFields: true, fieldsLoaded: false })).toBe(false);
+    expect(readyToPrint({ record: true, layoutReady: true, wantsFields: true, fieldsLoaded: true })).toBe(true);
+    expect(readyToPrint({ record: true, layoutReady: true, wantsFields: false, fieldsLoaded: false })).toBe(true);
+    expect(readyToPrint({ record: false, layoutReady: true, wantsFields: false, fieldsLoaded: false })).toBe(false);
+  });
+
+  it('wraps long unbroken text instead of running off the page', () => {
+    expect(renderHtml(<PlainText text={'https://example.test/' + 'a'.repeat(300)} />)).toMatch(/overflow-wrap:\s*anywhere/);
   });
 });

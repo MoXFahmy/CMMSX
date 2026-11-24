@@ -6,7 +6,7 @@ export type PrintContext = { orgName: string; terms: Terminology; logoUrl?: stri
 
 /** A layout's plain text: shown as typed, line breaks kept, never read as HTML. */
 export function PlainText({ text, size = 'sm' }: { text: string; size?: 'xs' | 'sm' }) {
-  return text ? <Text fz={size} style={{ whiteSpace: 'pre-wrap' }}>{text}</Text> : null;
+  return text ? <Text fz={size} style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere' }}>{text}</Text> : null;
 }
 
 /** The terms block: a title and the layout's terms in the page's language. */
@@ -17,7 +17,7 @@ export function TermsBlock({ title, text }: { title: string; text: string }) {
 
 /** The layout's footer, at the end of the paper. */
 export function FooterText({ text }: { text: string }) {
-  return text ? <Text fz="xs" c="dimmed" mt="xl" style={{ whiteSpace: 'pre-wrap', borderTop: '1px solid #ccc', paddingTop: 6 }}>{text}</Text> : null;
+  return text ? <Text fz="xs" c="dimmed" mt="xl" style={{ whiteSpace: 'pre-wrap', overflowWrap: 'anywhere', borderTop: '1px solid #ccc', paddingTop: 6 }}>{text}</Text> : null;
 }
 
 /** The printed page's size: A4 (as today), A5 with tighter spacing, or US Letter. */

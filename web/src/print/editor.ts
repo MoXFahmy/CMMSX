@@ -1,4 +1,5 @@
-import { blocksInOrder, FIXED_FIELDS, type PrintLayout } from './layouts';
+import { ApiError } from '@/api/client';
+import { ASSET_FIELDS_BLOCK, blocksInOrder, FIXED_FIELDS, type PrintLayout } from './layouts';
 
 /** A new layout starting from another (often the built-in one): same blocks and texts, not the default, no site or type. */
 export function copyLayout(from: PrintLayout, name: string): PrintLayout {
@@ -41,4 +42,16 @@ export function toggleField(layout: PrintLayout, block: string, field: string): 
 export function toggleLabelField(layout: PrintLayout, field: string): PrintLayout {
   const fields = layout.labelFields.includes(field) ? layout.labelFields.filter((f) => f !== field) : [...layout.labelFields, field];
   return { ...layout, labelFields: fields };
+}
+
+/** Why a save was refused: the server's field messages when it sent any, otherwise its message. */
+export function saveErrorText(e: unknown): string {
+  if (e instanceof ApiError && Object.keys(e.fieldErrors).length > 0) return Object.values(e.fieldErrors).join(' ');
+  return e instanceof Error ? e.message : String(e);
+}
+
+/** Drops asset fields that were deleted since the layout was saved (the editor can't show them, so they couldn't be unticked). */
+export function pruneAssetFields(layout: PrintLayout, known: string[] | undefined): PrintLayout {
+  if (!known) return layout;
+  return { ...layout, blocks: layout.blocks.map((b) => (b.key === ASSET_FIELDS_BLOCK ? { ...b, fields: b.fields.filter((f) => known.includes(f)) } : b)) };
 }

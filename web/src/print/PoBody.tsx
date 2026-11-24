@@ -109,6 +109,7 @@ export function PoBody({ o, layout, orgName, logoUrl, language }: PrintContext &
         </Group>
       )}
       {!has('header', 'title') && <Title order={4} mb="sm">{o.number}</Title>}
+      {!has('header') && (o.status === 'Draft' || o.status === 'Submitted') && <Badge color="orange" variant="outline" mb="sm">{t(`poStatus.${o.status}`)} — {t('po.notApproved')}</Badge>}
       {headerText && <div style={{ marginBottom: 12 }}><PlainText text={headerText} /></div>}
       {pairRows(rest, [['supplier', 'details']]).map((row) => row.length === 2
         ? <Group key={row.map((x) => x.key).join('+')} align="flex-start" grow mb="lg">{row[0].key === 'supplier' ? <>{supplier}{details}</> : <>{details}{supplier}</>}</Group>

@@ -136,4 +136,15 @@ public class PoEmailLayoutTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(wo.GetProperty("dueAt").GetDateTimeOffset(), linked.GetProperty("dueAt").GetDateTimeOffset());
         Assert.True(linked.TryGetProperty("dueDate", out _));
     }
+
+    [SkippableFact]
+    public async Task Po_email_prints_terms_filled_only_in_arabic()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await OrgAsync(fx, email: true);
+        var blocks = new object[] { new { key = "terms", shown = true, fields = Array.Empty<string>() } };
+        await Ok(await LayoutAsync(o.Admin, blocks, termsAr: "الدفع خلال 30 يومًا", footer: null));
+        var html = await SendAsync(o);
+        Assert.Contains("الدفع خلال 30 يومًا", html);
+    }
 }

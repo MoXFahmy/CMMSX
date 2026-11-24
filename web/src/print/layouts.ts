@@ -90,10 +90,11 @@ export function shows(layout: PrintLayout, block: string, field?: string): boole
   return field ? x.fields.includes(field) : true;
 }
 
-/** A layout text in the page's language: the Arabic one on an Arabic page when filled, otherwise the English one. */
+/** A layout text in the page's language when filled in, otherwise the other language's (never nothing when one is filled). */
 export function layoutText(layout: PrintLayout, which: 'header' | 'footer' | 'terms', language: string): string {
   const [en, ar] = which === 'header' ? [layout.headerText, layout.headerTextAr] : which === 'footer' ? [layout.footerText, layout.footerTextAr] : [layout.terms, layout.termsAr];
-  return (language === 'ar' && ar?.trim() ? ar : en) ?? '';
+  const pick = (a?: string | null, b?: string | null) => (a?.trim() ? a : b?.trim() ? b : '');
+  return language === 'ar' ? pick(ar, en) : pick(en, ar);
 }
 
 /** A purchase order line's unit price as printed: before discount when the discount column shows, after it otherwise. */

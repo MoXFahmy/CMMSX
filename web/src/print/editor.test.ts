@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { builtInLayout, blocksInOrder } from './layouts';
-import { copyLayout, moveBlock, toggleBlock, toggleField } from './editor';
+import { copyLayout, moveBlock, pruneAssetFields, saveErrorText, toggleBlock, toggleField } from './editor';
+import { ApiError } from '@/api/client';
 
 const keys = (l: ReturnType<typeof builtInLayout>) => blocksInOrder(l, true).map((b) => b.key);
 
@@ -36,5 +37,19 @@ describe('print layout editor', () => {
     expect(noUnit.blocks.find((b) => b.key === 'lines')!.fields).not.toContain('unit');
     expect(toggleField(noUnit, 'lines', 'unit').blocks.find((b) => b.key === 'lines')!.fields).toContain('unit');
     expect(toggleField(po, 'lines', 'description')).toEqual(po);
+  });
+
+  it("shows the server's reasons when a save is refused", () => {
+    const e = new ApiError(400, 'One or more validation errors occurred.', { name: 'Another layout of this paper has this name.', siteId: 'Choose a site you can see.' });
+    expect(saveErrorText(e)).toBe('Another layout of this paper has this name. Choose a site you can see.');
+    expect(saveErrorText(new ApiError(409, 'Conflict'))).toBe('Conflict');
+    expect(saveErrorText(new Error('Offline'))).toBe('Offline');
+  });
+
+  it('drops asset fields that no longer exist before saving', () => {
+    const l = { ...builtInLayout('job-card'), blocks: builtInLayout('job-card').blocks.map((b) => (b.key === 'asset-fields' ? { ...b, shown: true, fields: ['power', 'old'] } : b)) };
+    const pruned = pruneAssetFields(l, ['power', 'voltage']);
+    expect(pruned.blocks.find((b) => b.key === 'asset-fields')!.fields).toEqual(['power']);
+    expect(pruneAssetFields(l, undefined)).toBe(l); // fields not loaded yet: leave as is
   });
 });

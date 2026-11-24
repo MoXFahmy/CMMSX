@@ -5,9 +5,14 @@ import { useTranslation } from 'react-i18next';
 import { get } from '@/api/client';
 import { builtInLayout, isBuiltIn, type Paper, type PrintLayout } from './layouts';
 
-/** The layout to print with: the one picked by hand when it still exists, otherwise the record's own. */
+/** The layout to print with: the one picked by hand when it still exists and is for this paper, otherwise the record's own. */
 export function chooseLayout(chosen: PrintLayout | null | undefined, matched: PrintLayout): PrintLayout {
-  return chosen ?? matched;
+  return chosen && chosen.paper === matched.paper ? chosen : matched;
+}
+
+/** Whether a print page has everything to print: the record, its layout, and the asset fields when the layout shows them. */
+export function readyToPrint(s: { record: boolean; layoutReady: boolean; wantsFields: boolean; fieldsLoaded: boolean }): boolean {
+  return s.record && s.layoutReady && (!s.wantsFields || s.fieldsLoaded);
 }
 
 /**

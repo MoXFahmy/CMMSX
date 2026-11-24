@@ -11,7 +11,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { JobCardBody } from '@/print/JobCardBody';
 import { shows } from '@/print/layouts';
 import { PageSize } from '@/print/PrintTexts';
-import { LayoutChooser, usePrintLayout } from '@/print/usePrintLayout';
+import { LayoutChooser, readyToPrint, usePrintLayout } from '@/print/usePrintLayout';
 
 /** A paper job card for a work order, in the layout that applies to it (0.23.0; today's card when none is set up). */
 export function WorkOrderPrintPage() {
@@ -24,14 +24,15 @@ export function WorkOrderPrintPage() {
   const { data: asset } = useQuery({ queryKey: ['asset', w?.asset?.id], queryFn: () => get<AssetDetail>(`/assets/${w!.asset!.id}`), enabled: wantsFields });
   const { data: defs } = useQuery({ queryKey: ['custom-fields', 'Asset'], queryFn: () => get<CustomField[]>('/custom-fields', { entityType: 'Asset' }), enabled: wantsFields });
   const printed = useRef(false);
+  const canPrint = readyToPrint({ record: !!w, layoutReady: ready, wantsFields, fieldsLoaded: !!asset && !!defs });
   useEffect(() => {
-    if (!w || !ready || printed.current) return;
+    if (!w || !canPrint || printed.current) return;
     printed.current = true;
     document.title = w.number;
     // Signature images must be loaded before the print dialog takes its snapshot (but a stalled one mustn't hold it up).
     const h = setTimeout(() => { void imagesSettled(Array.from(document.images), 5000).then(() => window.print()); }, 400);
     return () => clearTimeout(h);
-  }, [w, ready]);
+  }, [w, canPrint]);
   if (!w || !layout) return <Center h={300}><Loader /></Center>;
   const logoUrl = me?.tenant.settings.logoVersion ? `/api/settings/logo?v=${me.tenant.settings.logoVersion}` : null;
   const assetFields = (defs ?? []).map((d) => ({ key: d.key, label: d.label, value: asset?.customFields?.[d.key] ?? null }));

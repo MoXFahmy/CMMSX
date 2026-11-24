@@ -9,7 +9,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { useHierarchy } from '@/components/LocationPicker';
 import { notifyError, notifySuccess } from '@/components/utils';
 import { sheetFor } from '@/pages/labels/sheet';
-import { moveBlock, toggleBlock, toggleField, toggleLabelField } from '@/print/editor';
+import { moveBlock, pruneAssetFields, saveErrorText, toggleBlock, toggleField, toggleLabelField } from '@/print/editor';
 import { JobCardBody } from '@/print/JobCardBody';
 import { ASSET_FIELDS_BLOCK, blocksInOrder, FIXED_FIELDS, LABEL_FIELDS, LABEL_SIZES, PAPER_BLOCKS, PAPER_SIZES, type Paper, type PrintLayout } from '@/print/layouts';
 import { PoBody } from '@/print/PoBody';
@@ -94,14 +94,14 @@ export function PrintLayoutEditor({ initial, onClose }: { initial: PrintLayout; 
       paper, name: l.name, isDefault: l.isDefault, siteId: l.isDefault ? null : l.siteId ?? null, kindKey: l.isDefault ? null : l.kindKey ?? null,
       paperSize: paper === 'labels' ? null : l.paperSize ?? 'A4', showLogo: l.showLogo, headerText: l.headerText, headerTextAr: l.headerTextAr,
       footerText: l.footerText, footerTextAr: l.footerTextAr, terms: l.terms, termsAr: l.termsAr,
-      blocks: paper === 'labels' ? [] : blocksInOrder(l, true), labelSize: paper === 'labels' ? l.labelSize ?? 'a4-3x8' : null, labelFields: paper === 'labels' ? l.labelFields : [],
+      blocks: paper === 'labels' ? [] : blocksInOrder(paper === 'job-card' ? pruneAssetFields(l, assetFields?.map((f) => f.key)) : l, true), labelSize: paper === 'labels' ? l.labelSize ?? 'a4-3x8' : null, labelFields: paper === 'labels' ? l.labelFields : [],
     };
     try {
       if (l.id) await put(`/print-layouts/${l.id}`, body); else await post('/print-layouts', body);
       notifySuccess(t('common.saved'));
       await qc.invalidateQueries({ queryKey: ['print-layouts'] });
       onClose();
-    } catch (e) { notifyError(e); } finally { setSaving(false); }
+    } catch (e) { notifyError(new Error(saveErrorText(e))); } finally { setSaving(false); }
   };
 
   const text = (key: 'headerText' | 'footerText' | 'terms', label: string, rows: number, max: number) => {

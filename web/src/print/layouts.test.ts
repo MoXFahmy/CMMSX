@@ -63,6 +63,8 @@ describe('print layouts', () => {
     expect(layoutText(l, 'header', 'ar')).toBe('نموذج 12');
     expect(layoutText(l, 'header', 'en')).toBe('Form 12');
     expect(layoutText(l, 'footer', 'ar')).toBe('');
+    // Filled only in Arabic: an English page prints the Arabic rather than nothing.
+    expect(layoutText({ ...l, terms: null, termsAr: 'الدفع خلال 30 يومًا' }, 'terms', 'en')).toBe('الدفع خلال 30 يومًا');
   });
 
   it('shows the price after discount when the discount is hidden', () => {

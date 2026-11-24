@@ -400,7 +400,8 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     {
         const string paper = PrintPapers.PurchaseOrder;
         var ar = Translator.CurrentLanguage == "ar";
-        string? Text(string? en, string? arText) => ar && !string.IsNullOrWhiteSpace(arText) ? arText : en;
+        // The e-mail's language when filled in, otherwise the other one: a text typed in one language still reaches the supplier.
+        string? Text(string? en, string? arText) => ar ? (string.IsNullOrWhiteSpace(arText) ? en : arText) : (string.IsNullOrWhiteSpace(en) ? arText : en);
         PrintBlock? Block(string key) => layout.Blocks.FirstOrDefault(b => b.Key == key && b.Shown);
         bool Has(string key, string field) => PrintPapers.FixedFields(paper).Contains($"{key}.{field}") || (Block(key)?.Fields.Contains(field) ?? false);
 
