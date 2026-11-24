@@ -1,5 +1,6 @@
 import { AiSettings } from './AiSettings';
 import { AiUsageSettings } from './AiUsageSettings';
+import { SecuritySettings } from './SecuritySettings';
 import { useEffect, useState } from 'react';
 import { ActionIcon, Badge, Button, Card, Checkbox, ColorInput, FileButton, Group, Modal, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Tabs, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
@@ -65,6 +66,7 @@ export function SettingsPage() {
     { value: 'contracts', label: t('contracts.title'), show: can(P.settingsManage) },
     { value: 'users', label: t('settings.users'), show: can(P.usersManage) },
     { value: 'roles', label: t('settings.roles'), show: can(P.usersManage) },
+    { value: 'security', label: t('security.title'), show: can(P.settingsManage) },
     { value: 'print-layouts', label: t('print.title'), show: can(P.settingsManage) },
     { value: 'import', label: t('settings.import'), show: can(P.settingsManage) },
     { value: 'ai-usage', label: t('ai.usageTab'), show: can(P.settingsManage) },
@@ -88,6 +90,7 @@ export function SettingsPage() {
         <Tabs.Panel value="cancel-reasons"><LookupTable path="/cancel-reasons" title={t('settings.cancelReasons')} newLabel={t('settings.newCancelReason')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="users"><UserSettings /></Tabs.Panel>
         <Tabs.Panel value="roles"><RoleSettings /></Tabs.Panel>
+        <Tabs.Panel value="security"><SecuritySettings editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="print-layouts"><PrintLayoutsSettings /></Tabs.Panel>
         <Tabs.Panel value="import"><ImportSettings /></Tabs.Panel>
         <Tabs.Panel value="ai-usage"><AiUsageSettings /></Tabs.Panel>

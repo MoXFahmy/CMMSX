@@ -116,7 +116,15 @@
     "newPassword": "New password",
     "passwordChanged": "Password changed",
     "registrationClosed": "New organizations can't be created on this server. Ask your administrator to invite you.",
-    "passwordRule": "8+ characters with upper, lower case and a digit"
+    "passwordRule": "8+ characters with upper, lower case and a digit",
+    "passwordExpiredNotice": "Your password has expired. Sign in and choose a new one.",
+    "renewTitle": "Choose a new password",
+    "repeatPassword": "Repeat the new password",
+    "passwordsDiffer": "The passwords don't match.",
+    "saveAndSignIn": "Save and sign in",
+    "otherSessionTitle": "You're signed in on another device",
+    "otherSession": "You're signed in on {{device}} (last used {{when}}). Sign in here and end that session?",
+    "signInHere": "Sign in here"
   },
   "status": {
     "Active": "Active",
@@ -3148,5 +3156,28 @@
     "orPick": "Or pick a unit in store",
     "toDefault": "Back to the default store ({{store}}).",
     "noDefault": "This job's site has no default store: choose repair or scrap, or remove it on the web."
+  },
+  "security": {
+    "title": "Security",
+    "passwords": "Passwords",
+    "minLength": "Minimum length",
+    "minLengthHint": "8 to 64 characters. People whose password is shorter choose a new one when they next sign in.",
+    "expiryDays": "Passwords expire after (days)",
+    "expiryHint": "0 = never; otherwise 30 to 730 days.",
+    "history": "Recent passwords that can't be reused",
+    "historyHint": "0 to 24. The current password can never be chosen again.",
+    "sessions": "Sessions",
+    "oneSession": "One session per person",
+    "oneSessionHint": "Signing in on a second device asks first, then ends the other device's session.",
+    "activityLog": "Activity log",
+    "retention": "Keep changes for (months)",
+    "retentionHint": "12 to 120 months; leave empty to keep everything.",
+    "keepEverything": "Keep everything",
+    "retentionNote": "Older changes also leave each record's History tab.",
+    "lastChanged": "Last changed by {{name}}, {{when}}",
+    "minLengthRange": "Enter a minimum length from 8 to 64.",
+    "expiryRange": "Enter 0 (never) or 30 to 730 days.",
+    "historyRange": "Enter 0 to 24.",
+    "retentionRange": "Keep at least 12 months, at most 120, or leave it empty."
   }
 }

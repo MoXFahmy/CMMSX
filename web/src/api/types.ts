@@ -589,3 +589,15 @@ export type FittedUnits = {
   now: { unitId: string; assetNumber: string; serialNumber?: string | null; partName?: string | null; since?: string | null }[];
   before: { unitId: string; assetNumber: string; serialNumber?: string | null; partName?: string | null; from?: string | null; to: string; outcome?: UnitOutcome | null }[];
 };
+
+/** Settings › Security (0.25.0): the organization's password rules, one session per person and how long the activity log keeps changes. */
+export interface SecuritySettings {
+  passwordMinLength: number;
+  /** 0 = passwords don't expire. */
+  passwordExpiryDays: number;
+  /** How many recent passwords can't be used again (0 = only the current one). */
+  passwordHistory: number;
+  oneSessionPerUser: boolean;
+  /** null = keep every change. */
+  activityRetentionMonths: number | null;
+}
