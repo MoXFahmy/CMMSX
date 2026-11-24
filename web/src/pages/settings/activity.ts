@@ -72,7 +72,7 @@ export function recordPath(type: string, id: string): string | null {
   }
 }
 
-export const SOURCES = ['Web', 'Phone', 'Import', 'Job'] as const;
+export const SOURCES = ['Web', 'Phone', 'Import', 'API', 'Job'] as const;
 export const ACTIONS = ['Created', 'Updated', 'Deleted', 'SettingsChanged', 'SignedIn', 'SignInFailed', 'LockedOut', 'SignedOut', 'DeviceSignedOut',
   'OtherSessionsEnded', 'PasswordChanged', 'PasswordRenewed', 'Anonymised'] as const;
 export const RECORD_TYPES = ['WorkOrder', 'WorkRequest', 'Asset', 'Location', 'Site', 'Part', 'Store', 'PurchaseOrder', 'PurchaseRequest', 'Supplier', 'Contract',

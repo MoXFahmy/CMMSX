@@ -17,7 +17,7 @@ import { ACTIONS, RECORD_TYPES, SOURCES, changeSummary, humanizeField, parseChan
 
 const PAGE_SIZE = 50;
 
-export const sourceColor = (s?: string) => (s === 'Phone' ? 'grape' : s === 'Import' ? 'orange' : s === 'Job' ? 'gray' : 'blue');
+export const sourceColor = (s?: string) => (s === 'Phone' ? 'grape' : s === 'Import' ? 'orange' : s === 'API' ? 'cyan' : s === 'Job' ? 'gray' : 'blue');
 
 /** Settings › Activity log (0.25.0): every change and security event, filtered, with what one action changed and an export. */
 export function ActivityLog() {

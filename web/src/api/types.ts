@@ -149,7 +149,7 @@ export type Attachment = { id: string; fileName: string; contentType: string; si
 export type AuditItem = {
   id: string; action: string; changes?: string; userName?: string; timestamp: string;
   /** 0.25.0: where the change came from, the action it was part of, and the row it was on (a child line of the record, e.g. a labour line). */
-  source?: 'Web' | 'Phone' | 'Import' | 'Job'; changeId?: string; entityType?: string; entityId?: string;
+  source?: 'Web' | 'Phone' | 'Import' | 'API' | 'Job'; changeId?: string; entityType?: string; entityId?: string;
 };
 export type Transfer = { id: string; transferredAt: string; reason?: string; fromSite?: string; fromLocation?: string; toSite?: string; toLocation?: string; transferredBy?: string };
 export type User = {
@@ -620,7 +620,7 @@ export interface SecuritySettings {
 
 /** One activity log entry (0.25.0). `changes` is the stored JSON of changed fields; masked values read "••••". */
 export type ActivityRow = {
-  id: string; timestamp: string; userId?: string | null; userName?: string | null; source: 'Web' | 'Phone' | 'Import' | 'Job'; changeId: string;
+  id: string; timestamp: string; userId?: string | null; userName?: string | null; source: 'Web' | 'Phone' | 'Import' | 'API' | 'Job'; changeId: string;
   entityType: string; entityId: string; parentType?: string | null; parentId?: string | null; recordLabel: string; action: string; changes?: string | null;
 };
 

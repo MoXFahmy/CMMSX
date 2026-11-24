@@ -15,13 +15,18 @@ public static class ApiKeyEndpoints
     {
         var g = api.MapGroup("/api-keys").WithTags("API keys").RequirePermission(Permissions.UsersManage);
 
-        g.MapGet("/", async (CmmsDbContext db, CancellationToken ct) =>
+        g.MapGet("/", async (CmmsDbContext db, HttpContext http, CancellationToken ct) =>
         {
             var now = DateTimeOffset.UtcNow;
             var keys = await db.ApiKeys.AsNoTracking().OrderByDescending(k => k.CreatedAt).ToListAsync(ct);
             var ids = keys.Select(k => k.ServiceAccountId).Distinct().ToList();
-            var accounts = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id) && u.TenantId == db.CurrentTenantId)
-                .ToDictionaryAsync(u => u.Id, u => new { u.FullName, u.IsActive }, ct);
+            var users = await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id) && u.TenantId == db.CurrentTenantId).ToListAsync(ct);
+            // Like people: a site-limited manager sees the keys of accounts inside their own access only.
+            var editor = Access.Of(http) ?? UserAccess.Everything;
+            var inside = new HashSet<Guid>();
+            foreach (var u in users) if (await UserAccessRules.OutsideAsync(db, editor, u, ct) is null) inside.Add(u.Id);
+            keys = keys.Where(k => inside.Contains(k.ServiceAccountId)).ToList();
+            var accounts = users.ToDictionary(u => u.Id, u => new { u.FullName, u.IsActive });
             return keys.Select(k => new
             {
                 k.Id, k.Name, k.ServiceAccountId, ServiceAccountName = accounts.GetValueOrDefault(k.ServiceAccountId)?.FullName, k.Prefix, k.ReadOnly, k.CreatedAt,
@@ -51,10 +56,12 @@ public static class ApiKeyEndpoints
             return Results.Created($"/api/api-keys/{row.Id}", new { row.Id, key, prefix });
         });
 
-        g.MapPost("/{id:guid}/revoke", async (Guid id, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        g.MapPost("/{id:guid}/revoke", async (Guid id, CmmsDbContext db, ITenantContext ctx, HttpContext http, CancellationToken ct) =>
         {
             var row = await db.ApiKeys.FirstOrDefaultAsync(k => k.Id == id, ct);
             if (row is null) return Results.NotFound();
+            if (await db.Users.FirstOrDefaultAsync(u => u.Id == row.ServiceAccountId && u.TenantId == db.CurrentTenantId, ct) is { } account
+                && await UserAccessRules.OutsideAsync(db, Access.Of(http) ?? UserAccess.Everything, account, ct) is { } outside) throw new DomainException(outside);
             if (row.RevokedAt is null) { row.RevokedAt = DateTimeOffset.UtcNow; row.RevokedById = ctx.UserId; await db.SaveChangesAsync(ct); }
             return Results.Ok(new { row.Id });
         });

@@ -64,7 +64,7 @@ These answer 403 "API keys can't do this.". A read-only key answers 403 "This ke
 
 Imports run in the background (see Settings › Import). `POST /api/import/check` or `POST /api/import/run` with the workbook as
 `file` (multipart) answers 202 with `{ "id": … }`. Then `GET /api/import/jobs/{id}` until `status` is `Done` or `Failed`; `result`
-holds the counts and problems, `GET /api/import/jobs/{id}/problems` the problem rows. Up to 20,000 rows a sheet, 30,000 in all,
+holds the counts and problems, `GET /api/import/jobs/{id}/problems` the problem rows. Up to 20,000 rows in one file,
 25 MB. Their changes show the source **Import**.
 
 ## Examples

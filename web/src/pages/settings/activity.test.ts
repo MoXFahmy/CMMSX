@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { changeSummary, fileKind, parseChanges } from './activity';
+import en from '@/locales/en.json';
+import ar from '@/locales/ar.json';
+import { SOURCES, changeSummary, fileKind, parseChanges } from './activity';
 
 const t = ((key: string, o?: Record<string, unknown>) => (key === 'activity.more' ? `+${o?.count} more` : key)) as never;
 
@@ -28,5 +30,13 @@ describe('activity log helpers (0.25.0)', () => {
     expect(fileKind('video/mp4', false)).toBe('Videos');
     expect(fileKind('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', false)).toBe('Documents');
     expect(fileKind('application/zip', false)).toBe('Other');
+  });
+
+  it('every source has a label, API included (0.26.0)', () => {
+    expect(SOURCES).toContain('API');
+    for (const source of SOURCES) {
+      expect((en.activity.sources as Record<string, string>)[source]).toBeTruthy();
+      expect((ar.activity.sources as Record<string, string>)[source]).toBeTruthy();
+    }
   });
 });

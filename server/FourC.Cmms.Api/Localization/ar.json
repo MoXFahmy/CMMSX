@@ -1267,5 +1267,6 @@
  "Your import didn't finish": "لم يكتمل الاستيراد الخاص بك",
  "Your check didn't finish": "لم يكتمل الفحص الخاص بك",
  "Open the import": "فتح الاستيراد",
- "This file has {0} rows; the limit is 30,000 in one file. Split it into smaller files.": "في هذا الملف {0} صفًا؛ الحد 30,000 في الملف الواحد. قسّمه إلى ملفات أصغر."
+ "This file has {0} rows; the limit is 20,000 in one file. Split it into smaller files.": "في هذا الملف {0} صفًا؛ الحد 20,000 في الملف الواحد. قسّمه إلى ملفات أصغر.",
+ "This file has more than {0} rows. Split it into smaller files.": "في هذا الملف أكثر من {0} صف. قسّمه إلى ملفات أصغر."
 }

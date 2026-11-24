@@ -153,11 +153,11 @@ public class ImportJobTests(ManualImportFixture fx) : IClassFixture<ManualImport
         var tooMany = await PostAsync(org.Admin, "/api/import/check", csv, "Symptoms.csv");
         Assert.Equal(HttpStatusCode.BadRequest, tooMany.StatusCode);
         Assert.Contains("Symptoms has 20,001 rows; the limit is 20,000 per sheet. Split it into smaller files.", await tooMany.Content.ReadAsStringAsync());
-        var rows = (int n, string p) => Enumerable.Range(1, n).Select(i => new object?[] { $"{p}{i}", $"{p} {i}" }).ToArray();
-        var file = Book(new Sheet("Symptoms", Lookup, rows(20_000, "S")), new Sheet("Causes", Lookup, rows(10_001, "C")));
-        var total = await PostAsync(org.Admin, "/api/import/check", file);
-        Assert.Equal(HttpStatusCode.BadRequest, total.StatusCode);
-        Assert.Contains("This file has 30,001 rows; the limit is 30,000 in one file. Split it into smaller files.", await total.Content.ReadAsStringAsync());
+        // A file far over the limit is refused while it's read, before it is held whole in memory.
+        var huge = Encoding.UTF8.GetBytes("Code,Name\n" + string.Join("\n", Enumerable.Range(1, 25_000).Select(i => $"S{i},Symptom {i}")));
+        var refused = await PostAsync(org.Admin, "/api/import/check", huge, "Symptoms.csv");
+        Assert.Equal(HttpStatusCode.BadRequest, refused.StatusCode);
+        Assert.Contains("This file has more than 21,000 rows. Split it into smaller files.", await refused.Content.ReadAsStringAsync());
     }
 
     [SkippableFact]

@@ -4,9 +4,17 @@ import type { ImportJob, ImportResult } from '@/api/types';
 /** Tells one chosen file from another (a check is only good for the file it read). */
 export const fileKey = (f: File): string => `${f.name}|${f.size}|${f.lastModified}`;
 
-/** Import is offered only after a check of this same file found something to add or change, and not yet saved. */
-export function canImport(result: ImportResult | null, checkedKey: string | null, file: File | null): boolean {
-  if (!result || !file || result.saved || result.stopped || checkedKey !== fileKey(file)) return false;
+/** The check this page sent, for which file. */
+export type Checked = { jobId: string; key: string };
+
+/**
+ * Import is offered only under the finished check this page sent for the file still chosen, when it found something to add
+ * or change (never under another check opened from the history, nor before the check is done).
+ */
+export function canImport(job: ImportJob | null | undefined, checked: Checked | null, file: File | null): boolean {
+  const result = job?.result;
+  if (!job || !result || !checked || !file || job.id !== checked.jobId || job.save || job.status !== 'Done') return false;
+  if (result.saved || result.stopped || checked.key !== fileKey(file)) return false;
   const t = totals(result);
   return t.new + t.changed > 0;
 }

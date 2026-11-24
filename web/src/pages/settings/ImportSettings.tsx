@@ -8,7 +8,7 @@ import { IconAlertTriangle, IconCheck, IconDownload, IconFileSpreadsheet, IconUp
 import { api, apiBlob, get } from '@/api/client';
 import type { ImportJob, ImportResult, RowResult, SheetResult } from '@/api/types';
 import { fmtDateTime, fromNow, notifyError } from '@/components/utils';
-import { canImport, fileKey, jobLabel, totals } from './importView';
+import { canImport, fileKey, jobLabel, totals, type Checked } from './importView';
 
 /** At most this many rows of a sheet are listed in the preview; the rest are counted. */
 const SHOWN = 200;
@@ -35,7 +35,7 @@ export function ImportSettings() {
   const qc = useQueryClient();
   const [params, setParams] = useSearchParams();
   const [file, setFile] = useState<File | null>(null);
-  const [checkedKey, setCheckedKey] = useState<string | null>(null);
+  const [checked, setChecked] = useState<Checked | null>(null);
   const [jobId, setJobId] = useState<string | null>(params.get('job'));
   const [busy, setBusy] = useState<'check' | 'run' | 'problems' | null>(null);
 
@@ -62,7 +62,7 @@ export function ImportSettings() {
     try {
       const r = await api<{ id: string }>(`/import/${step}`, { method: 'POST', body: form() });
       setJobId(r.id);
-      setCheckedKey(fileKey(file));
+      if (step === 'check') setChecked({ jobId: r.id, key: fileKey(file) });
       if (params.has('job')) { params.delete('job'); setParams(params, { replace: true }); }
       await qc.invalidateQueries({ queryKey: ['import-jobs'] });
     } catch (e) { notifyError(e); } finally { setBusy(null); }
@@ -144,7 +144,7 @@ export function ImportSettings() {
 
           <Group>
             {!result.saved && (
-              <Button onClick={() => send('run')} loading={busy === 'run'} disabled={!canImport(result, checkedKey, file) || busy !== null || !!running}>
+              <Button onClick={() => send('run')} loading={busy === 'run'} disabled={!canImport(job, checked, file) || busy !== null || !!running}>
                 {t('import.run')}
               </Button>
             )}

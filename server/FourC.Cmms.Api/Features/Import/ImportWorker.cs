@@ -88,7 +88,8 @@ public sealed class ImportWorker(IServiceScopeFactory scopes, IConfiguration con
                         last = DateTimeOffset.UtcNow;
                         await using var p = new CmmsDbContext(options, new FixedTenantContext(null));
                         await p.ImportJobs.IgnoreQueryFilters().Where(j => j.Id == job.Id).ExecuteUpdateAsync(s => s
-                            .SetProperty(j => j.Sheet, sheet).SetProperty(j => j.RowsDone, done).SetProperty(j => j.HeartbeatAt, DateTimeOffset.UtcNow), CancellationToken.None);
+                            .SetProperty(j => j.Sheet, sheet).SetProperty(j => j.RowsDone, done).SetProperty(j => j.RowsTotal, total)
+                            .SetProperty(j => j.HeartbeatAt, DateTimeOffset.UtcNow), CancellationToken.None);
                     });
                 if (result.Stopped is not null) error = result.Stopped;
                 else { resultJson = JsonSerializer.Serialize(result, json); finished = result; }

@@ -30,7 +30,8 @@ public static class ImportJobs
         if (file is null || file.Length == 0 || file.Length > MaxBytes) throw new DomainException(ChooseFile);
         byte[] bytes;
         await using (var s = file.OpenReadStream()) { using var m = new MemoryStream(); await s.CopyToAsync(m, ct); bytes = m.ToArray(); }
-        var book = SpreadsheetReader.Read(new MemoryStream(bytes), file.FileName);
+        // A little past the limit, so a file just over it gets the exact count; a huge one is refused while it's read.
+        var book = SpreadsheetReader.Read(new MemoryStream(bytes), file.FileName, ImportRun.MaxRowsPerFile + 1_000);
         var rows = ImportRun.CheckLimits(book);
         var name = Path.GetFileName(file.FileName) is { Length: > 0 } n ? n[..Math.Min(n.Length, 200)] : "import.xlsx";
         var job = new ImportJob
@@ -66,6 +67,13 @@ public static class ImportJobs
             .Where(j => j.Status == ImportJobStatus.Running && (j.HeartbeatAt == null || j.HeartbeatAt < before))
             .ExecuteUpdateAsync(s => s.SetProperty(j => j.Status, ImportJobStatus.Failed).SetProperty(j => j.Error, Restarted).SetProperty(j => j.FinishedAt, now), ct);
     }
+
+    /// <summary>
+    /// The jobs someone may see: all of the organization's when they see every site; only their own when they're limited to
+    /// some sites (a job's result holds rows from every site in its file).
+    /// </summary>
+    public static IQueryable<ImportJob> Visible(CmmsDbContext db, ITenantContext ctx) =>
+        db.CurrentSiteIds is null ? db.ImportJobs.AsNoTracking() : db.ImportJobs.AsNoTracking().Where(j => j.UserId == ctx.UserId);
 
     /// <summary>How many jobs (any organization) run before this queued one.</summary>
     public static Task<int> WaitingBehindAsync(CmmsDbContext db, ImportJob job, CancellationToken ct) =>

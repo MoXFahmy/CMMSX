@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import type { ImportResult, SheetResult } from '@/api/types';
+import type { ImportJob, ImportResult, SheetResult } from '@/api/types';
+import en from '@/locales/en.json';
+import ar from '@/locales/ar.json';
 import { canImport, fileKey, jobLabel, totals } from './importView';
 
 const sheet = (counts: Partial<Pick<SheetResult, 'new' | 'changed' | 'unchanged' | 'problems'>>, key = 'Sites'): SheetResult => ({
@@ -8,15 +10,24 @@ const sheet = (counts: Partial<Pick<SheetResult, 'new' | 'changed' | 'unchanged'
 const result = (sheets: SheetResult[], saved = false): ImportResult => ({ saved, sheets, newLookups: [], notes: [], stopped: null });
 const file = new File(['x'], 'data.xlsx', { lastModified: 1000 });
 
+const job = (r: ImportResult, over: Partial<ImportJob> = {}): ImportJob => ({
+  id: 'j1', save: false, status: 'Done', fileName: 'data.xlsx', createdAt: '', rowsDone: 0, rowsTotal: 0, waitingBehind: 0, result: r, ...over,
+});
+
 describe('import view', () => {
-  it('canImport needs a check of the same file with something to do', () => {
+  it("canImport needs this file's own finished check with something to do", () => {
     const key = fileKey(file);
-    expect(canImport(null, key, file)).toBe(false);
-    expect(canImport(result([sheet({ changed: 1 })]), 'other|1|1', file)).toBe(false);
-    expect(canImport(result([sheet({ unchanged: 3, problems: 2 })]), key, file)).toBe(false);
-    expect(canImport(result([sheet({ changed: 1 })], true), key, file)).toBe(false);
-    expect(canImport(result([sheet({ changed: 1 })]), key, null)).toBe(false);
-    expect(canImport(result([sheet({ changed: 1 })]), key, file)).toBe(true);
+    const checked = { jobId: 'j1', key };
+    expect(canImport(null, checked, file)).toBe(false);
+    expect(canImport(job(result([sheet({ changed: 1 })])), { jobId: 'j1', key: 'other|1|1' }, file)).toBe(false);
+    expect(canImport(job(result([sheet({ unchanged: 3, problems: 2 })])), checked, file)).toBe(false);
+    expect(canImport(job(result([sheet({ changed: 1 })], true), { save: true }), checked, file)).toBe(false);
+    expect(canImport(job(result([sheet({ changed: 1 })])), checked, null)).toBe(false);
+    // Another check opened from the history, or this one not finished yet: no Import under it.
+    expect(canImport(job(result([sheet({ changed: 1 })]), { id: 'j2' }), checked, file)).toBe(false);
+    expect(canImport(job(result([sheet({ changed: 1 })]), { status: 'Running' }), checked, file)).toBe(false);
+    expect(canImport(job(result([sheet({ changed: 1 })])), null, file)).toBe(false);
+    expect(canImport(job(result([sheet({ changed: 1 })])), checked, file)).toBe(true);
   });
 
   it('totals adds the sheets up', () => {
@@ -33,5 +44,15 @@ describe('import view', () => {
     expect(jobLabel(running, t)).toBe('import.checking {"sheet":"import.sheets.Assets","done":"1,240","total":"3,000"}');
     expect(jobLabel({ ...(running as object), save: true } as never, t)).toBe('import.importing {"sheet":"import.sheets.Assets","done":"1,240","total":"3,000"}');
     expect(jobLabel({ ...(running as object), status: 'Done' } as never, t)).toBe('');
+  });
+
+  it('every sheet the server imports has a name in both languages (0.26.0)', () => {
+    const sheets = ['Sites', 'CostCentres', 'Budgets', 'Locations', 'Categories', 'BrandsAndModels', 'Trades', 'PartGroups', 'Symptoms', 'Causes', 'Remedies',
+      'Suppliers', 'Stores', 'Assets', 'AssetGroups', 'AssetGroupMembers', 'People', 'Parts', 'SupplierCatalogue', 'AssetParts', 'Stock', 'PmTasks',
+      'MeasurementPoints', 'PmSteps', 'PmParts', 'PmSchedules'];
+    for (const k of sheets) {
+      expect((en.import.sheets as Record<string, string>)[k], k).toBeTruthy();
+      expect((ar.import.sheets as Record<string, string>)[k], k).toBeTruthy();
+    }
   });
 });
