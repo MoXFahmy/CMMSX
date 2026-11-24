@@ -89,7 +89,9 @@ public class ImportExportTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
         var c = await NewOrganizationAsync(fx);
         var file = Book(new Sheet("Sites", SiteHeadings, ["CAI", "Cairo", null], ["ALX", null, "Alexandria"]));
-        var response = await PostAsync(c, "/api/import/problems", file);
+        var id = (await OkAsync(await PostAsync(c, "/api/import/check", file))).GetProperty("id").GetGuid();
+        await FinishedAsync(c, id);
+        var response = await c.GetAsync($"/api/import/jobs/{id}/problems");
         response.EnsureSuccessStatusCode();
         var sites = Read(await response.Content.ReadAsByteArrayAsync()).Sheets.Single(s => s.Name == "Sites");
         Assert.Equal(2, sites.Rows.Count);

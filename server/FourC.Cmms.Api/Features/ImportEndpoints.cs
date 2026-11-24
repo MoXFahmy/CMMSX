@@ -2,27 +2,48 @@ using FourC.Cmms.Api.Features.Import;
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
+using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
+using Microsoft.EntityFrameworkCore;
 
 namespace FourC.Cmms.Api.Features;
 
 /// <summary>Settings › Import: check a workbook (nothing saved) or import it. Administrators only.</summary>
 public static class ImportEndpoints
 {
-    public const long MaxBytes = 10 * 1024 * 1024;
-
-    /// <summary>Well inside the 60-second limit in front of the app, so an import never saves after the page has given up.</summary>
-    public static readonly TimeSpan Budget = TimeSpan.FromSeconds(45);
-
     public static void MapImportEndpoints(this RouteGroupBuilder api)
     {
         var g = api.MapGroup("/import").WithTags("Import");
 
-        g.MapPost("/check", (HttpRequest req, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) => RunAsync(req, db, ctx, save: false, ct))
+        // Checks and imports run in the background (0.26.0): the upload answers at once with the job, which the page follows.
+        g.MapPost("/check", (HttpRequest req, CmmsDbContext db, ITenantContext ctx, IFileStorage storage, CancellationToken ct) => QueueAsync(req, db, ctx, storage, save: false, ct))
             .RequirePermission(Permissions.SettingsManage).DisableAntiforgery();
 
-        g.MapPost("/run", (HttpRequest req, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) => RunAsync(req, db, ctx, save: true, ct))
+        g.MapPost("/run", (HttpRequest req, CmmsDbContext db, ITenantContext ctx, IFileStorage storage, CancellationToken ct) => QueueAsync(req, db, ctx, storage, save: true, ct))
             .RequirePermission(Permissions.SettingsManage).DisableAntiforgery();
+
+        g.MapGet("/jobs", async (CmmsDbContext db, CancellationToken ct) =>
+            (await db.ImportJobs.AsNoTracking().OrderByDescending(j => j.CreatedAt).Take(100).ToListAsync(ct)).Select(j => ImportJobs.Shape(j, 0, withResult: false)))
+            .RequirePermission(Permissions.SettingsManage);
+
+        g.MapGet("/jobs/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
+            await db.ImportJobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == id, ct) is { } job
+                ? Results.Ok(ImportJobs.Shape(job, await ImportJobs.WaitingBehindAsync(db, job, ct), withResult: true)) : Results.NotFound())
+            .RequirePermission(Permissions.SettingsManage);
+
+        // The rows a finished check or import found problems in, as they were in the file, with the reason beside each.
+        g.MapGet("/jobs/{id:guid}/problems", async (Guid id, CmmsDbContext db, IFileStorage storage, Microsoft.Extensions.Options.IOptions<Microsoft.AspNetCore.Http.Json.JsonOptions> json,
+            CancellationToken ct) =>
+        {
+            var job = await db.ImportJobs.AsNoTracking().FirstOrDefaultAsync(j => j.Id == id, ct);
+            if (job?.ResultJson is null) return Results.NotFound();
+            if (job.StorageKey is null || await storage.OpenReadAsync(job.StorageKey, ct) is not { } stream)
+                return Results.Problem(title: Translator.T(ImportJobs.FileGone), statusCode: 404);
+            SpreadsheetBook book;
+            await using (stream) book = SpreadsheetReader.Read(stream, job.FileName);
+            var result = System.Text.Json.JsonSerializer.Deserialize<ImportResult>(job.ResultJson, json.Value.SerializerOptions)!;
+            return Results.File(ImportWorkbook.Problems(book, result), Xlsx, "CMX-import-problems.xlsx");
+        }).RequirePermission(Permissions.SettingsManage);
 
         g.MapGet("/template", async (CmmsDbContext db, CancellationToken ct) =>
             Results.File(await ImportWorkbook.TemplateAsync(db, ct), Xlsx, "CMX-import-template.xlsx"))
@@ -31,35 +52,13 @@ public static class ImportEndpoints
         g.MapGet("/current", async (CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
             Results.File(await ImportWorkbook.CurrentAsync(db, ctx, ct), Xlsx, $"CMX-data-{DateTime.UtcNow:yyyy-MM-dd}.xlsx"))
             .RequirePermission(Permissions.SettingsManage);
-
-        // The rows a check found problems in, as they were in the file, with the reason beside each.
-        g.MapPost("/problems", async (HttpRequest req, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
-        {
-            var started = System.Diagnostics.Stopwatch.StartNew();
-            var book = await ReadAsync(req, ct);
-            var result = await ImportRun.RunAsync(db, ctx, book, save: false, Budget - started.Elapsed, ct);
-            return Results.File(ImportWorkbook.Problems(book, result), Xlsx, "CMX-import-problems.xlsx");
-        }).RequirePermission(Permissions.SettingsManage).DisableAntiforgery();
     }
 
     private const string Xlsx = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-    /// <summary>The time limit counts from the start of the request, so reading the upload uses up part of it.</summary>
-    private static async Task<IResult> RunAsync(HttpRequest req, CmmsDbContext db, ITenantContext ctx, bool save, CancellationToken ct)
+    private static async Task<IResult> QueueAsync(HttpRequest req, CmmsDbContext db, ITenantContext ctx, IFileStorage storage, bool save, CancellationToken ct)
     {
-        var started = System.Diagnostics.Stopwatch.StartNew();
-        var book = await ReadAsync(req, ct);
-        return Results.Ok(await ImportRun.RunAsync(db, ctx, book, save, Budget - started.Elapsed, ct));
-    }
-
-    /// <summary>The uploaded workbook ("file"): .xlsx or .csv, up to 10 MB.</summary>
-    internal static async Task<SpreadsheetBook> ReadAsync(HttpRequest req, CancellationToken ct)
-    {
-        if (!req.HasFormContentType) throw new DomainException("Choose a file of up to 10 MB.");
-        var form = await req.ReadFormAsync(ct);
-        var file = form.Files.GetFile("file");
-        if (file is null || file.Length == 0 || file.Length > MaxBytes) throw new DomainException("Choose a file of up to 10 MB.");
-        await using var stream = file.OpenReadStream();
-        return SpreadsheetReader.Read(stream, file.FileName);
+        var id = await ImportJobs.QueueAsync(req, db, ctx, storage, save, ct);
+        return Results.Accepted($"/api/import/jobs/{id}", new { id });
     }
 }

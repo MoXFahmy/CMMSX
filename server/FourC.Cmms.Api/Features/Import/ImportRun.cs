@@ -156,28 +156,42 @@ internal interface ISheetImporter
 /// </summary>
 public static class ImportRun
 {
-    public const int MaxRowsPerSheet = 5000;
-    public const string TooBig = "This file is too big to import in one go. Split it into smaller files.";
+    public const int MaxRowsPerSheet = 20_000;
+    public const int MaxRowsPerFile = 50_000;
+    public const string TooBig = "This import took too long. Split it into smaller files.";
 
     private sealed class Stopped : Exception;
 
     public static Task<ImportResult> RunAsync(CmmsDbContext db, ITenantContext ctx, SpreadsheetBook book, bool save, TimeSpan budget, CancellationToken ct) =>
         RunAsync(db, ctx, book, save, budget, null, ct);
 
-    /// <summary>As above, with the time taken so far read from <paramref name="elapsed"/> (tests stand in a clock).</summary>
+    /// <summary>The row limits (0.26.0): 20,000 a sheet, 50,000 in one file. Checked when a file is uploaded and again when it runs.</summary>
+    public static int CheckLimits(SpreadsheetBook book)
+    {
+        var total = 0;
+        foreach (var (def, sheet) in Match(book))
+        {
+            var count = sheet.Rows.Skip(1).Count(r => !IsBlank(r));
+            if (count > MaxRowsPerSheet)
+                throw new DomainException(Translator.T($"{def.Name} has {count:N0} rows; the limit is 20,000 per sheet. Split it into smaller files."));
+            total += count;
+        }
+        if (total > MaxRowsPerFile) throw new DomainException(Translator.T($"This file has {total:N0} rows; the limit is 50,000 in one file. Split it into smaller files."));
+        return total;
+    }
+
+    /// <summary>
+    /// As above, with the time taken so far read from <paramref name="elapsed"/> (tests stand in a clock) and progress reported
+    /// as (sheet, rows done, rows in the sheet) at least every 100 rows.
+    /// </summary>
     public static async Task<ImportResult> RunAsync(CmmsDbContext db, ITenantContext ctx, SpreadsheetBook book, bool save, TimeSpan budget,
-        Func<TimeSpan>? elapsed, CancellationToken ct)
+        Func<TimeSpan>? elapsed, CancellationToken ct, Func<string, int, int, Task>? progress = null)
     {
         var stopwatch = Stopwatch.StartNew();
         var clock = elapsed ?? (() => stopwatch.Elapsed);
         ImportSheets.Organization = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var plan = Match(book);
-        foreach (var (def, sheet) in plan)
-        {
-            var count = sheet.Rows.Skip(1).Count(r => !IsBlank(r));
-            if (count > MaxRowsPerSheet)
-                throw new DomainException($"{def.Name} has {count:N0} rows; the limit is 5,000 per sheet. Split it into smaller files.");
-        }
+        CheckLimits(book);
 
         // Database work still running when the time is up is cancelled; the run then stops like any other over-time run.
         using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
@@ -192,7 +206,7 @@ public static class ImportRun
             await using var tx = await db.Database.BeginTransactionAsync(token);
             try
             {
-                var result = await RunSheetsAsync(db, ctx, plan, clock, budget, token);
+                var result = await RunSheetsAsync(db, ctx, plan, clock, budget, token, progress);
                 // New brands, models and units from the rows (0.21.0), counted in the check and kept only when the import saves.
                 var (brands, models, units) = await ReferenceLists.ReconcileAsync(db, db.CurrentTenantId!.Value, token);
                 var listNotes = new List<string>();
@@ -228,7 +242,7 @@ public static class ImportRun
     private static bool IsBlank(IReadOnlyList<object?> row) => row.All(v => v is null || v is string s && string.IsNullOrWhiteSpace(s));
 
     private static async Task<ImportResult> RunSheetsAsync(CmmsDbContext db, ITenantContext ctx, List<(SheetDef Def, SpreadsheetSheet Sheet)> plan,
-        Func<TimeSpan> clock, TimeSpan budget, CancellationToken ct)
+        Func<TimeSpan> clock, TimeSpan budget, CancellationToken ct, Func<string, int, int, Task>? progress)
     {
         void Check() { if (clock() > budget) throw new Stopped(); }
         Check();
@@ -246,9 +260,11 @@ public static class ImportRun
             await importer.LoadAsync(c, rows, ct);
             var outcomes = new List<RowResult>();
             var seen = new Dictionary<string, int>(StringComparer.OrdinalIgnoreCase);
+            if (progress is not null) await progress(def.Key, 0, rows.Count);
             foreach (var row in importer.Order(rows, c))
             {
                 Check();
+                if (progress is not null && outcomes.Count > 0 && outcomes.Count % 100 == 0) await progress(def.Key, outcomes.Count, rows.Count);
                 var key = row.HasProblems ? "" : importer.KeyOf(row);
                 if (!row.HasProblems && key.Length > 0)
                 {
@@ -258,6 +274,7 @@ public static class ImportRun
                 var result = row.HasProblems ? Problem(row, key) : await importer.ImportAsync(c, row, ct);
                 outcomes.Add(result);
             }
+            if (progress is not null) await progress(def.Key, rows.Count, rows.Count);
             outcomes = [.. importer.Review(c, rows, outcomes)];
             Check();
             await importer.FinishAsync(c, ct);

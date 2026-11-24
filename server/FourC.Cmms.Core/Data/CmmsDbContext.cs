@@ -59,6 +59,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<PasswordHistory> PasswordHistories => Set<PasswordHistory>();
     public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+    public DbSet<FourC.Cmms.Core.Imports.ImportJob> ImportJobs => Set<FourC.Cmms.Core.Imports.ImportJob>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<NumberSequence> NumberSequences => Set<NumberSequence>();
     public DbSet<Trade> Trades => Set<Trade>();
@@ -338,6 +339,19 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         {
             e.HasIndex(x => new { x.UserId, x.SetAt });
             e.HasIndex(x => x.TenantId);
+        });
+
+        b.Entity<FourC.Cmms.Core.Imports.ImportJob>(e =>
+        {
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.FileName).HasMaxLength(260);
+            e.Property(x => x.StorageKey).HasMaxLength(400);
+            e.Property(x => x.UserName).HasMaxLength(200);
+            e.Property(x => x.Language).HasMaxLength(10);
+            e.Property(x => x.Sheet).HasMaxLength(100);
+            e.Property(x => x.Error).HasMaxLength(1000);
+            e.HasIndex(x => new { x.Status, x.CreatedAt });
+            e.HasIndex(x => new { x.TenantId, x.CreatedAt });
         });
 
         b.Entity<ApiKey>(e =>

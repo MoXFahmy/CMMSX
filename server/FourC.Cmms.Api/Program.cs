@@ -82,6 +82,8 @@ switch (builder.Configuration["Storage:Provider"]?.ToLowerInvariant())
 if (builder.Configuration["ForwardedHeaders:ProtoHeaderName"] is { Length: > 0 } protoHeader)
     services.Configure<ForwardedHeadersOptions>(o => o.ForwardedProtoHeaderName = protoHeader);
 services.AddHostedService<PmSchedulerService>();
+services.AddSingleton<FourC.Cmms.Api.Features.Import.ImportWorker>();
+services.AddHostedService(sp => sp.GetRequiredService<FourC.Cmms.Api.Features.Import.ImportWorker>());
 
 // E-mail: queued in the database (outbox) and sent by a background job through SES or SMTP. Without a provider and a
 // From address, e-mail is unavailable: nothing is queued and Settings says so.

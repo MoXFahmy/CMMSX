@@ -74,7 +74,7 @@ public static class AuditScope
         typeof(StockTransaction), typeof(UnitMovement), typeof(MeterReading), typeof(UserSession), typeof(AuditEntry), typeof(OutboundEmail),
         typeof(PushMessage), typeof(TechAction), typeof(AiCall), typeof(AiDiagnosisVote), typeof(NumberSequence), typeof(StockReservation),
         typeof(SavedView), typeof(UserListSetting), typeof(WorkOrderStatusChange), typeof(AssetTransfer), typeof(Tenant), typeof(DataProtectionKey),
-        typeof(IdentityUserClaim<Guid>), typeof(IdentityUserLogin<Guid>), typeof(IdentityUserToken<Guid>), typeof(PasswordHistory),
+        typeof(IdentityUserClaim<Guid>), typeof(IdentityUserLogin<Guid>), typeof(IdentityUserToken<Guid>), typeof(PasswordHistory), typeof(FourC.Cmms.Core.Imports.ImportJob),
     };
 
     /// <summary>Whether changes to <paramref name="type"/> are recorded.</summary>

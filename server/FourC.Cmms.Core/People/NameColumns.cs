@@ -44,6 +44,7 @@ public static class NameColumns
         (typeof(AiCall), nameof(AiCall.UserName), nameof(AiCall.UserId)),
         (typeof(AiDiagnosis), nameof(AiDiagnosis.CreatedByName), nameof(AiDiagnosis.CreatedById)),
         (typeof(ApiKey), nameof(ApiKey.CreatedByName), nameof(ApiKey.CreatedById)),
+        (typeof(FourC.Cmms.Core.Imports.ImportJob), nameof(FourC.Cmms.Core.Imports.ImportJob.UserName), nameof(FourC.Cmms.Core.Imports.ImportJob.UserId)),
     ];
 
     /// <summary>
