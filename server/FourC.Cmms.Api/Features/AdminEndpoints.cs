@@ -284,6 +284,8 @@ public static class AdminEndpoints
             input.Settings.ListLabels = t.Settings.ListLabels ?? [];
             // The security rules (0.25.0) change only through Settings › Security, whatever this page sends.
             input.Settings.Security = t.Settings.Security ?? new();
+            if (SettingsDiff.Changes(t.Settings, input.Settings) is { Count: > 0 } changed)
+                FourC.Cmms.Core.Auditing.AuditLog.Event(db, "Tenant", t.Id, "SettingsChanged", changed);
             t.Settings = input.Settings;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { t.Name, t.Settings });

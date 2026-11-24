@@ -416,6 +416,7 @@ public sealed class PmSchedulerService(IServiceScopeFactory scopes, IConfigurati
             // Due dates written without a due time since the last run (an older server during a deploy, an import) get theirs.
             await FourC.Cmms.Core.Services.DueBackfill.RunAsync(root, ct);
             await Housekeeping.TrimAsync(root, DateTimeOffset.UtcNow, ct);
+            await Housekeeping.TrimActivityAsync(root, DateTimeOffset.UtcNow, ct);
         }
         foreach (var tenantId in tenantIds)
         {
