@@ -197,7 +197,7 @@ public class ImportPmTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var bytes = await (await c.GetAsync("/api/import/template")).Content.ReadAsByteArrayAsync();
         var book = FourC.Cmms.Api.Features.Import.SpreadsheetReader.Read(new MemoryStream(bytes), "book.xlsx");
         string?[] Heads(string sheet) => book.Sheets.Single(x => x.Name == sheet).Rows[0].Select(x => x?.ToString()).ToArray();
-        Assert.Equal(["Code", "Name", "Description", "Trade code", "Estimated hours", "Safety notes", "Title", "Work type", "Priority", "Expected stop hours", "Active"],
+        Assert.Equal(["Code", "Name", "Name (Arabic)", "Description", "Trade code", "Estimated hours", "Safety notes", "Safety notes (Arabic)", "Title", "Title (Arabic)", "Work type", "Priority", "Expected stop hours", "Active"],
             Heads("Work templates"));
         Assert.Contains("Multi-asset mode", Heads("PM schedules"));
     }

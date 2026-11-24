@@ -54,6 +54,9 @@ public static class ImportSheets
     private static ColumnDef Active => Y("active", "Active", "نشط");
     private static ColumnDef Description => T("description", "Description", "الوصف");
     private static ColumnDef Notes => T("notes", "Notes", "ملاحظات");
+    // 0.28.0: the Arabic texts, right after their main text.
+    private static ColumnDef NameAr => T("nameAr", "Name (Arabic)", "الاسم (عربي)");
+    private static ColumnDef NotesToTechnicianAr => T("notesToTechnicianAr", "Notes to technician (Arabic)", "ملاحظات للفني (عربي)");
     private static ColumnDef SiteCode => T("siteCode", "Site code", "رمز الموقع", true);
 
     public static readonly IReadOnlyList<SheetDef> All =
@@ -64,23 +67,23 @@ public static class ImportSheets
         new("CostCentres", "Cost centres", "مراكز التكلفة", [Code, Name, T("parentCode", "Parent code", "رمز المركز الأعلى"), T("siteCode", "Site code", "رمز الموقع"), Active]),
         new("Budgets", "Budgets", "الموازنات", [T("costCentreCode", "Cost centre code", "رمز مركز التكلفة", true), I("year", "Year", "السنة", true),
             I("month", "Month", "الشهر", true), N("amount", "Amount", "المبلغ")]),
-        new("Locations", "Locations", "الأماكن", [SiteCode, Code, Name, T("parentCode", "Parent code", "رمز المكان الأعلى"),
+        new("Locations", "Locations", "الأماكن", [SiteCode, Code, Name, NameAr, T("parentCode", "Parent code", "رمز المكان الأعلى"),
             C<LocationType>("type", "Type", "النوع"), C<Criticality>("criticality", "Criticality", "الأهمية"), Description,
-            T("notesToTechnician", "Notes to technician", "ملاحظات للفني"), T("costCentreCode", "Cost centre code", "رمز مركز التكلفة"), Active]),
-        new("Categories", "Categories", "الفئات", [Code, Name, T("color", "Color", "اللون"), N("downtimeCostPerHour", "Downtime cost per hour", "تكلفة التوقف للساعة"), Active]),
+            T("notesToTechnician", "Notes to technician", "ملاحظات للفني"), NotesToTechnicianAr, T("costCentreCode", "Cost centre code", "رمز مركز التكلفة"), Active]),
+        new("Categories", "Categories", "الفئات", [Code, Name, NameAr, T("color", "Color", "اللون"), N("downtimeCostPerHour", "Downtime cost per hour", "تكلفة التوقف للساعة"), Active]),
         // 0.21.0: a brand row (no model) or a model row; Active applies to the model when there is one, else to the brand.
         new("BrandsAndModels", "Brands and models", "العلامات التجارية والطرازات", [T("brand", "Brand", "العلامة التجارية", true), T("model", "Model", "الطراز"), Active]),
         new("Trades", "Trades", "التخصصات", [Code, Name, T("color", "Color", "اللون"), Active]),
         new("PartGroups", "Part groups", "مجموعات القطع", [Code, Name, Active]),
-        new("Symptoms", "Symptoms", "الأعراض", [Code, Name, Active]),
-        new("Causes", "Causes", "الأسباب", [Code, Name, Active]),
-        new("Remedies", "Remedies", "المعالجات", [Code, Name, Active]),
+        new("Symptoms", "Symptoms", "الأعراض", [Code, Name, NameAr, Active]),
+        new("Causes", "Causes", "الأسباب", [Code, Name, NameAr, Active]),
+        new("Remedies", "Remedies", "المعالجات", [Code, Name, NameAr, Active]),
         new("Suppliers", "Suppliers", "الموردون", [Code, Name, T("contact", "Contact", "جهة الاتصال"), T("email", "Email", "البريد الإلكتروني"),
             T("phone", "Phone", "الهاتف"), T("address", "Address", "العنوان"), T("city", "City", "المدينة"), T("country", "Country", "الدولة"),
             T("taxNumber", "Tax number", "الرقم الضريبي"), T("paymentTerms", "Payment terms", "شروط الدفع"), T("currency", "Currency", "العملة"),
             Y("contractor", "Contractor", "مقاول"), Notes, Active]),
         new("Stores", "Stores", "المخازن", [Code, Name, SiteCode, Description, Active]),
-        new("Assets", "Assets", "الأصول", [T("assetNumber", "Asset number", "رقم الأصل"), Name, SiteCode, T("locationCode", "Location code", "رمز المكان"),
+        new("Assets", "Assets", "الأصول", [T("assetNumber", "Asset number", "رقم الأصل"), Name, NameAr, SiteCode, T("locationCode", "Location code", "رمز المكان"),
             T("parentAssetNumber", "Parent asset number", "رقم الأصل الأعلى"), T("categoryCode", "Category code", "رمز الفئة"),
             C<AssetStatus>("status", "Status", "الحالة"), C<Criticality>("criticality", "Criticality", "الأهمية"),
             T("manufacturer", "Manufacturer", "الشركة المصنعة"), T("model", "Model", "الطراز"), T("serialNumber", "Serial number", "الرقم التسلسلي"),
@@ -89,7 +92,7 @@ public static class ImportSheets
             N("purchasePrice", "Purchase price", "سعر الشراء"), N("currentValue", "Current value", "القيمة الحالية"), N("salvageValue", "Salvage value", "قيمة الخردة"),
             N("expectedLifeYears", "Expected life (years)", "العمر المتوقع (سنوات)"), N("downtimeCostPerHour", "Downtime cost per hour", "تكلفة التوقف للساعة"),
             C<WarrantyType>("warrantyType", "Warranty type", "نوع الضمان"), D("warrantyExpiresOn", "Warranty expires on", "انتهاء الضمان"),
-            T("warrantyNotes", "Warranty notes", "ملاحظات الضمان"), Description, Notes, T("notesToTechnician", "Notes to technician", "ملاحظات للفني"),
+            T("warrantyNotes", "Warranty notes", "ملاحظات الضمان"), Description, Notes, T("notesToTechnician", "Notes to technician", "ملاحظات للفني"), NotesToTechnicianAr,
             N("runsHoursPerDay", "Runs hours a day", "ساعات التشغيل في اليوم"), CL<DayOfWeek>("runsOn", "Runs on", "يعمل في"), T("costCentreCode", "Cost centre code", "رمز مركز التكلفة")]),
         // 0.21.0: asset groups and their members (re-importing members adds, never removes).
         new("AssetGroups", "Asset groups", "مجموعات الأصول", [Code, Name, T("siteCode", "Site code", "رمز الموقع"), Active]),
@@ -98,7 +101,7 @@ public static class ImportSheets
             T("email", "Email", "البريد الإلكتروني"), T("phone", "Phone", "الهاتف"), L("trades", "Trades", "التخصصات"), L("sites", "Sites", "المواقع"),
             N("hourlyRate", "Hourly rate", "أجر الساعة"), N("overtimeRate", "Overtime rate", "أجر الساعة الإضافية"), Y("contractor", "Contractor", "مقاول"),
             T("company", "Company", "الشركة"), Notes, Active]),
-        new("Parts", "Parts", "القطع", [T("partNumber", "Part number", "رقم القطعة", true), Name, T("unit", "Unit", "الوحدة", true),
+        new("Parts", "Parts", "القطع", [T("partNumber", "Part number", "رقم القطعة", true), Name, NameAr, T("unit", "Unit", "الوحدة", true),
             T("groupCode", "Group code", "رمز المجموعة"), T("specification", "Specification", "المواصفات"), T("manufacturer", "Manufacturer", "الشركة المصنعة"),
             T("manufacturerPartNumber", "Manufacturer part number", "رقم القطعة لدى المصنع"), N("standardPrice", "Standard price", "السعر القياسي"),
             I("leadTimeDays", "Lead time (days)", "مدة التوريد (أيام)"), Y("critical", "Critical", "حرجة"), Y("shelfLife", "Shelf-life item", "صنف له صلاحية"),
@@ -117,9 +120,9 @@ public static class ImportSheets
             T("bin", "Bin", "الموضع"), N("min", "Min", "الحد الأدنى"), N("reorderLevel", "Re-order level", "حد إعادة الطلب"), N("max", "Max", "الحد الأقصى"),
             N("reorderQuantity", "Re-order quantity", "كمية إعادة الطلب"), N("openingQuantity", "Opening quantity", "الرصيد الافتتاحي"),
             T("batch", "Batch", "الدفعة"), D("expiry", "Expiry", "تاريخ الانتهاء")]),
-        new("PmTasks", "Work templates", "قوالب العمل", [Code, Name, Description, T("tradeCode", "Trade code", "رمز التخصص"),
+        new("PmTasks", "Work templates", "قوالب العمل", [Code, Name, NameAr, Description, T("tradeCode", "Trade code", "رمز التخصص"),
             N("estimatedHours", "Estimated hours", "الساعات التقديرية"), T("safetyNotes", "Safety notes", "ملاحظات السلامة"),
-            T("title", "Title", "العنوان"), C<WorkType>("workType", "Work type", "نوع العمل"), C<WorkPriority>("priority", "Priority", "الأولوية"),
+            T("safetyNotesAr", "Safety notes (Arabic)", "ملاحظات السلامة (عربي)"), T("title", "Title", "العنوان"), T("titleAr", "Title (Arabic)", "العنوان (عربي)"), C<WorkType>("workType", "Work type", "نوع العمل"), C<WorkPriority>("priority", "Priority", "الأولوية"),
             N("expectedStopHours", "Expected stop hours", "ساعات التوقف المتوقعة"), Active], ["PM tasks", "مهام الصيانة الوقائية"]),
         new("MeasurementPoints", "Measurement points", "نقاط القياس", [Code, Name, C<MeasurementKind>("kind", "Kind", "النوع"), T("unit", "Unit", "الوحدة"),
             I("decimals", "Decimals", "المنازل العشرية"), N("validMin", "Valid min", "أدنى قيمة صالحة"), N("validMax", "Valid max", "أعلى قيمة صالحة"),
@@ -129,13 +132,13 @@ public static class ImportSheets
             T("alertHighTemplate", "Alert high template", "قالب التنبيه المرتفع"), T("alarmHighTemplate", "Alarm high template", "قالب الإنذار المرتفع"),
             L("assets", "Assets", "الأصول"), Active]),
         new("PmSteps", "PM steps", "خطوات الصيانة الوقائية", [T("taskCode", "Task code", "رمز المهمة", true), I("step", "Step", "الخطوة", true),
-            T("description", "Description", "الوصف", true), C<StepType>("type", "Type", "النوع"), T("unit", "Unit", "الوحدة"),
+            T("description", "Description", "الوصف", true), T("descriptionAr", "Description (Arabic)", "الوصف (عربي)"), C<StepType>("type", "Type", "النوع"), T("unit", "Unit", "الوحدة"),
             I("decimals", "Decimals", "المنازل العشرية"), T("measurementPoint", "Measurement point", "نقطة القياس"), Y("photoRequired", "Photo required", "صورة مطلوبة"),
             Y("beforeStart", "Before starting", "قبل البدء"), C<FollowUpKind>("followUp", "Follow-up", "المتابعة"),
             T("followUpTemplate", "Follow-up template", "قالب المتابعة")]),
         new("PmParts", "PM parts", "قطع الصيانة الوقائية", [T("taskCode", "Task code", "رمز المهمة", true), T("partNumber", "Part number", "رقم القطعة", true),
             N("quantity", "Quantity", "الكمية", true)]),
-        new("PmSchedules", "PM schedules", "جداول الصيانة الوقائية", [Code, Name, T("taskCode", "Task code", "رمز المهمة", true), SiteCode,
+        new("PmSchedules", "PM schedules", "جداول الصيانة الوقائية", [Code, Name, NameAr, T("taskCode", "Task code", "رمز المهمة", true), SiteCode,
             T("locationCode", "Location code", "رمز المكان"), T("assetNumber", "Asset number", "رقم الأصل"), T("tradeCode", "Trade code", "رمز التخصص"),
             C<WorkPriority>("priority", "Priority", "الأولوية"), C<PmScheduleType>("schedule", "Schedule", "الجدول"), I("every", "Every", "كل"),
             C<FrequencyUnit>("unit", "Unit", "الوحدة"), C<PmBasis>("countFrom", "Count from", "الحساب من"),
