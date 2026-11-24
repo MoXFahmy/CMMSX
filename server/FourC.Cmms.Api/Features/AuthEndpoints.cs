@@ -14,7 +14,8 @@ public static class AuthEndpoints
 {
     public sealed record RegisterRequest(string OrganizationName, string FullName, string Email, string Password);
     /// <param name="Technician">Signing in from the technician view: with RememberMe it lasts 30 days, like the Android app.</param>
-    public sealed record LoginRequest(string Email, string Password, bool RememberMe, bool Technician = false);
+    /// <param name="EndOtherSessions">With one session per person on (0.25.0): sign in here and end the person's other sessions.</param>
+    public sealed record LoginRequest(string Email, string Password, bool RememberMe, bool Technician = false, bool EndOtherSessions = false);
 
     /// <summary>How long "Keep me signed in" lasts on a technician device (Android app or technician view) without use.</summary>
     private static readonly TimeSpan TechnicianSignIn = TimeSpan.FromDays(30);
@@ -58,24 +59,32 @@ public static class AuthEndpoints
             return Results.Ok(new { ok = true });
         }).AllowAnonymous();
 
-        g.MapPost("/login", async (LoginRequest req, HttpContext http, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPost("/login", async (LoginRequest req, HttpContext http, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext db,
+            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, CancellationToken ct) =>
         {
             var user = string.IsNullOrWhiteSpace(req.Email) ? null : await users.FindByEmailAsync(req.Email.Trim());
             var tenantActive = user is not null && await db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.IsActive);
             if (user is null || !user.IsActive || !tenantActive)
                 return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
             var result = await signIn.CheckPasswordSignInAsync(user, req.Password ?? "", lockoutOnFailure: true);
+            if (!result.Succeeded)
+            {
+                // Failed sign-ins of a known person reach the activity log (0.25.0), with the device and never the password.
+                AuditLog.Event(db, "AppUser", user.Id, result.IsLockedOut ? "LockedOut" : "SignInFailed", Device(http), user.TenantId, user.Id, user.FullName);
+                await db.SaveChangesAsync(ct);
+            }
             if (result.IsLockedOut) return Results.Problem(title: Translator.T("Too many failed attempts. Try again in a few minutes."), statusCode: 429);
             if (!result.Succeeded) return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
             // The organization's password rules (0.25.0): an expired password, or one shorter than today's minimum, is renewed first.
             var rules = await PasswordRules.SettingsAsync(db, user.TenantId, ct);
             if (PasswordRules.IsExpired(user, rules, DateTimeOffset.UtcNow)) return RenewFirst("password-expired", PasswordRules.Expired);
             if ((req.Password ?? "").Length < rules.PasswordMinLength) return RenewFirst("password-rules", PasswordRules.RulesChanged);
-            return await CompleteSignInAsync(http, db, users, signIn, user, req.RememberMe, req.Technician, ct);
+            return await CompleteSignInAsync(http, db, users, signIn, cache, user, req.RememberMe, req.Technician, req.EndOtherSessions, ct);
         }).AllowAnonymous();
 
         // A new password in place of an expired one, or one that no longer meets the rules; then signed in as usual (0.25.0).
-        g.MapPost("/renew-password", async (RenewPasswordRequest req, HttpContext http, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPost("/renew-password", async (RenewPasswordRequest req, HttpContext http, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext db,
+            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, CancellationToken ct) =>
         {
             var user = string.IsNullOrWhiteSpace(req.Email) ? null : await users.FindByEmailAsync(req.Email.Trim());
             var tenantActive = user is not null && await db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.IsActive, ct);
@@ -94,11 +103,17 @@ public static class AuthEndpoints
             await PasswordRules.RecordAsync(db, user, ct);
             AuditLog.Event(db, "AppUser", user.Id, "PasswordRenewed", tenantId: user.TenantId, userId: user.Id, userName: user.FullName);
             await db.SaveChangesAsync(ct);
-            return await CompleteSignInAsync(http, db, users, signIn, user, req.RememberMe, req.Technician, ct);
+            return await CompleteSignInAsync(http, db, users, signIn, cache, user, req.RememberMe, req.Technician, req.EndOtherSessions, ct);
         }).AllowAnonymous();
 
-        g.MapPost("/logout", async (HttpContext http, SignInManager<AppUser> signIn, CmmsDbContext db, Microsoft.Extensions.Caching.Memory.IMemoryCache cache, CancellationToken ct) =>
+        g.MapPost("/logout", async (HttpContext http, SignInManager<AppUser> signIn, CmmsDbContext db, Microsoft.Extensions.Caching.Memory.IMemoryCache cache, ITenantContext ctx,
+            CancellationToken ct) =>
         {
+            if (ctx.UserId is { } who && ctx.TenantId is { } tid)
+            {
+                AuditLog.Event(db, "AppUser", who, "SignedOut", Device(http), tid);
+                await db.SaveChangesAsync(ct);
+            }
             if (await Sessions.CurrentAsync(http) is { } sid) await Sessions.RevokeAsync(db, cache, db.UserSessions.IgnoreQueryFilters().Where(s => s.Id == sid), ct);
             await signIn.SignOutAsync();
             return Results.Ok(new { ok = true });
@@ -164,6 +179,10 @@ public static class AuthEndpoints
         }).RequireAuthorization();
     }
 
+    /// <summary>The device a sign-in event came from, as the device list names it (no address is kept).</summary>
+    private static Dictionary<string, object?> Device(HttpContext http) =>
+        new() { ["Device"] = new { to = Sessions.DeviceName(http.Request.Headers.UserAgent.ToString()) } };
+
     /// <summary>"Choose a new password first" (0.25.0): no sign-in; the sign-in page shows new-password fields.</summary>
     private static IResult RenewFirst(string code, string message) =>
         Results.Problem(title: Translator.T(message), statusCode: 403, extensions: new Dictionary<string, object?> { ["code"] = code });
@@ -171,9 +190,23 @@ public static class AuthEndpoints
     /// <summary>
     /// Signs a person in once their password checks out: every sign-in is a device they (or an administrator) can sign out later.
     /// </summary>
-    private static async Task<IResult> CompleteSignInAsync(HttpContext http, CmmsDbContext db, UserManager<AppUser> users, SignInManager<AppUser> signIn, AppUser user,
-        bool rememberMe, bool technician, CancellationToken ct)
+    private static async Task<IResult> CompleteSignInAsync(HttpContext http, CmmsDbContext db, UserManager<AppUser> users, SignInManager<AppUser> signIn,
+        Microsoft.Extensions.Caching.Memory.IMemoryCache cache, AppUser user, bool rememberMe, bool technician, bool endOtherSessions, CancellationToken ct)
     {
+        var now = DateTimeOffset.UtcNow;
+        // One session per person (0.25.0): another device still signed in is named, and ended only when the person says so.
+        if ((await PasswordRules.SettingsAsync(db, user.TenantId, ct)).OneSessionPerUser)
+        {
+            var others = db.UserSessions.IgnoreQueryFilters().Where(s => s.UserId == user.Id && s.RevokedAt == null && (s.ExpiresAt == null || s.ExpiresAt > now));
+            if (await others.OrderByDescending(s => s.LastSeenAt).Select(s => new { s.DeviceName, s.LastSeenAt }).FirstOrDefaultAsync(ct) is { } other)
+            {
+                if (!endOtherSessions)
+                    return Results.Problem(title: Translator.T("You're signed in on another device."), statusCode: 409,
+                        extensions: new Dictionary<string, object?> { ["code"] = "other-session", ["device"] = other.DeviceName, ["lastSeenAt"] = other.LastSeenAt });
+                await Sessions.RevokeAsync(db, cache, others, ct);
+                AuditLog.Event(db, "AppUser", user.Id, "OtherSessionsEnded", Device(http), user.TenantId, user.Id, user.FullName);
+            }
+        }
         var userAgent = http.Request.Headers.UserAgent.ToString();
         var longSignIn = rememberMe && (technician || Sessions.IsAndroidApp(userAgent));
         var session = await Sessions.StartAsync(db, user.Id, user.TenantId, userAgent, longSignIn ? TechnicianSignIn : Sessions.DefaultLifetime, ct);
@@ -182,6 +215,7 @@ public static class AuthEndpoints
         if (longSignIn) props.ExpiresUtc = DateTimeOffset.UtcNow.Add(TechnicianSignIn);
         await signIn.SignInWithClaimsAsync(user, props, []);
         user.LastLoginAt = DateTimeOffset.UtcNow;
+        AuditLog.Event(db, "AppUser", user.Id, "SignedIn", Device(http), user.TenantId, user.Id, user.FullName);
         // Someone who signs in in another language than their organization's, and hasn't chosen one yet, keeps it.
         if (user.Language is null)
         {

@@ -19,8 +19,11 @@ public static class DeviceEndpoints
 
         me.MapPost("/{id:guid}/sign-out", async (Guid id, CmmsDbContext db, ITenantContext ctx, IMemoryCache cache, CancellationToken ct) =>
         {
-            if (!await db.UserSessions.AnyAsync(s => s.Id == id && s.UserId == ctx.UserId, ct)) return Results.NotFound();
+            var device = await db.UserSessions.Where(s => s.Id == id && s.UserId == ctx.UserId).Select(s => s.DeviceName).FirstOrDefaultAsync(ct);
+            if (device is null) return Results.NotFound();
             await Sessions.RevokeAsync(db, cache, db.UserSessions.Where(s => s.Id == id), ct);
+            SignedOutEvent(db, ctx.UserId!.Value, device);
+            await db.SaveChangesAsync(ct);
             return Results.Ok(new { ok = true });
         });
 
@@ -30,6 +33,8 @@ public static class DeviceEndpoints
             await Sessions.RevokeAsync(db, cache, db.UserSessions.Where(s => s.UserId == ctx.UserId && s.Id != current), ct);
             // Also sign-ins from before 0.4.0 that have not been used since (they have no device session yet).
             await db.Users.Where(u => u.Id == ctx.UserId).ExecuteUpdateAsync(x => x.SetProperty(u => u.SignedOutBefore, DateTimeOffset.UtcNow), ct);
+            SignedOutEvent(db, ctx.UserId!.Value, "Other devices");
+            await db.SaveChangesAsync(ct);
             return Results.Ok(new { ok = true });
         });
 
@@ -49,11 +54,18 @@ public static class DeviceEndpoints
             var user = await db.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId && u.TenantId == db.CurrentTenantId, ct);
             if (user is null) return Results.NotFound();
             if (await UserAccessRules.OutsideAsync(db, Access.Of(http) ?? UserAccess.Everything, user, ct) is { } outside) throw new DomainException(outside);
-            if (!await db.UserSessions.AnyAsync(s => s.Id == id && s.UserId == userId, ct)) return Results.NotFound();
+            var device = await db.UserSessions.Where(s => s.Id == id && s.UserId == userId).Select(s => s.DeviceName).FirstOrDefaultAsync(ct);
+            if (device is null) return Results.NotFound();
             await Sessions.RevokeAsync(db, cache, db.UserSessions.Where(s => s.Id == id), ct);
+            SignedOutEvent(db, userId, device);
+            await db.SaveChangesAsync(ct);
             return Results.Ok(new { ok = true });
         });
     }
+
+    /// <summary>A device signed out, on the person's record in the activity log (0.25.0); who did it is the entry's person.</summary>
+    private static void SignedOutEvent(CmmsDbContext db, Guid userId, string device) =>
+        FourC.Cmms.Core.Auditing.AuditLog.Event(db, "AppUser", userId, "DeviceSignedOut", new Dictionary<string, object?> { ["Device"] = new { to = device } });
 
     /// <summary>Devices still signed in: not signed out, and not past when their sign-in runs out.</summary>
     private static async Task<List<object>> ListAsync(CmmsDbContext db, Guid userId, Guid? current, CancellationToken ct)

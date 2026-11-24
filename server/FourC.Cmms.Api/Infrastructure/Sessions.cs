@@ -17,6 +17,8 @@ public static class Sessions
 {
     public const string Key = "sid";
     public const string RevokedHeader = "X-Session-Revoked";
+    /// <summary>0.25.0: the person's password expired; the web and the phone ask for a new one (and keep the phone's queued changes).</summary>
+    public const string PasswordExpiredHeader = "X-Password-Expired";
     private static readonly TimeSpan CacheFor = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan TouchEvery = TimeSpan.FromMinutes(10);
     /// <summary>How long an ordinary sign-in lasts without use (sliding); the Android app and technician view get 30 days.</summary>
@@ -35,7 +37,7 @@ public static class Sessions
     private static TimeSpan LifetimeOf(AuthenticationProperties p) =>
         p.ExpiresUtc is { } e && p.IssuedUtc is { } i && e > i ? e - i : DefaultLifetime;
 
-    private sealed record State(bool Active, DateTimeOffset LastSeenAt);
+    private sealed record State(bool Active, DateTimeOffset LastSeenAt, bool PasswordExpired);
     private static string CacheKey(Guid id) => $"session:{id}";
 
     public static bool IsAndroidApp(string? userAgent) => userAgent?.Contains("4CCMMS-Android/", StringComparison.Ordinal) == true;
@@ -124,12 +126,24 @@ public static class Sessions
         var state = await cache.GetOrCreateAsync(CacheKey(sid), async e =>
         {
             e.AbsoluteExpirationRelativeToNow = CacheFor;
-            return await db.UserSessions.IgnoreQueryFilters().Where(s => s.Id == sid && s.UserId == userId)
-                .Select(s => new State(s.RevokedAt == null, s.LastSeenAt)).FirstOrDefaultAsync(ct);
+            var session = await db.UserSessions.IgnoreQueryFilters().Where(s => s.Id == sid && s.UserId == userId)
+                .Select(s => new { Active = s.RevokedAt == null, s.LastSeenAt }).FirstOrDefaultAsync(ct);
+            if (session is null) return null;
+            // Password expiry reaches devices already signed in (0.25.0), checked with the session's cached state.
+            var changed = await db.Users.IgnoreQueryFilters().Where(u => u.Id == userId).Select(u => u.PasswordChangedAt).FirstOrDefaultAsync(ct);
+            var rules = await PasswordRules.SettingsAsync(db, tenantId, ct);
+            var expired = rules.PasswordExpiryDays > 0 && changed is { } set && set.AddDays(rules.PasswordExpiryDays) <= DateTimeOffset.UtcNow;
+            return new State(session.Active, session.LastSeenAt, expired);
         });
         if (state is not { Active: true })
         {
             await RejectAsync(ctx);
+            return;
+        }
+        if (state.PasswordExpired)
+        {
+            ctx.RejectPrincipal();
+            http.Response.Headers[PasswordExpiredHeader] = "1";
             return;
         }
         var now = DateTimeOffset.UtcNow;
