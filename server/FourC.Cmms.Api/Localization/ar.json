@@ -1234,5 +1234,6 @@
  "Enter 0 (never) or 30 to 730 days.": "أدخل 0 (أبدًا) أو من 30 إلى 730 يومًا.",
  "Enter 0 to 24.": "أدخل من 0 إلى 24.",
  "Keep at least 12 months, at most 120, or leave it empty.": "احتفظ بـ 12 شهرًا على الأقل و120 على الأكثر، أو اتركه فارغًا.",
- "You're signed in on another device.": "أنت مسجّل الدخول على جهاز آخر."
+ "You're signed in on another device.": "أنت مسجّل الدخول على جهاز آخر.",
+ "Organization settings": "إعدادات المؤسسة"
 }
