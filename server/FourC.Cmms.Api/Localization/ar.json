@@ -1211,5 +1211,10 @@
  "A unit's status and place change through fit, remove and the unit actions.": "تتغير حالة الوحدة ومكانها عبر التركيب والنزع وإجراءات الوحدة.",
  "A unit needs a serial number.": "تحتاج الوحدة إلى رقم تسلسلي.",
  "A unit can't be deleted; scrap it instead.": "لا يمكن حذف وحدة؛ أتلفها بدلًا من ذلك.",
- "Remove its fitted units first.": "انزع وحداته المركّبة أولًا."
+ "Remove its fitted units first.": "انزع وحداته المركّبة أولًا.",
+ "Only units under repair can go on a repair line.": "لا يمكن وضع وحدة على سطر إصلاح إلا إذا كانت قيد الإصلاح.",
+ "This unit is already on an open repair line ({0}).": "هذه الوحدة على سطر إصلاح مفتوح بالفعل ({0}).",
+ "List each unit once.": "اذكر كل وحدة مرة واحدة.",
+ "Choose the store the unit comes back to.": "اختر المخزن الذي تعود إليه الوحدة.",
+ "Line {0}: Choose the store the unit comes back to.": "السطر {0}: اختر المخزن الذي تعود إليه الوحدة."
 }
