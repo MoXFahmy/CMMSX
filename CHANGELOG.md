@@ -4,6 +4,30 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.21.0] - 2026-11-24
+
+Editable lists, brands and models, units, asset groups and yearly numbering. Each organization can give the fixed lists its own
+words, keep one spelling per brand, model and unit, group assets across the tree, and restart numbers each year. Organizations
+that change nothing see CMX as before. See docs/LISTS_GROUPS_AND_NUMBERING.md.
+
+### Added
+- **Your own words for the fixed lists** (Settings › Lists): names in English and Arabic, colours, order and hidden values for work
+  types, priorities, asset statuses and criticality. Meanings stay fixed, so targets, rules and reports keep working. The names show
+  on screens, the phone (also offline), the job card, reports, exports and e-mails; the import accepts them and the built-in names.
+  A hidden value stays on old records and in list filters but isn't offered for new ones.
+- **Brands and models** (Settings › Brands and models), picked on assets, with "Add …" from the picker; the asset keeps the names
+  as text, renaming renames everywhere, and renaming onto another name merges the two. The asset list filters by brand and model.
+- **Units** (Settings › Units), picked for parts, measurement points and template steps; case-sensitive symbols; a new symbol is
+  written to everything using the old one (work orders keep theirs).
+- **Starting lists from your data:** on first start, brands, models and units are built from what records already say, and assets
+  are linked; the same runs after every import and at the end of a 4CSQL migration run.
+- **Asset groups** (Settings › Asset groups): named sets of assets anywhere in the tree, for one site or all. Members from the
+  group, the asset form or a bulk action on the asset list. Filters on the asset and work order lists and on seven reports, and a
+  PM target that follows the group: an asset added later is included from the next visit.
+- **Yearly numbering** (Settings › Organization): work orders, requests, orders, purchase requests, work groups and contracts can
+  carry the year and restart at 1 each year (WO-2027-00001), in the organization's time zone.
+- **Import sheets:** Brands and models, Asset groups, Asset group members, and an Asset group code column on PM schedules.
+
 ## [0.20.0] - 2026-11-23
 
 Cost centres and budgets. Maintenance cost is charged to the organization's own cost centres, set once on locations and assets
