@@ -108,7 +108,7 @@ public static class BrandEndpoints
     }
 
     private static string NameOf(string? name) =>
-        name.Clean() is { } n ? n.Length <= 100 ? n : throw new DomainException("A name can be at most 100 characters.") : throw new DomainException("Enter a name.");
+        name.Clean() is { } n ? n.Length <= 200 ? n : throw new DomainException("A name can be at most 200 characters.") : throw new DomainException("Enter a name.");
 
     /// <summary>
     /// <paramref name="from"/> goes into <paramref name="into"/>: its assets and models move (a model with the same name joins the
@@ -133,13 +133,20 @@ public static class BrandEndpoints
         await db.Assets.AllSites().Where(a => a.BrandId == into.Id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Manufacturer, into.Name), ct);
     }
 
-    /// <summary>The page picked a brand and model: the asset takes their ids and their names as text (none clears both).</summary>
+    /// <summary>
+    /// The page picked a brand and model: the asset takes their ids and their names as text. An empty pick clears the text only
+    /// when the asset had that brand or model linked; text the lists couldn't link (a model with no maker, a model not in the
+    /// list yet) stays as the page sent it, since the page can't show it.
+    /// </summary>
     internal static async Task SetAsync(CmmsDbContext db, Asset asset, Guid? brandId, Guid? modelId, CancellationToken ct)
     {
+        var (hadBrand, hadModel) = (asset.BrandId, asset.ModelId);
         asset.BrandId = brandId;
         asset.ModelId = brandId is null ? null : modelId;
-        asset.Manufacturer = brandId is { } b ? await db.Brands.Where(x => x.Id == b).Select(x => x.Name).FirstAsync(ct) : null;
-        asset.Model = asset.ModelId is { } mm ? await db.BrandModels.Where(x => x.Id == mm).Select(x => x.Name).FirstAsync(ct) : null;
+        if (brandId is { } b) asset.Manufacturer = await db.Brands.Where(x => x.Id == b).Select(x => x.Name).FirstAsync(ct);
+        else if (hadBrand is not null) { asset.Manufacturer = null; asset.Model = null; }
+        if (asset.ModelId is { } mm) asset.Model = await db.BrandModels.Where(x => x.Id == mm).Select(x => x.Name).FirstAsync(ct);
+        else if (hadModel is not null) asset.Model = null;
     }
 
     /// <summary>What's wrong with a picked brand and model; an inactive one may stay when it's already the asset's.</summary>

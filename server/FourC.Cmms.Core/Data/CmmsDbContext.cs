@@ -393,14 +393,14 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<Brand>(e =>
         {
             ConfigureTenantEntity(e);
-            e.Property(x => x.Name).HasMaxLength(100);
+            e.Property(x => x.Name).HasMaxLength(200);
             e.HasMany(x => x.Models).WithOne().HasForeignKey(x => x.BrandId).OnDelete(DeleteBehavior.NoAction);
             e.HasIndex(x => new { x.TenantId, x.Name }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
         b.Entity<BrandModel>(e =>
         {
             ConfigureTenantEntity(e);
-            e.Property(x => x.Name).HasMaxLength(100);
+            e.Property(x => x.Name).HasMaxLength(200);
             e.HasIndex(x => new { x.TenantId, x.BrandId, x.Name }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
         b.Entity<Asset>().HasOne<Brand>().WithMany().HasForeignKey(x => x.BrandId).OnDelete(DeleteBehavior.NoAction);

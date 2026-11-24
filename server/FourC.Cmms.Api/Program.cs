@@ -124,7 +124,8 @@ if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
         app.Logger.LogInformation("Turned on READ_COMMITTED_SNAPSHOT: reads no longer wait for other people's unsaved work.");
     await FourC.Cmms.Core.Services.DueBackfill.RunAsync(db);
     // Brands, models and units from the texts records carry (0.21.0): builds the starting lists on upgrade, then a few queries.
-    await FourC.Cmms.Core.Services.ReferenceLists.ReconcileAllAsync(db);
+    await FourC.Cmms.Core.Services.ReferenceLists.ReconcileAllAsync(db, failed: (tenant, e) =>
+        app.Logger.LogError(e, "Couldn't build the brand, model and unit lists for organization {Tenant}; it keeps working without them.", tenant));
 }
 
 // The app says which language it shows (Accept-Language); messages come back in it. Only the wording changes: numbers

@@ -1132,5 +1132,6 @@
  "Per-asset templates and spread aren't available for a PM on an asset group.": "القوالب الخاصة بكل أصل والتوزيع غير متاحة لصيانة وقائية على مجموعة أصول.",
  "The asset group is inactive.": "مجموعة الأصول غير نشطة.",
  "Asset group {0} not found.": "لم يتم العثور على مجموعة الأصول {0}.",
- "The asset isn't at the group's site.": "الأصل ليس في موقع المجموعة."
+ "The asset isn't at the group's site.": "الأصل ليس في موقع المجموعة.",
+ "A name can be at most 200 characters.": "يمكن أن يكون الاسم 200 حرف على الأكثر."
 }

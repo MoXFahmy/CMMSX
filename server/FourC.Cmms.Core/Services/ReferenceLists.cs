@@ -25,10 +25,14 @@ public static class ReferenceLists
     public static string Tidy(string s) => string.Join(' ', s.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
     private static string Key(string s) => Tidy(s).ToLowerInvariant();
 
-    public static async Task ReconcileAllAsync(CmmsDbContext db, CancellationToken ct = default)
+    /// <summary>Every organization, each on its own: one organization's data can't stop the others (or the start-up).</summary>
+    public static async Task ReconcileAllAsync(CmmsDbContext db, CancellationToken ct = default, Action<Guid, Exception>? failed = null)
     {
         foreach (var tenant in await db.Tenants.IgnoreQueryFilters().Select(t => t.Id).ToListAsync(ct))
-            await ReconcileAsync(db, tenant, ct);
+        {
+            try { await ReconcileAsync(db, tenant, ct); }
+            catch (Exception e) when (e is not OperationCanceledException) { db.ChangeTracker.Clear(); failed?.Invoke(tenant, e); }
+        }
     }
 
     /// <summary>One organization: the brands, models and units added.</summary>

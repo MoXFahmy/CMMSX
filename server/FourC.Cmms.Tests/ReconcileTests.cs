@@ -66,4 +66,20 @@ public class ReconcileTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var asset = (await Ok(await o.Admin.GetAsync("/api/assets?search=AC-1"))).GetProperty("items")[0];
         Assert.Equal(Id(brand), (await Ok(await o.Admin.GetAsync($"/api/assets/{Id(asset)}"))).GetProperty("brandId").GetGuid());
     }
+
+    /// <summary>Review fix: a manufacturer or model as long as an asset allows (200) joins the lists instead of failing the run (and the start-up).</summary>
+    [SkippableFact]
+    public async Task Long_names_join_the_lists()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var maker = "Very long manufacturer name " + new string('m', 140);
+        var model = "Very long model " + new string('x', 150);
+        await OldAssetAsync(o.Admin, o.Site, "Long", maker, model);
+        Assert.Equal((1, 1, 1), await Loop.DbAsync(fx, db => ReferenceLists.ReconcileAsync(db, o.Tenant, CancellationToken.None)));
+        var brand = Assert.Single((await Ok(await o.Admin.GetAsync("/api/brands"))).EnumerateArray());
+        Assert.Equal(maker, brand.GetProperty("name").GetString());
+        Assert.Equal(model, brand.GetProperty("models")[0].GetProperty("name").GetString());
+    }
 }
+

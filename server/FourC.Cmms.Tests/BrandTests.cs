@@ -101,4 +101,27 @@ public class BrandTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var d = await DetailAsync(o.Admin, pump);
         Assert.Equal((grundfos, cr10), (d.GetProperty("brandId").GetGuid(), d.GetProperty("modelId").GetGuid()));
     }
+
+    /// <summary>Review fix: assets the lists can't link (a model with no maker, a model not in the list, a copy) keep their text when saved.</summary>
+    [SkippableFact]
+    public async Task Editing_an_unlinked_asset_keeps_its_text_and_copies_keep_the_brand()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var legacy = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/assets", new { name = "Old pump", siteId = o.Site, status = "Active", criticality = "Medium", warrantyType = "None", model = "X-200" })));
+        await Ok(await SaveAsync(o.Admin, legacy, new { name = "Old pump renamed", manufacturer = (string?)null, model = "X-200", brandId = (Guid?)null, modelId = (Guid?)null, managesBrand = true }));
+        Assert.Equal("X-200", (await DetailAsync(o.Admin, legacy)).GetProperty("model").GetString());
+
+        var grundfos = await BrandAsync(o.Admin, "Grundfos");
+        var cr10 = await ModelAsync(o.Admin, grundfos, "CR 10");
+        var pump = await AssetAsync(o.Admin, o.Site, "Pump", grundfos, null);
+        await Ok(await SaveAsync(o.Admin, pump, new { manufacturer = "Grundfos", model = "CR 99", brandId = grundfos, modelId = (Guid?)null, managesBrand = true }));
+        Assert.Equal("CR 99", (await DetailAsync(o.Admin, pump)).GetProperty("model").GetString());
+
+        var linked = await AssetAsync(o.Admin, o.Site, "Linked pump", grundfos, cr10);
+        var copy = Id(await Ok(await o.Admin.PostAsync($"/api/assets/{linked}/duplicate", null)));
+        var c = await DetailAsync(o.Admin, copy);
+        Assert.Equal((grundfos, cr10, "Grundfos", "CR 10"), (c.GetProperty("brandId").GetGuid(), c.GetProperty("modelId").GetGuid(), c.GetProperty("manufacturer").GetString(), c.GetProperty("model").GetString()));
+    }
 }
+

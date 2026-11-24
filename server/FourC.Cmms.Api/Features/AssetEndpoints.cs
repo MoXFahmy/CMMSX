@@ -261,7 +261,7 @@ public static class AssetEndpoints
             {
                 AssetNumber = await NextAssetNumberAsync(db, tenant.Settings, ct, src.SiteId), Name = src.Name, Description = src.Description, CategoryId = src.CategoryId,
                 SiteId = src.SiteId, LocationId = src.LocationId, ParentAssetId = src.ParentAssetId, Status = src.Status, Criticality = src.Criticality,
-                Manufacturer = src.Manufacturer, Model = src.Model, OperationNumber = src.OperationNumber, PurchasePrice = src.PurchasePrice,
+                Manufacturer = src.Manufacturer, Model = src.Model, BrandId = src.BrandId, ModelId = src.ModelId, OperationNumber = src.OperationNumber, PurchasePrice = src.PurchasePrice,
                 ExpectedLifeYears = src.ExpectedLifeYears, DowntimeCostPerHour = src.DowntimeCostPerHour, WarrantyType = src.WarrantyType,
                 Notes = src.Notes, NotesToTechnician = src.NotesToTechnician, CustomFields = new(src.CustomFields),
             };

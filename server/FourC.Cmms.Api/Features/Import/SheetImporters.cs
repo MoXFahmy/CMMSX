@@ -1546,7 +1546,7 @@ internal sealed class BrandModelImporter : ISheetImporter
         var active = row.Get<bool?>("active");
         var shown = modelName.Length == 0 ? brandName : $"{brandName} · {modelName}";
         if (brandName.Length == 0) row.Problem(Translator.T($"{row.Sheet.Column("brand").Heading} is required."));
-        if (brandName.Length > 100 || modelName.Length > 100) row.Problem(Translator.T("A name can be at most 100 characters."));
+        if (brandName.Length > 200 || modelName.Length > 200) row.Problem(Translator.T("A name can be at most 200 characters."));
         if (row.HasProblems) return Task.FromResult(ImportRun.Problem(row, shown));
         var heading = row.Sheet.Column("active").Heading;
         if (!_brands.TryGetValue(brandName, out var brand))
