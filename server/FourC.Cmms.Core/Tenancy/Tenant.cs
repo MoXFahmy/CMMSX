@@ -28,6 +28,8 @@ public class TenantSettings
     public bool AutoNumberAssets { get; set; } = true;
     public string WorkOrderNumberPrefix { get; set; } = "WO-";
     public string WorkRequestNumberPrefix { get; set; } = "WR-";
+    /// <summary>0.21.0: numbers (not assets') restart each year with the year in them: WO-2027-00001.</summary>
+    public bool RestartNumbersYearly { get; set; }
     /// <summary>Require "action taken" notes before a work order can be completed.</summary>
     public bool RequireCompletionNotes { get; set; } = true;
     /// <summary>Completing a work order needs at least one labour entry.</summary>
