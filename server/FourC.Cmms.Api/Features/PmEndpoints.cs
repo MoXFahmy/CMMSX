@@ -34,7 +34,7 @@ public static class PmEndpoints
         bool? ManagesRules = null, List<Core.Assets.AssetStatus>? SkipStatusesOverride = null, List<DayOfWeek>? NonWorkingDaysOverride = null, bool? NoStackingOverride = null,
         List<AssetTemplateInput>? AssetTemplates = null, List<Guid>? CalendarIds = null, List<ExtraMeterInput>? ExtraMeters = null,
         MultiAssetMode? MultiAssetMode = null, GroupPlan? GroupPlan = null, int? SpreadParts = null, Guid? ContractId = null, bool? ManagesContract = null,
-        Guid? CostCentreId = null, bool? ManagesCostCentre = null);
+        Guid? CostCentreId = null, bool? ManagesCostCentre = null, Guid? AssetGroupId = null, bool? ManagesAssetGroup = null);
     /// <summary>A meter trigger on top of the PM's own (0.12.0), whichever comes first.</summary>
     public sealed record ExtraMeterInput(Guid MeterId, decimal Interval, decimal? NextDueReading = null);
     /// <summary>A multi-asset PM's asset with its own template (empty = the PM's).</summary>
@@ -202,7 +202,8 @@ public static class PmEndpoints
                 s.Id, s.Code, s.Name, s.Description, s.SiteId, s.LocationId, s.AssetId, Asset = s.Asset is null ? null : new { s.Asset.Id, s.Asset.AssetNumber, s.Asset.Name },
                 Assets = s.Assets.Where(a => a.Asset is not null).OrderBy(a => a.Sequence).Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name, a.PmTaskId }),
                 s.SkipStatusesOverride, s.NonWorkingDaysOverride, s.NoStackingOverride, s.MultiAssetMode, s.GroupPlan, s.SpreadParts, s.SpreadIndex, s.CycleStart,
-                s.TradeId, s.TeamId, s.Priority, s.AssigneeIds, s.RecipientIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, s.PmTask.Name }, s.OnlyWhenStopped, s.ContractId, s.CostCentreId,
+                s.TradeId, s.TeamId, s.Priority, s.AssigneeIds, s.RecipientIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, s.PmTask.Name }, s.OnlyWhenStopped, s.ContractId, s.CostCentreId, s.AssetGroupId,
+                GroupAssets = await GroupAssetsAsync(db, s, ct),
                 ExtraTasks = s.ExtraTasks.Select(e => new { e.PmTaskId, e.EveryNth }), s.Type, s.Basis, s.Frequency, s.Unit, s.WeekOfMonth, s.DayOfWeek, s.DayOfMonth,
                 s.WorkPeriodDays, s.WholeMonth, s.LeadDays, s.StartDate, s.NextDueDate, s.LastDueDate, s.LastGeneratedAt, s.GenerationCount,
                 s.MeterId, Meter = s.Meter is null ? null : new { s.Meter.Id, s.Meter.Code, s.Meter.Name, s.Meter.Unit, s.Meter.CurrentReading },
@@ -276,6 +277,8 @@ public static class PmEndpoints
             // send is a choice.
             if (input.ManagesTeam != true && input.TeamId is null && s.TeamId is { } keep)
                 input = input with { TeamId = await db.Teams.AllSites().AnyAsync(t => t.Id == keep && (t.SiteId == null || t.SiteId == input.SiteId), ct) ? keep : null };
+            // Pages from before asset groups (0.21.0) don't send the group: an edit from them keeps it.
+            if (input.ManagesAssetGroup != true && input.AssetGroupId is null && s.AssetGroupId is { } keepGroup) input = input with { AssetGroupId = keepGroup };
             var v = await ValidateScheduleAsync(input, id, db, ct, hidden);
             if (coversHidden is not null) v.Add("assetIds", coversHidden);
             if (input.ManagesContract == true && input.ContractId is { } contract && contract != s.ContractId
@@ -656,7 +659,7 @@ public static class PmEndpoints
             .When(i.Type == PmScheduleType.DateOfMonth && i.DayOfMonth is not (>= 1 and <= 31), "dayOfMonth", "Choose a day between 1 and 31.")
             .When(id is null && i.Type != PmScheduleType.Meter && i.StartDate < Today.AddDays(-366), "startDate", "Start date is more than a year in the past.");
         var round = i.AssetIds ?? [];
-        if (i.AssetId is null && i.LocationId is null && round.Count == 0) v.Add("assetId", "Choose the asset or location to maintain.");
+        if (i.AssetId is null && i.LocationId is null && round.Count == 0 && i.AssetGroupId is null) v.Add("assetId", "Choose the asset or location to maintain.");
         // Shared calendars and extra meters (0.12.0).
         var calendars = (i.CalendarIds ?? []).Distinct().Count();
         if (i.Type == PmScheduleType.Calendar && calendars == 0) v.Add("calendarIds", "Choose at least one calendar.");
@@ -667,13 +670,13 @@ public static class PmEndpoints
         else if (extra.Any(m => m.Interval <= 0)) v.Add("extraMeters", "Each extra meter needs an interval above zero.");
         else if (extra.GroupBy(m => m.MeterId).Any(g => g.Count() > 1) || extra.Any(m => i.Type == PmScheduleType.Meter && m.MeterId == i.MeterId))
             v.Add("extraMeters", "List each meter once.");
-        else if (extra.Count > 0 && round.Count > 0) v.Add("extraMeters", "Extra meters need a single asset.");
+        else if (extra.Count > 0 && (round.Count > 0 || i.AssetGroupId is not null)) v.Add("extraMeters", "Extra meters need a single asset.");
         if (i.SpreadParts is >= 2 && (i.Type != PmScheduleType.FixedInterval || i.Basis != PmBasis.Scheduled || calendars > 0 || extra.Count > 0))
             v.Add("spreadParts", "Spread needs a fixed interval, the Scheduled basis, and no calendars or extra meters.");
         else if (i.SpreadParts is >= 2 && (round.Count < 2 || i.SpreadParts > round.Count)) v.Add("spreadParts", $"Spread over 2 to {Math.Max(2, round.Count)} parts.");
         else if (i.SpreadParts is >= 2 && i.SpreadParts > ShortestPeriodDays(i.Frequency, i.Unit))
             v.Add("spreadParts", string.Format(SpreadDays, ShortestPeriodDays(i.Frequency, i.Unit)));
-        if (i.MultiAssetMode == MultiAssetMode.Group && round.Count < 2) v.Add("multiAssetMode", "Choose several assets for a group.");
+        if (i.MultiAssetMode == MultiAssetMode.Group && round.Count < 2 && i.AssetGroupId is null) v.Add("multiAssetMode", "Choose several assets for a group.");
         else if (i.MultiAssetMode == MultiAssetMode.Group && i.Basis == PmBasis.Actual) v.Add("multiAssetMode", "Groups need the Scheduled basis.");
         if ((i.ExtraTasks ?? []).Any(e => e.EveryNth is < 2 or > 1000)) v.Add("extraTasks", "\"Every Nth\" must be between 2 and 1000.");
         if (i.Type == PmScheduleType.Meter)
@@ -757,6 +760,15 @@ public static class PmEndpoints
         Access.RequireLocation(db, v, i.LocationId);
         var currentTeam = id is { } sid ? await db.PmSchedules.Where(x => x.Id == sid).Select(x => x.TeamId).FirstOrDefaultAsync(ct) : null;
         await TeamEndpoints.CheckForWorkAsync(db, v, i.TeamId, i.SiteId, currentTeam, ct);
+        if (i.AssetGroupId is { } groupId)
+        {
+            // A PM on an asset group (0.21.0) covers its members at the PM's site; it can't also name assets.
+            var group = await db.AssetGroups.Where(x => x.Id == groupId).Select(x => new { x.SiteId }).FirstOrDefaultAsync(ct);
+            if (group is null) v.Add("assetGroupId", "Choose an asset group.");
+            else if (group.SiteId is { } groupSite && groupSite != i.SiteId) v.Add("assetGroupId", "Choose a group of this PM's site or a shared group.");
+            if (i.Type == PmScheduleType.Meter) v.Add("assetGroupId", "Meter schedules cannot cover several assets.");
+            if ((i.AssetTemplates?.Count ?? 0) > 0 || i.SpreadParts is >= 2) v.Add("assetGroupId", "Per-asset templates and spread aren't available for a PM on an asset group.");
+        }
         var round = i.AssetIds ?? [];
         if (round.Count > 100) v.Add("assetIds", "List at most 100 assets.");
         else if (round.Count > 0)
@@ -819,6 +831,15 @@ public static class PmEndpoints
     public const string NoStepsWarning = "These assets get no checklist steps: {0}.";
 
     /// <summary>What to point out after saving (0.12.0): a multi-asset PM's assets whose template has no steps.</summary>
+    /// <summary>The members a PM on an asset group would cover today (0.21.0), in round order; empty for other PMs.</summary>
+    private static async Task<object[]> GroupAssetsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct)
+    {
+        if (s.AssetGroupId is null) return [];
+        var ids = (await PmGenerator.RoundAssetsAsync(db, s, ct)).Select(a => a.Id).ToList();
+        var names = await db.Assets.AllSites().AsNoTracking().Where(a => ids.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => new { a.Id, a.AssetNumber, a.Name }, ct);
+        return ids.Where(names.ContainsKey).Select(id => (object)names[id]).ToArray();
+    }
+
     internal static async Task<List<string>> WarningsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct)
     {
         if (s.Assets.Count == 0) return [];
@@ -868,7 +889,10 @@ public static class PmEndpoints
         s.MeterInterval = i.MeterInterval; s.LowerLimit = i.LowerLimit; s.UpperLimit = i.UpperLimit; s.LowerTaskId = i.LowerTaskId; s.UpperTaskId = i.UpperTaskId;
         s.TimeBased = i.Type == PmScheduleType.Meter && i.TimeBased;
         if (i.NextDueReading is not null) s.NextDueReading = i.NextDueReading;
-        var listed = (i.AssetIds ?? []).Distinct().ToList();
+        // An asset group (0.21.0) replaces the asset and the list: each generation takes its members.
+        s.AssetGroupId = i.AssetGroupId;
+        if (s.AssetGroupId is not null) s.AssetId = null;
+        var listed = s.AssetGroupId is null ? (i.AssetIds ?? []).Distinct().ToList() : [];
         s.Assets.RemoveAll(a => !listed.Contains(a.AssetId));
         for (var n = 0; n < listed.Count; n++)
         {

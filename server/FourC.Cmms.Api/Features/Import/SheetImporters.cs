@@ -19,7 +19,7 @@ internal static class SheetImporters
     [
         new SiteImporter(), new CostCentreImporter(), new BudgetImporter(), new LocationImporter(), new CategoryImporter(), new BrandModelImporter(), new TradeImporter(), new PartGroupImporter(),
         new SymptomImporter(), new CauseImporter(), new RemedyImporter(),
-        new SupplierImporter(), new StoreImporter(), new AssetImporter(), new PeopleImporter(), new PartImporter(), new StockImporter(),
+        new SupplierImporter(), new StoreImporter(), new AssetImporter(), new AssetGroupImporter(), new AssetGroupMemberImporter(), new PeopleImporter(), new PartImporter(), new StockImporter(),
         new SupplierCatalogueImporter(), new AssetPartImporter(), new PmTaskImporter(), new MeasurementPointImporter(), new PmStepImporter(), new PmPartImporter(), new PmScheduleImporter(),
     ];
 
@@ -1366,7 +1366,8 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
         ["startDate"] = s.StartDate, ["leadDays"] = s.LeadDays, ["workPeriodDays"] = s.WorkPeriodDays,
         ["assignees"] = s.AssigneeIds.Select(id => c.CodeOf.GetValueOrDefault(id)).OfType<string>().ToList(), ["description"] = s.Description, ["active"] = s.IsActive,
         ["costCentreCode"] = s.CostCentreId is { } scc ? c.CodeOf.GetValueOrDefault(scc) : null,
-        ["multiAssetMode"] = s.Assets.Count > 0 ? s.MultiAssetMode : null,
+        ["assetGroupCode"] = s.AssetGroupId is { } sag ? c.CodeOf.GetValueOrDefault(sag) : null,
+        ["multiAssetMode"] = PmRound.IsRound(s) ? s.MultiAssetMode : null,
     };
 
     protected override Dictionary<string, object?> Defaults() => new()
@@ -1410,7 +1411,8 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
             existing?.TeamId, // the sheet has no team column: the schedule keeps its team
             // 0.12.0: the sheet doesn't hold calendars, so a PM keeps its own; its multi-asset mode follows the screen's rules.
             CalendarIds: existing?.Calendars.Select(x => x.ScheduleCalendarId).ToList(), MultiAssetMode: v.GetValueOrDefault("multiAssetMode") as MultiAssetMode?,
-            CostCentreId: Ref(row, c.CostCentres, S(v, "costCentreCode"), "Cost centre"), ManagesCostCentre: true);
+            CostCentreId: Ref(row, c.CostCentres, S(v, "costCentreCode"), "Cost centre"), ManagesCostCentre: true,
+            AssetGroupId: Ref(row, c.AssetGroups, S(v, "assetGroupCode"), "Asset group"), ManagesAssetGroup: true);
         var rules = PmEndpoints.PmScheduleRules(input, existing?.Id);
         if (existing is not null) rules.Merge(PmEndpoints.ScheduleChangeRules(existing, input));
         if (!Accept(row, rules)) return Task.FromResult<PmSchedule?>(null);
@@ -1576,5 +1578,81 @@ internal sealed class BrandModelImporter : ISheetImporter
     }
 
     public Task FinishAsync(ImportContext c, CancellationToken ct) => Task.CompletedTask;
+}
+
+/// <summary>Asset groups (0.21.0): code, name, site (empty = every site), active.</summary>
+internal sealed class AssetGroupImporter : RecordImporter<FourC.Cmms.Core.Assets.AssetGroup>
+{
+    public override string Sheet => "AssetGroups";
+    public override IReadOnlyList<string> KeyColumns => ["code"];
+
+    public override async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        var codes = Codes(rows, "code");
+        Keep(await ByKey(c.Db.AssetGroups.Where(x => codes.Contains(x.Code)), x => x.Code, ct));
+    }
+
+    protected override Dictionary<string, object?> Values(ImportContext c, FourC.Cmms.Core.Assets.AssetGroup x) => new()
+    {
+        ["code"] = x.Code, ["name"] = x.Name, ["siteCode"] = x.SiteId is { } s ? c.CodeOf.GetValueOrDefault(s) : null, ["active"] = x.IsActive,
+    };
+
+    protected override Dictionary<string, object?> Defaults() => new() { ["active"] = true };
+
+    protected override Task<FourC.Cmms.Core.Assets.AssetGroup?> SaveAsync(ImportContext c, ImportRow row, FourC.Cmms.Core.Assets.AssetGroup? existing,
+        Dictionary<string, object?> v, CancellationToken ct)
+    {
+        if (S(v, "name") is null) row.Problem(Translator.T($"{row.Sheet.Column("name").Heading} is required."));
+        var siteId = Ref(row, c.Sites, S(v, "siteCode"), "Site");
+        if (row.HasProblems) return Task.FromResult<FourC.Cmms.Core.Assets.AssetGroup?>(null);
+        var item = existing ?? new FourC.Cmms.Core.Assets.AssetGroup { Code = "", Name = "" };
+        item.Code = S(v, "code")!.Trim(); item.Name = S(v, "name")!.Trim(); item.SiteId = siteId; item.IsActive = B(v, "active", true);
+        if (existing is not null) return Task.FromResult<FourC.Cmms.Core.Assets.AssetGroup?>(null);
+        c.Db.AssetGroups.Add(item);
+        return Task.FromResult<FourC.Cmms.Core.Assets.AssetGroup?>(item);
+    }
+
+    protected override void Remember(ImportContext c, FourC.Cmms.Core.Assets.AssetGroup x, Dictionary<string, object?> v) => c.Remember(c.AssetGroups, x.Code, x.Id);
+}
+
+/// <summary>Asset group members (0.21.0): one row per group and asset; importing adds members and never removes any.</summary>
+internal sealed class AssetGroupMemberImporter : ISheetImporter
+{
+    private readonly HashSet<(Guid Group, Guid Asset)> _have = [];
+    private readonly HashSet<(Guid Group, Guid Asset)> _adding = [];
+    private readonly Dictionary<Guid, Guid?> _groupSites = [];
+
+    public string Sheet => "AssetGroupMembers";
+    public IReadOnlyList<string> KeyColumns => ["groupCode", "assetNumber"];
+    public string KeyOf(ImportRow row) => string.Join('|', KeyColumns.Select(k => row.Get<string>(k)?.Trim().ToLowerInvariant() ?? ""));
+
+    public async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        foreach (var m in await c.Db.AssetGroupMembers.AsNoTracking().ToListAsync(ct)) _have.Add((m.AssetGroupId, m.AssetId));
+        foreach (var g in await c.Db.AssetGroups.AsNoTracking().Select(x => new { x.Id, x.SiteId }).ToListAsync(ct)) _groupSites[g.Id] = g.SiteId;
+    }
+
+    public Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        var code = row.Get<string>("groupCode")?.Trim();
+        var number = row.Get<string>("assetNumber")?.Trim();
+        var shown = $"{code} · {number}";
+        Guid group = Guid.Empty, asset = Guid.Empty;
+        if (code is not null && !c.AssetGroups.TryGetValue(code, out group)) row.Problem(Translator.T($"Asset group {code} not found."));
+        if (number is not null && !c.Assets.TryGetValue(number, out asset)) row.Problem(Translator.T($"Asset {number} not found."));
+        // A site's group takes only that site's assets (a group added earlier in this import is found among the new ones).
+        var site = _groupSites.TryGetValue(group, out var known) ? known : c.Db.AssetGroups.Local.FirstOrDefault(x => x.Id == group)?.SiteId;
+        if (!row.HasProblems && site is { } only && c.AssetSites.TryGetValue(asset, out var assetSite) && assetSite != only)
+            row.Problem(Translator.T("The asset isn't at the group's site."));
+        if (row.HasProblems) return Task.FromResult(ImportRun.Problem(row, shown));
+        if (_have.Contains((group, asset)) || !_adding.Add((group, asset))) return Task.FromResult(new RowResult(row.Number, shown, RowOutcome.Unchanged, [], []));
+        return Task.FromResult(new RowResult(row.Number, shown, RowOutcome.New, [], []));
+    }
+
+    public Task FinishAsync(ImportContext c, CancellationToken ct)
+    {
+        foreach (var (group, asset) in _adding) c.Db.AssetGroupMembers.Add(new FourC.Cmms.Core.Assets.AssetGroupMember { AssetGroupId = group, AssetId = asset });
+        return Task.CompletedTask;
+    }
 }
 

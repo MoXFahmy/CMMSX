@@ -69,6 +69,9 @@ public static class ImportSheets
             T("notesToTechnician", "Notes to technician", "ملاحظات للفني"), T("costCentreCode", "Cost centre code", "رمز مركز التكلفة"), Active]),
         new("Categories", "Categories", "الفئات", [Code, Name, T("color", "Color", "اللون"), N("downtimeCostPerHour", "Downtime cost per hour", "تكلفة التوقف للساعة"), Active]),
         // 0.21.0: a brand row (no model) or a model row; Active applies to the model when there is one, else to the brand.
+        // 0.21.0: asset groups and their members (re-importing members adds, never removes).
+        new("AssetGroups", "Asset groups", "مجموعات الأصول", [Code, Name, T("siteCode", "Site code", "رمز الموقع"), Active]),
+        new("AssetGroupMembers", "Asset group members", "أعضاء مجموعات الأصول", [T("groupCode", "Group code", "رمز المجموعة", true), T("assetNumber", "Asset number", "رقم الأصل", true)]),
         new("BrandsAndModels", "Brands and models", "العلامات التجارية والطرازات", [T("brand", "Brand", "العلامة التجارية", true), T("model", "Model", "الطراز"), Active]),
         new("Trades", "Trades", "التخصصات", [Code, Name, T("color", "Color", "اللون"), Active]),
         new("PartGroups", "Part groups", "مجموعات القطع", [Code, Name, Active]),
@@ -137,7 +140,7 @@ public static class ImportSheets
             C<WeekOfMonth>("weekOfMonth", "Week of month", "أسبوع الشهر"), C<DayOfWeek>("weekday", "Weekday", "يوم الأسبوع"),
             I("dayOfMonth", "Day of month", "يوم الشهر"), D("startDate", "Start date", "تاريخ البدء", true), I("leadDays", "Lead days", "أيام التقديم"),
             I("workPeriodDays", "Work period days", "أيام فترة العمل"), L("assignees", "Assignees", "المكلفون"),
-            C<MultiAssetMode>("multiAssetMode", "Multi-asset mode", "وضع الأصول المتعددة"), Description, T("costCentreCode", "Cost centre code", "رمز مركز التكلفة"), Active]),
+            C<MultiAssetMode>("multiAssetMode", "Multi-asset mode", "وضع الأصول المتعددة"), Description, T("costCentreCode", "Cost centre code", "رمز مركز التكلفة"), T("assetGroupCode", "Asset group code", "رمز مجموعة الأصول"), Active]),
     ];
 
     /// <summary>

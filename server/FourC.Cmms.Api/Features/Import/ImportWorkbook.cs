@@ -138,6 +138,11 @@ public static class ImportWorkbook
                     .Select(b => new Dictionary<string, object?> { ["costCentreCode"] = b.Code, ["year"] = b.Year, ["month"] = b.Month, ["amount"] = b.Amount }).ToList();
             case "Locations": return Of(new LocationImporter(), c, await db.Locations.AsNoTracking().OrderBy(x => x.Path).Take(take).ToListAsync(ct));
             case "Categories": return Of(new CategoryImporter(), c, await db.AssetCategories.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
+            case "AssetGroups": return Of(new AssetGroupImporter(), c, await db.AssetGroups.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
+            case "AssetGroupMembers":
+                return (await (from m in db.AssetGroupMembers.AsNoTracking() join g in db.AssetGroups on m.AssetGroupId equals g.Id join a in db.Assets on m.AssetId equals a.Id
+                               orderby g.Code, a.AssetNumber select new { g.Code, a.AssetNumber }).Take(take).ToListAsync(ct))
+                    .Select(x => new Dictionary<string, object?> { ["groupCode"] = x.Code, ["assetNumber"] = x.AssetNumber }).ToList();
             case "BrandsAndModels":
             {
                 // A row per brand (its own active) and one per model, so the file imports back with no changes.

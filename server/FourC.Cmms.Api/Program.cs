@@ -180,6 +180,7 @@ api.MapCostCentreEndpoints();
 api.MapBudgetEndpoints();
 api.MapBrandEndpoints();
 api.MapUnitEndpoints();
+api.MapAssetGroupEndpoints();
 api.MapPmEndpoints();
 api.MapPmCalendarEndpoints();
 api.MapMeasurementPointEndpoints();

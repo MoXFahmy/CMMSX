@@ -11,6 +11,9 @@ public sealed record RoundStep(Guid AssetId, int Sequence, string Description);
 public static class PmRound
 {
     /// <summary>The listed assets that the round's work order covers: available ones of the schedule's site, in list order.</summary>
+    /// <summary>A round or group PM: it covers listed assets, or an asset group's members (0.21.0).</summary>
+    public static bool IsRound(PmSchedule s) => s.Assets.Count > 0 || s.AssetGroupId != null;
+
     public static IReadOnlyList<RoundAsset> Covered(IEnumerable<RoundAsset> listed, Guid siteId) =>
         listed.Where(a => a.Available && a.SiteId == siteId).OrderBy(a => a.Sequence).ToList();
 

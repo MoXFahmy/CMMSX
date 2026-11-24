@@ -21,7 +21,7 @@ public static class AssetEndpoints
         decimal? ExpectedLifeYears, decimal? DowntimeCostPerHour, WarrantyType WarrantyType, DateOnly? WarrantyExpiresOn, string? WarrantyNotes,
         string? Notes, string? NotesToTechnician, Dictionary<string, string?>? CustomFields, string? RowVersion = null,
         decimal? RunsHoursPerDay = null, List<DayOfWeek>? RunsOn = null, bool? OnlyWhenStopped = null, Guid? CostCentreId = null, bool? ManagesCostCentre = null,
-        Guid? BrandId = null, Guid? ModelId = null, bool? ManagesBrand = null);
+        Guid? BrandId = null, Guid? ModelId = null, bool? ManagesBrand = null, List<Guid>? GroupIds = null);
 
     public sealed record TransferInput(Guid SiteId, Guid? LocationId, string? Reason, bool IncludeChildren = true);
     public sealed record BulkInput(Guid[] Ids, AssetStatus? Status, Criticality? Criticality, Guid? CategoryId);
@@ -43,6 +43,8 @@ public static class AssetEndpoints
         /// <summary>0.21.0: by brand or model from the lists.</summary>
         public Guid? BrandId { get; set; }
         public Guid? ModelId { get; set; }
+        /// <summary>0.21.0: members of an asset group.</summary>
+        public Guid? AssetGroupId { get; set; }
         public string? Sort { get; set; }
         public string? Dir { get; set; }
         public int? Page { get; set; }
@@ -146,6 +148,7 @@ public static class AssetEndpoints
                 a.Status, a.Criticality, a.Manufacturer, a.Model, a.SerialNumber, a.Barcode, a.OperationNumber,
                 a.CommissionedOn, a.DisposedOn, a.PurchasePrice, a.CurrentValue, a.SalvageValue, a.ExpectedLifeYears, a.DowntimeCostPerHour,
                 a.WarrantyType, a.WarrantyExpiresOn, a.WarrantyNotes, a.Notes, a.NotesToTechnician, a.CustomFields, a.OnlyWhenStopped, a.CostCentreId, a.BrandId, a.ModelId,
+                GroupIds = db.AssetGroupMembers.Where(m => m.AssetId == a.Id && db.AssetGroups.Any(g => g.Id == m.AssetGroupId)).Select(m => m.AssetGroupId).ToList(),
                 a.RunsHoursPerDay, a.RunsOn,
                 DownSince = await db.DowntimeEvents.Where(e => e.AssetId == id && e.EndedAt == null).Select(e => (DateTimeOffset?)e.StartedAt).FirstOrDefaultAsync(ct),
                 ChildCount = await db.Assets.CountAsync(x => x.ParentAssetId == id, ct),
@@ -186,6 +189,7 @@ public static class AssetEndpoints
             if (!v.IsValid) return v.Problem();
             var asset = await CreateAssetAsync(db, input, custom, tenant.Settings, ct);
             if (input.ManagesBrand == true) await BrandEndpoints.SetAsync(db, asset, input.BrandId, input.ModelId, ct);
+            if (input.GroupIds is { } groups) await AssetGroupEndpoints.SetForAssetAsync(db, asset.Id, asset.SiteId, groups.Distinct().ToList(), ct);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/assets/{asset.Id}", new { asset.Id, asset.AssetNumber });
         }).RequirePermission(Permissions.AssetsCreate);
@@ -199,6 +203,7 @@ public static class AssetEndpoints
             if (input.RowVersion is not null) db.Entry(asset).Property(a => a.RowVersion).OriginalValue = input.RowVersion.ToVersion();
             UpdateAsset(db, asset, input, custom, ctx);
             if (input.ManagesBrand == true) await BrandEndpoints.SetAsync(db, asset, input.BrandId, input.ModelId, ct);
+            if (input.GroupIds is { } groups) await AssetGroupEndpoints.SetForAssetAsync(db, asset.Id, asset.SiteId, groups.Distinct().ToList(), ct);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { asset.Id, RowVersion = Convert.ToBase64String(asset.RowVersion) });
         }).RequirePermission(Permissions.AssetsEdit);
@@ -321,6 +326,7 @@ public static class AssetEndpoints
         if (f.CategoryId is not null) q = q.Where(a => a.CategoryId == f.CategoryId);
         if (f.BrandId is { } brand) q = q.Where(a => a.BrandId == brand);
         if (f.ModelId is { } model) q = q.Where(a => a.ModelId == model);
+        if (f.AssetGroupId is { } grp) { var members = AssetGroupEndpoints.Members(db, grp); q = q.Where(a => members.Contains(a.Id)); }
         if (ParseEnums<AssetStatus>(f.Status) is { Count: > 0 } st) q = q.Where(a => st.Contains(a.Status));
         if (ParseEnums<Criticality>(f.Criticality) is { Count: > 0 } cr) q = q.Where(a => cr.Contains(a.Criticality));
         if (f.ParentAssetId is not null) q = q.Where(a => a.ParentAssetId == f.ParentAssetId);

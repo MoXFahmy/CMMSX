@@ -1119,5 +1119,18 @@
  "Enter a symbol.": "أدخل رمزًا.",
  "New brands: {0}": "علامات تجارية جديدة: {0}",
  "New models: {0}": "طرازات جديدة: {0}",
- "New units: {0}": "وحدات جديدة: {0}"
+ "New units: {0}": "وحدات جديدة: {0}",
+ "This asset group is used by a PM. Make it inactive instead.": "مجموعة الأصول هذه مستخدمة في صيانة وقائية. اجعلها غير نشطة بدلًا من ذلك.",
+ "Change at most 1,000 members at a time.": "غيّر 1,000 عضو على الأكثر في المرة الواحدة.",
+ "An asset wasn't found.": "لم يتم العثور على أصل.",
+ "This group is for {0} only.": "هذه المجموعة مخصصة لـ {0} فقط.",
+ "This group has assets of other sites.": "هذه المجموعة تضم أصولًا من مواقع أخرى.",
+ "An asset group wasn't found.": "لم يتم العثور على مجموعة أصول.",
+ "Choose groups of the asset's site or shared groups.": "اختر مجموعات من موقع الأصل أو مجموعات مشتركة.",
+ "Choose an asset group.": "اختر مجموعة أصول.",
+ "Choose a group of this PM's site or a shared group.": "اختر مجموعة من موقع هذه الصيانة الوقائية أو مجموعة مشتركة.",
+ "Per-asset templates and spread aren't available for a PM on an asset group.": "القوالب الخاصة بكل أصل والتوزيع غير متاحة لصيانة وقائية على مجموعة أصول.",
+ "The asset group is inactive.": "مجموعة الأصول غير نشطة.",
+ "Asset group {0} not found.": "لم يتم العثور على مجموعة الأصول {0}.",
+ "The asset isn't at the group's site.": "الأصل ليس في موقع المجموعة."
 }
