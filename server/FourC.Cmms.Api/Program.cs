@@ -37,7 +37,12 @@ services.AddIdentityCore<AppUser>(o =>
 // Sign-in cookies are encrypted with keys kept in the database, so sessions survive restarts and redeployments.
 services.AddDataProtection().SetApplicationName("FourC.Cmms").PersistKeysToDbContext<CmmsDbContext>();
 
-services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
+// A request carrying an API key (0.26.0) is signed in by the key, never by a cookie it also carries; everything else by the cookie.
+services.AddAuthentication(ApiKeyAuth.Smart)
+    .AddPolicyScheme(ApiKeyAuth.Smart, null, o => o.ForwardDefaultSelector = http => ApiKeyAuth.Read(http.Request) is not null ? ApiKeyAuth.Scheme : IdentityConstants.ApplicationScheme)
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiKeyHandler>(ApiKeyAuth.Scheme, null);
+services.AddAuthentication().AddIdentityCookies();
+services.AddApiKeyLimits(builder.Configuration);
 services.ConfigureApplicationCookie(o =>
 {
     o.Cookie.Name = "cmms.auth";
@@ -77,6 +82,8 @@ switch (builder.Configuration["Storage:Provider"]?.ToLowerInvariant())
 if (builder.Configuration["ForwardedHeaders:ProtoHeaderName"] is { Length: > 0 } protoHeader)
     services.Configure<ForwardedHeadersOptions>(o => o.ForwardedProtoHeaderName = protoHeader);
 services.AddHostedService<PmSchedulerService>();
+services.AddSingleton<FourC.Cmms.Api.Features.Import.ImportWorker>();
+services.AddHostedService(sp => sp.GetRequiredService<FourC.Cmms.Api.Features.Import.ImportWorker>());
 
 // E-mail: queued in the database (outbox) and sent by a background job through SES or SMTP. Without a provider and a
 // From address, e-mail is unavailable: nothing is queued and Settings says so.
@@ -111,7 +118,19 @@ services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
     o.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
 });
-services.AddOpenApi();
+// The API description declares the key scheme (0.26.0), so the docs' "Try it" takes a key.
+services.AddOpenApi(o => o.AddDocumentTransformer((doc, _, _) =>
+{
+    doc.Components ??= new Microsoft.OpenApi.OpenApiComponents();
+    doc.Components.SecuritySchemes ??= new Dictionary<string, Microsoft.OpenApi.IOpenApiSecurityScheme>();
+    doc.Components.SecuritySchemes["ApiKey"] = new Microsoft.OpenApi.OpenApiSecurityScheme
+    {
+        Type = Microsoft.OpenApi.SecuritySchemeType.Http, Scheme = "bearer",
+        Description = "An API key from Settings › API keys: \"Authorization: Bearer cmx_…\" (or the X-Api-Key header).",
+    };
+    doc.Security = [new Microsoft.OpenApi.OpenApiSecurityRequirement { [new Microsoft.OpenApi.OpenApiSecuritySchemeReference("ApiKey", doc)] = [] }];
+    return Task.CompletedTask;
+}));
 
 var app = builder.Build();
 
@@ -142,10 +161,13 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseSiteAccess();
+app.UseRateLimiter();
+app.UseApiKeyRules();
 app.UseAuthorization();
 
-app.MapOpenApi();
-app.MapScalarApiReference("/api/docs");
+// Signed in or with a key (0.26.0): the description isn't public.
+app.MapOpenApi().RequireAuthorization();
+app.MapScalarApiReference("/api/docs").RequireAuthorization();
 
 var api = app.MapGroup("/api");
 var version = app.Configuration["App:Version"] is { Length: > 0 } v ? v : "dev";
@@ -185,6 +207,8 @@ api.MapSecurityEndpoints();
 api.MapActivityEndpoints();
 api.MapAnonymiseEndpoints();
 api.MapStorageEndpoints();
+api.MapServiceAccountEndpoints();
+api.MapApiKeyEndpoints();
 api.MapAssetGroupEndpoints();
 api.MapPmEndpoints();
 api.MapPmCalendarEndpoints();

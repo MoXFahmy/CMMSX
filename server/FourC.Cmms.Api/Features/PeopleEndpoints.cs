@@ -136,7 +136,7 @@ public static class PeopleEndpoints
         if (trades.Count > 0 && await db.Trades.CountAsync(t => trades.Contains(t.Id), ct) != trades.Distinct().Count()) v.Add("tradeIds", "Unknown trade.");
         if (i.UserId is { } uid)
         {
-            if (!await db.Users.AnyAsync(u => u.Id == uid && u.TenantId == db.CurrentTenantId, ct)) v.Add("userId", "Unknown user.");
+            if (!await db.Users.People().AnyAsync(u => u.Id == uid && u.TenantId == db.CurrentTenantId, ct)) v.Add("userId", "Unknown user.");
             else if (await db.Employees.AnyAsync(e => e.UserId == uid && e.Id != id, ct)) v.Add("userId", "This login is already linked to another person.");
         }
         return v;

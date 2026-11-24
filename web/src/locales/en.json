@@ -1619,7 +1619,7 @@
   },
   "import": {
     "title": "Import data",
-    "intro": "Load or update locations, assets, parts and stock, people, suppliers and PM from one Excel workbook. Rows are matched by code: a new code adds a record, a known code updates it. Blank cells keep the current value and nothing is deleted (set Active to No instead). Up to 10 MB and 5,000 rows a sheet.",
+    "intro": "Load or update locations, assets, parts and stock, people, suppliers and PM from one Excel workbook. Rows are matched by code: a new code adds a record, a known code updates it. Blank cells keep the current value and nothing is deleted (set Active to No instead). Up to 20,000 rows in one file and 25 MB.",
     "step1": "1. Get a workbook",
     "template": "Download empty template",
     "current": "Download current data",
@@ -1663,7 +1663,35 @@
       "PmTasks": "PM tasks",
       "PmSteps": "PM steps",
       "PmParts": "PM parts",
-      "PmSchedules": "PM schedules"
+      "PmSchedules": "PM schedules",
+      "Symptoms": "Symptoms",
+      "Causes": "Causes",
+      "Remedies": "Remedies",
+      "CostCentres": "Cost centres",
+      "Budgets": "Budgets",
+      "BrandsAndModels": "Brands and models",
+      "AssetGroups": "Asset groups",
+      "AssetGroupMembers": "Asset group members",
+      "SupplierCatalogue": "Supplier catalogue",
+      "MeasurementPoints": "Measurement points"
+    },
+    "waiting": "Waiting for another import to finish",
+    "starting": "Starting…",
+    "checking": "Checking {{sheet}}… {{done}} of {{total}} rows",
+    "importing": "Importing {{sheet}}… {{done}} of {{total}} rows",
+    "goesOn": "This goes on in the background: you can leave this page. A long one e-mails you when it's done.",
+    "history": "Past checks and imports",
+    "noHistory": "Nothing imported yet",
+    "file": "File",
+    "anImport": "Import",
+    "aCheck": "Check",
+    "by": "By",
+    "took": "Took",
+    "jobStatus": {
+      "Queued": "Waiting",
+      "Running": "Running",
+      "Done": "Done",
+      "Failed": "Failed"
     }
   },
   "downtime": {
@@ -3201,7 +3229,8 @@
       "Web": "Web",
       "Phone": "Phone",
       "Import": "Import",
-      "Job": "Automatic"
+      "Job": "Automatic",
+      "API": "API"
     },
     "actions": {
       "Created": "Created",
@@ -3297,5 +3326,44 @@
     "freeText": "Names typed inside descriptions and comments aren't changed.",
     "typeToConfirm": "Type {{code}} to confirm",
     "done": "Anonymised"
+  },
+  "serviceAccounts": {
+    "new": "New service account",
+    "edit": "Edit service account",
+    "badge": "Service account",
+    "intro": "An account for another system (an ERP, a BI tool, a sensor gateway), not a person. API keys act as it, with its roles and sites. It can't sign in and gets no e-mail.",
+    "namePlaceholder": "SAP integration",
+    "sites": "Sites",
+    "sitesHint": "Empty = every site.",
+    "deleteBody": "Its API keys stop working at once. Its changes stay in the history."
+  },
+  "apiKeys": {
+    "title": "API keys",
+    "intro": "Keys let other systems use CMX as a service account. A key is shown once, when it's made.",
+    "new": "New key",
+    "make": "Make key",
+    "noAccounts": "Make a service account first, under Users.",
+    "account": "Service account",
+    "namePlaceholder": "Power BI nightly",
+    "access": "Access",
+    "readOnly": "Read only",
+    "readOnlyHint": "It can read, but never change anything.",
+    "readWrite": "Read and change",
+    "created": "Made",
+    "expires": "Expires",
+    "never": "Never",
+    "lastUsed": "Last used",
+    "notYet": "Not yet",
+    "revoke": "Revoke",
+    "revokeQuestion": "Revoke the key \"{{name}}\"? It stops working at once.",
+    "onlyOnce": "Copy this key now. You won't see this key again.",
+    "copy": "Copy",
+    "copied": "Copied",
+    "status": {
+      "Active": "Active",
+      "Expired": "Expired",
+      "Revoked": "Revoked",
+      "AccountInactive": "Account inactive"
+    }
   }
 }

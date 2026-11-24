@@ -49,6 +49,12 @@ public sealed record RequestFacts(string Number, string Title, LocalWords Priori
 /// </summary>
 public static class EmailTemplates
 {
+    /// <summary>A background check or import finished (0.26.0).</summary>
+    public static EmailContent ImportFinished(string org, string fileName, bool import, bool ok, IReadOnlyList<(string Label, string? Value)> lines, string? link) => Layout(org,
+        ok ? (import ? $"Import finished: {fileName}" : $"Check finished: {fileName}") : (import ? $"Import failed: {fileName}" : $"Check failed: {fileName}"),
+        ok ? (import ? "Your import has finished" : "Your check has finished") : (import ? "Your import didn't finish" : "Your check didn't finish"),
+        lines, null, link, "Open the import");
+
     public static EmailContent Assigned(string org, WorkOrderFacts w, string? link, bool pm) => Layout(org,
         pm ? $"PM work {w.Number}: {w.Title}" : $"Work order {w.Number}: {w.Title}",
         pm ? "Preventive maintenance has been assigned to you" : "A work order has been assigned to you",

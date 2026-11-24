@@ -58,6 +58,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<CustomFieldDefinition> CustomFields => Set<CustomFieldDefinition>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<PasswordHistory> PasswordHistories => Set<PasswordHistory>();
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
+    public DbSet<FourC.Cmms.Core.Imports.ImportJob> ImportJobs => Set<FourC.Cmms.Core.Imports.ImportJob>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<NumberSequence> NumberSequences => Set<NumberSequence>();
     public DbSet<Trade> Trades => Set<Trade>();
@@ -337,6 +339,29 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         {
             e.HasIndex(x => new { x.UserId, x.SetAt });
             e.HasIndex(x => x.TenantId);
+        });
+
+        b.Entity<FourC.Cmms.Core.Imports.ImportJob>(e =>
+        {
+            e.Property(x => x.Status).HasConversion<string>().HasMaxLength(20);
+            e.Property(x => x.FileName).HasMaxLength(260);
+            e.Property(x => x.StorageKey).HasMaxLength(400);
+            e.Property(x => x.UserName).HasMaxLength(200);
+            e.Property(x => x.Language).HasMaxLength(10);
+            e.Property(x => x.Sheet).HasMaxLength(100);
+            e.Property(x => x.Error).HasMaxLength(1000);
+            e.HasIndex(x => new { x.Status, x.CreatedAt });
+            e.HasIndex(x => new { x.TenantId, x.CreatedAt });
+        });
+
+        b.Entity<ApiKey>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.Property(x => x.Prefix).HasMaxLength(8);
+            e.Property(x => x.Hash).HasMaxLength(64);
+            e.Property(x => x.CreatedByName).HasMaxLength(200);
+            e.HasIndex(x => x.Prefix);
+            e.HasIndex(x => new { x.TenantId, x.ServiceAccountId });
         });
 
         b.Entity<AuditEntry>(e =>
@@ -1393,6 +1418,14 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             WHEN MATCHED AND t.NextValue < {next} THEN UPDATE SET NextValue = {next}
             WHEN NOT MATCHED THEN INSERT (TenantId, Name, NextValue) VALUES ({tenantId}, {name}, {next});
             """, ct);
+    }
+
+    /// <summary>The next number of a sequence without taking it (an import check shows the numbers it would take).</summary>
+    public async Task<long> PeekNextNumberAsync(string name, CancellationToken ct = default)
+    {
+        var tenantId = tenant.TenantId ?? throw new InvalidOperationException("No tenant in context.");
+        var values = await Database.SqlQuery<long>($"SELECT NextValue AS Value FROM NumberSequences WHERE TenantId = {tenantId} AND Name = {name}").ToListAsync(ct);
+        return values.Count == 1 ? values[0] : 1;
     }
 
     /// <summary>Atomically allocates the next number in a per-tenant sequence.</summary>

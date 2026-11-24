@@ -18,6 +18,11 @@ public class AppUser : IdentityUser<Guid>
     public DateTimeOffset? PasswordChangedAt { get; set; }
     /// <summary>"Sign out other devices": sign-ins without a device session (from before 0.4.0) issued before this are refused.</summary>
     public DateTimeOffset? SignedOutBefore { get; set; }
+    /// <summary>
+    /// A service account (0.26.0): a non-person account that API keys act as. It has roles and sites but no password, e-mail
+    /// or phone; it can't sign in, gets no e-mail or push, and is never chosen as a person.
+    /// </summary>
+    public bool IsServiceAccount { get; set; }
     /// <summary>When this sign-in was anonymised (0.25.0): closed for good, its e-mail freed and its name replaced.</summary>
     public DateTimeOffset? AnonymisedAt { get; set; }
     public string? LegacyRef { get; set; }
@@ -145,4 +150,10 @@ public static class Permissions
         new(UsersManage, "Administration", "Manage users and roles"),
         new(SettingsManage, "Administration", "Manage organization settings, categories and custom fields"),
     ];
+}
+
+public static class AppUserQueries
+{
+    /// <summary>People only: service accounts (0.26.0) are left out wherever a person is chosen, e-mailed or listed as one.</summary>
+    public static IQueryable<AppUser> People(this IQueryable<AppUser> users) => users.Where(u => !u.IsServiceAccount);
 }

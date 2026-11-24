@@ -4,10 +4,15 @@ using static FourC.Cmms.Tests.ImportFiles;
 
 namespace FourC.Cmms.Tests;
 
+/// <summary>Timed, so they run on their own (0.26.0): in parallel with the big import tests the machine's load, not the import, sets the time.</summary>
+[CollectionDefinition("Timed imports", DisableParallelization = true)]
+public sealed class TimedImports;
+
 /// <summary>
-/// A full sheet (5,000 rows) must go through well inside the 45-second limit. The bound here is the spec's target for a
-/// check of 5,000 assets (20 s); the test database is local, so production has less room than these numbers show.
+/// A full sheet (5,000 rows) goes through quickly. The bound here is the spec's target for a check of 5,000 assets (20 s);
+/// imports run in the background since 0.26.0, so this guards their speed rather than a request's time limit.
 /// </summary>
+[Collection("Timed imports")]
 public class ImportSpeedTests(ApiFixture fx, ITestOutputHelper output) : IClassFixture<ApiFixture>
 {
     private static readonly TimeSpan Target = TimeSpan.FromSeconds(20);

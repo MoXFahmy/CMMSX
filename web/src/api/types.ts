@@ -149,7 +149,7 @@ export type Attachment = { id: string; fileName: string; contentType: string; si
 export type AuditItem = {
   id: string; action: string; changes?: string; userName?: string; timestamp: string;
   /** 0.25.0: where the change came from, the action it was part of, and the row it was on (a child line of the record, e.g. a labour line). */
-  source?: 'Web' | 'Phone' | 'Import' | 'Job'; changeId?: string; entityType?: string; entityId?: string;
+  source?: 'Web' | 'Phone' | 'Import' | 'API' | 'Job'; changeId?: string; entityType?: string; entityId?: string;
 };
 export type Transfer = { id: string; transferredAt: string; reason?: string; fromSite?: string; fromLocation?: string; toSite?: string; toLocation?: string; transferredBy?: string };
 export type User = {
@@ -159,6 +159,8 @@ export type User = {
   siteIds?: string[]; locationIds?: string[];
   /** When this sign-in was anonymised (0.25.0); it stays closed. */
   anonymisedAt?: string | null;
+  /** A service account (0.26.0): an account for a system, which API keys act as. */
+  isServiceAccount?: boolean;
 };
 /** A named group of technicians that work can be given to (0.9.0). */
 export type Team = {
@@ -519,6 +521,12 @@ export type RowResult = { row: number; key: string; outcome: ImportOutcome; chan
 /** One sheet of a check or import; `rows` lists the new, changed and problem rows (not the unchanged ones). */
 export type SheetResult = { sheet: string; new: number; changed: number; unchanged: number; problems: number; rows: RowResult[]; ignoredColumns: string[] };
 export type ImportResult = { saved: boolean; sheets: SheetResult[]; newLookups: string[]; notes: string[]; stopped: string | null };
+/** A check or import running in the background (0.26.0). `result` comes with one job, not in the history list. */
+export type ImportJob = {
+  id: string; save: boolean; status: 'Queued' | 'Running' | 'Done' | 'Failed'; fileName: string; userName?: string | null;
+  createdAt: string; startedAt?: string | null; finishedAt?: string | null; sheet?: string | null; rowsDone: number; rowsTotal: number;
+  waitingBehind: number; error?: string | null; result?: ImportResult | null;
+};
 
 /** Service contracts (0.17.0). */
 export type ContractStatus = 'Upcoming' | 'Active' | 'Expired' | 'Terminated';
@@ -612,7 +620,7 @@ export interface SecuritySettings {
 
 /** One activity log entry (0.25.0). `changes` is the stored JSON of changed fields; masked values read "••••". */
 export type ActivityRow = {
-  id: string; timestamp: string; userId?: string | null; userName?: string | null; source: 'Web' | 'Phone' | 'Import' | 'Job'; changeId: string;
+  id: string; timestamp: string; userId?: string | null; userName?: string | null; source: 'Web' | 'Phone' | 'Import' | 'API' | 'Job'; changeId: string;
   entityType: string; entityId: string; parentType?: string | null; parentId?: string | null; recordLabel: string; action: string; changes?: string | null;
 };
 
@@ -629,3 +637,10 @@ export type StorageFile = {
 
 /** What anonymising a person would do (0.25.0); `blocked` says why it can't be done yet. */
 export type AnonymisePreview = { placeholder: string; confirmWith: string; records: number; sameNameAs: string[]; blocked: string | null };
+
+/** An API key (0.26.0); the key itself is only ever in the answer that made it. */
+export type ApiKeyStatus = 'Active' | 'Expired' | 'Revoked' | 'AccountInactive';
+export type ApiKeyRow = {
+  id: string; name: string; serviceAccountId: string; serviceAccountName?: string | null; prefix: string; readOnly: boolean; createdAt: string;
+  createdByName?: string | null; expiresAt?: string | null; lastUsedAt?: string | null; revokedAt?: string | null; status: ApiKeyStatus;
+};

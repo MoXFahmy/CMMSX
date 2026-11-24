@@ -11,7 +11,7 @@ using Microsoft.Extensions.DependencyInjection.Extensions;
 namespace FourC.Cmms.Tests;
 
 /// <summary>Spins up the real API against a throwaway SQL Server database (CMMS_TEST_SQL = server connection string).</summary>
-public sealed class ApiFixture : IAsyncLifetime
+public class ApiFixture : IAsyncLifetime
 {
     public WebApplicationFactory<Program>? Factory { get; private set; }
     private string? _db;
@@ -31,6 +31,8 @@ public sealed class ApiFixture : IAsyncLifetime
         var cs = new SqlConnectionStringBuilder(_server) { InitialCatalog = _db }.ConnectionString;
         Factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
+            b.UseSetting("Import:PollMilliseconds", "200"); // background imports (0.26.0) are picked up at once in tests
+            Configure(b);
             b.UseSetting("ConnectionStrings:Cmms", cs);
             b.UseSetting("Storage:Path", Path.Combine(Path.GetTempPath(), _db));
             // E-mail is "set up" (so it gets queued); tests send the queue themselves with EmailSenderService.RunOnceAsync.
@@ -65,6 +67,15 @@ public sealed class ApiFixture : IAsyncLifetime
     }
 
     public HttpClient Client() => Factory!.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+
+    /// <summary>Settings a test class needs on top of these (its own fixture type derives from this one).</summary>
+    protected virtual void Configure(IWebHostBuilder b) { }
+}
+
+/// <summary>Background imports driven by the test itself (0.26.0): the worker's loop is off; tests call it.</summary>
+public sealed class ManualImportFixture : ApiFixture
+{
+    protected override void Configure(IWebHostBuilder b) => b.UseSetting("Import:RunInBackground", "false");
 }
 
 public class ApiTests(ApiFixture fx) : IClassFixture<ApiFixture>

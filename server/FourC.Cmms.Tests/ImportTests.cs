@@ -172,7 +172,7 @@ public class ImportTests(ApiFixture fx) : IClassFixture<ApiFixture>
 
         var result = await ImportRun.RunAsync(db, ctx, book, save: true, budget: TimeSpan.Zero, CancellationToken.None);
         Assert.False(result.Saved);
-        Assert.Equal("This file is too big to import in one go. Split it into smaller files.", result.Stopped);
+        Assert.Equal("This import took too long. Split it into smaller files.", result.Stopped);
         Assert.Equal(0, (await Sites(c)).GetArrayLength());
     }
 
@@ -217,14 +217,14 @@ public class ImportTests(ApiFixture fx) : IClassFixture<ApiFixture>
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
         var c = await NewOrganizationAsync(fx);
-        var many = Enumerable.Range(1, 5001).Select(i => new object?[] { $"S{i}", $"Site {i}", null }).ToArray();
+        var many = Enumerable.Range(1, 20_001).Select(i => new object?[] { $"S{i}", $"Site {i}", null }).ToArray();
         var tooMany = await PostAsync(c, "/api/import/check", Book(new Sheet("Sites", SiteHeadings, many)));
         Assert.Equal(HttpStatusCode.BadRequest, tooMany.StatusCode);
-        Assert.Contains("the limit is 5,000 per sheet", await tooMany.Content.ReadAsStringAsync());
+        Assert.Contains("the limit is 20,000 per sheet", await tooMany.Content.ReadAsStringAsync());
 
-        var big = await PostAsync(c, "/api/import/check", new byte[11 * 1024 * 1024]);
+        var big = await PostAsync(c, "/api/import/check", new byte[26 * 1024 * 1024]);
         Assert.Equal(HttpStatusCode.BadRequest, big.StatusCode);
-        Assert.Contains("Choose a file of up to 10 MB.", await big.Content.ReadAsStringAsync());
+        Assert.Contains("Choose a file of up to 25 MB.", await big.Content.ReadAsStringAsync());
     }
 
     [SkippableFact]

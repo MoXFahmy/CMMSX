@@ -59,12 +59,16 @@ public interface ITenantContext
 }
 
 /// <summary>A tenant context set in code: background jobs ("Job", the default), tools, and a few anonymous web pages.</summary>
-public sealed class FixedTenantContext(Guid? tenantId, Guid? userId = null, string? userName = null, string source = "Job") : ITenantContext
+public sealed class FixedTenantContext(Guid? tenantId, Guid? userId = null, string? userName = null, string source = "Job",
+    IReadOnlyList<Guid>? siteIds = null, IReadOnlyList<string>? branchPaths = null) : ITenantContext
 {
     public Guid? TenantId { get; } = tenantId;
     public Guid? UserId { get; } = userId;
     public string? UserName { get; } = userName;
     public string Source { get; } = source;
+    /// <summary>A background job running for a site-limited person (0.26.0 imports) sees what they see.</summary>
+    public IReadOnlyList<Guid>? SiteIds { get; } = siteIds;
+    public IReadOnlyList<string>? BranchPaths { get; } = branchPaths;
     public Guid ChangeId { get; } = Guid.CreateVersion7();
 }
 

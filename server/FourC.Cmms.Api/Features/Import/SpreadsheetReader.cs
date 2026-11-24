@@ -2,6 +2,7 @@ using System.Globalization;
 using System.IO.Compression;
 using System.Text;
 using System.Xml;
+using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Common;
 
 namespace FourC.Cmms.Api.Features.Import;
@@ -21,20 +22,35 @@ public static class SpreadsheetReader
     /// <summary>Cells past this column are ignored (a stray value far to the right would otherwise make every row huge).</summary>
     private const int MaxColumns = 500;
 
-    public static SpreadsheetBook Read(Stream content, string fileName)
+    /// <summary>
+    /// Reads a workbook. Past <paramref name="maxRows"/> data rows in all (0.26.0) it stops and refuses the file, so a huge file
+    /// is never held whole in memory before its row limit is checked.
+    /// </summary>
+    public static SpreadsheetBook Read(Stream content, string fileName, int maxRows = int.MaxValue)
     {
         var ext = Path.GetExtension(fileName ?? "").ToLowerInvariant();
+        var counter = new RowCounter(maxRows);
         return ext switch
         {
-            ".xlsx" or ".xlsm" => ReadXlsx(content),
-            ".csv" => new SpreadsheetBook([ReadCsv(content, Path.GetFileNameWithoutExtension(fileName)!)]),
+            ".xlsx" or ".xlsm" => ReadXlsx(content, counter),
+            ".csv" => new SpreadsheetBook([ReadCsv(content, Path.GetFileNameWithoutExtension(fileName)!, counter)]),
             _ => throw new DomainException("Save the file as .xlsx (Excel workbook) or .csv first."),
         };
     }
 
     // ---------------- Excel ----------------
 
-    private static SpreadsheetBook ReadXlsx(Stream content)
+    /// <summary>Counts data rows (every row after a sheet's heading row that holds a value) across the whole file.</summary>
+    private sealed class RowCounter(int max)
+    {
+        private int _rows;
+        public void Add()
+        {
+            if (++_rows > max) throw new DomainException(Translator.T($"This file has more than {max:N0} rows. Split it into smaller files."));
+        }
+    }
+
+    private static SpreadsheetBook ReadXlsx(Stream content, RowCounter counter)
     {
         try
         {
@@ -52,7 +68,7 @@ public static class SpreadsheetReader
                 var entry = zip.GetEntry(target);
                 if (entry is null) continue;
                 using var s = entry.Open();
-                sheets.Add(new SpreadsheetSheet(name, SheetRows(s, strings, dateStyles)));
+                sheets.Add(new SpreadsheetSheet(name, SheetRows(s, strings, dateStyles, counter)));
             }
             return new SpreadsheetBook(sheets);
         }
@@ -181,11 +197,12 @@ public static class SpreadsheetReader
         return list;
     }
 
-    private static IReadOnlyList<IReadOnlyList<object?>> SheetRows(Stream s, List<string> strings, List<bool> dateStyles)
+    private static IReadOnlyList<IReadOnlyList<object?>> SheetRows(Stream s, List<string> strings, List<bool> dateStyles, RowCounter counter)
     {
         var rows = new SortedDictionary<int, List<object?>>();
         using var r = Xml(s);
         var rowNumber = 0;
+        var counted = false;
         List<object?>? current = null;
         while (r.Read())
         {
@@ -194,6 +211,7 @@ public static class SpreadsheetReader
             {
                 rowNumber = int.TryParse(r.GetAttribute("r"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var n) ? n : rowNumber + 1;
                 current = [];
+                counted = false;
                 rows[rowNumber] = current;
                 if (r.IsEmptyElement) current = null;
             }
@@ -204,6 +222,7 @@ public static class SpreadsheetReader
                 int.TryParse(r.GetAttribute("s"), NumberStyles.Integer, CultureInfo.InvariantCulture, out var style);
                 var value = CellValue(r, type, style, strings, dateStyles);
                 if (col >= MaxColumns || value is null) continue;
+                if (!counted && rowNumber > 1) { counted = true; counter.Add(); }
                 while (current.Count < col) current.Add(null);
                 if (current.Count == col) current.Add(value); else current[col] = value;
             }
@@ -262,7 +281,7 @@ public static class SpreadsheetReader
     // ---------------- CSV ----------------
 
     /// <summary>UTF-8 (with or without BOM), comma or semicolon separated (whichever the heading line uses more), quotes as in RFC 4180.</summary>
-    private static SpreadsheetSheet ReadCsv(Stream content, string name)
+    private static SpreadsheetSheet ReadCsv(Stream content, string name, RowCounter counter)
     {
         string text;
         using (var reader = new StreamReader(content, new UTF8Encoding(false), detectEncodingFromByteOrderMarks: true)) text = reader.ReadToEnd();
@@ -275,7 +294,7 @@ public static class SpreadsheetReader
         var cell = new StringBuilder();
         var quoted = false; var cellQuoted = false;
         void EndCell() { var s = cell.ToString(); row.Add(s.Length == 0 && !cellQuoted ? null : s); cell.Clear(); cellQuoted = false; }
-        void EndRow() { EndCell(); rows.Add(row); row = []; }
+        void EndRow() { EndCell(); if (rows.Count > 0 && row.Any(v => v is not null)) counter.Add(); rows.Add(row); row = []; }
         for (var i = 0; i < text.Length; i++)
         {
             var c = text[i];

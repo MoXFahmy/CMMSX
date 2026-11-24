@@ -222,7 +222,7 @@ public static class PurchaseRequestEndpoints
             var roleIds = (await db.Roles.AsNoTracking().Select(r => new { r.Id, r.Permissions }).ToListAsync(ct))
                 .Where(r => r.Permissions.Contains(Permissions.PurchasingCreate) || r.Permissions.Contains(Permissions.PurchasingApproveRequests)).Select(r => r.Id).ToList();
             var ids = await db.UserRoles.Where(ur => roleIds.Contains(ur.RoleId)).Select(ur => ur.UserId).Distinct().ToListAsync(ct);
-            return Results.Ok(await db.Users.AsNoTracking().Where(u => ids.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
+            return Results.Ok(await db.Users.AsNoTracking().People().Where(u => ids.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
                 .Select(u => new { u.Id, u.FullName }).ToListAsync(ct));
         });
 
@@ -410,7 +410,7 @@ public static class PurchaseRequestEndpoints
             if (l.AssetId is { } a && (!assets.TryGetValue(a, out var assetSite) || assetSite != i.SiteId)) v.Add($"lines[{k}].assetId", $"Line {n}: the asset is at another site.");
         }
         var who = (i.RecipientIds ?? []).Distinct().ToList();
-        if (who.Count > 0 && await db.Users.CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != who.Count)
+        if (who.Count > 0 && await db.Users.People().CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId && u.IsActive, ct) != who.Count)
             v.Add("recipientIds", "Choose active users.");
         return v;
     }

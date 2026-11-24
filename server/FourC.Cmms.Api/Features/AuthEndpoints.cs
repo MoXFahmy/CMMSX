@@ -64,7 +64,7 @@ public static class AuthEndpoints
         {
             var user = string.IsNullOrWhiteSpace(req.Email) ? null : await users.FindByEmailAsync(req.Email.Trim());
             var tenantActive = user is not null && await db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.IsActive);
-            if (user is null || !user.IsActive || !tenantActive)
+            if (user is null || !user.IsActive || user.IsServiceAccount || !tenantActive)
                 return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
             var wasLocked = await users.IsLockedOutAsync(user);
             var result = await signIn.CheckPasswordSignInAsync(user, req.Password ?? "", lockoutOnFailure: true);
@@ -90,7 +90,7 @@ public static class AuthEndpoints
         {
             var user = string.IsNullOrWhiteSpace(req.Email) ? null : await users.FindByEmailAsync(req.Email.Trim());
             var tenantActive = user is not null && await db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.IsActive, ct);
-            if (user is null || !user.IsActive || !tenantActive)
+            if (user is null || !user.IsActive || user.IsServiceAccount || !tenantActive)
                 return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
             var result = await signIn.CheckPasswordSignInAsync(user, req.Password ?? "", lockoutOnFailure: true);
             if (result.IsLockedOut) return Results.Problem(title: Translator.T("Too many failed attempts. Try again in a few minutes."), statusCode: 429);

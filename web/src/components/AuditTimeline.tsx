@@ -7,7 +7,7 @@ import type { AuditItem } from '@/api/types';
 import { humanizeField, parseChanges, showValue } from '@/pages/settings/activity';
 import { fmtDateTime } from './utils';
 
-const sourceColor = (s?: string) => (s === 'Phone' ? 'grape' : s === 'Import' ? 'orange' : 'gray');
+const sourceColor = (s?: string) => (s === 'Phone' ? 'grape' : s === 'Import' ? 'orange' : s === 'API' ? 'cyan' : 'gray');
 
 /**
  * A record's History tab: its own change entries and its child lines' (a work order's labour, a purchase order's lines…),

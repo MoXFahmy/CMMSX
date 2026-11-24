@@ -22,9 +22,31 @@ internal static class ImportFiles
         return c.PostAsync(path, form);
     }
 
-    public static async Task<JsonElement> CheckAsync(HttpClient c, byte[] file, string fileName = "data.xlsx") => await OkAsync(await PostAsync(c, "/api/import/check", file, fileName));
+    public static Task<JsonElement> CheckAsync(HttpClient c, byte[] file, string fileName = "data.xlsx") => JobResultAsync(c, "/api/import/check", file, fileName);
 
-    public static async Task<JsonElement> RunAsync(HttpClient c, byte[] file, string fileName = "data.xlsx") => await OkAsync(await PostAsync(c, "/api/import/run", file, fileName));
+    public static Task<JsonElement> RunAsync(HttpClient c, byte[] file, string fileName = "data.xlsx") => JobResultAsync(c, "/api/import/run", file, fileName);
+
+    /// <summary>Uploads to a background import (0.26.0) and follows the job until it finishes; its result.</summary>
+    public static async Task<JsonElement> JobResultAsync(HttpClient c, string path, byte[] file, string fileName = "data.xlsx")
+    {
+        var id = (await OkAsync(await PostAsync(c, path, file, fileName))).GetProperty("id").GetGuid();
+        return (await FinishedAsync(c, id)).GetProperty("result");
+    }
+
+    /// <summary>The job once it is done (fails the test if it failed or took over two minutes).</summary>
+    public static async Task<JsonElement> FinishedAsync(HttpClient c, Guid id)
+    {
+        var until = DateTime.UtcNow.AddMinutes(2);
+        while (DateTime.UtcNow < until)
+        {
+            var job = await OkAsync(await c.GetAsync($"/api/import/jobs/{id}"));
+            var status = job.GetProperty("status").GetString();
+            if (status == "Done") return job;
+            Assert.True(status != "Failed", $"The import failed: {job.GetProperty("error")}");
+            await Task.Delay(100);
+        }
+        throw new TimeoutException("The import didn't finish in two minutes.");
+    }
 
     public static async Task<JsonElement> OkAsync(HttpResponseMessage r)
     {
