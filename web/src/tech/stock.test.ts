@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { available, findPart, queuedCount, searchParts, shortBy, stillReserved } from './stock';
+import { available, canUseByQuantity, findPart, queuedCount, searchParts, shortBy, stillReserved } from './stock';
 import type { StockPart, TechStock } from './types';
 import type { QueuedChange } from './outbox';
 
@@ -43,5 +43,12 @@ describe('phone stock', () => {
       q(3, '2026-11-22T11:00:00Z', { countId: 'other', partId: 'p1', quantity: 1 })];
     expect(queuedCount(queue, 'c', 'p1')).toBe(4);
     expect(queuedCount(queue, 'c', 'p2')).toBeUndefined();
+  });
+});
+
+describe('serial parts on the phone (0.24.0)', () => {
+  it("serial parts can't be used by quantity", () => {
+    expect(canUseByQuantity(part())).toBe(true);
+    expect(canUseByQuantity(part({ isSerialTracked: true }))).toBe(false);
   });
 });

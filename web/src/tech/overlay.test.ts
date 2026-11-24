@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { stillShown, withQueued } from './overlay';
+import { stillShown, unitsWithQueued, withQueued } from './overlay';
 import type { QueuedChange } from './outbox';
-import type { TechJob } from './types';
+import type { StockUnit, TechJob } from './types';
 
 const job: TechJob = {
   id: 'w1', number: 'WO-1', title: 'Pump', type: 'Corrective', priority: 'High', status: 'Open', siteId: 's', roundAssets: [], plannedParts: [], files: [],
@@ -90,5 +90,23 @@ describe('stillShown', () => {
   });
   it('does not count a sent photo as still waiting', () => {
     expect(stillShown(sent, undefined).some((c) => c.type === 'photo.add')).toBe(false);
+  });
+});
+
+describe('serial units on the phone (0.24.0)', () => {
+  const spare: StockUnit = { id: 'u1', assetNumber: 'AST-9', serialNumber: 'SN-1', partId: 'p1', storeId: 's1' };
+  const onJob = { ...job, asset: { id: 'a1', assetNumber: 'CH-2', name: 'Chiller 2' }, defaultStoreId: 's1', units: [] };
+  it('a queued fit moves the unit onto the job', () => {
+    const queue = [q(1, 'unit.fit', { unitId: 'u1', assetId: 'a1', serialNumber: 'SN-1', assetNumber: 'AST-9', partId: 'p1', partName: 'Pump' })];
+    expect(withQueued(onJob, queue).units).toEqual([{ id: 'u1', assetNumber: 'AST-9', serialNumber: 'SN-1', partId: 'p1', partName: 'Pump', fittedToId: 'a1' }]);
+    expect(unitsWithQueued([spare], queue, [onJob])).toEqual([]);
+  });
+  it('a queued removal to store puts it back in stock', () => {
+    const fitted = { ...onJob, units: [{ id: 'u1', assetNumber: 'AST-9', serialNumber: 'SN-1', partId: 'p1', partName: 'Pump', fittedToId: 'a1' }] };
+    const toStore = [q(1, 'unit.remove', { unitId: 'u1', outcome: 'Store' })];
+    expect(withQueued(fitted, toStore).units).toEqual([]);
+    expect(unitsWithQueued([], toStore, [fitted])).toEqual([spare]);
+    // To repair or scrap, it doesn't come back to the store.
+    expect(unitsWithQueued([], [q(1, 'unit.remove', { unitId: 'u1', outcome: 'Repair' })], [fitted])).toEqual([]);
   });
 });

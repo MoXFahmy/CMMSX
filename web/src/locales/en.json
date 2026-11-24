@@ -1424,7 +1424,9 @@
       "downtime.end": "Back running",
       "tasks.fromPm": "Checklist added",
       "workorder.create": "New work order",
-      "file": "Video or document"
+      "file": "Video or document",
+      "unit.fit": "Unit fitted",
+      "unit.remove": "Unit removed"
     },
     "state": {
       "waiting": "Waiting",
@@ -1876,7 +1878,9 @@
     "shelfCount": "Shelf-life parts are counted by batch in the office.",
     "used": "{{qty}} {{unit}} used",
     "piecesPerPack_one": "{{count}} per pack: {{pieces}} into stock",
-    "piecesPerPack_other": "{{count}} per pack: {{pieces}} into stock"
+    "piecesPerPack_other": "{{count}} per pack: {{pieces}} into stock",
+    "fitInstead": "Serial part: fit a unit on the job instead.",
+    "serialCount": "Serial parts are counted by their units on the web."
   },
   "techJob": {
     "downSince": "The asset is down since {{when}}",
@@ -3136,5 +3140,13 @@
       "number": "Number",
       "detail": "Third line (location, parent or maker)"
     }
+  },
+  "techUnits": {
+    "scan": "Scan the unit's label",
+    "scanHint": "Or type its serial or asset number",
+    "notHere": "Not a unit in store at this job's site.",
+    "orPick": "Or pick a unit in store",
+    "toDefault": "Back to the default store ({{store}}).",
+    "noDefault": "This job's site has no default store: choose repair or scrap, or remove it on the web."
   }
 }

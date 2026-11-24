@@ -10,6 +10,7 @@ import { HOLD_REASONS, type HoldReason } from '@/api/types';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, fmtDateTime, hoursText, notifyError } from '@/components/utils';
 import { downFor } from '@/components/downtime';
+import { JobUnits } from './JobUnits';
 import { withQueued } from './overlay';
 import { shrink } from './photos';
 import { dueLabel } from './due';
@@ -110,6 +111,7 @@ export function JobPage() {
 
       <StopCard job={job} />
       <JobParts job={job} />
+      <JobUnits job={job} />
       <JobActions job={job} />
 
       <Card withBorder p="sm">

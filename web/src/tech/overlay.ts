@@ -1,5 +1,5 @@
 import type { QueuedChange } from './outbox';
-import type { TechJob, TechPoint } from './types';
+import type { StockUnit, TechJob, TechPoint } from './types';
 import { answered, levelOf } from '@/components/measure';
 
 /**
@@ -10,7 +10,7 @@ export function withQueued(job: TechJob, queue: QueuedChange[], opts: { canIssue
   const canIssue = opts.canIssue ?? true;
   const mine = queue.filter((c) => c.workOrderId === job.id && c.state !== 'failed').sort((a, b) => a.seq - b.seq);
   let j: TechJob = { ...job, tasks: job.tasks.map((t) => ({ ...t })), myLabor: [...job.myLabor], comments: [...job.comments],
-    plannedLines: job.plannedLines?.map((l) => ({ ...l })), usedParts: job.usedParts?.map((u) => ({ ...u })) };
+    plannedLines: job.plannedLines?.map((l) => ({ ...l })), usedParts: job.usedParts?.map((u) => ({ ...u })), units: job.units?.map((u) => ({ ...u })) };
   const lineFor = (p: Record<string, unknown>) =>
     j.plannedLines?.find((l) => l.id === p.lineId) ?? j.plannedLines?.find((l) => l.partId === p.partId && (l.storeId ?? null) === (p.storeId ?? null));
   let pendingPhotos = 0;
@@ -81,6 +81,14 @@ export function withQueued(job: TechJob, queue: QueuedChange[], opts: { canIssue
         j.usedParts = j.usedParts?.filter((u) => u.issued > 0);
         break;
       }
+      // Serial units (0.24.0): a fit shows the unit on the job at once (the change carries its serial and part for this), a removal takes it off.
+      case 'unit.fit':
+        j.units = [...(j.units ?? []).filter((u) => u.id !== p.unitId), { id: String(p.unitId), assetNumber: String(p.assetNumber ?? ''), serialNumber: (p.serialNumber as string) ?? null,
+          partId: String(p.partId ?? ''), partName: (p.partName as string) ?? null, fittedToId: String(p.assetId) }];
+        break;
+      case 'unit.remove':
+        j.units = (j.units ?? []).filter((u) => u.id !== p.unitId);
+        break;
     }
   }
   return { ...j, pendingPhotos, pendingSignatures, stepPhotos };
@@ -95,4 +103,28 @@ export type SentChange = QueuedChange & { sentAt: number };
  */
 export function stillShown(sent: SentChange[], fetchedAt: number | undefined): SentChange[] {
   return sent.filter((c) => c.type !== 'photo.add' && (fetchedAt === undefined || c.sentAt > fetchedAt));
+}
+
+/**
+ * The units in store as the technician sees them right now (0.24.0): a queued fit takes the unit out; a queued removal back to a
+ * store puts it in the job's default store (where the server will return it).
+ */
+export function unitsWithQueued(units: StockUnit[], queue: QueuedChange[], jobs: TechJob[]): StockUnit[] {
+  let list = units.map((u) => ({ ...u }));
+  const fittedNow = new Map<string, StockUnit>();
+  for (const c of queue.filter((x) => x.state !== 'failed').sort((a, b) => a.seq - b.seq)) {
+    const p = c.payload as Record<string, unknown>;
+    if (c.type === 'unit.fit') {
+      const was = list.find((u) => u.id === p.unitId);
+      if (was) fittedNow.set(was.id, was);
+      list = list.filter((u) => u.id !== p.unitId);
+    } else if (c.type === 'unit.remove' && p.outcome === 'Store') {
+      const job = jobs.find((x) => x.id === c.workOrderId);
+      const onJob = job?.units?.find((u) => u.id === p.unitId);
+      const known = onJob ? { id: onJob.id, assetNumber: onJob.assetNumber, serialNumber: onJob.serialNumber, partId: onJob.partId } : fittedNow.get(String(p.unitId));
+      if (known && job?.defaultStoreId && !list.some((u) => u.id === known.id))
+        list.push({ id: known.id, assetNumber: known.assetNumber, serialNumber: known.serialNumber, partId: known.partId, storeId: job.defaultStoreId });
+    }
+  }
+  return list;
 }
