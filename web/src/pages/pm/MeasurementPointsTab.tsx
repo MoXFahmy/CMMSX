@@ -12,6 +12,7 @@ import { P, useAuth } from '@/auth/AuthContext';
 import { AssetListEditor, type AssetRef } from '@/components/AssetListEditor';
 import { confirmDelete } from '@/components/confirm';
 import { handleFormError, notifyError, notifySuccess } from '@/components/utils';
+import { UnitSelect } from '@/components/ReferencePickers';
 
 type N = number | '';
 type F = {
@@ -89,7 +90,7 @@ export function MeasurementPointsTab() {
             <TextInput label={t('pm.code')} required {...form.getInputProps('code')} />
             <TextInput label={t('common.name')} required style={{ gridColumn: 'span 2' }} {...form.getInputProps('name')} />
             <Select label={t('points.kind')} data={MEASUREMENT_KINDS.map((k) => ({ value: k, label: t(`points.kinds.${k}`) }))} {...form.getInputProps('kind')} />
-            <TextInput label={t('points.unit')} maxLength={20} {...form.getInputProps('unit')} />
+            <UnitSelect label={t('points.unit')} clearable value={form.values.unit || null} onChange={(v) => form.setFieldValue('unit', v ?? '')} />
             <NumberInput label={t('points.decimals')} min={0} max={4} {...form.getInputProps('decimals')} />
           </SimpleGrid>
           <SimpleGrid cols={{ base: 1, sm: 2 }}>

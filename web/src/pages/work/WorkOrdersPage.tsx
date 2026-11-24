@@ -10,7 +10,7 @@ import { SlaText } from '@/components/SlaBadge';
 import { DataTable } from 'mantine-datatable';
 import { IconAdjustmentsHorizontal, IconFilterOff, IconFlag, IconPlus, IconSearch, IconUserPlus, IconCoin, IconArrowsExchange } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
-import { HOLD_REASONS, WORK_PRIORITIES, WORK_TYPES, type HoldReason, type Lookup, type Paged, type WorkOrderListItem, type WorkOrderStatus, type WorkPriority } from '@/api/types';
+import { HOLD_REASONS, type HoldReason, type Lookup, type Paged, type WorkOrderListItem, type WorkOrderStatus, type WorkPriority } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { teamOptions, useTeams } from '@/components/teams';
@@ -22,9 +22,11 @@ import { fmtDate, notifyError } from '@/components/utils';
 import { StoppedBadge } from '@/components/AccessWindowsEditor';
 import { ChangeCostCentreModal } from './ChangeCostCentre';
 import { BulkBar, FilterChips, ListTools, listText, rangeText, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
+import { listItems } from '@/components/listLabels';
+import { groupData, useAssetGroups } from '@/components/ReferencePickers';
 
 /** Filters behind "More filters"; they live in the address like the others. */
-const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source', 'completedFrom', 'cancelReasonId', 'onlyWhenStopped', 'groupId',
+const EXTRA_FILTERS = ['locationId', 'assetId', 'assetGroupId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source', 'completedFrom', 'cancelReasonId', 'onlyWhenStopped', 'groupId',
   'completedTo', 'symptomId', 'causeId', 'remedyId', 'inFailureTree'] as const;
 const isoDay = (d: string | Date | null) => (d ? dayjs(d).format('YYYY-MM-DD') : null);
 
@@ -49,7 +51,7 @@ export function WorkOrdersPage() {
   const view = p('view') || 'everyone';
   const statuses = TABS.find((x) => x.key === tab)?.statuses ?? null;
   const base = {
-    search: p('search'), siteId: p('siteId'), priority: p('priority'), type: p('type'), tradeId: p('tradeId'), assetId: p('assetId'),
+    search: p('search'), siteId: p('siteId'), priority: p('priority'), type: p('type'), tradeId: p('tradeId'), assetId: p('assetId'), assetGroupId: p('assetGroupId'),
     mine: view === 'mine' ? 'true' : '', overdue: view === 'overdue' ? 'true' : '',
     dueSoon: view === 'dueSoon' ? 'true' : '', responseLate: view === 'responseLate' ? 'true' : '',
     locationId: p('locationId'), assigneeId: p('assigneeId'), teamId: p('teamId'), createdFrom: p('createdFrom'), createdTo: p('createdTo'),
@@ -78,8 +80,9 @@ export function WorkOrdersPage() {
   const filtersActive = ['search', 'siteId', 'priority', 'type', 'tradeId', ...EXTRA_FILTERS].some((k) => p(k));
   const tradeOpts = useMemo(() => (trades ?? []).map((x) => ({ value: x.id, label: x.name })), [trades]);
   const { data: teams } = useTeams(p('siteId') || null);
-  const extraCount = [p('locationId'), p('assetId'), p('assigneeId'), p('teamId'), p('createdFrom') || p('createdTo'), p('dueFrom') || p('dueTo'), p('source')].filter(Boolean).length; // "completed since" shows as a chip only
+  const extraCount = [p('locationId'), p('assetId'), p('assetGroupId'), p('assigneeId'), p('teamId'), p('createdFrom') || p('createdTo'), p('dueFrom') || p('dueTo'), p('source')].filter(Boolean).length; // "completed since" shows as a chip only
   const [moreOpen, more] = useDisclosure(extraCount > 0);
+  const { data: groups } = useAssetGroups();
   const locOpts = useMemo(() => locationOptions(h?.locations ?? [], p('siteId') || null), [h, lp.params]); // eslint-disable-line react-hooks/exhaustive-deps
   const { data: employees } = useEmployees(p('siteId') || null);
   const empOpts = useMemo(() => (employees ?? []).map((e) => ({ value: e.id, label: e.fullName })), [employees]);
@@ -130,6 +133,7 @@ export function WorkOrdersPage() {
     { keys: ['teamId'], label: t('teams.team'), format: ([v]) => teams?.find((x) => x.id === v)?.name ?? '…' },
     { keys: ['locationId'], label: terms.location, format: ([v]) => h?.locations.find((l) => l.id === v)?.name ?? '…' },
     { keys: ['assetId'], label: terms.asset, format: () => (filterAsset ? `${filterAsset.assetNumber} ${filterAsset.name}` : '…') },
+    { keys: ['assetGroupId'], label: t('assetGroups.one'), format: ([v]) => groups?.find((g) => g.id === v)?.name ?? '…' },
     { keys: ['assigneeId'], label: t('wo.filterAssignee'), format: ([v]) => empOpts.find((o) => o.value === v)?.label ?? '…' },
     { keys: ['createdFrom', 'createdTo'], label: t('wo.createdBetween'), format: rangeText(fmtDate, t) },
     { keys: ['completedFrom'], label: t('wo.completedSince'), format: ([v]) => fmtDate(v) },
@@ -189,9 +193,9 @@ export function WorkOrdersPage() {
           ]} />
           <TextInput placeholder={t('wo.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 240 }} />
           <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v, locationId: null, assetId: null, assigneeId: null })} clearable searchable w={{ base: '100%', xs: 180 }} />
-          <MultiSelect placeholder={p('priority') ? undefined : t('priority.label')} data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))}
+          <MultiSelect placeholder={p('priority') ? undefined : t('priority.label')} data={listItems('priority', t, null, true)}
             value={p('priority') ? p('priority').split(',') : []} onChange={(v) => set({ priority: v.join(',') || null })} clearable w={{ base: '100%', xs: 170 }} />
-          <MultiSelect placeholder={p('type') ? undefined : t('workType.label')} data={WORK_TYPES.map((x) => ({ value: x, label: t(`workType.${x}`) }))}
+          <MultiSelect placeholder={p('type') ? undefined : t('workType.label')} data={listItems('workType', t, null, true)}
             value={p('type') ? p('type').split(',') : []} onChange={(v) => set({ type: v.join(',') || null })} clearable w={{ base: '100%', xs: 170 }} />
           <Select placeholder={t('wo.trade')} data={tradeOpts} value={p('tradeId') || null} onChange={(v) => set({ tradeId: v })} clearable w={{ base: '100%', xs: 160 }} />
           <Button variant={moreOpen ? 'light' : 'default'} leftSection={<IconAdjustmentsHorizontal size={16} />} onClick={more.toggle} aria-expanded={moreOpen}
@@ -209,6 +213,8 @@ export function WorkOrdersPage() {
               value={p('locationId') || null} onChange={(v) => set({ locationId: v })} clearable searchable comboboxProps={{ width: 'max-content', position: 'bottom-start' }} />
             <AssetPicker label={terms.asset} siteId={p('siteId') || null} value={p('assetId') || null} onChange={(v) => set({ assetId: v })}
               initial={filterAsset && p('assetId') ? { id: p('assetId'), assetNumber: filterAsset.assetNumber, name: filterAsset.name } : null} />
+            <Select label={t('assetGroups.one')} placeholder={t('common.all')} data={groupData(groups, null, p('assetGroupId') || null)} value={p('assetGroupId') || null}
+              onChange={(v) => set({ assetGroupId: v })} clearable searchable />
             <Select label={t('wo.filterAssignee')} placeholder={t('common.all')} data={empOpts} value={p('assigneeId') || null} onChange={(v) => set({ assigneeId: v })} clearable searchable />
             <Select label={t('teams.team')} placeholder={t('common.all')} data={teamOptions(teams, p('teamId'))} value={p('teamId') || null} onChange={(v) => set({ teamId: v })} clearable searchable />
             <Select label={t('wo.source')} placeholder={t('common.all')} value={p('source') || null} onChange={(v) => set({ source: v })} clearable
@@ -246,7 +252,7 @@ export function WorkOrdersPage() {
         )}
         {canBulkEdit && (
           <Menu><Menu.Target><Button size="xs" variant="white" leftSection={<IconFlag size={14} />}>{t('list.setPriority')}</Button></Menu.Target>
-            <Menu.Dropdown>{WORK_PRIORITIES.map((x) => <Menu.Item key={x} onClick={() => bulk.mutate({ priority: x })}>{t(`priority.${x}`)}</Menu.Item>)}</Menu.Dropdown></Menu>
+            <Menu.Dropdown>{listItems('priority', t).map((x) => <Menu.Item key={x.value} onClick={() => bulk.mutate({ priority: x.value as WorkPriority })}>{x.label}</Menu.Item>)}</Menu.Dropdown></Menu>
         )}
         {canBulkEdit && <Button size="xs" variant="white" leftSection={<IconUserPlus size={14} />} onClick={() => setTechOpen(true)}>{t('list.addTechnicians')}</Button>}
         {canBulkEdit && <Button size="xs" variant="white" leftSection={<IconCoin size={14} />} onClick={() => setCostCentreOpen(true)}>{t('costCentres.change')}</Button>}

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { ActionIcon, Anchor, Badge, Button, Card, Group, Menu, MultiSelect, Select, Stack, Switch, Text, TextInput, Tooltip } from '@mantine/core';
+import { ActionIcon, Anchor, Badge, Button, Card, Group, Menu, Modal, MultiSelect, Select, Stack, Switch, Text, TextInput, Tooltip } from '@mantine/core';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -8,13 +8,15 @@ import { IconFilterOff, IconPlus, IconSearch, IconEdit, IconQrcode } from '@tabl
 import { openLabels } from '@/pages/labels/LabelsPage';
 import { BulkBar } from '@/components/list';
 import { get, post } from '@/api/client';
-import { ASSET_STATUSES, CRITICALITIES, type AssetListItem, type Category, type CustomField, type Paged } from '@/api/types';
+import { type AssetStatus, type Criticality, type AssetListItem, type Category, type CustomField, type Paged } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { CriticalityBadge, StatusBadge } from '@/components/Badges';
 import { PageHeader } from '@/components/PageHeader';
 import { locationOptions, useHierarchy } from '@/components/LocationPicker';
 import { fmtDate, fmtDateTime, notifyError, notifySuccess } from '@/components/utils';
 import { FilterChips, ListTools, listText, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
+import { listItems } from '@/components/listLabels';
+import { groupData, useAssetGroups, useBrands } from '@/components/ReferencePickers';
 
 const PAGE_SIZES = [25, 50, 100];
 const DEFAULT_HIDDEN = ['manufacturer', 'model', 'serialNumber', 'commissionedOn', 'warrantyExpiresOn', 'parentAssetNumber'];
@@ -29,6 +31,7 @@ export function AssetsPage() {
   const filters = {
     search: p('search'), siteId: p('siteId'), locationId: p('locationId'), categoryId: p('categoryId'), status: p('status'), criticality: p('criticality'),
     topLevelOnly: p('topLevelOnly'), downNow: p('downNow'), sort: sort.columnAccessor as string, dir: sort.direction,
+    brandId: p('brandId'), modelId: p('modelId'), assetGroupId: p('assetGroupId'),
   };
   const { data, isFetching } = useQuery({
     queryKey: ['assets', filters, page, pageSize],
@@ -46,7 +49,23 @@ export function AssetsPage() {
   // If filtering by location only, infer the site so the location dropdown has options.
   const siteForLocations = p('siteId') || h?.locations.find((l) => l.id === p('locationId'))?.siteId || null;
   const locOpts = useMemo(() => locationOptions(h?.locations ?? [], siteForLocations), [h, siteForLocations]);
-  const activeFilters = ['siteId', 'locationId', 'categoryId', 'status', 'criticality', 'topLevelOnly', 'downNow', 'search'].filter((k) => p(k)).length;
+  const activeFilters = ['siteId', 'locationId', 'categoryId', 'status', 'criticality', 'topLevelOnly', 'downNow', 'search', 'brandId', 'modelId', 'assetGroupId'].filter((k) => p(k)).length;
+  // Brands, models and asset groups (0.21.0).
+  const { data: brands } = useBrands();
+  const { data: groups } = useAssetGroups();
+  const brandOf = brands?.find((b) => b.id === p('brandId'));
+  const [groupFor, setGroupFor] = useState<'add' | 'remove' | null>(null);
+  const [groupChoice, setGroupChoice] = useState<string | null>(null);
+  const changeGroup = async () => {
+    if (!groupChoice || !groupFor) return;
+    try {
+      const ids = selected.map((s) => s.id);
+      const r = await post<{ added: number; removed: number }>(`/asset-groups/${groupChoice}/members`, groupFor === 'add' ? { add: ids, remove: [] } : { add: [], remove: ids });
+      notifySuccess(groupFor === 'add' ? t('assetGroups.added', { count: r.added }) : t('assetGroups.removed', { count: r.removed }));
+      setGroupFor(null); setGroupChoice(null); setSelected([]);
+      await qc.invalidateQueries({ queryKey: ['assets'] }); await qc.invalidateQueries({ queryKey: ['asset-groups'] });
+    } catch (e) { notifyError(e); }
+  };
 
   const bulk = useMutation({
     mutationFn: (patch: Record<string, string>) => post<{ updated: number }>('/assets/bulk', { ids: selected.map((s) => s.id), ...patch }),
@@ -90,6 +109,9 @@ export function AssetsPage() {
     { keys: ['criticality'], label: t('criticality.label'), format: listText((v) => t(`criticality.${v}`)) },
     { keys: ['topLevelOnly'], label: t('assets.topLevelOnly'), format: () => t('common.yes') },
     { keys: ['downNow'], label: t('downtime.downNow'), format: () => t('common.yes') },
+    { keys: ['brandId'], label: t('brands.brand'), format: ([v]) => brands?.find((b) => b.id === v)?.name ?? '…' },
+    { keys: ['modelId'], label: t('brands.model'), format: ([v]) => brands?.flatMap((b) => b.models).find((x) => x.id === v)?.name ?? '…' },
+    { keys: ['assetGroupId'], label: t('assetGroups.one'), format: ([v]) => groups?.find((g) => g.id === v)?.name ?? '…' },
   ];
 
   return (
@@ -107,10 +129,16 @@ export function AssetsPage() {
             onChange={(v) => set({ locationId: v })} comboboxProps={{ width: 'max-content', position: 'bottom-start' }} />
           <Select placeholder={t('assets.category')} data={(cats ?? []).map((c) => ({ value: c.id, label: c.name }))} value={p('categoryId') || null} clearable searchable w={{ base: '100%', xs: 190 }}
             onChange={(v) => set({ categoryId: v })} />
-          <MultiSelect placeholder={p('status') ? undefined : t('common.status')} data={ASSET_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))} w={{ base: '100%', xs: 200 }}
+          <MultiSelect placeholder={p('status') ? undefined : t('common.status')} data={listItems('assetStatus', t, null, true)} w={{ base: '100%', xs: 200 }}
             value={p('status') ? p('status').split(',') : []} onChange={(v) => set({ status: v.join(',') || null })} clearable />
-          <MultiSelect placeholder={p('criticality') ? undefined : t('criticality.label')} data={CRITICALITIES.map((s) => ({ value: s, label: t(`criticality.${s}`) }))} w={{ base: '100%', xs: 190 }}
+          <MultiSelect placeholder={p('criticality') ? undefined : t('criticality.label')} data={listItems('criticality', t, null, true)} w={{ base: '100%', xs: 190 }}
             value={p('criticality') ? p('criticality').split(',') : []} onChange={(v) => set({ criticality: v.join(',') || null })} clearable />
+          <Select placeholder={t('brands.brand')} data={(brands ?? []).map((b) => ({ value: b.id, label: b.name }))} value={p('brandId') || null} clearable searchable w={{ base: '100%', xs: 170 }}
+            onChange={(v) => set({ brandId: v, modelId: null })} />
+          <Select placeholder={t('brands.model')} data={(brandOf?.models ?? []).map((x) => ({ value: x.id, label: x.name }))} value={p('modelId') || null} clearable searchable
+            disabled={!brandOf} w={{ base: '100%', xs: 150 }} onChange={(v) => set({ modelId: v })} />
+          <Select placeholder={t('assetGroups.one')} data={groupData(groups, null, p('assetGroupId') || null)} value={p('assetGroupId') || null} clearable searchable
+            w={{ base: '100%', xs: 190 }} onChange={(v) => set({ assetGroupId: v })} />
           <Switch label={t('assets.topLevelOnly')} checked={p('topLevelOnly') === 'true'} onChange={(e) => set({ topLevelOnly: e.currentTarget.checked ? 'true' : null })} mb={8} />
           <Switch label={t('downtime.downNow')} color="red" checked={p('downNow') === 'true'} onChange={(e) => set({ downNow: e.currentTarget.checked ? 'true' : null })} mb={8} />
           <Group gap={6} ml="auto">
@@ -123,13 +151,28 @@ export function AssetsPage() {
       {can(P.assetsEdit) && (
         <BulkBar count={selected.length} onClear={() => setSelected([])}>
             <Menu><Menu.Target><Button size="xs" variant="white" leftSection={<IconEdit size={14} />}>{t('assets.setStatus')}</Button></Menu.Target>
-              <Menu.Dropdown>{ASSET_STATUSES.map((s) => <Menu.Item key={s} onClick={() => bulk.mutate({ status: s })}>{t(`status.${s}`)}</Menu.Item>)}</Menu.Dropdown></Menu>
+              <Menu.Dropdown>{listItems('assetStatus', t).map((s) => <Menu.Item key={s.value} onClick={() => bulk.mutate({ status: s.value as AssetStatus })}>{s.label}</Menu.Item>)}</Menu.Dropdown></Menu>
             <Menu><Menu.Target><Button size="xs" variant="white">{t('assets.setCriticality')}</Button></Menu.Target>
-              <Menu.Dropdown>{CRITICALITIES.map((s) => <Menu.Item key={s} onClick={() => bulk.mutate({ criticality: s })}>{t(`criticality.${s}`)}</Menu.Item>)}</Menu.Dropdown></Menu>
+              <Menu.Dropdown>{listItems('criticality', t).map((s) => <Menu.Item key={s.value} onClick={() => bulk.mutate({ criticality: s.value as Criticality })}>{s.label}</Menu.Item>)}</Menu.Dropdown></Menu>
             <Menu><Menu.Target><Button size="xs" variant="white">{t('assets.setCategory')}</Button></Menu.Target>
               <Menu.Dropdown mah={300} style={{ overflowY: 'auto' }}>{(cats ?? []).map((c) => <Menu.Item key={c.id} onClick={() => bulk.mutate({ categoryId: c.id })}>{c.name}</Menu.Item>)}</Menu.Dropdown></Menu>
+            <Menu><Menu.Target><Button size="xs" variant="white">{t('assetGroups.one')}</Button></Menu.Target>
+              <Menu.Dropdown>
+                <Menu.Item onClick={() => setGroupFor('add')}>{t('assetGroups.addTo')}</Menu.Item>
+                <Menu.Item onClick={() => setGroupFor('remove')}>{t('assetGroups.removeFrom')}</Menu.Item>
+              </Menu.Dropdown></Menu>
             <Button size="xs" variant="white" leftSection={<IconQrcode size={14} />} onClick={() => openLabels('asset', selected.map((s) => s.id))}>{t('labels.printLabels')}</Button>
         </BulkBar>
+      )}
+      {groupFor && (
+        <Modal opened onClose={() => setGroupFor(null)} title={t(groupFor === 'add' ? 'assetGroups.addTo' : 'assetGroups.removeFrom')}>
+          <Stack>
+            <Text fz="sm" c="dimmed">{t('assetGroups.selectedCount', { count: selected.length })}</Text>
+            <Select label={t('assetGroups.one')} data={groupData(groups)} value={groupChoice} onChange={setGroupChoice} searchable data-autofocus />
+            <Group justify="flex-end"><Button variant="default" onClick={() => setGroupFor(null)}>{t('common.cancel')}</Button>
+              <Button disabled={!groupChoice} onClick={changeGroup}>{t('common.save')}</Button></Group>
+          </Stack>
+        </Modal>
       )}
       <Card p={0}>
         <DataTable<AssetListItem>

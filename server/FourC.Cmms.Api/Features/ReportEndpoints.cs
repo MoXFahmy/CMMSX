@@ -27,7 +27,7 @@ public static class ReportEndpoints
     public sealed record ReportDef(string Key, string Category, string Title, string Description, string Permission, List<Param> Params);
     /// <summary>A report's choices. 0.14.0: one asset (with its components), and a year.</summary>
     public sealed record ReportArgs(DateOnly From, DateOnly To, Guid? SiteId, string? GroupBy, int Days, Guid? AssetId = null, int Year = 0, bool Components = false,
-        Guid? CostCentreId = null);
+        Guid? CostCentreId = null, FourC.Cmms.Core.Tenancy.TenantSettings? Settings = null, Guid? AssetGroupId = null);
     /// <summary>A month of the PM annual plan (0.14.0): column type "plan".</summary>
     public sealed record PlanCell(int Done, int Late, int Missed, int Cancelled, int Planned);
     public const string ChooseAsset = "Choose an asset.";
@@ -41,6 +41,8 @@ public static class ReportEndpoints
     private static readonly Param ComponentsP = new("components", "bool");
     /// <summary>A cost centre with its children (0.20.0).</summary>
     private static readonly Param CostCentreP = new("costCentreId", "costCentre");
+    // 0.21.0: an asset group, by each row's own asset.
+    private static readonly Param AssetGroupP = new("assetGroupId", "assetGroup");
     private static Param GroupBy(object def, params (string, string)[] o) => new("groupBy", "select", o.Select(x => new Option(x.Item1, x.Item2)).ToList(), def);
 
     public static readonly List<ReportDef> Catalog =
@@ -52,7 +54,7 @@ public static class ReportEndpoints
             [Range, SiteP, GroupBy("order", ("order", "Order"), ("priority", "Priority"), ("trade", "Trade"))]),
         new("wo-throughput", "Work", "Work order throughput", "Work orders raised and completed per month, on-time completion and average turnaround.", Permissions.WorkOrdersView, [Range, SiteP]),
         new("pm-compliance", "Work", "PM compliance", "Preventive work due in the period: completed on time, late, or missed.", Permissions.PmView,
-            [Range, SiteP, GroupBy("month", ("month", "Month"), ("schedule", "PM schedule"), ("trade", "Trade"), ("category", "Asset category"))]),
+            [Range, SiteP, AssetGroupP, GroupBy("month", ("month", "Month"), ("schedule", "PM schedule"), ("trade", "Trade"), ("category", "Asset category"))]),
         new("pm-annual-plan", "Work", "PM annual plan", "Each PM's year, month by month: what was done, late, missed or cancelled, and what is still planned.", Permissions.PmView, [YearP, SiteP]),
         new("requester-satisfaction", "Work", "Requester satisfaction", "Requesters' answers to finished work: accepted or refused, and their ratings.", Permissions.WorkOrdersView,
             [Range, SiteP, GroupBy("month", ("month", "Month"), ("type", "Request type"), ("trade", "Trade"), ("team", "Team"), ("site", "Site"))]),
@@ -60,19 +62,19 @@ public static class ReportEndpoints
             [Range, SiteP, GroupBy("reason", ("reason", "Reason"), ("month", "Month"), ("trade", "Trade"), ("site", "Site"))]),
         new("labor-hours", "Work", "Labour hours", "Hours, overtime and labour cost booked to work orders.", Permissions.WorkOrdersView,
             [Range, SiteP, GroupBy("employee", ("employee", "Employee"), ("trade", "Trade"), ("team", "Team"), ("type", "Work type"))]),
-        new("reliability", "Reliability", "Asset reliability (MTBF / MTTR)", "Breakdowns per asset with downtime, mean time between failures and mean time to repair.", Permissions.WorkOrdersView, [Range, SiteP]),
-        new("downtime", "Reliability", "Downtime log", "Every stop in the period with how long the asset was stopped during its running time.", Permissions.WorkOrdersView, [Range, SiteP]),
+        new("reliability", "Reliability", "Asset reliability (MTBF / MTTR)", "Breakdowns per asset with downtime, mean time between failures and mean time to repair.", Permissions.WorkOrdersView, [Range, SiteP, AssetGroupP]),
+        new("downtime", "Reliability", "Downtime log", "Every stop in the period with how long the asset was stopped during its running time.", Permissions.WorkOrdersView, [Range, SiteP, AssetGroupP]),
         new("out-of-limits", "Reliability", "Out of limits", "Readings at an alert or alarm level, with the work they raised.", Permissions.WorkOrdersView, [Range, SiteP]),
-        new("failure-tree", "Reliability", "Failure tree", "Completed work by symptom, cause and remedy, with hours, downtime and cost.", Permissions.WorkOrdersView, [Range, SiteP]),
-        new("failure-pareto", "Reliability", "Failure analysis", "Breakdowns by failure code — the few causes behind most of the downtime.", Permissions.WorkOrdersView, [Range, SiteP]),
+        new("failure-tree", "Reliability", "Failure tree", "Completed work by symptom, cause and remedy, with hours, downtime and cost.", Permissions.WorkOrdersView, [Range, SiteP, AssetGroupP]),
+        new("failure-pareto", "Reliability", "Failure analysis", "Breakdowns by failure code — the few causes behind most of the downtime.", Permissions.WorkOrdersView, [Range, SiteP, AssetGroupP]),
         new("maintenance-costs", "Costs", "Maintenance costs", "Labour, parts and other costs booked in the period.", Permissions.WorkOrdersView,
-            [Range, SiteP, CostCentreP, GroupBy("asset", ("asset", "Asset"), ("site", "Site"), ("category", "Asset category"), ("type", "Work type"), ("trade", "Trade"), ("team", "Team"), ("technician", "Technician"), ("month", "Month"), ("costCentre", "Cost centre"))]),
+            [Range, SiteP, CostCentreP, AssetGroupP, GroupBy("asset", ("asset", "Asset"), ("site", "Site"), ("category", "Asset category"), ("type", "Work type"), ("trade", "Trade"), ("team", "Team"), ("technician", "Technician"), ("month", "Month"), ("costCentre", "Cost centre"))]),
         new("budget-vs-actual", "Costs", "Budget against actual", "Budget, committed spend and actual cost by cost centre or month, with the variance.", Permissions.ReportsView,
             [Range, CostCentreP, GroupBy("costCentre", ("costCentre", "Cost centre"), ("month", "Month"))]),
         new("contracts", "Costs", "Contracts", "Each contract's value, spend and completed work in the period against what it expects.", Permissions.ReportsView, [Range, SiteP]),
         new("asset-work-history", "Assets", "Asset work history", "Every work order on one asset in the period, with its codes, hours, cost and downtime.", Permissions.WorkOrdersView,
             [AssetP, Range, ComponentsP]),
-        new("assets-by-category", "Assets", "Asset register summary", "Assets by category and status with purchase and current value.", Permissions.AssetsView, [SiteP]),
+        new("assets-by-category", "Assets", "Asset register summary", "Assets by category and status with purchase and current value.", Permissions.AssetsView, [SiteP, AssetGroupP]),
         new("stock-valuation", "Inventory", "Stock valuation", "Value of stock on hand at average cost.", Permissions.InventoryView,
             [SiteP, GroupBy("store", ("store", "Store"), ("group", "Part group"))]),
         new("stock-reorder", "Inventory", "Stock below re-order level", "Store levels at or below their re-order point, with quantity on order.", Permissions.InventoryView, [SiteP]),
@@ -94,7 +96,7 @@ public static class ReportEndpoints
         }).RequirePermission(Permissions.ReportsView);
 
         g.MapGet("/{key}", async (string key, HttpContext http, PermissionService perms, CmmsDbContext db, DateOnly? from, DateOnly? to, Guid? siteId, string? groupBy, int? days,
-            Guid? assetId, int? year, bool? components, Guid? costCentreId, CancellationToken ct) =>
+            Guid? assetId, int? year, bool? components, Guid? costCentreId, Guid? assetGroupId, CancellationToken ct) =>
         {
             var def = Catalog.FirstOrDefault(r => r.Key == key);
             if (def is null) return Results.NotFound();
@@ -109,9 +111,13 @@ public static class ReportEndpoints
             if (assetId is { } chosen && def.Params.Any(p => p.Type == "asset") && !await db.Assets.AnyAsync(x => x.Id == chosen, ct)) return Results.NotFound();
             // A cost centre the person can't see (another site's) can't be reported on.
             if (costCentreId is { } centre && def.Params.Any(p => p.Type == "costCentre") && !await db.CostCentres.AnyAsync(x => x.Id == centre, ct)) return Results.NotFound();
+            var byGroup = def.Params.Any(p => p.Type == "assetGroup") ? assetGroupId : null;
+            if (byGroup is { } grp && !await db.AssetGroups.AnyAsync(x => x.Id == grp, ct)) return Results.NotFound();
             var y = year ?? Today.Year;
             if (def.Params.Any(p => p.Type == "year") && y is < 2000 or > 2100) throw new FourC.Cmms.Core.Common.DomainException(ChooseYear);
-            var a = new ReportArgs(f, t, siteId, gb, Math.Clamp(days ?? 180, 1, 3650), assetId, y, components == true, costCentreId);
+            // The organization's names for types, priorities, statuses and criticality (0.21.0) label the rows.
+            var orgSettings = (await db.Tenants.AsNoTracking().FirstAsync(x => x.Id == db.CurrentTenantId, ct)).Settings;
+            var a = new ReportArgs(f, t, siteId, gb, Math.Clamp(days ?? 180, 1, 3650), assetId, y, components == true, costCentreId, orgSettings, byGroup);
             ReportResult r = key switch
             {
                 "wo-backlog" => await BacklogAsync(db, a, ct),
@@ -186,7 +192,13 @@ public static class ReportEndpoints
     private static string MonthLabel(int y, int m) => new DateOnly(y, m, 1).ToString("MMM yyyy", Dates);
     private static bool IsFailure(WorkOrder w) => w.Type == WorkType.Breakdown || w.AssetWasDown;
 
-    private static IQueryable<WorkOrder> Wo(CmmsDbContext db, ReportArgs a) => a.SiteId is { } s ? db.WorkOrders.AsNoTracking().Where(w => w.SiteId == s) : db.WorkOrders.AsNoTracking();
+    private static IQueryable<WorkOrder> Wo(CmmsDbContext db, ReportArgs a)
+    {
+        var q = a.SiteId is { } s ? db.WorkOrders.AsNoTracking().Where(w => w.SiteId == s) : db.WorkOrders.AsNoTracking();
+        // An asset group (0.21.0): work on one of its assets, or a round covering one.
+        if (a.AssetGroupId is { } g) { var members = AssetGroupEndpoints.Members(db, g); q = q.Where(w => (w.AssetId != null && members.Contains(w.AssetId.Value)) || w.Assets.Any(x => members.Contains(x.AssetId))); }
+        return q;
+    }
 
     // ---------------------------------------------------------------- work
     private static async Task<ReportResult> BacklogAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
@@ -198,7 +210,7 @@ public static class ReportEndpoints
         var rows = Enum.GetValues<WorkPriority>().OrderByDescending(p => p).Select(p =>
         {
             var xs = open.Where(w => w.Priority == p).ToList();
-            return Row(("priority", p.ToString()), ("d0_7", xs.Count(w => Bucket(w.CreatedAt) == "d0_7")), ("d8_30", xs.Count(w => Bucket(w.CreatedAt) == "d8_30")),
+            return Row(("priority", Lists.Name(a.Settings, p)), ("d0_7", xs.Count(w => Bucket(w.CreatedAt) == "d0_7")), ("d8_30", xs.Count(w => Bucket(w.CreatedAt) == "d8_30")),
                 ("d31_90", xs.Count(w => Bucket(w.CreatedAt) == "d31_90")), ("d90", xs.Count(w => Bucket(w.CreatedAt) == "d90")),
                 ("onHold", xs.Count(w => w.Status == WorkOrderStatus.OnHold)), ("overdue", xs.Count(w => w.DueAt < now)), ("total", xs.Count));
         }).ToList();
@@ -234,7 +246,7 @@ public static class ReportEndpoints
 
         var byPriority = a.GroupBy == "priority";
         var groups = byPriority
-            ? Enum.GetValues<WorkPriority>().OrderByDescending(p => p).Select(p => (Label: p.ToString(), Match: (Func<WorkPriority, DateTimeOffset, bool>)((pr, _) => pr == p))).ToList()
+            ? Enum.GetValues<WorkPriority>().OrderByDescending(p => p).Select(p => (Label: Lists.Name(a.Settings, p), Match: (Func<WorkPriority, DateTimeOffset, bool>)((pr, _) => pr == p))).ToList()
             : Months(a).Select(m => (Label: MonthLabel(m.Y, m.M), Match: (Func<WorkPriority, DateTimeOffset, bool>)((_, d) => d.Year == m.Y && d.Month == m.M))).ToList();
         var key = byPriority ? "priority" : "month";
         var rows = groups.Select(g =>
@@ -325,7 +337,7 @@ public static class ReportEndpoints
         {
             "trade" => xs.GroupBy(x => x.Trade ?? "No trade"),
             "team" => xs.GroupBy(x => x.Team ?? "No team"),
-            "type" => xs.GroupBy(x => x.Type.ToString()),
+            "type" => xs.GroupBy(x => Lists.Name(a.Settings, x.Type)),
             _ => xs.GroupBy(x => x.Employee + (x.IsContractor ? " (contractor)" : "")),
         };
         var rows = groups.Select(g => Row(("group", g.Key), ("hours", g.Sum(x => x.Hours)), ("overtime", g.Sum(x => x.OvertimeHours)), ("total", g.Sum(x => x.Hours + x.OvertimeHours)),
@@ -369,6 +381,7 @@ public static class ReportEndpoints
         var (tz, s, e) = await LocalPeriodAsync(db, a, ct);
         var assets = db.Assets.AsNoTracking();
         if (a.SiteId is { } site) assets = assets.Where(x => x.SiteId == site);
+        if (a.AssetGroupId is { } g) { var members = AssetGroupEndpoints.Members(db, g); assets = assets.Where(x => members.Contains(x.Id)); }
         var clocks = await assets
             .Where(x => db.DowntimeEvents.Any(d => d.AssetId == x.Id && d.StartedAt < e && (d.EndedAt == null || d.EndedAt > s))
                      || db.WorkOrders.Any(w => w.AssetId == x.Id && w.AssetWasDown && w.DowntimeEventId == null && w.CompletedAt >= s && w.CompletedAt < e))
@@ -403,6 +416,7 @@ public static class ReportEndpoints
         var (tz, s, e) = await LocalPeriodAsync(db, a, ct);
         var q = db.DowntimeEvents.AsNoTracking().Where(d => d.StartedAt < e && (d.EndedAt == null || d.EndedAt > s));
         if (a.SiteId is { } site) q = q.Where(d => d.Asset!.SiteId == site);
+        if (a.AssetGroupId is { } g) { var members = AssetGroupEndpoints.Members(db, g); q = q.Where(d => members.Contains(d.AssetId)); }
         const int most = 5000;
         var stops = await q.OrderBy(d => d.StartedAt).Take(most + 1)
             .Select(d => new { d.AssetId, d.Asset!.AssetNumber, AssetName = d.Asset.Name, d.Asset.RunsHoursPerDay, d.Asset.RunsOn, d.StartedAt, d.EndedAt, d.Reason, d.SourceNumber })
@@ -627,7 +641,7 @@ public static class ReportEndpoints
         {
             var byPriority = a.GroupBy == "priority";
             var groups = byPriority
-                ? orders.GroupBy(o => o.Priority).OrderByDescending(g => g.Key).Select(g => (Label: g.Key.ToString(), Items: g.ToList()))
+                ? orders.GroupBy(o => o.Priority).OrderByDescending(g => g.Key).Select(g => (Label: Lists.Name(a.Settings, g.Key), Items: g.ToList()))
                 : orders.GroupBy(o => o.Trade ?? "No trade").OrderBy(g => g.Key == "No trade").ThenBy(g => g.Key).Select(g => (Label: g.Key, Items: g.ToList()));
             var rows = groups.Select(g => Row(("group", g.Label), ("orders", g.Items.Count), ("responseAvg", Avg(g.Items.Select(o => o.ResponseHours))),
                 ("responsePct", MetPct(g.Items.Select(o => o.Response))), ("completionAvg", Avg(g.Items.Select(o => o.CompletionHours))),
@@ -638,7 +652,7 @@ public static class ReportEndpoints
                 rows, new Chart("bar", "group", ["responsePct", "completionPct"]), summary);
         }
         string? T(string? word) => word is null ? null : Translator.T(word);
-        var list = orders.Select(o => Row(("number", o.Number), ("title", o.Title), ("priority", Translator.T(o.Priority.ToString())), ("trade", o.Trade),
+        var list = orders.Select(o => Row(("number", o.Number), ("title", o.Title), ("priority", Lists.Name(a.Settings, o.Priority)), ("trade", o.Trade),
             ("respondBy", o.RespondBy), ("respondedAt", o.RespondedAt), ("responseHours", o.ResponseHours), ("response", T(o.Response)),
             ("dueAt", o.DueAt), ("completedAt", o.CompletedAt), ("completionHours", o.CompletionHours), ("completion", T(o.Completion)),
             ("requestId", o.RequestId), ("workOrderId", o.WorkOrderId))).ToList();
@@ -711,7 +725,7 @@ public static class ReportEndpoints
         foreach (var chunk in ids.Chunk(1000))
             foreach (var d in await db.WorkOrders.AsNoTracking().Where(w => chunk.Contains(w.Id)).Select(w => new { w.Id, Site = w.Site!.Name, w.Type, Trade = w.Trade!.Name,
                          Team = w.Team!.Name, Asset = w.Asset == null ? null : w.Asset.AssetNumber + " · " + w.Asset.Name, Category = w.Asset!.Category!.Name, w.CostCentreId }).ToListAsync(ct))
-                dims[d.Id] = (d.Site, d.Type.ToString(), d.Trade ?? "No trade", d.Team ?? "No team", d.Asset ?? "No asset (location work)", d.Category ?? "Uncategorised",
+                dims[d.Id] = (d.Site, Lists.Name(a.Settings, d.Type), d.Trade ?? "No trade", d.Team ?? "No team", d.Asset ?? "No asset (location work)", d.Category ?? "Uncategorised",
                     d.CostCentreId is { } dc ? centrePaths.GetValueOrDefault(dc) ?? "No cost centre" : "No cost centre");
         string Key(CostLine l) => a.GroupBy switch
         {
@@ -854,7 +868,7 @@ public static class ReportEndpoints
         }).Take(5000).ToListAsync(ct);
         var costs = (await CostLinesAsync(db, wos, null, null, ct)).GroupBy(c => c.WoId)
             .ToDictionary(g => g.Key, g => (Hours: g.Sum(x => x.Hours), Cost: g.Sum(x => x.Total)));
-        var rows = items.Select(w => Row(("number", w.Number), ("date", w.CreatedAt), ("asset", w.Asset), ("type", Translator.T(w.Type.ToString())), ("title", w.Title),
+        var rows = items.Select(w => Row(("number", w.Number), ("date", w.CreatedAt), ("asset", w.Asset), ("type", Lists.Name(a.Settings, w.Type)), ("title", w.Title),
             ("symptom", w.Symptom), ("cause", w.Cause), ("remedy", w.Remedy), ("hours", R2(costs.GetValueOrDefault(w.Id).Hours)), ("cost", R2(costs.GetValueOrDefault(w.Id).Cost)),
             ("downtime", w.DowntimeHours), ("workOrderId", w.Id))).ToList();
         var subtitle = $"{root.AssetNumber} · {root.Name} · {Period(a)}" + (a.Components ? $" · {Translator.T("with its components")}" : "");
@@ -870,6 +884,7 @@ public static class ReportEndpoints
     {
         var q = db.Assets.AsNoTracking();
         if (a.SiteId is { } s) q = q.Where(x => x.SiteId == s);
+        if (a.AssetGroupId is { } g) { var members = AssetGroupEndpoints.Members(db, g); q = q.Where(x => members.Contains(x.Id)); }
         var xs = await q.Select(x => new { Category = x.Category!.Name, x.Status, x.PurchasePrice, x.CurrentValue }).ToListAsync(ct);
         var rows = xs.GroupBy(x => x.Category ?? "Uncategorised").OrderBy(g => g.Key).Select(g => Row(("category", g.Key),
             ("active", g.Count(x => x.Status == FourC.Cmms.Core.Assets.AssetStatus.Active)), ("underRepair", g.Count(x => x.Status == FourC.Cmms.Core.Assets.AssetStatus.UnderRepair)),
@@ -877,10 +892,13 @@ public static class ReportEndpoints
             ("disposed", g.Count(x => x.Status == FourC.Cmms.Core.Assets.AssetStatus.Disposed)), ("total", g.Count()),
             ("purchaseValue", R2(g.Sum(x => x.PurchasePrice ?? 0))), ("currentValue", R2(g.Sum(x => x.CurrentValue ?? 0))))).ToList();
         return new("assets-by-category", "Asset register summary", $"As of {Today:d MMM yyyy}",
-            [new("category", "Category"), new("active", "Active", "number"), new("underRepair", "Under repair", "number"), new("inactive", "Inactive / in storage", "number"),
-             new("disposed", "Disposed", "number"), new("total", "Total", "number"), new("purchaseValue", "Purchase value", "currency"), new("currentValue", "Current value", "currency")],
+            // Statuses as the organization names them (0.21.0).
+            [new("category", "Category"), new("active", Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.Active), "number"),
+             new("underRepair", Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.UnderRepair), "number"),
+             new("inactive", $"{Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.Inactive)} / {Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.InStorage)}", "number"),
+             new("disposed", Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.Disposed), "number"), new("total", "Total", "number"), new("purchaseValue", "Purchase value", "currency"), new("currentValue", "Current value", "currency")],
             rows, new Chart("bar", "category", ["active", "underRepair", "inactive"], true),
-            [new("Assets", xs.Count), new("Under repair", xs.Count(x => x.Status == FourC.Cmms.Core.Assets.AssetStatus.UnderRepair)),
+            [new("Assets", xs.Count), new(Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.UnderRepair), xs.Count(x => x.Status == FourC.Cmms.Core.Assets.AssetStatus.UnderRepair)),
              new("Purchase value", R2(xs.Sum(x => x.PurchasePrice ?? 0)), "currency"), new("Current value", R2(xs.Sum(x => x.CurrentValue ?? 0)), "currency")]);
     }
 

@@ -7,7 +7,13 @@ namespace FourC.Cmms.Api.Features;
 public sealed record EmailContent(string Subject, string Html, string Text);
 
 /// <summary>Facts about a work order that e-mails mention.</summary>
-public sealed record WorkOrderFacts(string Number, string Title, string Priority, DateOnly? DueDate, string? Place, string? Description, string? CompletionNotes);
+/// <summary>A word in both languages, read in the language of the e-mail being written (0.21.0: the organization's names for priorities).</summary>
+public sealed record LocalWords(string En, string Ar)
+{
+    public override string ToString() => Translator.CurrentLanguage == "ar" ? Ar : En;
+}
+
+public sealed record WorkOrderFacts(string Number, string Title, LocalWords Priority, DateOnly? DueDate, string? Place, string? Description, string? CompletionNotes);
 
 /// <summary>Facts about a purchase order for internal e-mails.</summary>
 public sealed record PoFacts(string Number, string? Supplier, string Total, string? RequestedBy);
@@ -24,7 +30,7 @@ public sealed record PoDocument(string Number, string OrderDate, string? Expecte
 public sealed record PoDocumentLine(int Number, string Description, string Quantity, string UnitPrice, string Total);
 
 /// <summary>Facts about a work request that e-mails mention.</summary>
-public sealed record RequestFacts(string Number, string Title, string Priority, string? Place);
+public sealed record RequestFacts(string Number, string Title, LocalWords Priority, string? Place);
 
 /// <summary>
 /// The text of every notification. One short layout: heading, a few facts, an optional paragraph, a button to the
@@ -43,7 +49,7 @@ public static class EmailTemplates
 
     public static EmailContent RequestSubmitted(string org, RequestFacts r, string? requester, string? link) => Layout(org,
         $"New request {r.Number}: {r.Title}", "A new work request is waiting for review",
-        [("Request", $"{r.Number} · {r.Title}"), ("Priority", r.Priority), ("Where", r.Place), ("From", requester)], null, link, "Review the request");
+        [("Request", $"{r.Number} · {r.Title}"), ("Priority", r.Priority.ToString()), ("Where", r.Place), ("From", requester)], null, link, "Review the request");
 
     public static EmailContent RequestApproved(string org, RequestFacts r, string workOrderNumber, string? link) => Layout(org,
         $"Your request {r.Number} was approved", "Your work request was approved",
@@ -61,7 +67,7 @@ public static class EmailTemplates
 
     public static EmailContent WorkOrderOverdue(string org, WorkOrderFacts w, string? link) => Layout(org,
         $"Overdue: work order {w.Number}", "This work is past its due time",
-        [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority), ("Due", w.DueDate is { } d ? Translator.Date(d) : null), ("Where", w.Place)],
+        [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority.ToString()), ("Due", w.DueDate is { } d ? Translator.Date(d) : null), ("Where", w.Place)],
         null, link, "Open the work order");
 
     public static EmailContent WorkOrderCancelled(string org, WorkOrderFacts w, string? reason, string? note, string? link, bool forRequester = false) => Layout(org,
@@ -155,7 +161,7 @@ public static class EmailTemplates
     }
 
     private static (string, string?)[] WorkOrderLines(WorkOrderFacts w) =>
-        [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority), ("Due", w.DueDate is { } d ? Translator.Date(d) : null), ("Where", w.Place)];
+        [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority.ToString()), ("Due", w.DueDate is { } d ? Translator.Date(d) : null), ("Where", w.Place)];
 
     /// <summary>Builds both bodies. Facts with no value are left out.</summary>
     public static EmailContent Layout(string org, string subject, string heading, IEnumerable<(string Label, string? Value)> facts, string? paragraph,
@@ -196,6 +202,6 @@ public static class EmailTemplates
         return new EmailContent(EmailText.OneLine(subject), h.ToString(), t.ToString());
     }
 
-    /// <summary>Fixed values are translated (a priority such as "High"); names, numbers and text people typed are not.</summary>
-    private static string? TranslateFixed(string label, string? value) => label == "Priority" ? Translator.T(value) : value;
+    /// <summary>Values are shown as given: a priority already reads in the e-mail's language (<see cref="LocalWords"/>).</summary>
+    private static string? TranslateFixed(string label, string? value) => value;
 }

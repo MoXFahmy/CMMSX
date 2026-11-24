@@ -35,6 +35,8 @@ public static class WorkOrderEndpoints
     public sealed class WorkOrderFilter
     {
         public string? Search { get; set; }
+        /// <summary>0.21.0: work on an asset of the group, or a round covering one.</summary>
+        public Guid? AssetGroupId { get; set; }
         public string? Status { get; set; }
         public string? Priority { get; set; }
         public string? Type { get; set; }
@@ -742,6 +744,7 @@ public static class WorkOrderEndpoints
             q = q.Where(w => w.LocationId != null && db.Locations.Any(l => l.Id == w.LocationId && l.Path.StartsWith(path)));
         }
         if (f.AssetId is not null) q = q.Where(w => w.AssetId == f.AssetId || (w.Asset != null && w.Asset.ParentAssetId == f.AssetId) || w.Assets.Any(a => a.AssetId == f.AssetId));
+        if (f.AssetGroupId is { } grp) { var members = AssetGroupEndpoints.Members(db, grp); q = q.Where(w => (w.AssetId != null && members.Contains(w.AssetId.Value)) || w.Assets.Any(a => members.Contains(a.AssetId))); }
         if (f.TradeId is not null) q = q.Where(w => w.TradeId == f.TradeId);
         if (f.TeamId is not null) q = q.Where(w => w.TeamId == f.TeamId);
         if (f.CancelReasonId is not null) q = q.Where(w => w.CancelReasonId == f.CancelReasonId);

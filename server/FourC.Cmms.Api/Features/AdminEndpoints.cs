@@ -20,6 +20,7 @@ public static class AdminEndpoints
         List<Guid>? SiteIds = null, List<Guid>? LocationIds = null);
     public sealed record RoleInput(string Name, string? Description, List<string> Permissions);
     public sealed record SettingsInput(string Name, TenantSettings Settings);
+    public sealed record ListLabelsInput(Dictionary<string, Dictionary<string, ListLabel>>? ListLabels);
     public sealed record PasswordInput(string Password);
 
     public static void MapAdminEndpoints(this RouteGroupBuilder api)
@@ -195,9 +196,24 @@ public static class AdminEndpoints
             // The logo (0.14.0) changes only through its own upload, whatever a page sends.
             input.Settings.LogoVersion = t.Settings.LogoVersion;
             input.Settings.LogoContentType = t.Settings.LogoContentType;
+            // The lists' wording (0.21.0) changes only through its own page, whatever this page sends.
+            input.Settings.ListLabels = t.Settings.ListLabels ?? [];
             t.Settings = input.Settings;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { t.Name, t.Settings });
+        }).RequirePermission(Permissions.SettingsManage);
+
+        // The organization's wording for the fixed lists (0.21.0): names, colours, order and hidden values.
+        settings.MapPut("/lists", async (ListLabelsInput input, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var labels = Lists.Clean(input.ListLabels);
+            if (Lists.Problem(labels) is { } problem) return new Validator().When(true, "listLabels", problem).Problem();
+            var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
+            var copy = System.Text.Json.JsonSerializer.Deserialize<TenantSettings>(System.Text.Json.JsonSerializer.Serialize(t.Settings))!;
+            copy.ListLabels = labels;
+            t.Settings = copy;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { ListLabels = labels });
         }).RequirePermission(Permissions.SettingsManage);
 
         // The organization's logo (0.14.0), on printed reports and job cards: PNG, JPEG or WebP up to 1 MB, one per organization.

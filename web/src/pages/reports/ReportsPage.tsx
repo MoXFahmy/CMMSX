@@ -21,6 +21,7 @@ import { printFilters } from './printFilters';
 import { isTree, PLAN_PARTS, planText, rowLink, treeRows, type PlanCell } from './reportCells';
 import { fmtDate, fmtDateTime, fmtNumber, fmtPrice } from '@/components/utils';
 import { downloadCsv } from '../inventory/InventoryPage';
+import { groupData, useAssetGroups } from '@/components/ReferencePickers';
 
 const CATEGORY_ICON: Record<string, typeof IconTool> = { Work: IconTool, Reliability: IconAlertTriangle, Costs: IconCoin, Assets: IconBox, Inventory: IconPackage, Purchasing: IconShoppingCart };
 const CATEGORY_COLOR: Record<string, string> = { Work: 'blue', Reliability: 'red', Costs: 'teal', Assets: 'indigo', Inventory: 'orange', Purchasing: 'grape' };
@@ -93,9 +94,11 @@ export function ReportViewPage() {
   const yearParam = def?.params.find((x) => x.type === 'year');
   const boolParam = def?.params.find((x) => x.type === 'bool');
   const costCentreParam = def?.params.find((x) => x.type === 'costCentre');
+  const groupParam2 = def?.params.find((x) => x.type === 'assetGroup');
+  const { data: assetGroups } = useAssetGroups(!!groupParam2);
   const q = { from: has('range') ? from : undefined, to: has('range') ? to : undefined, siteId: p('siteId') || undefined, groupBy: p('groupBy') || (groupParam?.default as string | undefined), days: p('days') || (daysParam?.default as number | undefined),
     assetId: assetParam ? p('assetId') || undefined : undefined, year: yearParam ? p('year') || String(dayjs().year()) : undefined,
-    components: boolParam ? p('components') || undefined : undefined, costCentreId: costCentreParam ? p('costCentreId') || undefined : undefined };
+    components: boolParam ? p('components') || undefined : undefined, costCentreId: costCentreParam ? p('costCentreId') || undefined : undefined, assetGroupId: groupParam2 ? p('assetGroupId') || undefined : undefined };
   const needsAsset = !!assetParam && !q.assetId;
   const { data: centres } = useCostCentres();
   const { data: chosenAsset } = useQuery({ queryKey: ['asset', q.assetId], queryFn: () => get<{ assetNumber: string; name: string }>(`/assets/${q.assetId}`), enabled: !!q.assetId });
@@ -154,6 +157,8 @@ export function ReportViewPage() {
                 onChange={([a, b]) => { if (a && b) set({ preset: null, from: dayjs(a).format('YYYY-MM-DD'), to: dayjs(b).format('YYYY-MM-DD') }); }} />
             </>}
             {has('siteId') && <Select label={terms.site} placeholder={t('common.all')} w={200} clearable data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v })} />}
+            {groupParam2 && <Select label={t('assetGroups.one')} placeholder={t('common.all')} w={220} clearable searchable
+              data={groupData(assetGroups, null, q.assetGroupId ?? null)} value={q.assetGroupId ?? null} onChange={(v) => set({ assetGroupId: v })} />}
             {costCentreParam && <CostCentrePicker w={240} placeholder={t('common.all')} value={q.costCentreId ?? null} onChange={(v) => set({ costCentreId: v })}
               title={t('costCentres.withChildren')} />}
             {groupParam && <Select label={t('rep.groupBy')} w={180} allowDeselect={false} data={groupParam.options ?? []} value={q.groupBy ?? null} onChange={(v) => { setSort(NONE); set({ groupBy: v }); }} />}
@@ -175,7 +180,7 @@ export function ReportViewPage() {
           <div className="print-only"><PrintHeader title={data.title}
             lines={[...(data.subtitle ? [data.subtitle] : []), ...printFilters(def!, q, { site: h?.sites.find((s) => s.id === q.siteId)?.name,
               asset: chosenAsset ? `${chosenAsset.assetNumber} · ${chosenAsset.name}` : undefined,
-              costCentre: (centres ?? []).find((c) => c.id === q.costCentreId)?.path }, t)]} /></div>
+              costCentre: (centres ?? []).find((c) => c.id === q.costCentreId)?.path, assetGroup: assetGroups?.find((g) => g.id === q.assetGroupId)?.name }, t)]} /></div>
           {data.summary.length > 0 && (
             <SimpleGrid cols={{ base: 2, md: data.summary.length }}>
               {data.summary.map((s) => <Card key={s.label} p="md"><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{s.label}</Text><Text fz={26} fw={700} lh={1.3}>{fmt(s.value, s.type)}</Text></Card>)}

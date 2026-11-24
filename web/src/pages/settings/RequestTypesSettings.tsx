@@ -7,10 +7,11 @@ import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
 import { IconEdit, IconPlus, IconTrash } from '@tabler/icons-react';
 import { del, get, post, put } from '@/api/client';
-import { WORK_PRIORITIES, type Lookup, type RequestType } from '@/api/types';
+import { type Lookup, type RequestType } from '@/api/types';
 import { confirmDelete } from '@/components/confirm';
 import { teamOptions, useTeams } from '@/components/teams';
 import { handleFormError, notifyError, notifySuccess } from '@/components/utils';
+import { listItems } from '@/components/listLabels';
 
 const blank = { code: '', name: '', isActive: true, defaultTradeId: null as string | null, defaultPriority: null as string | null, recipientIds: [] as string[], autoApprove: false, teamId: null as string | null };
 
@@ -74,7 +75,7 @@ export function RequestTypesSettings({ editable }: { editable: boolean }) {
           <Group grow>
             <Select label={t('requestTypes.defaultTrade')} clearable searchable data={(trades ?? []).filter((x) => x.isActive || x.id === form.values.defaultTradeId).map((x) => ({ value: x.id, label: x.name }))}
               {...form.getInputProps('defaultTradeId')} />
-            <Select label={t('requestTypes.defaultPriority')} clearable data={WORK_PRIORITIES.map((p) => ({ value: p, label: t(`priority.${p}`) }))} {...form.getInputProps('defaultPriority')} />
+            <Select label={t('requestTypes.defaultPriority')} clearable data={listItems('priority', t, form.values.defaultPriority)} {...form.getInputProps('defaultPriority')} />
           </Group>
           <MultiSelect label={t('requestTypes.recipients')} description={t('requestTypes.recipientsHint')} searchable clearable
             data={(people ?? []).map((u) => ({ value: u.id, label: u.fullName }))} {...form.getInputProps('recipientIds')} />

@@ -549,8 +549,15 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     }
 
     private static async Task<WorkOrderFacts> FactsAsync(CmmsDbContext db, WorkOrder w, CancellationToken ct) =>
-        new(w.Number, w.Title, w.Priority.ToString(), w.DueDate, await PlaceAsync(db, w.SiteId, w.LocationId, w.AssetId, ct), w.Description, w.CompletionNotes);
+        new(w.Number, w.Title, await PriorityAsync(db, w.Priority, ct), w.DueDate, await PlaceAsync(db, w.SiteId, w.LocationId, w.AssetId, ct), w.Description, w.CompletionNotes);
 
     private static async Task<RequestFacts> FactsAsync(CmmsDbContext db, WorkRequest r, CancellationToken ct) =>
-        new(r.Number, r.Title, r.Priority.ToString(), await PlaceAsync(db, r.SiteId, r.LocationId, r.AssetId, ct));
+        new(r.Number, r.Title, await PriorityAsync(db, r.Priority, ct), await PlaceAsync(db, r.SiteId, r.LocationId, r.AssetId, ct));
+
+    /// <summary>A priority as the organization names it, in both languages (each recipient reads their own).</summary>
+    private static async Task<LocalWords> PriorityAsync(CmmsDbContext db, WorkPriority p, CancellationToken ct)
+    {
+        var settings = await db.Tenants.AsNoTracking().Where(t => t.Id == db.CurrentTenantId).Select(t => t.Settings).FirstAsync(ct);
+        return new LocalWords(Lists.Name(settings, p, "en"), Lists.Name(settings, p, "ar"));
+    }
 }

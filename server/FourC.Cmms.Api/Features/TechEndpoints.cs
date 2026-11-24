@@ -165,6 +165,8 @@ public static partial class TechEndpoints
                 },
                 // The AI assistant (0.15.0): "Fill with AI" shows when the server has a key, the organization switched it on and the person may report work.
                 Ai = new { Enabled = ai.Configured && settings.AiEnabled && allowed.Contains(Permissions.WorkOrdersExecute) },
+                // The organization's names for types, priorities, statuses and criticality (0.21.0), kept with the jobs for offline use.
+                ListLabels = settings.ListLabels,
                 // The measurement points the jobs' steps use (0.13.0): the phone judges a reading as it is typed.
                 Points = await Checklists.PointsAsync(db, tasks.SelectMany(g => g).Select(t => t.MeasurementPointId), ct),
                 FailureCodes = await db.FailureCodes.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),

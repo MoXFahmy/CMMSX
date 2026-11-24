@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using FourC.Cmms.Api.Infrastructure;
+using FourC.Cmms.Core.Services;
 using FourC.Cmms.Core.Assets;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
@@ -65,6 +66,7 @@ public sealed class ImportContext(CmmsDbContext db, ITenantContext tenant, Tenan
     public Dictionary<string, Guid> Remedies { get; } = Codes();
     public Dictionary<string, Guid> Suppliers { get; } = Codes();
     public Dictionary<string, Guid> CostCentres { get; } = Codes();
+    public Dictionary<string, Guid> AssetGroups { get; } = Codes();
     public Dictionary<string, Guid> Stores { get; } = Codes();
     public Dictionary<string, Guid> Assets { get; } = Codes();
     public Dictionary<string, Guid> Employees { get; } = Codes();
@@ -168,6 +170,7 @@ public static class ImportRun
     {
         var stopwatch = Stopwatch.StartNew();
         var clock = elapsed ?? (() => stopwatch.Elapsed);
+        ImportSheets.Organization = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var plan = Match(book);
         foreach (var (def, sheet) in plan)
         {
@@ -190,6 +193,13 @@ public static class ImportRun
             try
             {
                 var result = await RunSheetsAsync(db, ctx, plan, clock, budget, token);
+                // New brands, models and units from the rows (0.21.0), counted in the check and kept only when the import saves.
+                var (brands, models, units) = await ReferenceLists.ReconcileAsync(db, db.CurrentTenantId!.Value, token);
+                var listNotes = new List<string>();
+                if (brands > 0) listNotes.Add(Translator.T($"New brands: {brands}"));
+                if (models > 0) listNotes.Add(Translator.T($"New models: {models}"));
+                if (units > 0) listNotes.Add(Translator.T($"New units: {units}"));
+                if (listNotes.Count > 0) result = result with { Notes = [.. result.Notes, .. listNotes] };
                 // The last word on time: nothing is committed once the page may have given up waiting.
                 if (clock() > budget) throw new Stopped();
                 if (save) { await tx.CommitAsync(CancellationToken.None); Infrastructure.AccessService.LocationsChanged(); } // locations may have moved
@@ -326,6 +336,7 @@ public static class ImportRun
         var db = c.Db;
         foreach (var x in await db.Sites.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.Sites, x.Code, x.Id);
         foreach (var x in await db.CostCentres.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.CostCentres, x.Code, x.Id);
+        foreach (var x in await db.AssetGroups.AsNoTracking().Select(x => new { x.Id, x.Code }).ToListAsync(ct)) c.Remember(c.AssetGroups, x.Code, x.Id);
         foreach (var x in await db.Locations.AsNoTracking().Select(x => new { x.Id, x.SiteId, x.ParentId, x.Code }).ToListAsync(ct))
         {
             c.Locations[ImportContext.LocationKey(x.SiteId, x.Code)] = x.Id;

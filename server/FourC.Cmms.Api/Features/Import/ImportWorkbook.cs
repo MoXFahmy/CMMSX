@@ -13,6 +13,7 @@ public static class ImportWorkbook
     /// <summary>Every sheet with its headings only (custom fields included), in the request's language, and a Help sheet.</summary>
     public static async Task<byte[]> TemplateAsync(CmmsDbContext db, CancellationToken ct)
     {
+        ImportSheets.Organization = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
         var fields = await db.CustomFields.AsNoTracking().Where(f => f.EntityType == "Asset").OrderBy(f => f.SortOrder).ToListAsync(ct);
         var sheets = Defs(fields).Select(d => new ExportSheet(d.Name, Columns(d), [])).ToList();
         sheets.Add(Help(Defs(fields), []));
@@ -26,6 +27,7 @@ public static class ImportWorkbook
     public static async Task<byte[]> CurrentAsync(CmmsDbContext db, ITenantContext ctx, CancellationToken ct)
     {
         var c = await ImportRun.ContextAsync(db, ctx, ct);
+        ImportSheets.Organization = c.Settings;
         var defs = Defs(c.AssetFields);
         var cut = new List<string>();
         var sheets = new List<ExportSheet>();
@@ -136,6 +138,22 @@ public static class ImportWorkbook
                     .Select(b => new Dictionary<string, object?> { ["costCentreCode"] = b.Code, ["year"] = b.Year, ["month"] = b.Month, ["amount"] = b.Amount }).ToList();
             case "Locations": return Of(new LocationImporter(), c, await db.Locations.AsNoTracking().OrderBy(x => x.Path).Take(take).ToListAsync(ct));
             case "Categories": return Of(new CategoryImporter(), c, await db.AssetCategories.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
+            case "AssetGroups": return Of(new AssetGroupImporter(), c, await db.AssetGroups.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
+            case "AssetGroupMembers":
+                return (await (from m in db.AssetGroupMembers.AsNoTracking() join g in db.AssetGroups on m.AssetGroupId equals g.Id join a in db.Assets on m.AssetId equals a.Id
+                               orderby g.Code, a.AssetNumber select new { g.Code, a.AssetNumber }).Take(take).ToListAsync(ct))
+                    .Select(x => new Dictionary<string, object?> { ["groupCode"] = x.Code, ["assetNumber"] = x.AssetNumber }).ToList();
+            case "BrandsAndModels":
+            {
+                // A row per brand (its own active) and one per model, so the file imports back with no changes.
+                var rows = new List<Dictionary<string, object?>>();
+                foreach (var b in await db.Brands.AsNoTracking().Include(x => x.Models).OrderBy(x => x.Name).ToListAsync(ct))
+                {
+                    rows.Add(new() { ["brand"] = b.Name, ["model"] = null, ["active"] = b.IsActive });
+                    rows.AddRange(b.Models.Where(m => !m.IsDeleted).OrderBy(m => m.Name).Select(m => new Dictionary<string, object?> { ["brand"] = b.Name, ["model"] = m.Name, ["active"] = m.IsActive }));
+                }
+                return rows.Take(take).ToList();
+            }
             case "Trades": return Of(new TradeImporter(), c, await db.Trades.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
             case "Symptoms": return Of(new SymptomImporter(), c, await db.Symptoms.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
             case "Causes": return Of(new CauseImporter(), c, await db.FailureCodes.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));

@@ -72,10 +72,10 @@ public static class PmGenerator
         IReadOnlyList<RoundAsset>? round = null;
         string? roundSkip = null;
         var rules = Rules(s, settings);
-        if (s.Assets.Count > 0 && (round = await RoundAssetsAsync(db, s, ct, rules.Skip)).Count == 0)
+        if (PmRound.IsRound(s) && (round = await RoundAssetsAsync(db, s, ct, rules.Skip)).Count == 0)
         {
             // Every available asset is in a skip status (e.g. all under repair): skip like a single asset would, instead of piling up work.
-            if ((await RoundAssetsAsync(db, s, ct)).Count == 0) return [new Result(s.Id, s.Code, s.Name, first, null, null, null, null, NoActiveAssets)];
+            if ((await RoundAssetsAsync(db, s, ct)).Count == 0) return [new Result(s.Id, s.Code, s.Name, first, null, null, null, null, await NoAssetsReasonAsync(db, s, ct))];
             roundSkip = "every asset on the round has a status that skips PM work";
         }
         var taskIds = s.ExtraTasks.Select(x => x.PmTaskId).Append(s.PmTaskId).Distinct().ToList();
@@ -196,7 +196,7 @@ public static class PmGenerator
         var taskId = PmCalendar.TaskFor(s, s.GenerationCount + 1 + k);
         var task = await db.PmTasks.AsNoTracking().Include(t => t.Steps).FirstAsync(t => t.Id == taskId, ct);
         IReadOnlyList<RoundAsset>? round = null;
-        if (s.Assets.Count > 0 && (round = await RoundAssetsAsync(db, s, ct, rules.Skip)).Count == 0) throw new DomainException(NoActiveAssets);
+        if (PmRound.IsRound(s) && (round = await RoundAssetsAsync(db, s, ct, rules.Skip)).Count == 0) throw new DomainException(await NoAssetsReasonAsync(db, s, ct));
         if (s.MultiAssetMode == MultiAssetMode.Group && round is { Count: > 0 })
         {
             var group = await WorkGroups.CreateGroupAsync(db, ctx, s, task, date, round, rules.NonWorking, ct, mail);
@@ -220,6 +220,11 @@ public static class PmGenerator
     }
 
     public const string NoActiveAssets = "No active assets in the list";
+    public const string GroupInactive = "The asset group is inactive.";
+
+    /// <summary>Why a round has nothing to cover: its asset group is inactive (0.21.0), else no active assets.</summary>
+    private static async Task<string> NoAssetsReasonAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct) =>
+        s.AssetGroupId is { } g && !await db.AssetGroups.AllSites().AnyAsync(x => x.Id == g && x.IsActive, ct) ? GroupInactive : NoActiveAssets;
 
     /// <summary>The PM rules that apply to <paramref name="s"/>: its own (0.12.0) where it has them, else the organization's.</summary>
     internal static (IReadOnlyCollection<Core.Assets.AssetStatus> Skip, IReadOnlyCollection<DayOfWeek> NonWorking, bool NoStacking) Rules(PmSchedule s, TenantSettings org) =>
@@ -248,7 +253,7 @@ public static class PmGenerator
     public static async Task<WorkOrder> CreateWorkOrderAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, PmTask task, DateOnly? due, string? trigger, CancellationToken ct,
         IReadOnlyList<RoundAsset>? round = null, IReadOnlyCollection<DayOfWeek>? nonWorkingDays = null, EmailOutbox? mail = null)
     {
-        if (s.Assets.Count > 0) round ??= await RoundAssetsAsync(db, s, ct);
+        if (PmRound.IsRound(s)) round ??= await RoundAssetsAsync(db, s, ct);
         else round = null;
         var assignees = s.AssigneeIds.Count == 0 ? [] : await db.Employees.Where(e => s.AssigneeIds.Contains(e.Id) && e.IsActive).Select(e => e.Id).ToListAsync(ct);
         // Told about the work (0.12.0): the template's and the PM's recipients who are still active users.
@@ -299,7 +304,14 @@ public static class PmGenerator
     internal static async Task<IReadOnlyList<RoundAsset>> RoundAssetsAsync(CmmsDbContext db, PmSchedule s, CancellationToken ct,
         IReadOnlyCollection<Core.Assets.AssetStatus>? skipStatuses = null)
     {
-        var sequence = s.Assets.ToDictionary(a => a.AssetId, a => a.Sequence);
+        // A PM on an asset group (0.21.0): its members today, by asset number; none while the group is inactive.
+        var sequence = s.AssetGroupId is { } groupId
+            ? (await db.AssetGroups.AllSites().AnyAsync(x => x.Id == groupId && x.IsActive, ct)
+                ? (await (from m in db.AssetGroupMembers where m.AssetGroupId == groupId
+                          join a in db.Assets.AllSites() on m.AssetId equals a.Id
+                          orderby a.AssetNumber select a.Id).ToListAsync(ct)).Select((id, n) => (id, n + 1)).ToDictionary(x => x.id, x => x.Item2)
+                : [])
+            : s.Assets.ToDictionary(a => a.AssetId, a => a.Sequence);
         var ids = sequence.Keys.ToList();
         var rows = await db.Assets.AllSites().AsNoTracking().Where(a => ids.Contains(a.Id)) // every asset on the round, also those in branches the person can't see
             .Select(a => new { a.Id, a.SiteId, a.Status, a.LocationId, Path = a.Location != null ? a.Location.Path : null }).ToListAsync(ct);
@@ -445,6 +457,8 @@ public static class PmCost
         var people = schedules.SelectMany(s => s.AssigneeIds).Distinct().ToList();
         var rates = people.Count == 0 ? [] : await db.Employees.AsNoTracking().Where(e => people.Contains(e.Id) && e.IsActive).ToDictionaryAsync(e => e.Id, e => e.HourlyRate, ct);
         var covered = await CoveredCountsAsync(db, schedules.Where(s => s.Assets.Count > 0).ToList(), ct);
+        // PMs on an asset group (0.21.0): the members they'd cover today.
+        foreach (var g in schedules.Where(s => s.AssetGroupId != null)) covered[g.Id] = (await PmGenerator.RoundAssetsAsync(db, g, ct)).Count;
         return pairs.ToDictionary(p => (p.S.Id, p.TaskId), p => Visit(parts[p.TaskId], covered.GetValueOrDefault(p.S.Id, 1), hours.GetValueOrDefault(p.TaskId),
             p.S.AssigneeIds.Where(rates.ContainsKey).Select(id => rates[id])));
     }

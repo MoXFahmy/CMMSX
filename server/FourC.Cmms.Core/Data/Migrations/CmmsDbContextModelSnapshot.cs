@@ -203,6 +203,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<Guid?>("BrandId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("CategoryId")
                         .HasColumnType("uniqueidentifier");
 
@@ -263,6 +266,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<string>("Model")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("ModelId")
+                        .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -338,11 +344,15 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("BrandId");
+
                     b.HasIndex("CategoryId");
 
                     b.HasIndex("CostCentreId");
 
                     b.HasIndex("LocationId");
+
+                    b.HasIndex("ModelId");
 
                     b.HasIndex("ParentAssetId");
 
@@ -508,6 +518,88 @@ namespace FourC.Cmms.Core.Data.Migrations
                         });
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.AssetGroup", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("Code")
+                        .IsRequired()
+                        .HasMaxLength(50)
+                        .HasColumnType("nvarchar(50)");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid?>("SiteId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("SiteId");
+
+                    b.HasIndex("TenantId", "Code")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.ToTable("AssetGroups");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.AssetGroupMember", b =>
+                {
+                    b.Property<Guid>("AssetGroupId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("AssetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("AssetGroupId", "AssetId");
+
+                    b.HasIndex("AssetId");
+
+                    b.ToTable("AssetGroupMembers");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Assets.AssetPart", b =>
                 {
                     b.Property<Guid>("Id")
@@ -620,6 +712,125 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasIndex("TenantId", "AssetId");
 
                     b.ToTable("AssetTransfers");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.Brand", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "Name")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("Brands");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.BrandModel", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("BrandId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("BrandId");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "BrandId", "Name")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("BrandModels");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Assets.CustomFieldDefinition", b =>
@@ -2085,6 +2296,73 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.ToTable("Stores");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Inventory.Unit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("CreatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("DeletedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<bool>("IsActive")
+                        .HasColumnType("bit");
+
+                    b.Property<bool>("IsDeleted")
+                        .HasColumnType("bit");
+
+                    b.Property<string>("LegacyRef")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("NameAr")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<byte[]>("RowVersion")
+                        .IsConcurrencyToken()
+                        .IsRequired()
+                        .ValueGeneratedOnAddOrUpdate()
+                        .HasColumnType("rowversion");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(30)
+                        .HasColumnType("nvarchar(30)")
+                        .UseCollation("Latin1_General_100_CS_AS");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<Guid?>("UpdatedById")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "LegacyRef")
+                        .HasFilter("[LegacyRef] IS NOT NULL");
+
+                    b.HasIndex("TenantId", "Symbol")
+                        .IsUnique()
+                        .HasFilter("[IsDeleted] = 0");
+
+                    b.ToTable("Units");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Locations.Location", b =>
                 {
                     b.Property<Guid>("Id")
@@ -3197,6 +3475,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("AssetGroupId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid?>("AssetId")
                         .HasColumnType("uniqueidentifier");
 
@@ -3392,6 +3673,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasColumnType("int");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("AssetGroupId");
 
                     b.HasIndex("AssetId");
 
@@ -4819,8 +5102,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Name")
-                        .HasMaxLength(50)
-                        .HasColumnType("nvarchar(50)");
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
 
                     b.Property<long>("NextValue")
                         .HasColumnType("bigint");
@@ -6515,6 +6798,11 @@ namespace FourC.Cmms.Core.Data.Migrations
 
             modelBuilder.Entity("FourC.Cmms.Core.Assets.Asset", b =>
                 {
+                    b.HasOne("FourC.Cmms.Core.Assets.Brand", null)
+                        .WithMany()
+                        .HasForeignKey("BrandId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("FourC.Cmms.Core.Assets.AssetCategory", "Category")
                         .WithMany()
                         .HasForeignKey("CategoryId")
@@ -6529,6 +6817,11 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .WithMany()
                         .HasForeignKey("LocationId")
                         .OnDelete(DeleteBehavior.Restrict);
+
+                    b.HasOne("FourC.Cmms.Core.Assets.BrandModel", null)
+                        .WithMany()
+                        .HasForeignKey("ModelId")
+                        .OnDelete(DeleteBehavior.NoAction);
 
                     b.HasOne("FourC.Cmms.Core.Assets.Asset", "ParentAsset")
                         .WithMany()
@@ -6569,6 +6862,29 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired();
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.AssetGroup", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Locations.Site", null)
+                        .WithMany()
+                        .HasForeignKey("SiteId")
+                        .OnDelete(DeleteBehavior.NoAction);
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.AssetGroupMember", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Assets.AssetGroup", null)
+                        .WithMany("Members")
+                        .HasForeignKey("AssetGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.Assets.Asset", null)
+                        .WithMany()
+                        .HasForeignKey("AssetId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Assets.AssetPart", b =>
                 {
                     b.HasOne("FourC.Cmms.Core.Assets.Asset", "Asset")
@@ -6586,6 +6902,15 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Navigation("Asset");
 
                     b.Navigation("Part");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.BrandModel", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Assets.Brand", null)
+                        .WithMany("Models")
+                        .HasForeignKey("BrandId")
+                        .OnDelete(DeleteBehavior.NoAction)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Assets.DowntimeEvent", b =>
@@ -6899,6 +7224,11 @@ namespace FourC.Cmms.Core.Data.Migrations
 
             modelBuilder.Entity("FourC.Cmms.Core.Pm.PmSchedule", b =>
                 {
+                    b.HasOne("FourC.Cmms.Core.Assets.AssetGroup", null)
+                        .WithMany()
+                        .HasForeignKey("AssetGroupId")
+                        .OnDelete(DeleteBehavior.NoAction);
+
                     b.HasOne("FourC.Cmms.Core.Assets.Asset", "Asset")
                         .WithMany()
                         .HasForeignKey("AssetId")
@@ -7541,6 +7871,16 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasForeignKey("UserId")
                         .OnDelete(DeleteBehavior.Cascade)
                         .IsRequired();
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.AssetGroup", b =>
+                {
+                    b.Navigation("Members");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Assets.Brand", b =>
+                {
+                    b.Navigation("Models");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Contracts.Contract", b =>

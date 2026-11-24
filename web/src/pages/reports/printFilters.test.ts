@@ -26,4 +26,9 @@ describe('printed report filters (0.14.0)', () => {
     expect(printFilters(cc, { costCentreId: 'c1' }, { costCentre: 'Production › Line 1' }, t)).toEqual(['costCentres.one: Production › Line 1']);
     expect(printFilters(cc, {}, {}, t)).toEqual(['costCentres.one: common.all']);
   });
+  it('names the asset group (0.21.0)', () => {
+    const g: ReportDef = { ...def, params: [{ name: 'assetGroupId', type: 'assetGroup' }] };
+    expect(printFilters(g, { assetGroupId: 'g1' }, { assetGroup: 'Kitchen' }, t)).toEqual(['assetGroups.one: Kitchen']);
+    expect(printFilters(g, {}, {}, t)).toEqual([]);
+  });
 });

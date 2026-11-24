@@ -21,7 +21,9 @@ public static partial class WorkGroups
     public static async Task<WorkOrderGroup> CreateGroupAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, PmTask task, DateOnly? due,
         IReadOnlyList<RoundAsset> covered, IReadOnlyCollection<DayOfWeek> nonWorkingDays, CancellationToken ct, EmailOutbox? mail = null)
     {
-        var number = await Numbering.NextAsync(db, "WorkGroup", "GRP-", 5, n => db.WorkOrderGroups.AllSites().AnyAsync(g => g.Number == n, ct),
+        var settings = await db.Tenants.AsNoTracking().Where(t => t.Id == db.CurrentTenantId).Select(t => t.Settings).FirstAsync(ct);
+        var (sequence, prefix) = Numbering.For(settings, null, NumberKind.WorkGroup); // yearly when the organization wants it (0.21.0)
+        var number = await Numbering.NextAsync(db, sequence, prefix, 5, n => db.WorkOrderGroups.AllSites().AnyAsync(g => g.Number == n, ct),
             p => db.WorkOrderGroups.AllSites().Where(g => g.Number.StartsWith(p)).Select(g => g.Number).ToListAsync(ct), ct);
         var title = task.Title is { Length: > 0 } tt ? tt : task.Id == s.PmTaskId ? s.Name : $"{s.Name} — {task.Name}";
         var start = PmCalendar.NextWorkingDay(due ?? DateOnly.FromDateTime(DateTime.UtcNow), nonWorkingDays);

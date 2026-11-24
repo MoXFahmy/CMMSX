@@ -19,6 +19,8 @@ public class TenantSettings
     public Terminology Terminology { get; set; } = new();
     /// <summary>The same terms shown in Arabic.</summary>
     public Terminology TerminologyArabic { get; set; } = Terminology.Arabic();
+    /// <summary>0.21.0: the organization's names, colours, order and hidden values, by list (workType, priority, assetStatus, criticality) then value.</summary>
+    public Dictionary<string, Dictionary<string, ListLabel>> ListLabels { get; set; } = new();
     /// <summary>Language for people who haven't chosen one, and for e-mails to suppliers ("en" or "ar").</summary>
     public string DefaultLanguage { get; set; } = "en";
     public string AssetNumberPrefix { get; set; } = "AST-";
@@ -26,6 +28,8 @@ public class TenantSettings
     public bool AutoNumberAssets { get; set; } = true;
     public string WorkOrderNumberPrefix { get; set; } = "WO-";
     public string WorkRequestNumberPrefix { get; set; } = "WR-";
+    /// <summary>0.21.0: numbers (not assets') restart each year with the year in them: WO-2027-00001.</summary>
+    public bool RestartNumbersYearly { get; set; }
     /// <summary>Require "action taken" notes before a work order can be completed.</summary>
     public bool RequireCompletionNotes { get; set; } = true;
     /// <summary>Completing a work order needs at least one labour entry.</summary>

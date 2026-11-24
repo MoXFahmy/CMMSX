@@ -1,10 +1,11 @@
-import { createContext, useContext, useEffect, type ReactNode } from 'react';
+import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { get } from '@/api/client';
 import type { Me, Terminology } from '@/api/types';
 import i18n from '@/i18n';
 import { applyLanguage, pickLanguage } from '@/language';
+import { applyListLabels } from '@/components/listLabels';
 
 type AuthValue = {
   me: Me | null;
@@ -32,6 +33,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('cmms:unauthorized', onUnauthorized);
   }, [qc]);
   const me = data ?? null;
+  // The organization's names for work types, priorities, asset statuses and criticality (0.21.0), before the screens render.
+  const labelsKey = JSON.stringify(me?.tenant.settings.listLabels ?? {});
+  useMemo(() => applyListLabels(i18n, me?.tenant.settings.listLabels), [labelsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   // The account's language (the person's choice, else the organization's) wins over this device's last one.
   const accountLanguage = me ? pickLanguage(me.user.language) : null;
   useEffect(() => { if (accountLanguage && accountLanguage !== i18n.language) applyLanguage(accountLanguage); }, [accountLanguage]);

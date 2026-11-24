@@ -11,6 +11,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { useStores } from '@/components/PartPicker';
 import { handleFormError, notifySuccess } from '@/components/utils';
+import { unitData, useUnits } from '@/components/ReferencePickers';
 
 type Level = { storeId: string | null; bin: string; minLevel: number | ''; reorderLevel: number | ''; maxLevel: number | ''; reorderQuantity: number | ''; quantityOnHand?: number };
 type Values = {
@@ -22,7 +23,6 @@ const empty: Values = {
   partNumber: '', name: '', specification: '', manufacturer: '', manufacturerPartNumber: '', unitOfMeasure: 'EA', groupId: null, standardPrice: '', leadTimeDays: '',
   isCritical: false, isShelfItem: false, allowNegativeStock: false, preferredSupplierId: null, barcode: '', alternatePartIds: [], notes: '', isActive: true, levels: [],
 };
-const UNITS = ['EA', 'SET', 'PR', 'BOX', 'PK', 'ROLL', 'M', 'MM', 'FT', 'KG', 'G', 'LB', 'L', 'ML', 'GAL', 'DRUM', 'HR'];
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return <Card><Title order={5} mb="md">{title}</Title><Stack gap="sm">{children}</Stack></Card>;
@@ -42,6 +42,7 @@ export function PartFormPage() {
   const { data: stores } = useStores();
   const { data: others } = useQuery({ queryKey: ['part-lookup', 'all'], queryFn: () => get<PartLookup[]>('/parts/lookup') });
   const form = useForm<Values>({ initialValues: empty });
+  const { data: units } = useUnits(); // the organization's units (0.21.0)
   useEffect(() => {
     if (!part) return;
     form.setValues({
@@ -96,7 +97,7 @@ export function PartFormPage() {
               </SimpleGrid>
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 <Select label={t('inv.group')} data={(groups ?? []).map((g) => ({ value: g.id, label: g.name }))} clearable searchable {...form.getInputProps('groupId')} />
-                <Select label={t('inv.unit')} required data={Array.from(new Set([...UNITS, form.getValues().unitOfMeasure].filter(Boolean)))} searchable {...form.getInputProps('unitOfMeasure')} />
+                <Select label={t('inv.unit')} required data={unitData(units, form.getValues().unitOfMeasure)} searchable {...form.getInputProps('unitOfMeasure')} />
                 <TextInput label={t('inv.barcode')} {...form.getInputProps('barcode')} />
               </SimpleGrid>
               <SimpleGrid cols={{ base: 1, sm: 2 }}>

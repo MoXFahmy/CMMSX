@@ -6,7 +6,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconTrash } from '@tabler/icons-react';
 import { del, get, post, put } from '@/api/client';
-import { WORK_PRIORITIES, WORK_TYPES, type Lookup, type PmTaskDetail, type StepDetail } from '@/api/types';
+import { type Lookup, type PmTaskDetail, type StepDetail } from '@/api/types';
 import { TemplateSteps } from './TemplateSteps';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
@@ -14,6 +14,7 @@ import { PartPicker } from '@/components/PartPicker';
 import { Attachments } from '@/components/Attachments';
 import { confirmDelete } from '@/components/confirm';
 import { fmtMoney, handleFormError, notifyError, notifySuccess } from '@/components/utils';
+import { listItems } from '@/components/listLabels';
 
 type PartRow = { partId: string; label: string; unit: string; quantity: number | ''; unitCost: number };
 type F = {
@@ -92,8 +93,8 @@ export function TemplatePage() {
               </SimpleGrid>
               <TextInput label={t('pm12.woTitle')} description={t('pm12.woTitleHint')} {...form.getInputProps('title')} />
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
-                <Select label={t('workType.label')} data={WORK_TYPES.map((w) => ({ value: w, label: t(`workType.${w}`) }))} {...form.getInputProps('workType')} />
-                <Select label={t('priority.label')} clearable placeholder={t('pm12.priorityFromPm')} data={WORK_PRIORITIES.map((p) => ({ value: p, label: t(`priority.${p}`) }))} {...form.getInputProps('priority')} />
+                <Select label={t('workType.label')} data={listItems('workType', t, form.values.workType)} {...form.getInputProps('workType')} />
+                <Select label={t('priority.label')} clearable placeholder={t('pm12.priorityFromPm')} data={listItems('priority', t, form.values.priority)} {...form.getInputProps('priority')} />
                 <Select label={t('wo.trade')} clearable data={(trades ?? []).map((tr) => ({ value: tr.id, label: tr.name }))} {...form.getInputProps('tradeId')} />
                 <NumberInput label={t('pm.estimatedHours')} min={0} decimalScale={2} {...form.getInputProps('estimatedHours')} />
                 <NumberInput label={t('pm12.expectedStop')} min={0} decimalScale={2} {...form.getInputProps('expectedStopHours')} />

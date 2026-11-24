@@ -12,7 +12,11 @@ public static class Numbering
     /// The sequence and prefix for a new number at <paramref name="site"/>: the site's own prefix counts in its own sequence
     /// ("WorkOrder:&lt;site id&gt;"); otherwise the organization's prefix and sequence.
     /// </summary>
-    public static (string Sequence, string Prefix) For(Tenancy.TenantSettings org, Locations.Site? site, NumberKind kind)
+    /// <remarks>
+    /// With <see cref="Tenancy.TenantSettings.RestartNumbersYearly"/> (0.21.0), every kind but assets counts in a sequence per year
+    /// and carries the year: "WO-2027-00001". The year is the organization's (its time zone) at <paramref name="now"/>.
+    /// </remarks>
+    public static (string Sequence, string Prefix) For(Tenancy.TenantSettings org, Locations.Site? site, NumberKind kind, DateTimeOffset? now = null)
     {
         var (sequence, orgPrefix, sitePrefix) = kind switch
         {
@@ -26,7 +30,10 @@ public static class Numbering
             NumberKind.PurchaseRequest => ("PurchaseRequest", org.PurchaseRequestNumberPrefix, site?.Settings.PurchaseRequestNumberPrefix),
             _ => ("PurchaseOrder", org.PurchaseOrderNumberPrefix, site?.Settings.PurchaseOrderNumberPrefix),
         };
-        return string.IsNullOrWhiteSpace(sitePrefix) ? (sequence, orgPrefix ?? "") : ($"{sequence}:{site!.Id:N}", sitePrefix.Trim());
+        var (seq, prefix) = string.IsNullOrWhiteSpace(sitePrefix) ? (sequence, orgPrefix ?? "") : ($"{sequence}:{site!.Id:N}", sitePrefix.Trim());
+        if (!org.RestartNumbersYearly || kind == NumberKind.Asset) return (seq, prefix);
+        var year = TimeZoneInfo.ConvertTime(now ?? DateTimeOffset.UtcNow, Work.Sla.Zone(org.TimeZone)).Year;
+        return ($"{seq}:{year}", $"{prefix}{year}-");
     }
 
     public static async Task<string> NextAsync(CmmsDbContext db, string sequence, string? prefix, int padding,

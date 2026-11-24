@@ -15,7 +15,14 @@ export const WARRANTY_TYPES: WarrantyType[] = ['None', 'Warranty', 'ServiceContr
 export const FIELD_TYPES: CustomFieldType[] = ['Text', 'LongText', 'Number', 'Date', 'Select', 'Boolean'];
 
 export type Terminology = { site: string; sites: string; location: string; locations: string; asset: string; assets: string };
+/** 0.21.0: an organization's wording for one value of a fixed list (names, colour, order, hidden). */
+export type ListLabel = { name?: string | null; nameAr?: string | null; color?: string | null; order?: number | null; hidden?: boolean };
+export type ListKey = 'workType' | 'priority' | 'assetStatus' | 'criticality';
+export type ListLabels = Partial<Record<ListKey, Record<string, ListLabel>>>;
+
 export type TenantSettings = {
+  /** 0.21.0 */
+  listLabels?: ListLabels; restartNumbersYearly?: boolean;
   terminology: Terminology; terminologyArabic?: Terminology; defaultLanguage?: 'en' | 'ar'; assetNumberPrefix: string; assetNumberPadding: number; autoNumberAssets: boolean;
   workOrderNumberPrefix: string; workRequestNumberPrefix: string; requireCompletionNotes: boolean; autoGeneratePm: boolean;
   purchaseOrderNumberPrefix: string; purchaseRequestNumberPrefix?: string; purchaseRequestRecipientIds?: string[]; defaultTaxPercent: number; currency: string; dateFormat: string; timeZone: string;
@@ -102,6 +109,8 @@ export type AssetListItem = {
 };
 export type AssetDetail = {
   onlyWhenStopped?: boolean; costCentreId?: string | null;
+  /** 0.21.0 */
+  brandId?: string | null; modelId?: string | null; groupIds?: string[];
   id: string; assetNumber: string; name: string; description?: string; categoryId?: string;
   category?: { id: string; code: string; name: string; color?: string; downtimeCostPerHour?: number | null }; siteId: string; site: { id: string; code: string; name: string };
   locationId?: string; locationTrail: { id: string; code: string; name: string }[]; parentAssetId?: string;
@@ -342,6 +351,8 @@ export type PmScheduleListItem = {
 };
 export type PmScheduleDetail = {
   onlyWhenStopped?: boolean; costCentreId?: string | null;
+  /** 0.21.0: aimed at an asset group, and the members it would cover today. */
+  assetGroupId?: string | null; groupAssets?: { id: string; assetNumber: string; name: string }[];
   /** The service contract it is done under (0.17.0). */
   contractId?: string | null;
   id: string; code: string; name: string; description?: string; siteId: string; locationId?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
@@ -469,7 +480,7 @@ export type PoDetail = {
 };
 
 // ---------------- Reports ----------------
-export type ReportParam = { name: string; type: 'dateRange' | 'site' | 'select' | 'number' | 'asset' | 'year' | 'bool' | 'costCentre'; options?: { value: string; label: string }[]; default?: string | number };
+export type ReportParam = { name: string; type: 'dateRange' | 'site' | 'select' | 'number' | 'asset' | 'year' | 'bool' | 'costCentre' | 'assetGroup'; options?: { value: string; label: string }[]; default?: string | number };
 export type ReportDef = { key: string; category: string; title: string; description: string; permission: string; params: ReportParam[] };
 export type ReportColumnType = 'text' | 'number' | 'currency' | 'percent' | 'date' | 'datetime' | 'hours' | 'plan';
 export type ReportResult = {
@@ -532,3 +543,10 @@ export type FilledLine = { partId: string; unitOfMeasure: string; packSize: numb
 export type CostCentre = { id: string; code: string; name: string; parentId?: string | null; siteId?: string | null; siteName?: string | null; isActive: boolean; path: string };
 export type BudgetRow = { costCentreId: string; path: string; isActive: boolean; months: number[]; total: number };
 export type BudgetYear = { year: number; rows: BudgetRow[] };
+
+/** 0.21.0: brands with their models, units, and asset groups. */
+export type BrandItem = { id: string; name: string; isActive: boolean; models: { id: string; name: string; isActive: boolean }[] };
+export type UnitItem = { id: string; symbol: string; name: string; nameAr?: string | null; isActive: boolean };
+export type AssetGroupItem = { id: string; code: string; name: string; siteId?: string | null; siteName?: string | null; isActive: boolean; memberCount: number };
+export type AssetGroupDetail = { id: string; code: string; name: string; siteId?: string | null; isActive: boolean; members: { id: string; assetNumber: string; name: string; siteId: string }[] };
+

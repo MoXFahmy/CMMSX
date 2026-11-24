@@ -68,6 +68,8 @@ public static class ImportSheets
             C<LocationType>("type", "Type", "النوع"), C<Criticality>("criticality", "Criticality", "الأهمية"), Description,
             T("notesToTechnician", "Notes to technician", "ملاحظات للفني"), T("costCentreCode", "Cost centre code", "رمز مركز التكلفة"), Active]),
         new("Categories", "Categories", "الفئات", [Code, Name, T("color", "Color", "اللون"), N("downtimeCostPerHour", "Downtime cost per hour", "تكلفة التوقف للساعة"), Active]),
+        // 0.21.0: a brand row (no model) or a model row; Active applies to the model when there is one, else to the brand.
+        new("BrandsAndModels", "Brands and models", "العلامات التجارية والطرازات", [T("brand", "Brand", "العلامة التجارية", true), T("model", "Model", "الطراز"), Active]),
         new("Trades", "Trades", "التخصصات", [Code, Name, T("color", "Color", "اللون"), Active]),
         new("PartGroups", "Part groups", "مجموعات القطع", [Code, Name, Active]),
         new("Symptoms", "Symptoms", "الأعراض", [Code, Name, Active]),
@@ -89,6 +91,9 @@ public static class ImportSheets
             C<WarrantyType>("warrantyType", "Warranty type", "نوع الضمان"), D("warrantyExpiresOn", "Warranty expires on", "انتهاء الضمان"),
             T("warrantyNotes", "Warranty notes", "ملاحظات الضمان"), Description, Notes, T("notesToTechnician", "Notes to technician", "ملاحظات للفني"),
             N("runsHoursPerDay", "Runs hours a day", "ساعات التشغيل في اليوم"), CL<DayOfWeek>("runsOn", "Runs on", "يعمل في"), T("costCentreCode", "Cost centre code", "رمز مركز التكلفة")]),
+        // 0.21.0: asset groups and their members (re-importing members adds, never removes).
+        new("AssetGroups", "Asset groups", "مجموعات الأصول", [Code, Name, T("siteCode", "Site code", "رمز الموقع"), Active]),
+        new("AssetGroupMembers", "Asset group members", "أعضاء مجموعات الأصول", [T("groupCode", "Group code", "رمز المجموعة", true), T("assetNumber", "Asset number", "رقم الأصل", true)]),
         new("People", "People", "الأفراد", [Code, T("fullName", "Full name", "الاسم الكامل", true), T("jobTitle", "Job title", "المسمى الوظيفي"),
             T("email", "Email", "البريد الإلكتروني"), T("phone", "Phone", "الهاتف"), L("trades", "Trades", "التخصصات"), L("sites", "Sites", "المواقع"),
             N("hourlyRate", "Hourly rate", "أجر الساعة"), N("overtimeRate", "Overtime rate", "أجر الساعة الإضافية"), Y("contractor", "Contractor", "مقاول"),
@@ -135,7 +140,7 @@ public static class ImportSheets
             C<WeekOfMonth>("weekOfMonth", "Week of month", "أسبوع الشهر"), C<DayOfWeek>("weekday", "Weekday", "يوم الأسبوع"),
             I("dayOfMonth", "Day of month", "يوم الشهر"), D("startDate", "Start date", "تاريخ البدء", true), I("leadDays", "Lead days", "أيام التقديم"),
             I("workPeriodDays", "Work period days", "أيام فترة العمل"), L("assignees", "Assignees", "المكلفون"),
-            C<MultiAssetMode>("multiAssetMode", "Multi-asset mode", "وضع الأصول المتعددة"), Description, T("costCentreCode", "Cost centre code", "رمز مركز التكلفة"), Active]),
+            C<MultiAssetMode>("multiAssetMode", "Multi-asset mode", "وضع الأصول المتعددة"), Description, T("costCentreCode", "Cost centre code", "رمز مركز التكلفة"), T("assetGroupCode", "Asset group code", "رمز مجموعة الأصول"), Active]),
     ];
 
     /// <summary>
@@ -171,6 +176,14 @@ public static class ImportSheets
         _ => TableExport.Words(value.ToString()),
     };
 
-    /// <summary>The choice word in the request's language.</summary>
-    public static string ChoiceText(Enum value) => Translator.T(ChoiceWord(value));
+    private static readonly AsyncLocal<FourC.Cmms.Core.Tenancy.TenantSettings?> Org = new();
+
+    /// <summary>
+    /// The organization whose wording of work types, priorities, asset statuses and criticality an import or export uses (0.21.0).
+    /// Set at the top of a run (an async local: set it in the method that does the work, not in a helper it awaits).
+    /// </summary>
+    public static FourC.Cmms.Core.Tenancy.TenantSettings? Organization { get => Org.Value; set => Org.Value = value; }
+
+    /// <summary>The choice word in the request's language (the organization's name for the four reworded lists).</summary>
+    public static string ChoiceText(Enum value) => Lists.Key(value.GetType()) is not null ? Lists.Name(Organization, value) : Translator.T(ChoiceWord(value));
 }

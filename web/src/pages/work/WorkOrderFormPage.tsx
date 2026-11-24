@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useMemo } from 'react';
 import { ActionIcon, Button, Card, Center, Checkbox, Grid, Group, Loader, NumberInput, Select, SimpleGrid, Stack, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput, DateTimePicker } from '@mantine/dates';
 import dayjs from 'dayjs';
@@ -10,7 +10,7 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { get, post, put } from '@/api/client';
-import { WORK_PRIORITIES, WORK_TYPES, type AssetDetail, type Lookup, type PmTaskDetail, type PmTaskListItem, type WorkOrderDetail } from '@/api/types';
+import { type AssetDetail, type Lookup, type PmTaskDetail, type PmTaskListItem, type WorkOrderDetail } from '@/api/types';
 import type { AccessWindow } from '@/api/types';
 import { PageHeader } from '@/components/PageHeader';
 import { LocationPicker } from '@/components/LocationPicker';
@@ -21,6 +21,7 @@ import { EmployeePicker } from '@/components/EmployeePicker';
 import { AssetCheck } from '@/components/AssetCheck';
 import { teamOptions, useTeams } from '@/components/teams';
 import { dateTimeFormat, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { listDefault, listItems } from '@/components/listLabels';
 
 type Values = {
   title: string; description: string; type: string; priority: string; siteId: string | null; locationId: string | null; assetId: string | null;
@@ -61,7 +62,9 @@ export function WorkOrderFormPage() {
   const assetParam = params.get('assetId');
   const { data: asset } = useQuery({ queryKey: ['asset', assetParam], queryFn: () => get<AssetDetail>(`/assets/${assetParam}`), enabled: !!assetParam && !editing });
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
-  const form = useForm<Values>({ initialValues: empty });
+  // A new work order's type and priority, unless the organization hid them (0.21.0).
+  const start = useMemo<Values>(() => ({ ...empty, type: listDefault('workType', empty.type), priority: listDefault('priority', empty.priority) }), []);
+  const form = useForm<Values>({ initialValues: start });
   const { data: teams } = useTeams(form.values.siteId);
   const { data: templates } = useQuery({ queryKey: ['pm-tasks'], queryFn: () => get<PmTaskListItem[]>('/pm-tasks'), enabled: !editing });
   // From a work template (0.12.0): fills what the job is; on save its parts and recipients come along and its documents show.
@@ -103,9 +106,9 @@ export function WorkOrderFormPage() {
         accessWindows: source.accessWindows ?? [], onlyWhenStopped: source.onlyWhenStopped ?? null, symptomId: source.symptomId ?? null, contractId: source.contractId ?? null,
       });
     } else if (asset) {
-      form.setValues({ ...empty, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id, priority: asset.criticality === 'Critical' ? 'High' : 'Medium' });
+      form.setValues({ ...start, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id, priority: asset.criticality === 'Critical' ? 'High' : 'Medium' });
     } else if (!editing && params.get('siteId')) {
-      form.setValues({ ...empty, siteId: params.get('siteId'), locationId: params.get('locationId') });
+      form.setValues({ ...start, siteId: params.get('siteId'), locationId: params.get('locationId') });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [wo, asset, source]);
@@ -152,8 +155,8 @@ export function WorkOrderFormPage() {
               <TextInput label={t('wr.whatsWrong')} required data-autofocus {...form.getInputProps('title')} />
               <Textarea label={t('wo.description')} autosize minRows={3} {...form.getInputProps('description')} />
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
-                <Select label={t('workType.label')} required data={WORK_TYPES.map((x) => ({ value: x, label: t(`workType.${x}`) }))} {...form.getInputProps('type')} />
-                <Select label={t('priority.label')} required data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))} {...form.getInputProps('priority')} />
+                <Select label={t('workType.label')} required data={listItems('workType', t, form.values.type)} {...form.getInputProps('type')} />
+                <Select label={t('priority.label')} required data={listItems('priority', t, form.values.priority)} {...form.getInputProps('priority')} />
                 <Select label={t('wo.trade')} clearable data={(trades ?? []).filter((x) => x.isActive || x.id === form.values.tradeId).map((x) => ({ value: x.id, label: x.name }))} {...form.getInputProps('tradeId')} />
               </SimpleGrid>
             </Stack></Card>
