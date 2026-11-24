@@ -202,6 +202,33 @@ No new permissions: existing organizations' administrator roles wouldn't pick up
 - **Storage:** totals match the files.
 - Every new label and message in English and Arabic.
 
+## My calls (from the builder check)
+
+1. **"Every change" is every change.** Today only `TenantEntity` rows get change entries. The log also records the tenant-owned rows that have no history yet:
+   - work order labour, parts, costs, contractor lines, checklist steps and comments;
+   - request comments;
+   - attachments (uploads, deletes, signatures);
+   - purchase order approval steps and signatures;
+   - contract periods, amendments and covered assets;
+   - stock levels and count lines.
+
+   How these entries work:
+   - Each entry names its **parent record** (type and id), so the log shows "WO-00012 › Labour" and links to the work order. The record's History tab includes its children's entries.
+   - **Out of the log:** the stock ledger, unit movements, meter readings, sessions, password history, the e-mail outbox and other system rows.
+   - **An inventory test** lists every tenant-owned entity as either recorded or left out, and fails when a new one appears in neither list.
+   - **Bulk operations:** about 30 of them bypass the save pipeline (`ExecuteUpdate`/`ExecuteDelete`). Deleting child lines (labour, tasks, costs) becomes tracked deletes, so each line is logged. Cascades (unit renames, brand merges, cost-centre reassignment) write one summary entry on the record that was changed, with how many rows followed ("Brand merged into ‹name›: 14 assets").
+2. **Anonymising a person with a sign-in but no employee record** (such as the administrator created at registration):
+   - From the Users page, for an **inactive** user, "Anonymise" (Manage users) with the same confirmation.
+   - Their placeholder name is "Former user ‹first 6 characters of the user id›" (Arabic "مستخدم سابق ‹…›").
+   - An employee with a linked sign-in can be anonymised only when both the employee and the sign-in are inactive ("Make their sign-in inactive first."). Anonymising never closes a working account by itself.
+3. **Same name as someone else:**
+   - When another current or former person (employee or user) has the same name, ignoring case and spaces, the confirmation says so.
+   - Names stored **only as text** (requested by, signed by, read by, counted by, decided by…) are then **left unchanged**, and the confirmation says which kinds. Copies linked by id are still replaced.
+4. **The person's own history:** in change entries of the person's own employee and user records, every personal value is masked (name, e-mail, user name, phone, job title, notes). Elsewhere in the log, values exactly equal to their name or e-mail are replaced.
+5. **How far password rules reach:**
+   - **Expiry applies to sessions already signed in.** When expiry is on and a person's password has expired, their next request answers 401 with the code `password-expired`. The web shows "choose a new password" and returns to the page; the phone shows the same and keeps its queued changes, sending them after.
+   - **At every sign-in, the typed password is checked against the current minimum length.** A password that no longer meets it must be changed then ("Your organization's password rules changed. Choose a new password."). Phones signed in for 30 days meet it at their next sign-in.
+
 ## Left to the builder
 
 - Exact table and column names and the migration.
