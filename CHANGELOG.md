@@ -4,6 +4,34 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.25.0] - 2026-11-24
+
+Security and the activity log. An organization can set its own password rules, allow one signed-in device per person, anonymise
+people who have left, and see every change and sign-in in one activity log, with how long to keep it. Settings › Storage shows the
+space files take. Nothing changes until an administrator sets these. See docs/SECURITY_AND_ACTIVITY.md.
+
+### Added
+- **Settings › Security** (Manage settings): minimum password length (8–64), expiry (never, or 30–730 days) and recent passwords
+  that can't be reused (0–24). An expired password is renewed at sign-in, and expiry also reaches devices already signed in: the
+  web returns to the page after the new password, the phone keeps its waiting changes. A password shorter than a raised minimum is
+  changed at the next sign-in. "Last changed by" shows who set each rule.
+- **One session per person** (off by default): signing in on a second device asks before ending the first one's session.
+- **Anonymise a person who has left** (Manage users), for an inactive employee or sign-in: their name is replaced wherever it was
+  copied (by person where CMX kept who it was, by exact name where only the name was typed, left alone when someone else has the
+  same name), e-mail, phone and notes are cleared, the sign-in is closed for good and its e-mail freed; hours and costs stay.
+- **Settings › Activity log:** every change (records and their lines, users, roles, settings key by key, the organization's name,
+  list wording and logo) and security event (signed in, sign-in failed, locked out, signed out, device signed out, password
+  changed or renewed, other sessions ended, anonymised), with the source (Web, Phone, Import, Automatic), one change number per
+  action ("show everything this action changed"), filters, Excel/CSV export and masked secrets. Site-limited administrators see
+  their sites' records and organization-wide changes. Optional retention of 12–120 months.
+- **Settings › Storage:** space used, by kind and by record type, files kept with deleted records, and the largest files with a search.
+- **History tabs** show their lines' changes (labour, parts, checklist steps, comments, files…) and where a change came from.
+
+### Changed
+- Changes made in bulk reach the log: deleting a record's lines logs each line; merges and renames write one summary on the record.
+- The history of a person's sign-in, of roles and of organization settings needs Manage users or Manage settings.
+- Choosing a new password signs the person out on their other devices.
+
 ## [0.24.0] - 2026-11-24
 
 Serial-numbered parts. Pumps, motors and other repairable spares can be tracked one by one: each piece of a serial-tracked part is
