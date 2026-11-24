@@ -2804,5 +2804,76 @@
       "purchase-orders": "Purchase orders",
       "assets": "Assets"
     }
+  },
+  "roles": {
+    "tabs": {
+      "home": "Home page",
+      "menu": "Menu",
+      "columns": "Columns"
+    },
+    "homeBadge": "Home",
+    "duplicate": "Duplicate",
+    "duplicated": "Created {{name}}.",
+    "groups": {
+      "dashboard": "Dashboard pieces",
+      "work": "Work",
+      "assets": "Assets and stock",
+      "tools": "Tools"
+    },
+    "home": {
+      "addCard": "Add card",
+      "startClassic": "Start from today's dashboard",
+      "classicNote": "Cards follow the home page grid, so a page made from today's dashboard looks close to it, not identical.",
+      "none": "No home page: people with this role see the standard dashboard.",
+      "missing": "People with only this role won't see this card: it needs {{perm}}.",
+      "or": " or ",
+      "up": "Move up",
+      "down": "Move down",
+      "severalRoles": "People with several roles see the cards of all their roles, in role-name order, without repeats.",
+      "fixTiles": "Give every tile a label and a CMX address starting with /."
+    },
+    "tile": {
+      "label": "Label",
+      "labelAr": "Arabic label",
+      "page": "Page",
+      "address": "Address",
+      "badLink": "Use a CMX address starting with /.",
+      "colour": "Colour",
+      "add": "Add tile"
+    },
+    "links": {
+      "newRequest": "New request",
+      "newWorkOrder": "New work order",
+      "newAsset": "New asset"
+    },
+    "menu": {
+      "note": "Hiding a menu item only tidies the menu. People can still open the page from links if their permissions allow it. To stop access, change the role's permissions.",
+      "severalRoles": "A menu item is hidden for a person when all of their roles that can open it hide it."
+    },
+    "columns": {
+      "none": "No default columns for this role.",
+      "clear": "Clear",
+      "where": "Set a role's default columns from a list's column menu."
+    },
+    "cardHints": {
+      "work-summary": "Open, late, due soon, not started, completed and waiting requests.",
+      "work-by-site": "Open and late work at each site.",
+      "urgent-work": "The most urgent open work orders.",
+      "asset-summary": "Assets, assets down, critical, under repair and value.",
+      "assets-by-status": "A chart of assets by status.",
+      "assets-by-category": "A chart of assets by category.",
+      "assets-by-site": "How many assets each site has.",
+      "warranty-soon": "Warranties ending in the next months.",
+      "recent-assets": "Assets added lately.",
+      "my-work": "Open work assigned to the person, earliest due first.",
+      "unassigned-work": "Open work with nobody assigned, for whoever hands out work.",
+      "late-work": "Work past its due time.",
+      "assets-down": "Assets stopped right now.",
+      "low-stock": "Parts at or below their reorder level.",
+      "my-approvals": "Purchase requests and orders waiting for the person's approval.",
+      "quick-request": "A button to report a problem.",
+      "location-tree": "The sites and locations, with buttons to report, create work or add assets there.",
+      "shortcuts": "Coloured tiles that open CMX pages."
+    }
   }
 }
