@@ -4,6 +4,32 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.26.0] - 2026-11-24
+
+API keys and background imports. Other systems (an ERP, a BI tool, a sensor gateway) can read and change CMX data with an API key
+that acts as a service account, within its roles and sites. Every check and import now runs in the background with a progress bar,
+a history and an e-mail when a long one finishes. See docs/API.md.
+
+### Added
+- **Service accounts** (Settings › Users, Manage users): accounts for systems, not people, with roles, sites and an active switch.
+  They can't sign in, get no e-mail or push, and are never offered where a person is chosen.
+- **API keys** (Settings › API keys, Manage users): made for a service account, shown once, optionally read-only and expiring, with
+  the time each was last used and Revoke. Send `Authorization: Bearer cmx_…` (or `X-Api-Key`). A key sees and changes what its
+  account's roles and sites allow, up to 120 requests a minute; changes show the source **API** in the activity log. Keys can't sign
+  in, manage users, roles, keys or security settings, anonymise anyone or use the technician app's sync.
+- **API documentation** at `/api/docs` describes the key scheme; it needs sign-in or a key. Guide: docs/API.md.
+- **Background imports** (Settings › Import): checks and imports are queued and run one at a time per server, with progress
+  ("Checking Assets… 1,240 of 3,000 rows"), a history of past runs with their results and problem rows, and an e-mail to the person
+  who started one that took more than a minute. Leaving the page doesn't stop it. Imports by key answer with the job to follow.
+
+### Changed
+- Import limits: up to 20,000 rows in one file and 25 MB (was 5,000 rows a sheet and 10 MB, within 45 seconds). An import still
+  saves everything or nothing; one that runs over 30 minutes or is stopped by a server restart saves nothing and says so.
+- Asset numbers an import uses are taken at once, so other people can keep adding assets while a long import runs; a check only
+  shows the numbers it would take. A failed import leaves a gap in the numbering.
+- Site-limited administrators see only the imports they started. Uploaded files are kept 30 days after an import finishes.
+- The API description (`/openapi/v1.json`) is no longer public.
+
 ## [0.25.0] - 2026-11-24
 
 Security and the activity log. An organization can set its own password rules, allow one signed-in device per person, anonymise
