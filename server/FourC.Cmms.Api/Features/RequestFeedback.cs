@@ -151,7 +151,7 @@ public static class RequestFeedbackService
         {
             if (await FindAsync(db, token, ct) is not { } found) return Gone();
             var name = found.RequesterName ?? found.RequesterEmail;
-            var ctx = new FixedTenantContext(found.TenantId, null, name);
+            var ctx = new FixedTenantContext(found.TenantId, null, name, "Web");
             await using var scoped = factory.For(found.TenantId, name);
             var v = await scoped.InTransactionAsync(async tk =>
             {
@@ -185,5 +185,5 @@ public static class RequestFeedbackService
 /// <summary>Opens a database context for one organization outside a signed-in request (the requester's answer page).</summary>
 public sealed class DbContextOptionsFactory(DbContextOptions<CmmsDbContext> options)
 {
-    public CmmsDbContext For(Guid tenantId, string? userName) => new(options, new FixedTenantContext(tenantId, null, userName));
+    public CmmsDbContext For(Guid tenantId, string? userName) => new(options, new FixedTenantContext(tenantId, null, userName, "Web"));
 }

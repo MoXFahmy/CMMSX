@@ -48,7 +48,7 @@ public static class AuthEndpoints
             if (!v.IsValid) return v.Problem();
 
             var tenantId = Guid.CreateVersion7();
-            await using var db = new CmmsDbContext(options, new FixedTenantContext(tenantId));
+            await using var db = new CmmsDbContext(options, new FixedTenantContext(tenantId, source: "Web"));
             var (_, admin) = await TenantProvisioning.CreateAsync(db, hasher, tenantId, req.OrganizationName, req.FullName, req.Email, req.Password!, language: Translator.CurrentLanguage, ct: ct);
             var user = await users.FindByIdAsync(admin.Id.ToString());
             await signIn.SignInAsync(user!, isPersistent: true);

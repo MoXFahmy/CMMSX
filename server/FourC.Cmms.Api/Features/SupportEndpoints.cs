@@ -340,9 +340,11 @@ public static class AuditEndpoints
     {
         api.MapGet("/audit", async (string entityType, Guid entityId, CmmsDbContext db, CancellationToken ct) =>
             !await SiteAccess.VisibleAsync(db, entityType, entityId, ct) ? Results.NotFound()
-            : Results.Ok(await db.AuditEntries.AsNoTracking().Where(a => a.EntityType == entityType && a.EntityId == entityId)
+            // The record's own changes and its child rows' (0.25.0: labour lines, comments, files…), with where each came from.
+            : Results.Ok(await db.AuditEntries.AsNoTracking()
+                .Where(a => (a.EntityType == entityType && a.EntityId == entityId && a.ParentType == null) || (a.ParentType == entityType && a.ParentId == entityId))
                 .OrderByDescending(a => a.Timestamp).Take(200)
-                .Select(a => new { a.Id, a.Action, a.Changes, a.UserName, a.Timestamp }).ToListAsync(ct)))
+                .Select(a => new { a.Id, a.Action, a.Changes, a.UserName, a.Timestamp, a.EntityType, a.EntityId, a.Source, a.ChangeId }).ToListAsync(ct)))
             .WithTags("Audit").RequireAuthorization();
     }
 }

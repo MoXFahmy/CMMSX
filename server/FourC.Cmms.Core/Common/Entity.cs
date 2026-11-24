@@ -52,13 +52,20 @@ public interface ITenantContext
     /// <summary>Location paths (Location.Path) this request may see under; null = no branch limit, empty = nothing.
     /// Never set without <see cref="SiteIds"/>.</summary>
     IReadOnlyList<string>? BranchPaths => null;
+    /// <summary>Where changes come from (0.25.0): Web, Phone, Import or Job.</summary>
+    string Source => "Web";
+    /// <summary>The change number everything this request or run saves shares; empty = one per database context.</summary>
+    Guid ChangeId => Guid.Empty;
 }
 
-public sealed class FixedTenantContext(Guid? tenantId, Guid? userId = null, string? userName = null) : ITenantContext
+/// <summary>A tenant context set in code: background jobs ("Job", the default), tools, and a few anonymous web pages.</summary>
+public sealed class FixedTenantContext(Guid? tenantId, Guid? userId = null, string? userName = null, string source = "Job") : ITenantContext
 {
     public Guid? TenantId { get; } = tenantId;
     public Guid? UserId { get; } = userId;
     public string? UserName { get; } = userName;
+    public string Source { get; } = source;
+    public Guid ChangeId { get; } = Guid.CreateVersion7();
 }
 
 public sealed record PagedResult<T>(IReadOnlyList<T> Items, int Total, int Page, int PageSize);

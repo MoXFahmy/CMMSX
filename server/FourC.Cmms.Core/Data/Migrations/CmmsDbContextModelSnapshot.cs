@@ -1022,6 +1022,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(20)
                         .HasColumnType("nvarchar(20)");
 
+                    b.Property<Guid>("ChangeId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("Changes")
                         .HasColumnType("nvarchar(max)");
 
@@ -1032,6 +1035,18 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
+
+                    b.Property<Guid?>("ParentId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("ParentType")
+                        .HasMaxLength(100)
+                        .HasColumnType("nvarchar(100)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasMaxLength(10)
+                        .HasColumnType("nvarchar(10)");
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
@@ -1047,6 +1062,12 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasColumnType("nvarchar(200)");
 
                     b.HasKey("Id");
+
+                    b.HasIndex("TenantId", "ChangeId");
+
+                    b.HasIndex("TenantId", "Timestamp");
+
+                    b.HasIndex("TenantId", "ParentType", "ParentId");
 
                     b.HasIndex("TenantId", "EntityType", "EntityId", "Timestamp");
 
