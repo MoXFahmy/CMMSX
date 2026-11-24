@@ -245,6 +245,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
 
+                    b.Property<DateOnly?>("EndOfLifeOn")
+                        .HasColumnType("date");
+
                     b.Property<decimal?>("ExpectedLifeYears")
                         .HasPrecision(9, 2)
                         .HasColumnType("decimal(9,2)");
@@ -291,6 +294,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<Guid?>("ParentAssetId")
                         .HasColumnType("uniqueidentifier");
 
+                    b.Property<Guid?>("PartId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<decimal?>("PurchasePrice")
                         .HasPrecision(18, 2)
                         .HasColumnType("decimal(18,2)");
@@ -324,6 +330,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<int>("Status")
                         .HasColumnType("int");
 
+                    b.Property<Guid?>("StoreId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
@@ -356,7 +365,11 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.HasIndex("ParentAssetId");
 
+                    b.HasIndex("PartId");
+
                     b.HasIndex("SiteId");
+
+                    b.HasIndex("StoreId");
 
                     b.HasIndex("TenantId", "AssetNumber")
                         .IsUnique()
@@ -370,6 +383,10 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasIndex("TenantId", "LocationId");
 
                     b.HasIndex("TenantId", "ParentAssetId");
+
+                    b.HasIndex("TenantId", "PartId", "SerialNumber")
+                        .IsUnique()
+                        .HasFilter("[PartId] IS NOT NULL AND [IsDeleted] = 0");
 
                     b.ToTable("Assets");
                 });
@@ -1815,6 +1832,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<bool>("IsDeleted")
                         .HasColumnType("bit");
 
+                    b.Property<bool>("IsSerialTracked")
+                        .HasColumnType("bit");
+
                     b.Property<bool>("IsShelfItem")
                         .HasColumnType("bit");
 
@@ -1868,6 +1888,9 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<int?>("UnitLifeMonths")
+                        .HasColumnType("int");
 
                     b.Property<string>("UnitOfMeasure")
                         .IsRequired()
@@ -2370,6 +2393,66 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasFilter("[IsDeleted] = 0");
 
                     b.ToTable("Units");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Inventory.UnitMovement", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("AssetId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset>("At")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("ByName")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<Guid?>("ByUserId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<decimal?>("Cost")
+                        .HasPrecision(18, 4)
+                        .HasColumnType("decimal(18,4)");
+
+                    b.Property<int>("Kind")
+                        .HasColumnType("int");
+
+                    b.Property<string>("Note")
+                        .HasMaxLength(500)
+                        .HasColumnType("nvarchar(500)");
+
+                    b.Property<int?>("Outcome")
+                        .HasColumnType("int");
+
+                    b.Property<Guid?>("PurchaseOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("PurchaseOrderLineId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("StoreId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid>("UnitId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<Guid?>("WorkOrderId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("TenantId");
+
+                    b.HasIndex("UnitId", "At");
+
+                    b.ToTable("UnitMovements");
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Locations.Location", b =>
@@ -4504,6 +4587,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(100)
                         .HasColumnType("nvarchar(100)");
 
+                    b.Property<Guid?>("UnitId")
+                        .HasColumnType("uniqueidentifier");
+
                     b.Property<string>("UnitOfMeasure")
                         .HasMaxLength(30)
                         .HasColumnType("nvarchar(30)");
@@ -4522,6 +4608,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasIndex("PurchaseOrderId");
 
                     b.HasIndex("PurchaseRequestLineId");
+
+                    b.HasIndex("UnitId");
 
                     b.ToTable("PurchaseOrderLines");
                 });
@@ -6988,11 +7076,21 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasForeignKey("ParentAssetId")
                         .OnDelete(DeleteBehavior.Restrict);
 
+                    b.HasOne("FourC.Cmms.Core.Inventory.Part", null)
+                        .WithMany()
+                        .HasForeignKey("PartId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("FourC.Cmms.Core.Locations.Site", "Site")
                         .WithMany()
                         .HasForeignKey("SiteId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.HasOne("FourC.Cmms.Core.Inventory.Store", null)
+                        .WithMany()
+                        .HasForeignKey("StoreId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Category");
 
@@ -7276,6 +7374,15 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired();
 
                     b.Navigation("Site");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Inventory.UnitMovement", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Assets.Asset", null)
+                        .WithMany()
+                        .HasForeignKey("UnitId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Locations.Location", b =>
@@ -7597,6 +7704,11 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .WithMany()
                         .HasForeignKey("PurchaseRequestLineId")
                         .OnDelete(DeleteBehavior.NoAction);
+
+                    b.HasOne("FourC.Cmms.Core.Assets.Asset", null)
+                        .WithMany()
+                        .HasForeignKey("UnitId")
+                        .OnDelete(DeleteBehavior.Restrict);
 
                     b.Navigation("Part");
                 });

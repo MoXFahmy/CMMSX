@@ -117,6 +117,8 @@ public class PurchaseOrderLine : Entity
     /// <summary>Stock part; null for services / direct purchases.</summary>
     public Guid? PartId { get; set; }
     public Part? Part { get; set; }
+    /// <summary>A unit under repair sent to the supplier on this line (0.24.0); receiving the line brings it back.</summary>
+    public Guid? UnitId { get; set; }
     public required string Description { get; set; }
     public string? UnitOfMeasure { get; set; }
     public decimal Quantity { get; set; }

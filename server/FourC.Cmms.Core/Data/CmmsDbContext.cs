@@ -45,6 +45,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<UserListSetting> UserListSettings => Set<UserListSetting>();
     public DbSet<RoleListSetting> RoleListSettings => Set<RoleListSetting>();
     public DbSet<PrintLayout> PrintLayouts => Set<PrintLayout>();
+    public DbSet<UnitMovement> UnitMovements => Set<UnitMovement>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<Site> Sites => Set<Site>();
@@ -266,6 +267,10 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<Asset>(e =>
         {
             ConfigureTenantEntity(e);
+            // Serial units (0.24.0): the part a unit belongs to, its store while in stock, one serial per part among live units.
+            e.HasOne<Part>().WithMany().HasForeignKey(x => x.PartId).OnDelete(DeleteBehavior.Restrict);
+            e.HasOne<Store>().WithMany().HasForeignKey(x => x.StoreId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.PartId, x.SerialNumber }).IsUnique().HasFilter("[PartId] IS NOT NULL AND [IsDeleted] = 0");
             e.Property(x => x.AssetNumber).HasMaxLength(100);
             e.Property(x => x.Name).HasMaxLength(300);
             e.Property(x => x.Manufacturer).HasMaxLength(200);
@@ -448,6 +453,14 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<WorkOrder>().HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
         b.Entity<PmSchedule>().HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
         b.Entity<StockTransaction>().HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
+        b.Entity<UnitMovement>(e =>
+        {
+            e.Property(x => x.Note).HasMaxLength(500); e.Property(x => x.ByName).HasMaxLength(200);
+            e.Property(x => x.Cost).HasPrecision(18, 4);
+            e.HasIndex(x => new { x.UnitId, x.At });
+            e.HasIndex(x => x.TenantId);
+            e.HasOne<Asset>().WithMany().HasForeignKey(x => x.UnitId).OnDelete(DeleteBehavior.Restrict);
+        });
         b.Entity<PrintLayout>(e =>
         {
             ConfigureTenantEntity(e);
@@ -856,6 +869,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         });
         b.Entity<PurchaseOrderLine>(e =>
         {
+            e.HasOne<Asset>().WithMany().HasForeignKey(x => x.UnitId).OnDelete(DeleteBehavior.Restrict);
             e.Property(x => x.Description).HasMaxLength(500); e.Property(x => x.UnitOfMeasure).HasMaxLength(30); e.Property(x => x.AccountCode).HasMaxLength(50);
             e.Property(x => x.Quantity).HasPrecision(18, 3); e.Property(x => x.QuantityReceived).HasPrecision(18, 3);
             e.Property(x => x.UnitPrice).HasPrecision(18, 4); e.Property(x => x.DiscountPercent).HasPrecision(9, 3);

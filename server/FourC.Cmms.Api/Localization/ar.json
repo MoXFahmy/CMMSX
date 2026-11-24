@@ -1168,5 +1168,9 @@
  "Terms": "الشروط",
  "Tax number": "الرقم الضريبي",
  "Shipping method": "طريقة الشحن",
- "Order type": "نوع الأمر"
+ "Order type": "نوع الأمر",
+ "This part is serial-tracked: fit or remove a unit on the work order.": "هذه القطعة تُتتبَّع بالرقم التسلسلي: ركّب وحدة أو انزعها في أمر العمل.",
+ "This part is serial-tracked: scrap a unit or register a found one on the part's units.": "هذه القطعة تُتتبَّع بالرقم التسلسلي: أتلف وحدة أو سجّل وحدة وُجدت من وحدات القطعة.",
+ "Enter a serial number for each piece received.": "أدخل رقمًا تسلسليًا لكل قطعة مستلمة.",
+ "This part is serial-tracked: transfer units by choosing them on the part's units.": "هذه القطعة تُتتبَّع بالرقم التسلسلي: انقل الوحدات باختيارها من وحدات القطعة."
 }

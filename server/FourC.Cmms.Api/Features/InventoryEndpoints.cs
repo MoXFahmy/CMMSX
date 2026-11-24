@@ -310,6 +310,7 @@ public static class InventoryEndpoints
         t.MapPost("/return", async (IssueInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             if (Missing(i.PartId, i.StoreId) is { } bad) return bad;
+            await StockLedger.RefuseSerialAsync(db, i.PartId!.Value, StockTransactionType.Return, ct);
             Guid? lastIssue = null;
             if (i.WorkOrderId is { } wo)
             {

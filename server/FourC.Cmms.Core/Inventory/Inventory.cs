@@ -43,6 +43,10 @@ public class Part : TenantEntity
     public bool IsCritical { get; set; }
     /// <summary>Shelf-life item: receipts need a batch and expiry date; expired batches cannot be issued.</summary>
     public bool IsShelfItem { get; set; }
+    /// <summary>Tracked unit by unit (0.24.0): each piece is an asset with a serial number; stock moves only through its units.</summary>
+    public bool IsSerialTracked { get; set; }
+    /// <summary>The default operating life of its units, in months: a unit's end of life is its receipt date plus this.</summary>
+    public int? UnitLifeMonths { get; set; }
     public bool AllowNegativeStock { get; set; }
     public Guid? PreferredSupplierId { get; set; }
     public string? Barcode { get; set; }
