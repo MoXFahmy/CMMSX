@@ -45,6 +45,23 @@ public static class Housekeeping
         return deleted;
     }
 
+    /// <summary>How long a finished import's uploaded file is kept (0.26.0), for its problems workbook.</summary>
+    public static readonly TimeSpan KeepImportFiles = TimeSpan.FromDays(30);
+
+    /// <summary>Removes the files of imports that finished more than <see cref="KeepImportFiles"/> ago; their history lines stay.</summary>
+    public static async Task<int> TrimImportFilesAsync(CmmsDbContext db, IFileStorage storage, DateTimeOffset now, CancellationToken ct = default)
+    {
+        var before = now - KeepImportFiles;
+        var old = await db.ImportJobs.IgnoreQueryFilters().Where(j => j.StorageKey != null && j.FinishedAt != null && j.FinishedAt < before)
+            .Select(j => new { j.Id, j.StorageKey }).Take(500).ToListAsync(ct);
+        foreach (var j in old)
+        {
+            try { await storage.DeleteAsync(j.StorageKey!, ct); } catch (Exception) { /* already gone: the line is still cleared */ }
+            await db.ImportJobs.IgnoreQueryFilters().Where(x => x.Id == j.Id).ExecuteUpdateAsync(s => s.SetProperty(x => x.StorageKey, (string?)null), ct);
+        }
+        return old.Count;
+    }
+
     /// <summary>Saves the record of a file already stored; if that fails, removes the file so it isn't left behind, and rethrows.</summary>
     public static Task SaveOrRemoveFileAsync(IFileStorage storage, string key, Func<Task<int>> save, CancellationToken ct = default) =>
         SaveOrRemoveFilesAsync(storage, [key], save, ct);

@@ -1420,6 +1420,14 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             """, ct);
     }
 
+    /// <summary>The next number of a sequence without taking it (an import check shows the numbers it would take).</summary>
+    public async Task<long> PeekNextNumberAsync(string name, CancellationToken ct = default)
+    {
+        var tenantId = tenant.TenantId ?? throw new InvalidOperationException("No tenant in context.");
+        var values = await Database.SqlQuery<long>($"SELECT NextValue AS Value FROM NumberSequences WHERE TenantId = {tenantId} AND Name = {name}").ToListAsync(ct);
+        return values.Count == 1 ? values[0] : 1;
+    }
+
     /// <summary>Atomically allocates the next number in a per-tenant sequence.</summary>
     public Task<long> NextNumberAsync(string name, CancellationToken ct = default) => NextNumbersAsync(name, 1, ct);
 

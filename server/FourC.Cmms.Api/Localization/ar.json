@@ -1256,5 +1256,16 @@
  "This import took too long. Split it into smaller files.": "استغرق هذا الاستيراد وقتًا طويلًا. قسّمه إلى ملفات أصغر.",
  "The server restarted during this import. Nothing was saved. Try again.": "أُعيد تشغيل الخادم أثناء هذا الاستيراد. لم يُحفظ شيء. حاول مرة أخرى.",
  "Something went wrong during this import. Nothing was saved.": "حدث خطأ أثناء هذا الاستيراد. لم يُحفظ شيء.",
- "This file is no longer kept.": "لم يعد هذا الملف محفوظًا."
+ "This file is no longer kept.": "لم يعد هذا الملف محفوظًا.",
+ "Result": "النتيجة",
+ "{0} new, {1} changed, {2} with problems": "{0} جديد، {1} معدّل، {2} بها مشكلات",
+ "Import finished: {0}": "انتهى الاستيراد: {0}",
+ "Check finished: {0}": "انتهى الفحص: {0}",
+ "Import failed: {0}": "فشل الاستيراد: {0}",
+ "Check failed: {0}": "فشل الفحص: {0}",
+ "Your import has finished": "انتهى الاستيراد الخاص بك",
+ "Your check has finished": "انتهى الفحص الخاص بك",
+ "Your import didn't finish": "لم يكتمل الاستيراد الخاص بك",
+ "Your check didn't finish": "لم يكتمل الفحص الخاص بك",
+ "Open the import": "فتح الاستيراد"
 }

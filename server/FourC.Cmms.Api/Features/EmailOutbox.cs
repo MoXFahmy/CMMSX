@@ -566,6 +566,21 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     /// <summary>An address CMX made up (a service account's, an anonymised sign-in's): never written to.</summary>
     internal static bool Undeliverable(string? address) => address is not null && address.Trim().EndsWith(".invalid", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>A check or import that took more than a minute finished (0.26.0): the person who started it hears, with its result.</summary>
+    public async Task ImportFinishedAsync(CmmsDbContext db, ITenantContext ctx, FourC.Cmms.Core.Imports.ImportJob job, FourC.Cmms.Api.Features.Import.ImportResult? result, string? error, CancellationToken ct)
+    {
+        if (job.UserId is not { } starter) return;
+        var to = await UsersAsync(db, [starter], ct);
+        if (to.Count == 0) return;
+        var lines = new List<(string, string?)>();
+        if (error is not null) lines.Add((Translator.T("Result"), error));
+        else foreach (var s in result?.Sheets ?? [])
+            lines.Add((s.Sheet, Translator.T($"{s.New} new, {s.Changed} changed, {s.Problems} with problems")));
+        await QueueAsync(db, ctx, "import.finished", to,
+            org => EmailTemplates.ImportFinished(org, job.FileName, job.Save, error is null, lines, Link($"/settings/import?job={job.Id}")), "ImportJob", job.Id, ct,
+            ignoreToggles: true, keepActor: true);
+    }
+
     internal static async Task<List<EmailRecipient>> UsersAsync(CmmsDbContext db, IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
         await db.Users.AsNoTracking().People().Where(u => ids.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId)
             .Select(u => new EmailRecipient(u.Email, u.FullName, u.Id)).ToListAsync(ct);

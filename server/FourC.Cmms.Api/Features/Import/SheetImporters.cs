@@ -554,7 +554,7 @@ internal sealed class AssetImporter : RecordImporter<Asset>
     {
         if (_next == _end && _toNumber > 0)
         {
-            _next = await c.Db.NextNumbersAsync("Asset", _toNumber, ct);
+            _next = await c.TakeNumbersAsync("Asset", _toNumber, ct);
             _end = _next + _toNumber;
             _toNumber = 0;
         }
@@ -569,7 +569,7 @@ internal sealed class AssetImporter : RecordImporter<Asset>
     /// <summary>Numbers of the block that no row needed (rows that turned out to be problems) go back to the sequence.</summary>
     public override async Task FinishAsync(ImportContext c, CancellationToken ct)
     {
-        if (_next < _end) await c.Db.ReturnNumbersAsync("Asset", _next, _end, ct);
+        if (_next < _end) await c.ReturnNumbersAsync("Asset", _next, _end, ct);
         _next = _end = 0;
     }
 

@@ -51,6 +51,33 @@ public sealed class ImportContext(CmmsDbContext db, ITenantContext tenant, Tenan
 
     public CmmsDbContext Db => db;
     public ITenantContext Tenant => tenant;
+
+    /// <summary>An import (numbers are taken for good) or a check (numbers are only shown).</summary>
+    public bool Saving { get; set; }
+
+    /// <summary>
+    /// Takes <paramref name="count"/> numbers of a sequence (0.26.0) in a short step of its own, kept at once, so a long import
+    /// never holds the numbering others need; a check only shows the next number. If the import then fails, they're skipped.
+    /// </summary>
+    public async Task<long> TakeNumbersAsync(string name, int count, CancellationToken ct)
+    {
+        if (!Saving) return await db.PeekNextNumberAsync(name, ct);
+        await using var own = Own();
+        return await own.NextNumbersAsync(name, count, ct);
+    }
+
+    /// <summary>Gives back the end of a block nobody used, if no one has taken a number since (imports only).</summary>
+    public async Task ReturnNumbersAsync(string name, long firstUnused, long end, CancellationToken ct)
+    {
+        if (!Saving) return;
+        await using var own = Own();
+        await own.ReturnNumbersAsync(name, firstUnused, end, ct);
+    }
+
+    /// <summary>A context on its own connection, outside the import's transaction.</summary>
+    private CmmsDbContext Own() =>
+        new((DbContextOptions<CmmsDbContext>)Microsoft.EntityFrameworkCore.Infrastructure.AccessorExtensions.GetService<Microsoft.EntityFrameworkCore.Infrastructure.IDbContextOptions>(db),
+            new FixedTenantContext(db.CurrentTenantId));
     public TenantSettings Settings => settings;
     public DateOnly Today => today;
 
@@ -206,7 +233,7 @@ public static class ImportRun
             await using var tx = await db.Database.BeginTransactionAsync(token);
             try
             {
-                var result = await RunSheetsAsync(db, ctx, plan, clock, budget, token, progress);
+                var result = await RunSheetsAsync(db, ctx, plan, clock, budget, token, progress, save);
                 // New brands, models and units from the rows (0.21.0), counted in the check and kept only when the import saves.
                 var (brands, models, units) = await ReferenceLists.ReconcileAsync(db, db.CurrentTenantId!.Value, token);
                 var listNotes = new List<string>();
@@ -242,11 +269,12 @@ public static class ImportRun
     private static bool IsBlank(IReadOnlyList<object?> row) => row.All(v => v is null || v is string s && string.IsNullOrWhiteSpace(s));
 
     private static async Task<ImportResult> RunSheetsAsync(CmmsDbContext db, ITenantContext ctx, List<(SheetDef Def, SpreadsheetSheet Sheet)> plan,
-        Func<TimeSpan> clock, TimeSpan budget, CancellationToken ct, Func<string, int, int, Task>? progress)
+        Func<TimeSpan> clock, TimeSpan budget, CancellationToken ct, Func<string, int, int, Task>? progress, bool save)
     {
         void Check() { if (clock() > budget) throw new Stopped(); }
         Check();
         var c = await ContextAsync(db, ctx, ct);
+        c.Saving = save;
         var customFields = c.AssetFields;
         var importers = SheetImporters.All(customFields).ToDictionary(i => i.Sheet);
         var results = new List<SheetResult>();
