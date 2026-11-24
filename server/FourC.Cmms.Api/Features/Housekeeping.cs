@@ -54,12 +54,16 @@ public static class Housekeeping
         var before = now - KeepImportFiles;
         var old = await db.ImportJobs.IgnoreQueryFilters().Where(j => j.StorageKey != null && j.FinishedAt != null && j.FinishedAt < before)
             .Select(j => new { j.Id, j.StorageKey }).Take(500).ToListAsync(ct);
+        var cleared = 0;
         foreach (var j in old)
         {
-            try { await storage.DeleteAsync(j.StorageKey!, ct); } catch (Exception) { /* already gone: the line is still cleared */ }
+            // Cleared from the history line only once the file is gone (deleting a missing file works); a failed delete is tried again next time (0.26.1).
+            try { await storage.DeleteAsync(j.StorageKey!, ct); }
+            catch (Exception e) when (e is not OperationCanceledException and not FileNotFoundException and not DirectoryNotFoundException) { continue; }
             await db.ImportJobs.IgnoreQueryFilters().Where(x => x.Id == j.Id).ExecuteUpdateAsync(s => s.SetProperty(x => x.StorageKey, (string?)null), ct);
+            cleared++;
         }
-        return old.Count;
+        return cleared;
     }
 
     /// <summary>Saves the record of a file already stored; if that fails, removes the file so it isn't left behind, and rethrows.</summary>

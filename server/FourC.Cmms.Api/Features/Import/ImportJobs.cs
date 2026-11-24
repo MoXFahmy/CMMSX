@@ -11,6 +11,9 @@ namespace FourC.Cmms.Api.Features.Import;
 /// <summary>Background imports (0.26.0): queuing an upload, claiming the next job, progress and jobs left behind by a restart.</summary>
 public static class ImportJobs
 {
+    /// <summary>The longest error a job keeps (its column's size).</summary>
+    public const int MaxError = 1000;
+
     public const long MaxBytes = 25 * 1024 * 1024;
     public const string ChooseFile = "Choose a file of up to 25 MB.";
     public const string Restarted = "The server restarted during this import. Nothing was saved. Try again.";

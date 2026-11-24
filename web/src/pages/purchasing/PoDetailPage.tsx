@@ -258,8 +258,8 @@ function ReceiveModal({ o, onClose, onDone }: { o: PoDetail; onClose: () => void
                     ? <Select size="xs" data={(stores ?? []).map((s) => ({ value: s.id, label: s.code }))} value={rows[l.id].storeId} onChange={(v) => set(l.id, { storeId: v })} aria-label={t('inv.store')}
                         placeholder={l.unitId ? t('units.backInto') : undefined} />
                     : <Text fz="sm" c="dimmed">{l.workOrderNumber ? t('po.chargeTo', { number: l.workOrderNumber }) : t('po.expense')}</Text>}
-                    {l.partId && l.workOrderNumber && <Text fz="xs" c="dimmed">{t('po.thenIssue', { number: l.workOrderNumber })}</Text>}</Table.Td>
-                  <Table.Td>{l.isShelfItem ? <Group gap={4} wrap="nowrap">
+                    {l.partId && l.workOrderNumber && !l.isSerialTracked && <Text fz="xs" c="dimmed">{t('po.thenIssue', { number: l.workOrderNumber })}</Text>}</Table.Td>
+                  <Table.Td>{l.isShelfItem && !l.isSerialTracked ? <Group gap={4} wrap="nowrap">
                     <TextInput size="xs" placeholder={t('inv.batch')} value={rows[l.id].batch} onChange={(e) => set(l.id, { batch: e.currentTarget.value })} w={90} />
                     <DateInput size="xs" placeholder={t('inv.expiry')} value={rows[l.id].expiry} onChange={(v) => set(l.id, { expiry: v })} w={110} valueFormat="DD/MM/YY" /></Group> : <Text fz="sm" c="dimmed">—</Text>}</Table.Td>
                 </Table.Tr>

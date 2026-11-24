@@ -1,10 +1,12 @@
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Text.Json;
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Auditing;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Identity;
+using FourC.Cmms.Core.Work;
 using Microsoft.EntityFrameworkCore;
 
 namespace FourC.Cmms.Api.Features;
@@ -37,6 +39,10 @@ public static class ActivityEndpoints
     {
         var g = api.MapGroup("/activity").WithTags("Activity").RequirePermission(Permissions.SettingsManage);
         g.MapGet("/", ([AsParameters] ActivityFilter f, CmmsDbContext db, CancellationToken ct) => ListAsync(db, f, f.Page ?? 1, f.PageSize ?? 50, ct));
+        // The person filter's choices: the organization's people and service accounts, for anyone who may open the log (0.26.1).
+        g.MapGet("/people", async (CmmsDbContext db, CancellationToken ct) =>
+            await db.Users.AsNoTracking().Where(u => u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
+                .Select(u => new { u.Id, u.FullName, u.IsServiceAccount, u.IsActive }).ToListAsync(ct));
         g.MapGet("/export", ([AsParameters] ActivityFilter f, HttpContext http, CmmsDbContext db, CancellationToken ct) =>
             ListExport.FileAsync(http, db, "activity", (page, size) => ListAsync(db, f, page, size, ct, ListExport.MaxRows), ct));
 
@@ -58,8 +64,13 @@ public static class ActivityEndpoints
     internal static async Task<PagedResult<ActivityRow>> ListAsync(CmmsDbContext db, ActivityFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 200)
     {
         var q = db.AuditEntries.AsNoTracking();
-        if (f.From is { } from) { var start = new DateTimeOffset(from.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(a => a.Timestamp >= start); }
-        if (f.To is { } to) { var end = new DateTimeOffset(to.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(a => a.Timestamp < end); }
+        if (f.From is not null || f.To is not null)
+        {
+            // The organization's days, in its time zone (0.26.1).
+            var zone = Sla.Zone((await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings.TimeZone);
+            if (f.From is { } from) { var start = DayStart(from, zone); q = q.Where(a => a.Timestamp >= start); }
+            if (f.To is { } to) { var end = DayStart(to.AddDays(1), zone); q = q.Where(a => a.Timestamp < end); }
+        }
         if (f.UserId is { } user) q = q.Where(a => a.UserId == user);
         if (f.Source.Clean() is { } source) q = q.Where(a => a.Source == source);
         if (f.EntityType.Clean() is { } type) q = q.Where(a => a.EntityType == type || a.ParentType == type);
@@ -69,7 +80,9 @@ public static class ActivityEndpoints
         {
             // A record's number or name finds its entries; so do changed fields and values, the record type and the person.
             var ids = await MatchingRecordsAsync(db, s, ct);
-            q = q.Where(a => a.EntityType.Contains(s) || (a.UserName != null && a.UserName.Contains(s)) || (a.Changes != null && a.Changes.Contains(s))
+            // Changed values are stored JSON-escaped (Arabic as \uXXXX): both spellings are searched (0.26.1).
+            var escaped = JsonSerializer.Serialize(s)[1..^1];
+            q = q.Where(a => a.EntityType.Contains(s) || (a.UserName != null && a.UserName.Contains(s)) || (a.Changes != null && (a.Changes.Contains(s) || a.Changes.Contains(escaped)))
                              || ids.Contains(a.EntityId) || (a.ParentId != null && ids.Contains(a.ParentId.Value)));
         }
         // Entries of a site's records only when the person can see the record; organization-wide entries (settings, users, parts…) stay.
@@ -82,6 +95,13 @@ public static class ActivityEndpoints
             var label = a.ParentType is null ? record : $"{record} › {a.EntityType}";
             return new ActivityRow(a.Id, a.Timestamp, a.UserId, a.UserName, a.Source, a.ChangeId, a.EntityType, a.EntityId, a.ParentType, a.ParentId, label, a.Action, a.Changes);
         }).ToList(), paged.Total, paged.Page, paged.PageSize);
+    }
+
+    /// <summary>The first moment of <paramref name="day"/> in <paramref name="zone"/>.</summary>
+    internal static DateTimeOffset DayStart(DateOnly day, TimeZoneInfo zone)
+    {
+        var local = day.ToDateTime(TimeOnly.MinValue);
+        return new DateTimeOffset(local, zone.GetUtcOffset(local));
     }
 
     /// <summary>Ids of the main records whose number, code or name contains the text (at most 500).</summary>
@@ -105,39 +125,41 @@ public static class ActivityLabels
     public static async Task<Dictionary<(string Type, Guid Id), string>> ResolveAsync(CmmsDbContext db, IEnumerable<(string Type, Guid Id)> records, CancellationToken ct)
     {
         var byType = records.Distinct().GroupBy(r => r.Type).ToDictionary(g => g.Key, g => g.Select(r => r.Id).ToList());
+        // Deleted records keep their names here, so the filters are lifted; the organization is checked by hand (0.26.1).
+        var tenant = db.CurrentTenantId;
         var labels = new Dictionary<(string, Guid), string>();
         if (byType.TryGetValue("WorkOrder", out var w))
-            foreach (var x in await db.WorkOrders.IgnoreQueryFilters().Where(x => w.Contains(x.Id)).Select(x => new { x.Id, x.Number, x.Title }).ToListAsync(ct)) labels[("WorkOrder", x.Id)] = $"{x.Number} · {x.Title}";
+            foreach (var x in await db.WorkOrders.IgnoreQueryFilters().Where(x => x.TenantId == tenant && w.Contains(x.Id)).Select(x => new { x.Id, x.Number, x.Title }).ToListAsync(ct)) labels[("WorkOrder", x.Id)] = $"{x.Number} · {x.Title}";
         if (byType.TryGetValue("Asset", out var a))
-            foreach (var x in await db.Assets.IgnoreQueryFilters().Where(x => a.Contains(x.Id)).Select(x => new { x.Id, x.AssetNumber, x.Name }).ToListAsync(ct)) labels[("Asset", x.Id)] = $"{x.AssetNumber} · {x.Name}";
+            foreach (var x in await db.Assets.IgnoreQueryFilters().Where(x => x.TenantId == tenant && a.Contains(x.Id)).Select(x => new { x.Id, x.AssetNumber, x.Name }).ToListAsync(ct)) labels[("Asset", x.Id)] = $"{x.AssetNumber} · {x.Name}";
         if (byType.TryGetValue("Part", out var p))
-            foreach (var x in await db.Parts.IgnoreQueryFilters().Where(x => p.Contains(x.Id)).Select(x => new { x.Id, x.PartNumber, x.Name }).ToListAsync(ct)) labels[("Part", x.Id)] = $"{x.PartNumber} · {x.Name}";
+            foreach (var x in await db.Parts.IgnoreQueryFilters().Where(x => x.TenantId == tenant && p.Contains(x.Id)).Select(x => new { x.Id, x.PartNumber, x.Name }).ToListAsync(ct)) labels[("Part", x.Id)] = $"{x.PartNumber} · {x.Name}";
         if (byType.TryGetValue("WorkRequest", out var r))
-            foreach (var x in await db.WorkRequests.IgnoreQueryFilters().Where(x => r.Contains(x.Id)).Select(x => new { x.Id, x.Number, x.Title }).ToListAsync(ct)) labels[("WorkRequest", x.Id)] = $"{x.Number} · {x.Title}";
+            foreach (var x in await db.WorkRequests.IgnoreQueryFilters().Where(x => x.TenantId == tenant && r.Contains(x.Id)).Select(x => new { x.Id, x.Number, x.Title }).ToListAsync(ct)) labels[("WorkRequest", x.Id)] = $"{x.Number} · {x.Title}";
         if (byType.TryGetValue("PurchaseOrder", out var po))
-            foreach (var x in await db.PurchaseOrders.IgnoreQueryFilters().Where(x => po.Contains(x.Id)).Select(x => new { x.Id, x.Number }).ToListAsync(ct)) labels[("PurchaseOrder", x.Id)] = x.Number;
+            foreach (var x in await db.PurchaseOrders.IgnoreQueryFilters().Where(x => x.TenantId == tenant && po.Contains(x.Id)).Select(x => new { x.Id, x.Number }).ToListAsync(ct)) labels[("PurchaseOrder", x.Id)] = x.Number;
         if (byType.TryGetValue("PurchaseRequest", out var pr))
-            foreach (var x in await db.PurchaseRequests.IgnoreQueryFilters().Where(x => pr.Contains(x.Id)).Select(x => new { x.Id, x.Number }).ToListAsync(ct)) labels[("PurchaseRequest", x.Id)] = x.Number;
+            foreach (var x in await db.PurchaseRequests.IgnoreQueryFilters().Where(x => x.TenantId == tenant && pr.Contains(x.Id)).Select(x => new { x.Id, x.Number }).ToListAsync(ct)) labels[("PurchaseRequest", x.Id)] = x.Number;
         if (byType.TryGetValue("Contract", out var c))
-            foreach (var x in await db.Contracts.IgnoreQueryFilters().Where(x => c.Contains(x.Id)).Select(x => new { x.Id, x.Number, x.Title }).ToListAsync(ct)) labels[("Contract", x.Id)] = $"{x.Number} · {x.Title}";
+            foreach (var x in await db.Contracts.IgnoreQueryFilters().Where(x => x.TenantId == tenant && c.Contains(x.Id)).Select(x => new { x.Id, x.Number, x.Title }).ToListAsync(ct)) labels[("Contract", x.Id)] = $"{x.Number} · {x.Title}";
         if (byType.TryGetValue("PmSchedule", out var pm))
-            foreach (var x in await db.PmSchedules.IgnoreQueryFilters().Where(x => pm.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name }).ToListAsync(ct)) labels[("PmSchedule", x.Id)] = $"{x.Code} · {x.Name}";
+            foreach (var x in await db.PmSchedules.IgnoreQueryFilters().Where(x => x.TenantId == tenant && pm.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name }).ToListAsync(ct)) labels[("PmSchedule", x.Id)] = $"{x.Code} · {x.Name}";
         if (byType.TryGetValue("PmTask", out var t))
-            foreach (var x in await db.PmTasks.IgnoreQueryFilters().Where(x => t.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name }).ToListAsync(ct)) labels[("PmTask", x.Id)] = $"{x.Code} · {x.Name}";
+            foreach (var x in await db.PmTasks.IgnoreQueryFilters().Where(x => x.TenantId == tenant && t.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name }).ToListAsync(ct)) labels[("PmTask", x.Id)] = $"{x.Code} · {x.Name}";
         if (byType.TryGetValue("Location", out var l))
-            foreach (var x in await db.Locations.IgnoreQueryFilters().Where(x => l.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name }).ToListAsync(ct)) labels[("Location", x.Id)] = $"{x.Code} · {x.Name}";
+            foreach (var x in await db.Locations.IgnoreQueryFilters().Where(x => x.TenantId == tenant && l.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name }).ToListAsync(ct)) labels[("Location", x.Id)] = $"{x.Code} · {x.Name}";
         if (byType.TryGetValue("Site", out var si))
-            foreach (var x in await db.Sites.IgnoreQueryFilters().Where(x => si.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name }).ToListAsync(ct)) labels[("Site", x.Id)] = $"{x.Code} · {x.Name}";
+            foreach (var x in await db.Sites.IgnoreQueryFilters().Where(x => x.TenantId == tenant && si.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name }).ToListAsync(ct)) labels[("Site", x.Id)] = $"{x.Code} · {x.Name}";
         if (byType.TryGetValue("Store", out var st))
-            foreach (var x in await db.Stores.IgnoreQueryFilters().Where(x => st.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name }).ToListAsync(ct)) labels[("Store", x.Id)] = $"{x.Code} · {x.Name}";
+            foreach (var x in await db.Stores.IgnoreQueryFilters().Where(x => x.TenantId == tenant && st.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name }).ToListAsync(ct)) labels[("Store", x.Id)] = $"{x.Code} · {x.Name}";
         if (byType.TryGetValue("Supplier", out var su))
-            foreach (var x in await db.Suppliers.IgnoreQueryFilters().Where(x => su.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name }).ToListAsync(ct)) labels[("Supplier", x.Id)] = $"{x.Code} · {x.Name}";
+            foreach (var x in await db.Suppliers.IgnoreQueryFilters().Where(x => x.TenantId == tenant && su.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name }).ToListAsync(ct)) labels[("Supplier", x.Id)] = $"{x.Code} · {x.Name}";
         if (byType.TryGetValue("Employee", out var e))
-            foreach (var x in await db.Employees.IgnoreQueryFilters().Where(x => e.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.FullName }).ToListAsync(ct)) labels[("Employee", x.Id)] = $"{x.Code} · {x.FullName}";
+            foreach (var x in await db.Employees.IgnoreQueryFilters().Where(x => x.TenantId == tenant && e.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.FullName }).ToListAsync(ct)) labels[("Employee", x.Id)] = $"{x.Code} · {x.FullName}";
         if (byType.TryGetValue("AppUser", out var u))
-            foreach (var x in await db.Users.IgnoreQueryFilters().Where(x => u.Contains(x.Id)).Select(x => new { x.Id, x.FullName }).ToListAsync(ct)) labels[("AppUser", x.Id)] = x.FullName;
+            foreach (var x in await db.Users.IgnoreQueryFilters().Where(x => x.TenantId == tenant && u.Contains(x.Id)).Select(x => new { x.Id, x.FullName }).ToListAsync(ct)) labels[("AppUser", x.Id)] = x.FullName;
         if (byType.TryGetValue("Role", out var ro))
-            foreach (var x in await db.Roles.IgnoreQueryFilters().Where(x => ro.Contains(x.Id)).Select(x => new { x.Id, x.Name }).ToListAsync(ct)) labels[("Role", x.Id)] = x.Name;
+            foreach (var x in await db.Roles.IgnoreQueryFilters().Where(x => x.TenantId == tenant && ro.Contains(x.Id)).Select(x => new { x.Id, x.Name }).ToListAsync(ct)) labels[("Role", x.Id)] = x.Name;
         if (byType.ContainsKey("Tenant")) foreach (var id in byType["Tenant"]) labels[("Tenant", id)] = Translator.T("Organization settings");
         return labels;
     }

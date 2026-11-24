@@ -306,7 +306,7 @@ public static class ContractEndpoints
             .When(i.Currency.Clean() is { Length: not 3 }, "currency", "Use a 3-letter currency code.");
         var company = await db.Suppliers.AsNoTracking().FirstOrDefaultAsync(s => s.Id == i.SupplierId, ct);
         v.Merge(ContractorEndpoints.ValidateContractorCompany(company, existing is null || existing.SupplierId != i.SupplierId));
-        if (i.ManagerId is { } m && !await db.Users.AnyAsync(u => u.Id == m && u.TenantId == db.CurrentTenantId, ct)) v.Add("managerId", "Choose a user of this organization as manager.");
+        if (i.ManagerId is { } m && !await db.Users.People().AnyAsync(u => u.Id == m && u.TenantId == db.CurrentTenantId, ct)) v.Add("managerId", "Choose a user of this organization as manager.");
         if (i.ContractTypeId is { } type && type != existing?.ContractTypeId && !await db.ContractTypes.AnyAsync(t => t.Id == type && t.IsActive, ct)) v.Add("contractTypeId", "Choose an active contract type.");
         if (i.TradeId is { } trade && !await db.Trades.AnyAsync(t => t.Id == trade, ct)) v.Add("tradeId", "Unknown trade.");
         if (i.SiteId is { } site && site != existing?.SiteId && !await db.Sites.AnyAsync(s => s.Id == site, ct)) v.Add("siteId", "Choose a site.");

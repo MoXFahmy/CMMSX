@@ -5,7 +5,7 @@ import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconDots, IconPlus, IconTags } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
-import type { PartDetail, UnitOutcome, UnitRow, UnitState } from '@/api/types';
+import type { PartDetail, UnitList, UnitOutcome, UnitRow, UnitState } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { AssetPicker } from '@/components/AssetPicker';
 import { useStores } from '@/components/PartPicker';
@@ -170,11 +170,12 @@ export function PartUnits({ part }: { part: PartDetail }) {
   const [selected, setSelected] = useState<string[]>([]);
   const [acting, setActing] = useState<{ unit: UnitRow; action: UnitAction } | null>(null);
   const [register, setRegister] = useState<'found' | 'fitted' | null>(null);
-  const { data: rows, isLoading } = useQuery({
+  // Filtered by the server before its 500-row cap (0.26.1).
+  const { data, isLoading } = useQuery({
     queryKey: ['serial-units', part.id, state, storeId],
-    queryFn: () => get<UnitRow[]>('/serial-units', { partId: part.id, state: state === 'active' || state === 'all' ? undefined : state, storeId: storeId ?? undefined }),
+    queryFn: () => get<UnitList>('/serial-units', { partId: part.id, state: state === 'all' ? undefined : state, storeId: storeId ?? undefined }),
   });
-  const shown = useMemo(() => (rows ?? []).filter((r) => state !== 'active' || r.state !== 'Scrapped'), [rows, state]);
+  const shown = useMemo(() => data?.items ?? [], [data]);
   const today = new Date().toISOString().slice(0, 10);
   const soon = new Date(Date.now() + 30 * 86_400_000).toISOString().slice(0, 10);
   const transact = can(P.inventoryTransact);
@@ -233,6 +234,7 @@ export function PartUnits({ part }: { part: PartDetail }) {
           </Table.Tbody>
         </Table>
       </Table.ScrollContainer>
+      {data?.capped && <Text fz="xs" c="dimmed" p="md">{t('units.capped')}</Text>}
       {acting && <UnitActionModal unit={acting.unit} action={acting.action} onClose={() => setActing(null)} />}
       {register && <RegisterUnitModal part={part} kind={register} onClose={() => setRegister(null)} />}
     </Card>

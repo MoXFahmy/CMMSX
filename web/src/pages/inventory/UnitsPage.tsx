@@ -5,7 +5,7 @@ import { useQuery } from '@tanstack/react-query';
 import { Link, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { get } from '@/api/client';
-import type { UnitRow } from '@/api/types';
+import type { UnitList } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { fmtDate, fmtPrice } from '@/components/utils';
@@ -22,10 +22,11 @@ export function UnitsPage() {
   const [state, setState] = useState<string | null>(null);
   const [search, setSearch] = useState('');
   const [q] = useDebouncedValue(search, 300);
-  const { data: rows, isLoading } = useQuery({
+  const { data, isLoading } = useQuery({
     queryKey: ['serial-units', 'all', ending, state, q],
-    queryFn: () => get<UnitRow[]>('/serial-units', { endingWithinDays: ending ?? undefined, state: state ?? undefined, search: q || undefined }),
+    queryFn: () => get<UnitList>('/serial-units', { endingWithinDays: ending ?? undefined, state: state ?? undefined, search: q || undefined }),
   });
+  const rows = data?.items;
   return (
     <>
       <PageHeader crumbs={[{ label: t('inv.title'), to: '/inventory' }, { label: t('units.tab') }]} title={t('units.allUnits')} />
@@ -55,6 +56,7 @@ export function UnitsPage() {
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>
+        {data?.capped && <Text fz="xs" c="dimmed" p="md">{t('units.capped')}</Text>}
       </Card>
     </>
   );

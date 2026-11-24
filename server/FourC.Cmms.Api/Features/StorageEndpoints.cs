@@ -46,7 +46,7 @@ public static class StorageEndpoints
 
         g.MapGet("/files", async (string? search, int? page, CmmsDbContext db, CancellationToken ct) =>
         {
-            var q = db.Attachments.AsNoTracking();
+            var q = Visible(db, db.Attachments.AsNoTracking());
             if (search.Clean() is { } s)
             {
                 // The file's name, its record's number or name, or who uploaded it.
@@ -72,6 +72,21 @@ public static class StorageEndpoints
             });
         });
     }
+
+    /// <summary>Records with files that belong to a site: their files are listed only when the person can see the record.</summary>
+    private static readonly string[] SiteRecords = ["Site", "Location", "Asset", "WorkRequest", "WorkOrder", "PurchaseOrder", "PurchaseRequest", "Contract"];
+
+    /// <summary>A site-limited person's list leaves out files of records they can't see (0.26.1); the totals stay organization-wide.</summary>
+    internal static IQueryable<Core.Files.Attachment> Visible(CmmsDbContext db, IQueryable<Core.Files.Attachment> q) => db.CurrentSiteIds is null ? q : q.Where(a =>
+        !SiteRecords.Contains(a.EntityType)
+        || (a.EntityType == "Site" && db.Sites.Any(x => x.Id == a.EntityId))
+        || (a.EntityType == "Location" && db.Locations.Any(x => x.Id == a.EntityId))
+        || (a.EntityType == "Asset" && db.Assets.Any(x => x.Id == a.EntityId))
+        || (a.EntityType == "WorkRequest" && db.WorkRequests.Any(x => x.Id == a.EntityId))
+        || (a.EntityType == "WorkOrder" && db.WorkOrders.Any(x => x.Id == a.EntityId))
+        || (a.EntityType == "PurchaseOrder" && db.PurchaseOrders.Any(x => x.Id == a.EntityId))
+        || (a.EntityType == "PurchaseRequest" && db.PurchaseRequests.Any(x => x.Id == a.EntityId))
+        || (a.EntityType == "Contract" && db.Contracts.Any(x => x.Id == a.EntityId)));
 
     /// <summary>Space taken by files of a record type's deleted records (CMX keeps a deleted record and its files).</summary>
     private static Task<long> DeletedBytesAsync(CmmsDbContext db, string entityType, CancellationToken ct)

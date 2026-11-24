@@ -278,7 +278,7 @@ export function PoFormPage() {
 /** Units under repair not yet on this order (0.24.0); one becomes a repair line. */
 function RepairPickModal({ taken, onPick, onClose }: { taken: string[]; onPick: (u: UnitRow) => void; onClose: () => void }) {
   const { t } = useTranslation();
-  const { data: units } = useQuery({ queryKey: ['serial-units', 'at-repair'], queryFn: () => get<UnitRow[]>('/serial-units', { state: 'AtRepair' }) });
+  const { data: units } = useQuery({ queryKey: ['serial-units', 'at-repair'], queryFn: () => get<UnitRow[]>('/serial-units/at-repair') });
   const [id, setId] = useState<string | null>(null);
   const open = (units ?? []).filter((u) => !taken.includes(u.id));
   return (

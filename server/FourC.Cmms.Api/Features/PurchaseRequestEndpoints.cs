@@ -231,8 +231,9 @@ public static class PurchaseRequestEndpoints
         {
             var lines = await db.PurchaseRequestLines.AsNoTracking()
                 .Where(l => db.PurchaseRequests.Any(r => r.Id == l.PurchaseRequestId && (r.Status == PurchaseRequestStatus.Approved || r.Status == PurchaseRequestStatus.PartlyOrdered)))
-                .Where(l => !db.PurchaseOrderLines.AllSites().Any(ol => ol.PurchaseRequestLineId == l.Id
-                    && db.PurchaseOrders.AllSites().Any(o => o.Id == ol.PurchaseOrderId && o.Status != PurchaseOrderStatus.Cancelled)))
+                // No AllSites() here: it would lift the site limits from the whole list (0.26.1). A request's orders are at its own site.
+                .Where(l => !db.PurchaseOrderLines.Any(ol => ol.PurchaseRequestLineId == l.Id
+                    && db.PurchaseOrders.Any(o => o.Id == ol.PurchaseOrderId && o.Status != PurchaseOrderStatus.Cancelled)))
                 .Select(l => new
                 {
                     l.Id, l.LineNumber, l.PurchaseRequestId, Request = db.PurchaseRequests.Where(r => r.Id == l.PurchaseRequestId)

@@ -82,7 +82,8 @@ public sealed class ImportWorker(IServiceScopeFactory scopes, IConfiguration con
                 await using var db = new CmmsDbContext(options, ctx);
                 var last = DateTimeOffset.MinValue;
                 var result = await ImportRun.RunAsync(db, ctx, book, job.Save, TimeSpan.FromMinutes(Math.Max(1, config.GetValue("Import:MaxMinutes", 30))), null, ct,
-                    async (sheet, done, total) =>
+                    beforeCommit: (r, tk) => MarkDoneAsync(db, job.Id, r, json, tk),
+                    progress: async (sheet, done, total) =>
                     {
                         if (DateTimeOffset.UtcNow - last < TimeSpan.FromSeconds(2) && done != total) return;
                         last = DateTimeOffset.UtcNow;
@@ -107,6 +108,7 @@ public sealed class ImportWorker(IServiceScopeFactory scopes, IConfiguration con
             try { await heartbeat; } catch (OperationCanceledException) { }
         }
         var now = DateTimeOffset.UtcNow;
+        if (error is { Length: > ImportJobs.MaxError }) error = error[..ImportJobs.MaxError]; // fits its column, so the job can't stay stuck (0.26.1)
         await using (var done = new CmmsDbContext(options, new FixedTenantContext(null)))
             await done.ImportJobs.IgnoreQueryFilters().Where(j => j.Id == job.Id).ExecuteUpdateAsync(s => s
                 .SetProperty(j => j.Status, error is null ? ImportJobStatus.Done : ImportJobStatus.Failed).SetProperty(j => j.ResultJson, resultJson)
@@ -125,6 +127,19 @@ public sealed class ImportWorker(IServiceScopeFactory scopes, IConfiguration con
             }
             catch (Exception e) { log.LogWarning(e, "Couldn't e-mail the result of import {Job}", job.Id); }
         }
+    }
+
+    /// <summary>
+    /// Marks an import done with its result inside the import's own transaction (0.26.1), so a crash right after the save can't
+    /// leave a job that saved showing "Nothing was saved".
+    /// </summary>
+    public static Task MarkDoneAsync(CmmsDbContext db, Guid jobId, ImportResult result, JsonSerializerOptions json, CancellationToken ct)
+    {
+        var text = JsonSerializer.Serialize(result, json);
+        var now = DateTimeOffset.UtcNow;
+        return db.ImportJobs.IgnoreQueryFilters().Where(j => j.Id == jobId).ExecuteUpdateAsync(s => s
+            .SetProperty(j => j.Status, ImportJobStatus.Done).SetProperty(j => j.ResultJson, text).SetProperty(j => j.Error, (string?)null)
+            .SetProperty(j => j.FinishedAt, now), ct);
     }
 
     /// <summary>Tells other servers this job is still alive, every 15 seconds, even while one long save runs.</summary>

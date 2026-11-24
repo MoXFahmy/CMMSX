@@ -15,7 +15,7 @@ public class UnitActionTests(ApiFixture fx) : IClassFixture<ApiFixture>
         c.PostAsJsonAsync($"/api/serial-units/{unit}/{action}", body);
 
     internal static async Task<List<JsonElement>> ListAsync(HttpClient c, string query) =>
-        (await Ok(await c.GetAsync($"/api/serial-units?{query}"))).EnumerateArray().ToList();
+        (await Ok(await c.GetAsync($"/api/serial-units?{query}"))).GetProperty("items").EnumerateArray().ToList();
 
     private static async Task<decimal> StockAsync(HttpClient c, Guid part, Guid store) =>
         (await Ok(await c.GetAsync($"/api/parts/{part}"))).GetProperty("levels").EnumerateArray()

@@ -442,7 +442,7 @@ function UserSettings() {
       ]} />
       <AnonymiseModal who={anonymiseUser ? { userId: anonymiseUser } : null} onClose={() => setAnonymiseUser(null)} />
       <ServiceAccountModal account={serviceAccount ?? null} opened={serviceAccount !== undefined} onClose={() => setServiceAccount(undefined)} roles={roles ?? []}
-        sites={(h?.sites ?? []).map((x) => ({ value: x.id, label: x.name }))} />
+        sites={(h?.sites ?? []).map((x) => ({ value: x.id, label: x.name }))} places={placeOptions} />
       <Modal opened={opened} onClose={m.close} title={editing ? t('settings.editUser') : t('settings.newUser')} size="lg">
         <form onSubmit={submit}><Stack>
           <SimpleGrid cols={2}>

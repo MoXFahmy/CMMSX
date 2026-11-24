@@ -114,7 +114,7 @@ function EmployeesTable() {
             data={[...(companies ?? []).map((c) => ({ value: c.id, label: c.name })),
               ...(editing?.companyId && !(companies ?? []).some((c) => c.id === editing.companyId) ? [{ value: editing.companyId, label: editing.companyName ?? '—' }] : [])]}
             {...form.getInputProps('companyId')} />}
-          {users && <Select label={t('people.login')} description={t('people.loginHint')} clearable searchable data={users.map((u) => ({ value: u.id, label: `${u.fullName} (${u.email})` }))} {...form.getInputProps('userId')} />}
+          {users && <Select label={t('people.login')} description={t('people.loginHint')} clearable searchable data={users.filter((u) => !u.isServiceAccount).map((u) => ({ value: u.id, label: `${u.fullName} (${u.email})` }))} {...form.getInputProps('userId')} />}
           <Textarea label={t('common.notes')} autosize {...form.getInputProps('notes')} />
           <Accordion variant="contained" chevronPosition="left">
             <Accordion.Item value="hours">

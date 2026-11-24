@@ -8,6 +8,7 @@ using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
+using FourC.Cmms.Core.Notifications;
 using FourC.Cmms.Core.People;
 using FourC.Cmms.Core.Work;
 using Microsoft.EntityFrameworkCore;
@@ -28,6 +29,8 @@ public static class AnonymiseEndpoints
     public const string Already = "This person is already anonymised.";
     /// <summary>An anonymised sign-in stays closed: it can't be edited or given a password again.</summary>
     public const string Closed = "This sign-in was anonymised and can't be used again.";
+    /// <summary>Why an e-mail waiting to go to an anonymised person was never sent.</summary>
+    public const string AnonymisedMail = "Not sent: the person was anonymised.";
 
     /// <summary>
     /// Who is being anonymised: an employee (with their sign-in, if linked) or a sign-in with no employee record. The names
@@ -90,7 +93,8 @@ public static class AnonymiseEndpoints
         if (employeeId is { } eid && (e = await db.Employees.FirstOrDefaultAsync(x => x.Id == eid, ct)) is null) return null;
         // A sign-in that belongs to an employee is anonymised as that employee.
         if (e is null && userId is { } linked) e = await db.Employees.FirstOrDefaultAsync(x => x.UserId == linked, ct);
-        var uid = e?.UserId ?? userId;
+        // A named employee brings only their own linked sign-in; a sign-in sent with them is ignored (0.26.1).
+        var uid = employeeId is not null ? e!.UserId : e?.UserId ?? userId;
         var u = uid is { } id ? await db.Users.FirstOrDefaultAsync(x => x.Id == id && x.TenantId == tenantId, ct) : null;
         if (e is null && u is null) return null;
         var arabic = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == tenantId, ct)).Settings.DefaultLanguage == Languages.Arabic;
@@ -157,8 +161,26 @@ public static class AnonymiseEndpoints
             total += apply ? await requests.ExecuteUpdateAsync(s => s.SetProperty(r => r.RequesterEmail, (string?)null).SetProperty(r => r.RequesterPhone, (string?)null), ct)
                 : await requests.CountAsync(ct);
         }
+        // The e-mail log: rows sent to their address, or to their name when no one else shares it (0.26.1). Subjects and bodies stay.
+        total += await MailAsync(db, p, clash, apply, ct);
         total += await LogAsync(db, p, clash, linked, apply, ct);
         return total;
+    }
+
+    private static async Task<int> MailAsync(CmmsDbContext db, Person p, bool clash, bool apply, CancellationToken ct)
+    {
+        var emails = p.Emails;
+        var names = clash ? [] : p.Names;
+        if (emails.Count == 0 && names.Count == 0) return 0;
+        var address = p.User is not null ? p.NewEmail : $"anonymised-{p.Employee!.Id}@invalid";
+        var rows = db.OutboundEmails.IgnoreQueryFilters().Where(m => m.TenantId == p.TenantId
+            && (emails.Contains(m.ToAddress.Trim()) || (m.ToName != null && names.Contains(m.ToName.Trim()))));
+        // Those not sent yet aren't sent to the placeholder address: they end as failed.
+        var reason = Translator.T(AnonymisedMail);
+        return apply ? await rows.ExecuteUpdateAsync(s => s.SetProperty(m => m.ToAddress, address).SetProperty(m => m.ToName, p.Placeholder)
+                .SetProperty(m => m.Status, m => m.Status == EmailStatus.Pending ? EmailStatus.Failed : m.Status)
+                .SetProperty(m => m.LastError, m => m.Status == EmailStatus.Pending ? reason : m.LastError), ct)
+            : await rows.CountAsync(ct);
     }
 
     /// <summary>One name column: rows carrying the person's (user) id, then, unless text is off, rows with no id whose text is their name.</summary>
