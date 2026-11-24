@@ -8,7 +8,7 @@ using static FourC.Cmms.Tests.ImportFiles;
 
 namespace FourC.Cmms.Tests;
 
-public class DatabaseTests(ApiFixture fx) : IClassFixture<ApiFixture>
+public class DatabaseTests(ManualImportFixture fx) : IClassFixture<ManualImportFixture>
 {
     private string ConnectionString()
     {

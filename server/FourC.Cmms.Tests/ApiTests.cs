@@ -31,7 +31,7 @@ public class ApiFixture : IAsyncLifetime
         var cs = new SqlConnectionStringBuilder(_server) { InitialCatalog = _db }.ConnectionString;
         Factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
-            b.UseSetting("Import:PollMilliseconds", "100"); // background imports (0.26.0) are picked up at once in tests
+            b.UseSetting("Import:PollMilliseconds", "200"); // background imports (0.26.0) are picked up at once in tests
             Configure(b);
             b.UseSetting("ConnectionStrings:Cmms", cs);
             b.UseSetting("Storage:Path", Path.Combine(Path.GetTempPath(), _db));
