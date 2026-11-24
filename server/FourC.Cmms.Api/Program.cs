@@ -42,6 +42,7 @@ services.AddAuthentication(ApiKeyAuth.Smart)
     .AddPolicyScheme(ApiKeyAuth.Smart, null, o => o.ForwardDefaultSelector = http => ApiKeyAuth.Read(http.Request) is not null ? ApiKeyAuth.Scheme : IdentityConstants.ApplicationScheme)
     .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiKeyHandler>(ApiKeyAuth.Scheme, null);
 services.AddAuthentication().AddIdentityCookies();
+services.AddApiKeyLimits(builder.Configuration);
 services.ConfigureApplicationCookie(o =>
 {
     o.Cookie.Name = "cmms.auth";
@@ -146,6 +147,8 @@ app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthentication();
 app.UseSiteAccess();
+app.UseRateLimiter();
+app.UseApiKeyRules();
 app.UseAuthorization();
 
 app.MapOpenApi();

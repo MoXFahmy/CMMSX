@@ -1246,5 +1246,8 @@
  "Service accounts aren't people.": "حسابات الخدمة ليست أشخاصًا.",
  "The API key isn't valid.": "مفتاح الواجهة البرمجية غير صالح.",
  "Choose a service account.": "اختر حساب خدمة.",
- "Choose an expiry date in the future.": "اختر تاريخ انتهاء في المستقبل."
+ "Choose an expiry date in the future.": "اختر تاريخ انتهاء في المستقبل.",
+ "This key is read-only.": "هذا المفتاح للقراءة فقط.",
+ "API keys can't do this.": "لا يمكن لمفاتيح الواجهة البرمجية القيام بذلك.",
+ "Too many requests with this key. Try again in {0} seconds.": "طلبات كثيرة جدًا بهذا المفتاح. حاول مرة أخرى بعد {0} ثانية."
 }
