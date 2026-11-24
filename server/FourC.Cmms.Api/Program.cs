@@ -189,6 +189,7 @@ api.MapWorkGroupEndpoints();
 api.MapAssetChecklistEndpoints();
 api.MapInventoryEndpoints();
 api.MapPurchasingEndpoints();
+api.MapSerialUnitEndpoints();
 api.MapPurchaseRequestEndpoints();
 api.MapContractorEndpoints();
 api.MapContractEndpoints();

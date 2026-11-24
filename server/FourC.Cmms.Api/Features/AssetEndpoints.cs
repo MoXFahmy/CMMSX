@@ -149,7 +149,7 @@ public static class AssetEndpoints
                 a.CommissionedOn, a.DisposedOn, a.PurchasePrice, a.CurrentValue, a.SalvageValue, a.ExpectedLifeYears, a.DowntimeCostPerHour,
                 a.WarrantyType, a.WarrantyExpiresOn, a.WarrantyNotes, a.Notes, a.NotesToTechnician, a.CustomFields, a.OnlyWhenStopped, a.CostCentreId, a.BrandId, a.ModelId,
                 GroupIds = db.AssetGroupMembers.Where(m => m.AssetId == a.Id && db.AssetGroups.Any(g => g.Id == m.AssetGroupId)).Select(m => m.AssetGroupId).ToList(),
-                a.RunsHoursPerDay, a.RunsOn,
+                a.RunsHoursPerDay, a.RunsOn, a.PartId, a.StoreId, a.EndOfLifeOn,
                 DownSince = await db.DowntimeEvents.Where(e => e.AssetId == id && e.EndedAt == null).Select(e => (DateTimeOffset?)e.StartedAt).FirstOrDefaultAsync(ct),
                 ChildCount = await db.Assets.CountAsync(x => x.ParentAssetId == id, ct),
                 PrimaryImageId = image,

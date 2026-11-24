@@ -29,7 +29,8 @@ public static class PurchasingEndpoints
         string? PaymentTerms, string? ShippingMethod, string? DeliverTo, string? SupplierQuoteRef, decimal? TaxPercent, decimal ShippingCost, string? Notes,
         List<LineInput> Lines, Guid? OrderTypeId = null, string? RowVersion = null);
     public sealed record ReasonInput(string? Reason);
-    public sealed record ReceiveLine(Guid LineId, decimal Quantity, Guid? StoreId, string? BatchNumber, DateOnly? ExpiryDate);
+    /// <param name="Serials">A serial-tracked part's serial numbers, one per piece received (quantity × pack size, 0.24.0).</param>
+    public sealed record ReceiveLine(Guid LineId, decimal Quantity, Guid? StoreId, string? BatchNumber, DateOnly? ExpiryDate, List<string>? Serials = null);
     public sealed record ReceiveInput(DateOnly? Date, string? Reference, List<ReceiveLine> Lines);
     public sealed record ProposalLine(Guid PartId, Guid StoreId, decimal Quantity, decimal? UnitPrice, Guid? SupplierId);
     public sealed record FromProposalInput(List<ProposalLine> Lines);
@@ -112,12 +113,24 @@ public static class PurchasingEndpoints
                 // Packs become the part's own units (0.18.0): 1 box of 100 books 100 pieces, each at the box's cost ÷ 100.
                 var pieces = r.Quantity * line.PackSize;
                 var pieceCost = PackMath.CostPerPiece(line.NetUnitPrice, o.ExchangeRate, line.PackSize);
-                var rx = await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, partId, storeId, pieces, date, pieceCost,
-                    SupplierId: o.SupplierId, PurchaseOrderId: o.Id, PurchaseOrderLineId: line.Id, Reference: i.Reference.Clean() ?? o.Number,
-                    BatchNumber: r.BatchNumber.Clean(), ExpiryDate: r.ExpiryDate), tk);
-                if (line.WorkOrderId is { } wo) // ordered for a job: receive and issue straight to it
-                    await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, pieces, date, WorkOrderId: wo,
-                        BatchNumber: r.BatchNumber.Clean(), Notes: $"Received on {o.Number}", RelatedTransactionId: rx.Id), tk);
+                var part = await db.Parts.FirstAsync(p => p.Id == partId, tk);
+                if (part.IsSerialTracked)
+                {
+                    // Serial units (0.24.0): one per piece, each with its serial; even ordered for a job they wait in the store until fitted on it.
+                    var serials = await SerialUnitEndpoints.ReceiptSerialsAsync(db, part, pieces, r.Serials, tk, $"Line {line.LineNumber}: ");
+                    var unitStore = await db.Stores.FirstOrDefaultAsync(x => x.Id == storeId, tk) ?? throw new DomainException($"Line {line.LineNumber}: choose the store receiving this part.");
+                    await SerialUnits.ReceiveAsync(db, ctx, part, unitStore, serials, date, pieceCost, new StockPost(StockTransactionType.Receipt, partId, storeId, pieces, date, pieceCost,
+                        SupplierId: o.SupplierId, PurchaseOrderId: o.Id, PurchaseOrderLineId: line.Id, Reference: i.Reference.Clean() ?? o.Number), tk);
+                }
+                else
+                {
+                    var rx = await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, partId, storeId, pieces, date, pieceCost,
+                        SupplierId: o.SupplierId, PurchaseOrderId: o.Id, PurchaseOrderLineId: line.Id, Reference: i.Reference.Clean() ?? o.Number,
+                        BatchNumber: r.BatchNumber.Clean(), ExpiryDate: r.ExpiryDate), tk);
+                    if (line.WorkOrderId is { } wo) // ordered for a job: receive and issue straight to it
+                        await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, pieces, date, WorkOrderId: wo,
+                            BatchNumber: r.BatchNumber.Clean(), Notes: $"Received on {o.Number}", RelatedTransactionId: rx.Id), tk);
+                }
             }
             else if (line.PartId is not null)
                 throw new DomainException($"Line {line.LineNumber}: choose the store receiving this part.");

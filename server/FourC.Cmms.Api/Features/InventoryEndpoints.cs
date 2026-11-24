@@ -17,9 +17,13 @@ public static class InventoryEndpoints
     public sealed record StoreInput(string Code, string Name, Guid? SiteId, string? Description, bool IsActive = true);
     public sealed record PartInput(string PartNumber, string Name, string? Specification, string? Manufacturer, string? ManufacturerPartNumber, string UnitOfMeasure,
         Guid? GroupId, decimal StandardPrice, int? LeadTimeDays, bool IsCritical, bool IsShelfItem, bool AllowNegativeStock, Guid? PreferredSupplierId,
-        string? Barcode, List<Guid>? AlternatePartIds, string? Notes, bool IsActive = true, List<LevelInput>? Levels = null, string? RowVersion = null);
+        string? Barcode, List<Guid>? AlternatePartIds, string? Notes, bool IsActive = true, List<LevelInput>? Levels = null, string? RowVersion = null,
+        // Serial tracking (0.24.0), on a new part only: an existing part is switched on its units (it needs a serial for each piece in stock).
+        bool? IsSerialTracked = null, int? UnitLifeMonths = null);
     public sealed record LevelInput(Guid StoreId, string? Bin, decimal MinLevel, decimal ReorderLevel, decimal MaxLevel, decimal ReorderQuantity);
-    public sealed record ReceiveInput(Guid? PartId, Guid? StoreId, decimal Quantity, decimal UnitCost, DateOnly? Date, Guid? SupplierId, string? Reference, string? BatchNumber, DateOnly? ExpiryDate, string? Notes);
+    /// <param name="Serials">A serial-tracked part's serial numbers, one per piece (0.24.0).</param>
+    public sealed record ReceiveInput(Guid? PartId, Guid? StoreId, decimal Quantity, decimal UnitCost, DateOnly? Date, Guid? SupplierId, string? Reference, string? BatchNumber, DateOnly? ExpiryDate, string? Notes,
+        List<string>? Serials = null);
     /// <param name="ConfirmReserved">Issue even if it takes stock reserved for other work (the answer to "Issue anyway?").</param>
     /// <param name="CostCentreId">For parts issued to or returned from a location without a work order (0.20.0); none = the location's in force.</param>
     public sealed record IssueInput(Guid? PartId, Guid? StoreId, decimal Quantity, DateOnly? Date, Guid? WorkOrderId, Guid? LocationId, string? BatchNumber, string? Notes,
@@ -54,7 +58,7 @@ public static class InventoryEndpoints
     }
 
     public sealed record PartListItem(Guid Id, string PartNumber, string Name, string? Manufacturer, string UnitOfMeasure, string? GroupName, decimal AverageCost,
-        bool IsCritical, bool IsShelfItem, bool IsActive, decimal OnHand, decimal Reserved, decimal Available, decimal OnOrder, bool Low, decimal Value);
+        bool IsCritical, bool IsShelfItem, bool IsActive, decimal OnHand, decimal Reserved, decimal Available, decimal OnOrder, bool Low, decimal Value, bool IsSerialTracked = false);
 
     /// <summary>One page of the part list (the list screen and its export share it).</summary>
     internal static async Task<PagedResult<PartListItem>> ListAsync(CmmsDbContext db, PartFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
@@ -71,7 +75,7 @@ public static class InventoryEndpoints
             && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel));
         var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "partNumber").Select(p => new
         {
-            p.Id, p.PartNumber, p.Name, p.Manufacturer, p.UnitOfMeasure, GroupName = p.Group!.Name, p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive,
+            p.Id, p.PartNumber, p.Name, p.Manufacturer, p.UnitOfMeasure, GroupName = p.Group!.Name, p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive, p.IsSerialTracked,
             OnHand = db.StockLevels.Where(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId)).Sum(l => (decimal?)l.QuantityOnHand) ?? 0,
             Reserved = db.StockReservations.Where(r => r.PartId == p.Id && (storeId == null || r.StoreId == storeId)).Sum(r => (decimal?)r.Reserved) ?? 0,
             Low = db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0 && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel),
@@ -79,7 +83,7 @@ public static class InventoryEndpoints
                 .Sum(x => (decimal?)((x.Quantity - x.QuantityReceived) * x.PackSize)) ?? 0,
         }).ToPagedAsync(page, pageSize, ct, maxPageSize);
         return new PagedResult<PartListItem>(paged.Items.Select(p => new PartListItem(p.Id, p.PartNumber, p.Name, p.Manufacturer, p.UnitOfMeasure, p.GroupName,
-            p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive, p.OnHand, p.Reserved, p.OnHand - p.Reserved, p.OnOrder, p.Low, Math.Round(p.OnHand * p.AverageCost, 2))).ToList(),
+            p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive, p.OnHand, p.Reserved, p.OnHand - p.Reserved, p.OnOrder, p.Low, Math.Round(p.OnHand * p.AverageCost, 2), p.IsSerialTracked)).ToList(),
             paged.Total, paged.Page, paged.PageSize);
     }
 
@@ -197,7 +201,7 @@ public static class InventoryEndpoints
             {
                 p.Id, p.PartNumber, p.Name, p.Specification, p.Manufacturer, p.ManufacturerPartNumber, p.UnitOfMeasure, p.GroupId, GroupName = p.Group?.Name, p.StandardPrice,
                 p.AverageCost, p.LastPurchasePrice, p.LeadTimeDays, p.IsCritical, p.IsShelfItem, p.AllowNegativeStock, p.PreferredSupplierId, PreferredSupplier = supplier,
-                p.Barcode, p.AlternatePartIds, Alternates = alternates, p.Notes, p.IsActive,
+                p.Barcode, p.AlternatePartIds, Alternates = alternates, p.Notes, p.IsActive, p.IsSerialTracked, p.UnitLifeMonths,
                 Levels = levels.Select(l => new { l.Id, l.StoreId, l.StoreCode, l.StoreName, l.Bin, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity, l.QuantityOnHand,
                     l.Reserved, Available = l.QuantityOnHand - l.Reserved }),
                 Batches = batches, ReservedFor = reservedFor, UsedOn = usedOn,
@@ -209,7 +213,10 @@ public static class InventoryEndpoints
         {
             var v = await ValidatePartAsync(i, null, db, ct);
             if (!v.IsValid) return v.Problem();
+            UnitRules.CheckLife(i.UnitLifeMonths);
             var p = CreatePart(db, i);
+            p.IsSerialTracked = i.IsSerialTracked ?? false;
+            p.UnitLifeMonths = i.UnitLifeMonths;
             foreach (var l in i.Levels ?? []) db.StockLevels.Add(new StockLevel { PartId = p.Id, StoreId = l.StoreId, Bin = l.Bin.Clean(), MinLevel = l.MinLevel, ReorderLevel = l.ReorderLevel, MaxLevel = l.MaxLevel, ReorderQuantity = l.ReorderQuantity });
             // The preferred supplier always has a catalogue row (0.18.0).
             if (p.PreferredSupplierId is { } preferred) await CatalogueEndpoints.EnsureRowAsync(db, p, preferred, ct);
@@ -290,6 +297,20 @@ public static class InventoryEndpoints
         {
             if (Missing(i.PartId, i.StoreId) is { } bad) return bad;
             if (i.SupplierId is not null && !await db.Suppliers.AnyAsync(s => s.Id == i.SupplierId, ct)) throw new DomainException("Supplier not found.");
+            if (await db.Parts.FirstOrDefaultAsync(p => p.Id == i.PartId, ct) is { IsSerialTracked: true } serialPart)
+            {
+                // A serial part (0.24.0): one unit per serial number, in one receipt entry.
+                var serials = await SerialUnitEndpoints.ReceiptSerialsAsync(db, serialPart, i.Quantity, i.Serials, ct);
+                var store = await db.Stores.FirstOrDefaultAsync(s => s.Id == i.StoreId, ct) ?? throw new DomainException("Store not found.");
+                var units = await db.InTransactionAsync(async tk =>
+                {
+                    var made = await SerialUnits.ReceiveAsync(db, ctx, serialPart, store, serials, i.Date ?? Today, i.UnitCost, new StockPost(StockTransactionType.Receipt,
+                        serialPart.Id, store.Id, serials.Count, i.Date ?? Today, i.UnitCost, SupplierId: i.SupplierId, Reference: i.Reference, Notes: i.Notes), tk);
+                    await db.SaveChangesAsync(tk);
+                    return made;
+                }, ct);
+                return Results.Ok(new { Units = units.Select(u => new { u.Id, u.AssetNumber, u.SerialNumber }) });
+            }
             var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
                 i.UnitCost, SupplierId: i.SupplierId, Reference: i.Reference, BatchNumber: i.BatchNumber, ExpiryDate: i.ExpiryDate, Notes: i.Notes), tk), ct);
             return Results.Ok(new { tx.Id });

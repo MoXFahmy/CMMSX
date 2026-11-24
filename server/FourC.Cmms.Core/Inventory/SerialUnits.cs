@@ -56,6 +56,12 @@ public static class UnitRules
     /// <summary>The end of a unit's operating life: <paramref name="from"/> plus the part's life in months.</summary>
     public static DateOnly? EndOfLife(DateOnly from, int? months) => months is > 0 ? from.AddMonths(months.Value) : null;
 
+    /// <summary>A part's unit life, when given: 1 to 600 months.</summary>
+    public static void CheckLife(int? months)
+    {
+        if (months is { } m && (m < 1 || m > 600)) throw new DomainException("Enter the life in months, from 1 to 600.");
+    }
+
     /// <summary>Serial numbers as typed: trimmed, blanks dropped, case and order kept.</summary>
     public static IReadOnlyList<string> CleanSerials(IEnumerable<string?> raw) =>
         raw.Select(s => s?.Trim() ?? "").Where(s => s.Length > 0).ToList();
