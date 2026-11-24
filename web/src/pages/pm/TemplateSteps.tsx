@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { IconArrowDown, IconArrowUp, IconCamera, IconChevronDown, IconChevronUp, IconPlus, IconShieldCheck, IconTrash } from '@tabler/icons-react';
 import { get } from '@/api/client';
 import { FOLLOW_UP_KINDS, STEP_TYPES, type FollowUpKind, type MeasurementPointItem, type PmTaskListItem, type StepDetail } from '@/api/types';
+import { UnitSelect } from '@/components/ReferencePickers';
 
 export const plainStep = (description: string): StepDetail => ({ description, type: 'Check', photoRequired: false, beforeStart: false, followUp: 'Default' });
 
@@ -58,9 +59,12 @@ export function TemplateSteps({ value, onChange, editable, error, selfId }: {
                     data={(points ?? []).filter((p) => p.isActive || p.id === s.measurementPointId).map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))}
                     value={s.measurementPointId ?? null} onChange={(x) => set(i, x ? { measurementPointId: x, unit: null, decimals: null } : { measurementPointId: null })} />
                 )}
-                {(s.type === 'Meter' || (s.type === 'Number' && !s.measurementPointId)) && (
-                  <TextInput w={110} size="xs" label={s.type === 'Meter' ? t('steps.meterUnit') : t('points.unit')} maxLength={20} disabled={!editable}
+                {s.type === 'Meter' && (
+                  <TextInput w={110} size="xs" label={t('steps.meterUnit')} maxLength={20} disabled={!editable}
                     value={s.unit ?? ''} onChange={(e) => set(i, { unit: e.currentTarget.value || null })} />
+                )}
+                {s.type === 'Number' && !s.measurementPointId && (
+                  <UnitSelect w={130} size="xs" label={t('points.unit')} clearable disabled={!editable} value={s.unit ?? null} onChange={(v) => set(i, { unit: v })} />
                 )}
                 {s.type === 'Number' && !s.measurementPointId && (
                   <NumberInput w={100} size="xs" label={t('points.decimals')} min={0} max={4} disabled={!editable} value={s.decimals ?? ''}

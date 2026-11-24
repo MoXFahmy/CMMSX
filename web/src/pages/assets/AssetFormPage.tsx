@@ -8,12 +8,13 @@ import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { get, post, put } from '@/api/client';
 import { DAY_NAMES, WARRANTY_TYPES, type AssetDetail, type Category, type CustomField, type DayName } from '@/api/types';
-import { useAuth } from '@/auth/AuthContext';
+import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { LocationPicker } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
 import { handleFormError, notifySuccess, toIsoDate } from '@/components/utils';
 import { listDefault, listItems } from '@/components/listLabels';
+import { BrandModelPicker, useAssetGroups } from '@/components/ReferencePickers';
 
 type Values = {
   assetNumber: string; name: string; description: string; categoryId: string | null; siteId: string | null; locationId: string | null; parentAssetId: string | null;
@@ -22,13 +23,15 @@ type Values = {
   expectedLifeYears: number | ''; downtimeCostPerHour: number | ''; warrantyType: string; warrantyExpiresOn: Date | null; warrantyNotes: string;
   notes: string; notesToTechnician: string; customFields: Record<string, string>; onlyWhenStopped: boolean;
   runsHoursPerDay: number | ''; runsOn: DayName[]; costCentreId: string | null;
+  /** 0.21.0: brand and model from the lists, and the asset's groups. */
+  brandId: string | null; modelId: string | null; groupIds: string[];
 };
 
 const empty: Values = {
   assetNumber: '', name: '', description: '', categoryId: null, siteId: null, locationId: null, parentAssetId: null, status: 'Active', criticality: 'Medium',
   manufacturer: '', model: '', serialNumber: '', barcode: '', operationNumber: '', commissionedOn: null, disposedOn: null, purchasePrice: '', currentValue: '',
   salvageValue: '', expectedLifeYears: '', downtimeCostPerHour: '', warrantyType: 'None', warrantyExpiresOn: null, warrantyNotes: '', notes: '', notesToTechnician: '', customFields: {}, onlyWhenStopped: false,
-  runsHoursPerDay: 24, runsOn: [...DAY_NAMES], costCentreId: null,
+  runsHoursPerDay: 24, runsOn: [...DAY_NAMES], costCentreId: null, brandId: null, modelId: null, groupIds: [],
 };
 
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
@@ -45,7 +48,8 @@ export function AssetFormPage() {
   const [params] = useSearchParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const { me, terms } = useAuth();
+  const { me, terms, can } = useAuth();
+  const { data: groups } = useAssetGroups();
   const editing = !!id;
   const { data: asset, isLoading } = useQuery({ queryKey: ['asset', id], queryFn: () => get<AssetDetail>(`/assets/${id}`), enabled: editing });
   const parentId = params.get('parentId');
@@ -67,7 +71,7 @@ export function AssetFormPage() {
         commissionedOn: d(asset.commissionedOn), disposedOn: d(asset.disposedOn), purchasePrice: n(asset.purchasePrice), currentValue: n(asset.currentValue),
         salvageValue: n(asset.salvageValue), expectedLifeYears: n(asset.expectedLifeYears), downtimeCostPerHour: n(asset.downtimeCostPerHour),
         warrantyType: asset.warrantyType, warrantyExpiresOn: d(asset.warrantyExpiresOn), warrantyNotes: asset.warrantyNotes ?? '', notes: asset.notes ?? '',
-        notesToTechnician: asset.notesToTechnician ?? '', onlyWhenStopped: asset.onlyWhenStopped ?? false, costCentreId: asset.costCentreId ?? null, customFields: Object.fromEntries(Object.entries(asset.customFields ?? {}).map(([k, v]) => [k, v ?? ''])),
+        notesToTechnician: asset.notesToTechnician ?? '', onlyWhenStopped: asset.onlyWhenStopped ?? false, costCentreId: asset.costCentreId ?? null, brandId: asset.brandId ?? null, modelId: asset.modelId ?? null, groupIds: asset.groupIds ?? [], customFields: Object.fromEntries(Object.entries(asset.customFields ?? {}).map(([k, v]) => [k, v ?? ''])),
         runsHoursPerDay: asset.runsHoursPerDay ?? 24, runsOn: asset.runsOn ?? [...DAY_NAMES],
       });
       form.resetDirty();
@@ -87,7 +91,7 @@ export function AssetFormPage() {
     const body = {
       ...v, commissionedOn: toIsoDate(v.commissionedOn), disposedOn: toIsoDate(v.disposedOn), warrantyExpiresOn: toIsoDate(v.warrantyExpiresOn),
       purchasePrice: num(v.purchasePrice), currentValue: num(v.currentValue), salvageValue: num(v.salvageValue), expectedLifeYears: num(v.expectedLifeYears),
-      downtimeCostPerHour: num(v.downtimeCostPerHour), assetNumber: v.assetNumber || null, rowVersion: asset?.rowVersion, managesCostCentre: true,
+      downtimeCostPerHour: num(v.downtimeCostPerHour), assetNumber: v.assetNumber || null, rowVersion: asset?.rowVersion, managesCostCentre: true, managesBrand: true,
       runsHoursPerDay: v.runsHoursPerDay === '' ? null : v.runsHoursPerDay,
     };
     try {
@@ -148,9 +152,13 @@ export function AssetFormPage() {
                 description={t('costCentres.assetHint')} error={err('costCentreId')} />
             </Section>
             <Section title={t('assets.identification')}>
+              <BrandModelPicker brandId={form.values.brandId} modelId={form.values.modelId} canAdd={can(P.assetsEdit)}
+                onChange={(b, mo) => form.setValues({ brandId: b, modelId: mo })} errors={{ brand: err('brandId'), model: err('modelId') }} />
+              <MultiSelect label={t('assetGroups.title')} description={t('assetGroups.assetHint')} searchable clearable
+                data={(groups ?? []).filter((g) => form.values.groupIds.includes(g.id) || (g.isActive && (!g.siteId || g.siteId === form.values.siteId)))
+                  .map((g) => ({ value: g.id, label: `${g.code} · ${g.name}` }))}
+                value={form.values.groupIds} onChange={(v) => form.setFieldValue('groupIds', v)} error={err('groupIds')} />
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
-                <TextInput label={t('assets.manufacturer')} {...form.getInputProps('manufacturer')} />
-                <TextInput label={t('assets.model')} {...form.getInputProps('model')} />
                 <TextInput label={t('assets.serialNumber')} {...form.getInputProps('serialNumber')} />
                 <TextInput label={t('assets.barcode')} {...form.getInputProps('barcode')} />
                 <TextInput label={t('assets.operationNumber')} {...form.getInputProps('operationNumber')} />

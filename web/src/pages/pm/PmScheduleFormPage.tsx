@@ -9,7 +9,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { del, get, post, put } from '@/api/client';
-import { DAY_NAMES, FREQ_UNITS, PM_TYPES, type AssetDetail, type Lookup, type MeterItem, type PmScheduleDetail, type PmTaskListItem } from '@/api/types';
+import { type AssetGroupDetail, DAY_NAMES, FREQ_UNITS, PM_TYPES, type AssetDetail, type Lookup, type MeterItem, type PmScheduleDetail, type PmTaskListItem } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { LocationPicker } from '@/components/LocationPicker';
@@ -25,6 +25,7 @@ import { ContractSelect } from '@/components/ContractSelect';
 import { generateNow } from './generateNow';
 import { fmtDate, fmtDateTime, fmtMoney, handleFormError, notifyError, notifySuccess, notifyWarning, toIsoDate } from '@/components/utils';
 import { listItems } from '@/components/listLabels';
+import { groupData, useAssetGroups } from '@/components/ReferencePickers';
 
 export type V = {
   code: string; name: string; description: string; siteId: string | null; locationId: string | null; assetId: string | null; tradeId: string | null; teamId: string | null; priority: string;
@@ -44,15 +45,17 @@ export type V = {
   contractId: string | null;
   /** 0.20.0: overrides the asset's or location's cost centre on the work orders it creates; empty follows them. */
   costCentreId: string | null;
+  /** 0.21.0: an asset group the PM follows (target 'group'). */
+  assetGroupId: string | null;
 };
-type Target = 'asset' | 'location' | 'several';
+type Target = 'asset' | 'location' | 'several' | 'group';
 const blank: V = {
   code: '', name: '', description: '', siteId: null, locationId: null, assetId: null, tradeId: null, teamId: null, priority: 'Medium', assigneeIds: [], pmTaskId: null, extraTasks: [],
   type: 'FixedInterval', basis: 'Scheduled', frequency: 1, unit: 'Month', weekOfMonth: '1', dayOfWeek: 'Monday', dayOfMonth: 1, workPeriodDays: 1, wholeMonth: false, leadDays: 7,
   startDate: new Date(), nextDueDate: null, meterId: null, meterTrigger: 'Incremental', meterInterval: '', nextDueReading: '', lowerLimit: '', upperLimit: '', lowerTaskId: null,
   upperTaskId: null, timeBased: false, isActive: true, target: 'asset', roundAssets: [], onlyWhenStopped: null,
   calendarIds: [], extraMeters: [], recipientIds: [], useOrgRules: true, skipStatusesOverride: [], nonWorkingDaysOverride: [], noStackingOverride: false,
-  multiAssetMode: 'Round', groupPlan: 'Copy', spreadParts: '', assetTemplates: {}, contractId: null, costCentreId: null,
+  multiAssetMode: 'Round', groupPlan: 'Copy', spreadParts: '', assetTemplates: {}, contractId: null, costCentreId: null, assetGroupId: null,
 };
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 const n = (v: number | '') => (v === '' ? null : v);
@@ -70,7 +73,8 @@ function toBody({ target, roundAssets, useOrgRules, assetTemplates, ...v }: V, r
     extraMeters: target === 'asset' ? v.extraMeters.filter((m) => m.meterId).map((m) => ({ meterId: m.meterId, interval: n(m.interval) ?? 0 })) : [],
     managesRules: true, skipStatusesOverride: useOrgRules ? null : v.skipStatusesOverride, nonWorkingDaysOverride: useOrgRules ? null : v.nonWorkingDaysOverride,
     noStackingOverride: useOrgRules ? null : v.noStackingOverride,
-    multiAssetMode: several ? v.multiAssetMode : 'Round', groupPlan: v.groupPlan, spreadParts: several ? n(v.spreadParts) ?? 0 : 0,
+    multiAssetMode: several || target === 'group' ? v.multiAssetMode : 'Round', groupPlan: v.groupPlan, spreadParts: several ? n(v.spreadParts) ?? 0 : 0,
+    assetGroupId: target === 'group' ? v.assetGroupId : null, managesAssetGroup: true, // the PM follows an asset group (0.21.0)
     assetTemplates: several ? roundAssets.map((a) => ({ assetId: a.id, pmTaskId: assetTemplates[a.id] ?? null })) : [],
   };
 }
@@ -105,7 +109,7 @@ export function PmScheduleFormPage() {
         workPeriodDays: s.workPeriodDays, wholeMonth: s.wholeMonth, leadDays: s.leadDays, startDate: d(s.startDate), nextDueDate: d(s.nextDueDate), meterId: s.meterId ?? null,
         meterTrigger: s.meterTrigger ?? 'Incremental', meterInterval: s.meterInterval ?? '', nextDueReading: s.nextDueReading ?? '', lowerLimit: s.lowerLimit ?? '', upperLimit: s.upperLimit ?? '',
         lowerTaskId: s.lowerTaskId ?? null, upperTaskId: s.upperTaskId ?? null, timeBased: s.timeBased, isActive: s.isActive,
-        target: s.assets.length > 0 ? 'several' : s.assetId ? 'asset' : 'location', roundAssets: s.assets, onlyWhenStopped: s.onlyWhenStopped ?? false, contractId: s.contractId ?? null, costCentreId: s.costCentreId ?? null,
+        target: s.assetGroupId ? 'group' : s.assets.length > 0 ? 'several' : s.assetId ? 'asset' : 'location', roundAssets: s.assets, assetGroupId: s.assetGroupId ?? null, onlyWhenStopped: s.onlyWhenStopped ?? false, contractId: s.contractId ?? null, costCentreId: s.costCentreId ?? null,
         calendarIds: s.calendarIds ?? [], extraMeters: (s.extraMeters ?? []).map((m) => ({ meterId: m.meterId, interval: m.interval })), recipientIds: s.recipientIds ?? [],
         useOrgRules: s.skipStatusesOverride == null && s.nonWorkingDaysOverride == null && s.noStackingOverride == null,
         skipStatusesOverride: s.skipStatusesOverride ?? [], nonWorkingDaysOverride: s.nonWorkingDaysOverride ?? [], noStackingOverride: !!s.noStackingOverride,
@@ -192,12 +196,14 @@ export function PmScheduleFormPage() {
               <Group justify="space-between" wrap="wrap" gap="xs">
                 <Title order={5}>{t('pm.target')}</Title>
                 <SegmentedControl size="xs" value={v.target} onChange={(x) => form.setValues({ target: x as Target, type: x === 'several' && v.type === 'Meter' ? 'FixedInterval' : v.type, meterId: x === 'asset' ? v.meterId : null })}
-                  data={[{ value: 'asset', label: t('pm.targetAsset') }, { value: 'location', label: t('pm.targetLocation') }, { value: 'several', label: t('pm.targetSeveral') }]} />
+                  data={[{ value: 'asset', label: t('pm.targetAsset') }, { value: 'location', label: t('pm.targetLocation') }, { value: 'several', label: t('pm.targetSeveral') }, { value: 'group', label: t('assetGroups.one') }]} />
               </Group>
               <LocationPicker siteId={v.siteId} locationId={v.locationId} siteError={err('siteId')} locationError={err('locationId')} onChange={(si, l) => form.setValues({ siteId: si, locationId: l, assetId: si === v.siteId ? v.assetId : null, roundAssets: si === v.siteId ? v.roundAssets : [] })} />
               {v.target === 'asset' && <AssetPicker label={t('wo.asset')} value={v.assetId} onChange={(x) => form.setValues({ assetId: x, meterId: null })} error={err('assetId')} initial={s?.asset ?? (asset ? { id: asset.id, assetNumber: asset.assetNumber, name: asset.name } : null)} />}
               {v.target === 'several' && <AssetListEditor value={v.roundAssets} siteId={v.siteId} onChange={(x) => form.setFieldValue('roundAssets', x)} error={err('assetIds') ?? err('assetId')} />}
               {v.target === 'location' && err('assetId') && <Text c="red" fz="sm">{err('assetId')}</Text>}
+              {v.target === 'group' && <GroupTarget form={form} siteId={v.siteId} saved={s?.assetGroupId === v.assetGroupId ? s?.groupAssets : undefined} error={err('assetGroupId')}
+                locked={editing && (s?.generationCount ?? 0) > 0} />}
               <CostCentrePicker value={v.costCentreId} onChange={(x) => form.setFieldValue('costCentreId', x)} siteId={v.siteId}
                 description={t('costCentres.overrideHint')} error={err('costCentreId')} />
               <EmployeePicker label={t('wo.assignees')} value={v.assigneeIds} onChange={(x) => form.setFieldValue('assigneeIds', x)} siteId={v.siteId} tradeId={v.tradeId} />
@@ -206,7 +212,7 @@ export function PmScheduleFormPage() {
               <Title order={5}>{t('pm.type')}</Title>
               <Radio.Group value={v.type} onChange={(x) => form.setValues({ type: x, basis: x === 'DayOfWeekInMonth' || x === 'DateOfMonth' ? 'Scheduled' : v.basis })}>
                 <SimpleGrid cols={{ base: 1, sm: 2 }}>
-                  {PM_TYPES.map((x) => <Radio.Card key={x} value={x} p="sm" radius="md" disabled={(editing && (s?.generationCount ?? 0) > 0 && x !== s?.type) || (x === 'Meter' && v.target === 'several')}>
+                  {PM_TYPES.map((x) => <Radio.Card key={x} value={x} p="sm" radius="md" disabled={(editing && (s?.generationCount ?? 0) > 0 && x !== s?.type) || (x === 'Meter' && (v.target === 'several' || v.target === 'group'))}>
                     <Group wrap="nowrap" align="flex-start"><Radio.Indicator /><div><Text fw={500} fz="sm">{t(`pm.types.${x}`)}</Text><Text fz="xs" c="dimmed">{t(`pm.typeHints.${x}`)}</Text></div></Group>
                   </Radio.Card>)}
                 </SimpleGrid>
@@ -333,3 +339,30 @@ export function PmScheduleFormPage() {
     </form>
   );
 }
+
+/**
+ * A PM on an asset group (0.21.0): the group, round or group mode, and the members it would cover today at the PM's site —
+ * an asset added to the group later is included from the next visit.
+ */
+function GroupTarget({ form, siteId, saved, error, locked }: {
+  form: ReturnType<typeof useForm<V>>; siteId: string | null; saved?: { id: string; assetNumber: string; name: string }[]; error?: React.ReactNode; locked: boolean;
+}) {
+  const { t } = useTranslation();
+  const v = form.values;
+  const { data: groups } = useAssetGroups();
+  const { data: detail } = useQuery({ queryKey: ['asset-group', v.assetGroupId], queryFn: () => get<AssetGroupDetail>(`/asset-groups/${v.assetGroupId}`), enabled: !!v.assetGroupId && !saved });
+  const members = saved ?? (detail?.members ?? []).filter((a) => a.siteId === siteId);
+  return (
+    <Stack gap="xs">
+      <Group align="flex-end" wrap="wrap">
+        <Select label={t('assetGroups.one')} required searchable data={groupData(groups, siteId, v.assetGroupId)} value={v.assetGroupId}
+          onChange={(x) => form.setFieldValue('assetGroupId', x)} error={error} style={{ flex: 1, minWidth: 220 }} />
+        <SegmentedControl size="xs" disabled={locked} value={v.multiAssetMode} onChange={(x) => form.setFieldValue('multiAssetMode', x as V['multiAssetMode'])}
+          data={[{ value: 'Round', label: t('pm12.round') }, { value: 'Group', label: t('pm12.group') }]} />
+      </Group>
+      <Text fz="xs" c="dimmed">{t('assetGroups.pmHint')}</Text>
+      {v.assetGroupId && <Text fz="sm">{t('assetGroups.coversToday', { count: members.length })}{members.length > 0 && `: ${members.slice(0, 12).map((a) => a.assetNumber).join(', ')}${members.length > 12 ? ' …' : ''}`}</Text>}
+    </Stack>
+  );
+}
+

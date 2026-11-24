@@ -27,6 +27,10 @@ import { ContractorCategoriesSettings } from './ContractorCategoriesSettings';
 import { ContractSettings } from './ContractSettings';
 import { CostCentresSettings } from './CostCentresSettings';
 import { ListsSettings } from './ListsSettings';
+import { BrandsSettings } from './BrandsSettings';
+import { UnitsSettings } from './UnitsSettings';
+import { AssetGroupsSettings } from './AssetGroupsSettings';
+import { previewNumber } from './numbering';
 import { locationOptions } from '@/components/LocationPicker';
 import { confirmDelete } from '@/components/confirm';
 import { fromNow, handleFormError, notifyError, notifySuccess } from '@/components/utils';
@@ -49,6 +53,9 @@ export function SettingsPage() {
     { value: 'cancel-reasons', label: t('settings.cancelReasons'), show: can(P.woView) },
     { value: 'availability-types', label: t('availability.types'), show: can(P.woView) },
     { value: 'lists', label: t('lists.title'), show: can(P.settingsManage) },
+    { value: 'brands', label: t('brands.title'), show: can(P.assetsView) },
+    { value: 'units', label: t('units.title'), show: can(P.inventoryView) || can(P.settingsManage) },
+    { value: 'asset-groups', label: t('assetGroups.title'), show: can(P.assetsView) },
     { value: 'cost-centres', label: t('costCentres.title'), show: can(P.woView) || can(P.settingsManage) },
     { value: 'purchasing', label: t('settings.purchasingTab'), show: can(P.settingsManage) },
     { value: 'contractor-categories', label: t('contractorCategories.title'), show: can(P.purchasingView) || can(P.suppliersManage) },
@@ -81,6 +88,9 @@ export function SettingsPage() {
         <Tabs.Panel value="import"><ImportSettings /></Tabs.Panel>
         <Tabs.Panel value="ai-usage"><AiUsageSettings /></Tabs.Panel>
         <Tabs.Panel value="lists"><ListsSettings editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="brands"><BrandsSettings editable={can(P.assetsEdit)} /></Tabs.Panel>
+        <Tabs.Panel value="units"><UnitsSettings editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="asset-groups"><AssetGroupsSettings editable={can(P.assetsEdit)} /></Tabs.Panel>
         <Tabs.Panel value="cost-centres"><CostCentresSettings editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="purchasing"><PurchasingSettings /></Tabs.Panel>
         <Tabs.Panel value="contractor-categories"><ContractorCategoriesSettings editable={can(P.suppliersManage)} /></Tabs.Panel>
@@ -156,6 +166,9 @@ function OrganizationSettings() {
             <TextInput label={t('settings.woPrefix')} disabled={!editable} {...form.getInputProps('settings.workOrderNumberPrefix')} />
             <TextInput label={t('settings.wrPrefix')} disabled={!editable} {...form.getInputProps('settings.workRequestNumberPrefix')} />
           </SimpleGrid>
+          <Switch label={t('settings.restartYearly')} description={t('settings.restartYearlyHint')} disabled={!editable}
+            {...form.getInputProps('settings.restartNumbersYearly', { type: 'checkbox' })} />
+          <Text fz="sm" c="dimmed">{t('settings.example', { value: previewNumber(s.workOrderNumberPrefix ?? '', 5, !!s.restartNumbersYearly, new Date()) })}</Text>
           <Switch label={t('settings.requireLaborToComplete')} disabled={!editable} {...form.getInputProps('settings.requireLaborToComplete', { type: 'checkbox' })} />
           <Switch label={t('settings.requireAllTasksDone')} disabled={!editable} {...form.getInputProps('settings.requireAllTasksDone', { type: 'checkbox' })} />
           <Switch label={t('settings.requireReadingSteps')} disabled={!editable} {...form.getInputProps('settings.requireReadingSteps', { type: 'checkbox' })} />

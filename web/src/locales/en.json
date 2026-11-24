@@ -93,7 +93,8 @@
     "toggleColorScheme": "Switch between light and dark",
     "listSeparator": ", ",
     "confirm": "Confirm",
-    "total": "Total"
+    "total": "Total",
+    "add": "Add"
   },
   "auth": {
     "signIn": "Sign in",
@@ -411,7 +412,9 @@
     "logoHint": "PNG, JPEG or WebP, up to 1 MB. Shown on printed reports and job cards.",
     "logoTooBig": "The logo can be at most 1 MB.",
     "prPrefix": "Purchase request prefix",
-    "purchasingTab": "Purchasing"
+    "purchasingTab": "Purchasing",
+    "restartYearly": "Restart numbers each year",
+    "restartYearlyHint": "Work orders, requests, orders, purchase requests, work groups and contracts get the year in their number (WO-2027-00001) and start again at 1 each year. Asset numbers keep running."
   },
   "audit": {
     "Created": "created this record",
@@ -2677,5 +2680,55 @@
     "down": "Move down",
     "reset": "Back to the built-in name",
     "keepOne": "Leave at least one showing."
+  },
+  "brands": {
+    "title": "Brands and models",
+    "hint": "Picked on assets; an asset keeps the names. Rename one onto another name to merge the two.",
+    "new": "New brand",
+    "edit": "Edit brand",
+    "newModel": "New model",
+    "editModel": "Edit model",
+    "brand": "Brand",
+    "model": "Model",
+    "models": "Models",
+    "modelsOf": "Models of {{name}}",
+    "none": "No brands yet.",
+    "noModels": "No models yet.",
+    "mergeQuestion": "“{{name}}” is already in the list. Merge the two? Assets move to the one kept.",
+    "merged": "Merged",
+    "addNamed": "Add “{{name}}”"
+  },
+  "units": {
+    "title": "Units",
+    "hint": "Picked for parts, measurement points and template steps, which keep the symbol. Case matters: mW isn't MW. A new symbol is written to everything that uses the old one.",
+    "new": "New unit",
+    "edit": "Edit unit",
+    "symbol": "Symbol",
+    "mergeQuestion": "“{{symbol}}” is already a unit. Merge the two?"
+  },
+  "assetGroups": {
+    "title": "Asset groups",
+    "one": "Asset group",
+    "hint": "Named sets of assets anywhere in the tree, such as kitchen equipment or guest-facing assets. Use them to filter lists and reports, and as a PM target that follows its members.",
+    "new": "New asset group",
+    "edit": "Edit asset group",
+    "members": "Members",
+    "none": "No asset groups yet.",
+    "siteHint": "Leave empty to take assets of every site.",
+    "addAsset": "Add an asset",
+    "noMembers": "No members you can see.",
+    "remove": "Remove from the group",
+    "assetHint": "Groups of this asset's site, or shared ones.",
+    "added_one": "{{count}} asset added",
+    "added_other": "{{count}} assets added",
+    "removed_one": "{{count}} asset removed",
+    "removed_other": "{{count}} assets removed",
+    "addTo": "Add to a group",
+    "removeFrom": "Remove from a group",
+    "selectedCount_one": "{{count}} asset selected",
+    "selectedCount_other": "{{count}} assets selected",
+    "pmHint": "The PM follows the group: an asset added later is included from the next visit.",
+    "coversToday_one": "Covers {{count}} asset today",
+    "coversToday_other": "Covers {{count}} assets today"
   }
 }
