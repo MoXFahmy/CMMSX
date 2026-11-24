@@ -49,6 +49,28 @@ public class ActivityFixTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Anonymised_pending_emails_are_not_sent()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var email = Addr("salma");
+        var salma = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/employees", new { code = "E-033", fullName = "Salma Ezz", email, hourlyRate = 10m, isActive = true })));
+        var (pending, sent) = await DbAsync(fx, async db =>
+        {
+            var p = new OutboundEmail { TenantId = org.Tenant, EventKey = EmailEvents.WorkOrderAssigned, ToAddress = email, ToName = "Salma Ezz", Subject = "WO-00002", HtmlBody = "x", TextBody = "x" };
+            var s = new OutboundEmail { TenantId = org.Tenant, EventKey = EmailEvents.WorkOrderAssigned, ToAddress = email, ToName = "Salma Ezz", Subject = "WO-00001", HtmlBody = "x", TextBody = "x",
+                Status = EmailStatus.Sent, SentAt = DateTimeOffset.UtcNow };
+            db.OutboundEmails.AddRange(p, s);
+            await db.SaveChangesAsync();
+            return (p.Id, s.Id);
+        });
+        await Deactivate(salma);
+        await Ok(await org.Admin.PostAsJsonAsync("/api/anonymise", new { employeeId = salma, confirm = "E-033" }));
+        var rows = await DbAsync(fx, db => db.OutboundEmails.IgnoreQueryFilters().AsNoTracking().Where(m => m.Id == pending || m.Id == sent).ToDictionaryAsync(m => m.Id, m => m.Status));
+        Assert.Equal((EmailStatus.Failed, EmailStatus.Sent), (rows[pending], rows[sent]));
+    }
+
+    [SkippableFact]
     public async Task Anonymise_ignores_a_second_sign_in()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

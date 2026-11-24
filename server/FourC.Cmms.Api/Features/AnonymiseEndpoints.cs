@@ -8,6 +8,7 @@ using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
+using FourC.Cmms.Core.Notifications;
 using FourC.Cmms.Core.People;
 using FourC.Cmms.Core.Work;
 using Microsoft.EntityFrameworkCore;
@@ -28,6 +29,8 @@ public static class AnonymiseEndpoints
     public const string Already = "This person is already anonymised.";
     /// <summary>An anonymised sign-in stays closed: it can't be edited or given a password again.</summary>
     public const string Closed = "This sign-in was anonymised and can't be used again.";
+    /// <summary>Why an e-mail waiting to go to an anonymised person was never sent.</summary>
+    public const string AnonymisedMail = "Not sent: the person was anonymised.";
 
     /// <summary>
     /// Who is being anonymised: an employee (with their sign-in, if linked) or a sign-in with no employee record. The names
@@ -172,7 +175,12 @@ public static class AnonymiseEndpoints
         var address = p.User is not null ? p.NewEmail : $"anonymised-{p.Employee!.Id}@invalid";
         var rows = db.OutboundEmails.IgnoreQueryFilters().Where(m => m.TenantId == p.TenantId
             && (emails.Contains(m.ToAddress.Trim()) || (m.ToName != null && names.Contains(m.ToName.Trim()))));
-        return apply ? await rows.ExecuteUpdateAsync(s => s.SetProperty(m => m.ToAddress, address).SetProperty(m => m.ToName, p.Placeholder), ct) : await rows.CountAsync(ct);
+        // Those not sent yet aren't sent to the placeholder address: they end as failed.
+        var reason = Translator.T(AnonymisedMail);
+        return apply ? await rows.ExecuteUpdateAsync(s => s.SetProperty(m => m.ToAddress, address).SetProperty(m => m.ToName, p.Placeholder)
+                .SetProperty(m => m.Status, m => m.Status == EmailStatus.Pending ? EmailStatus.Failed : m.Status)
+                .SetProperty(m => m.LastError, m => m.Status == EmailStatus.Pending ? reason : m.LastError), ct)
+            : await rows.CountAsync(ct);
     }
 
     /// <summary>One name column: rows carrying the person's (user) id, then, unless text is off, rows with no id whose text is their name.</summary>

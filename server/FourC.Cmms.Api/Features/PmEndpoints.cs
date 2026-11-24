@@ -410,10 +410,16 @@ public static class PmEndpoints
             var q = db.Meters.AsNoTracking();
             if (assetId is not null) q = q.Where(x => x.AssetId == assetId);
             if (search.Clean() is { } s) q = q.Where(x => x.Code.Contains(s) || x.Name.Contains(s) || x.Asset!.AssetNumber.Contains(s));
-            return await q.OrderBy(x => x.Code).Select(x => new { x.Id, x.Code, x.Name, x.AssetId, AssetNumber = x.Asset!.AssetNumber, AssetName = x.Asset.Name, x.Unit,
+            var rows = await q.OrderBy(x => x.Code).Select(x => new { x.Id, x.Code, x.Name, x.AssetId, AssetNumber = x.Asset!.AssetNumber, AssetName = x.Asset.Name, x.Unit,
                 x.CurrentReading, x.LastReadAt, x.MaxDailyIncrement, x.IsActive, Schedules = db.PmSchedules.Count(p => p.MeterId == x.Id && p.IsActive),
-                x.SourceMeterId, SourceCode = db.Meters.IgnoreQueryFilters().Where(m => m.Id == x.SourceMeterId).Select(m => m.Code).FirstOrDefault(),
-                Followers = db.Meters.Count(m => m.SourceMeterId == x.Id) }).ToListAsync(ct);
+                x.SourceMeterId, Followers = db.Meters.Count(m => m.SourceMeterId == x.Id) }).ToListAsync(ct);
+            // Source codes looked up afterwards, within the organization: lifting the filters inside the list's own query would lift
+            // them from the whole list (0.26.1).
+            var sourceIds = rows.Where(r => r.SourceMeterId != null).Select(r => r.SourceMeterId!.Value).Distinct().ToList();
+            var codes = await db.Meters.IgnoreQueryFilters().AsNoTracking().Where(x => x.TenantId == db.CurrentTenantId && sourceIds.Contains(x.Id))
+                .ToDictionaryAsync(x => x.Id, x => x.Code, ct);
+            return rows.Select(x => new { x.Id, x.Code, x.Name, x.AssetId, x.AssetNumber, x.AssetName, x.Unit, x.CurrentReading, x.LastReadAt, x.MaxDailyIncrement, x.IsActive,
+                x.Schedules, x.SourceMeterId, SourceCode = x.SourceMeterId is { } sid ? codes.GetValueOrDefault(sid) : null, x.Followers }).ToList();
         }).RequirePermission(Permissions.PmView);
         m.MapPost("/", async (MeterInput input, CmmsDbContext db, CancellationToken ct) =>
         {

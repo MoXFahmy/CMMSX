@@ -1271,5 +1271,6 @@
  "This file has more than {0} rows. Split it into smaller files.": "في هذا الملف أكثر من {0} صف. قسّمه إلى ملفات أصغر.",
  "A serial-tracked part can't also be a shelf-life item.": "لا يمكن أن تكون القطعة المتتبعة بالرقم التسلسلي صنفاً ذا عمر تخزيني أيضاً.",
  "Receive a repair line whole.": "استلم سطر الإصلاح بالكامل.",
- "Line {0}: Receive a repair line whole.": "السطر {0}: استلم سطر الإصلاح بالكامل."
+ "Line {0}: Receive a repair line whole.": "السطر {0}: استلم سطر الإصلاح بالكامل.",
+ "Not sent: the person was anonymised.": "لم تُرسل: تمت إزالة هوية الشخص."
 }
