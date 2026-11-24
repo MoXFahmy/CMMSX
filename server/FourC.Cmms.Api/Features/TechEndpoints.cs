@@ -22,6 +22,8 @@ public static partial class TechEndpoints
 {
     private static readonly WorkOrderStatus[] Open = [WorkOrderStatus.Open, WorkOrderStatus.InProgress, WorkOrderStatus.OnHold];
     private const int MaxJobs = 300;
+    /// <summary>Serial units in store the phone keeps (0.24.0): the newest, for fitting offline; older ones are found on the web.</summary>
+    private const int MaxSpareUnits = 500;
     private const int CommentsPerJob = 20;
 
     private sealed record Me(Guid EmployeeId, List<Guid> SiteIds);
@@ -75,6 +77,15 @@ public static partial class TechEndpoints
                 .ToLookup(t => t.WorkOrderId);
             var round = (await db.WorkOrderAssets.AsNoTracking().Where(a => ids.Contains(a.WorkOrderId) && a.Asset != null).OrderBy(a => a.Sequence)
                 .Select(a => new { a.WorkOrderId, a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name }).ToListAsync(ct)).ToLookup(a => a.WorkOrderId);
+            // Serial units fitted to the jobs' assets (0.24.0), for Remove on the phone.
+            var jobAssets = jobs.Where(j => j.Asset != null).Select(j => j.Asset!.Id).Concat(round.SelectMany(r => r.Select(a => a.Id))).Distinct().ToList();
+            var fittedUnits = await db.Assets.AllSites().AsNoTracking()
+                .Where(a => a.PartId != null && a.ParentAssetId != null && jobAssets.Contains(a.ParentAssetId.Value) && a.Status != FourC.Cmms.Core.Assets.AssetStatus.Disposed
+                            && a.Status != FourC.Cmms.Core.Assets.AssetStatus.UnderRepair)
+                .OrderBy(a => a.AssetNumber).Select(a => new
+                {
+                    a.Id, a.AssetNumber, a.SerialNumber, a.PartId, PartName = db.Parts.Where(p => p.Id == a.PartId).Select(p => p.Name).FirstOrDefault(), FittedToId = a.ParentAssetId!.Value,
+                }).ToListAsync(ct);
             var parts = (await db.WorkOrderParts.AsNoTracking().Where(p => ids.Contains(p.WorkOrderId)).OrderBy(p => p.Part!.PartNumber)
                 .Select(p => new { p.WorkOrderId, p.Part!.PartNumber, PartName = p.Part.Name, p.Part.UnitOfMeasure, p.Quantity, StoreCode = p.Store != null ? p.Store.Code : null })
                 .ToListAsync(ct)).ToLookup(p => p.WorkOrderId);
@@ -153,6 +164,7 @@ public static partial class TechEndpoints
                     UsedParts = issued.Where(x => x.Key.Item1 == j.Id && x.Value > 0 && !planned[j.Id].Any(p => p.PartId == x.Key.PartId && p.StoreId == x.Key.StoreId))
                         .Select(x => new { x.Key.PartId, x.Key.StoreId, Issued = x.Value }),
                     DefaultStoreId = defaultStores.GetValueOrDefault(j.SiteId),
+                    Units = fittedUnits.Where(u => u.FittedToId == j.Asset?.Id || round[j.Id].Any(a => a.Id == u.FittedToId)),
                     Crew = crew[j.Id],
                     // Its group (0.12.0): the number and the group's comments.
                     Group = j.GroupId is { } gid && groups.TryGetValue(gid, out var grp) ? new { grp.Number, Comments = groupComments[gid] } : null,
@@ -216,16 +228,23 @@ public static partial class TechEndpoints
                     .Select(a => new { a.EntityId, a.Id, a.IsPrimaryImage, a.CreatedAt }).ToListAsync(ct))
                 .GroupBy(a => a.EntityId).ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.IsPrimaryImage).ThenBy(a => a.CreatedAt).First().Id);
             var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).OrderBy(p => p.PartNumber)
-                .Select(p => new { p.Id, p.PartNumber, p.Name, p.UnitOfMeasure, p.Barcode, p.IsShelfItem, p.AllowNegativeStock }).ToListAsync(ct);
+                .Select(p => new { p.Id, p.PartNumber, p.Name, p.UnitOfMeasure, p.Barcode, p.IsShelfItem, p.AllowNegativeStock, p.IsSerialTracked }).ToListAsync(ct);
+            // Serial units in store at my sites (0.24.0), newest first, for Fit a unit offline.
+            var spareUnits = await db.Assets.AllSites().AsNoTracking()
+                .Where(a => a.PartId != null && a.StoreId != null && storeIds.Contains(a.StoreId.Value) && a.ParentAssetId == null
+                            && a.Status != FourC.Cmms.Core.Assets.AssetStatus.Disposed && a.Status != FourC.Cmms.Core.Assets.AssetStatus.UnderRepair)
+                .OrderByDescending(a => a.CreatedAt).Take(MaxSpareUnits).Select(a => new { a.Id, a.AssetNumber, a.SerialNumber, a.PartId, a.StoreId }).ToListAsync(ct);
             var allowed = await perms.GetAsync(ctx.UserId!.Value);
             var body = new
             {
                 Stores = stores,
                 Parts = parts.Select(p => new
                 {
-                    p.Id, p.PartNumber, p.Name, p.UnitOfMeasure, p.Barcode, p.IsShelfItem, p.AllowNegativeStock, PhotoId = photos.TryGetValue(p.Id, out var ph) ? ph : (Guid?)null,
+                    p.Id, p.PartNumber, p.Name, p.UnitOfMeasure, p.Barcode, p.IsShelfItem, p.AllowNegativeStock, p.IsSerialTracked,
+                    PhotoId = photos.TryGetValue(p.Id, out var ph) ? ph : (Guid?)null,
                     Levels = levels[p.Id].Select(l => new { l.StoreId, OnHand = l.QuantityOnHand, Reserved = reserved.GetValueOrDefault((p.Id, l.StoreId)), l.Bin }),
                 }),
+                Units = spareUnits,
                 CancelReasons = await db.CancelReasons.AsNoTracking().Where(r => r.IsActive).OrderBy(r => r.Name).Select(r => new { r.Id, r.Name }).ToListAsync(ct),
                 PmTasks = await db.PmTasks.AsNoTracking().Where(t => t.IsActive).OrderBy(t => t.Code)
                     .Select(t => new { t.Id, t.Code, t.Name, Steps = t.Steps.OrderBy(s => s.Sequence).Select(s => s.Description) }).ToListAsync(ct),

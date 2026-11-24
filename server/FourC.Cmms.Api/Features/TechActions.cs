@@ -5,6 +5,7 @@ using FourC.Cmms.Core.Pm;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
+using FourC.Cmms.Core.Inventory;
 using FourC.Cmms.Core.Services;
 using FourC.Cmms.Core.Work;
 using Microsoft.AspNetCore.Http.Json;
@@ -39,6 +40,10 @@ public static partial class TechEndpoints
     private sealed record PartPayload(Guid PartId, Guid? StoreId, decimal Quantity, Guid? LineId = null, Guid? WorkOrderId = null);
     /// <summary>A delivery received against a purchase order line on the phone (0.11.0).</summary>
     private sealed record ReceivePayload(Guid PurchaseOrderId, Guid LineId, decimal Quantity, Guid? StoreId = null, string? BatchNumber = null, DateOnly? ExpiryDate = null);
+    /// <summary>A serial unit fitted to one of the job's assets (0.24.0).</summary>
+    private sealed record UnitFitPayload(Guid UnitId, Guid AssetId);
+    /// <summary>A fitted unit taken off on the job (0.24.0): Store (the job's site's default store), Repair or Scrap.</summary>
+    private sealed record UnitRemovePayload(Guid UnitId, string? Outcome, string? Note);
     /// <summary>A counted quantity for a stock count (0.11.0).</summary>
     private sealed record CountPayload(Guid CountId, Guid PartId, decimal Quantity);
     /// <summary>The asset's stop started or ended from a job (0.11.0); At = the time the technician chose, else when the change was made.</summary>
@@ -321,6 +326,37 @@ public static partial class TechEndpoints
                 var day = Sla.LocalDay(at, Sla.Zone((await SlaQueries.SettingsAsync(db, ct)).TimeZone));
                 await PurchasingEndpoints.ReceiveCoreAsync(db, ctx, mail, p.PurchaseOrderId,
                     new PurchasingEndpoints.ReceiveInput(day, null, [new PurchasingEndpoints.ReceiveLine(p.LineId, p.Quantity, p.StoreId, p.BatchNumber, p.ExpiryDate)]), day, ct);
+                return new Answer("done");
+            }
+            case "unit.fit":
+            case "unit.remove":
+            {
+                Require(allowed, Permissions.WorkOrdersExecute);
+                Require(allowed, Permissions.InventoryTransact);
+                var w = await WorkOrderAsync(db, input.WorkOrderId, ct);
+                RequireNotClosed(w);
+                var assets = await SerialUnitEndpoints.WorkOrderAssetsAsync(db, w, ct);
+                if (input.Type == "unit.fit")
+                {
+                    var p = Read<UnitFitPayload>(input.Payload, options);
+                    if (!assets.Contains(p.AssetId)) throw new Rejected("Choose an asset of this work order.");
+                    var target = await db.Assets.AllSites().FirstOrDefaultAsync(a => a.Id == p.AssetId, ct) ?? throw new Rejected("Choose an asset of this work order.");
+                    var unit = await db.Assets.AllSites().FirstOrDefaultAsync(a => a.Id == p.UnitId && a.PartId != null, ct) ?? throw new Rejected("This unit no longer exists.");
+                    await SerialUnits.FitAsync(db, ctx, unit, target, w, countHours: true, null, at, ct);
+                }
+                else
+                {
+                    var p = Read<UnitRemovePayload>(input.Payload, options);
+                    var outcome = SerialUnitEndpoints.OutcomeOf(p.Outcome) ?? throw new Rejected("Choose what happens to the unit.");
+                    var unit = await db.Assets.AllSites().FirstOrDefaultAsync(a => a.Id == p.UnitId && a.PartId != null, ct) ?? throw new Rejected("This unit no longer exists.");
+                    if (unit.ParentAssetId is not { } parent || !assets.Contains(parent)) throw new Rejected("This unit isn't fitted to this work order's asset.");
+                    Guid? store = null;
+                    if (outcome == UnitOutcome.Store)
+                        store = (await db.Sites.AllSites().AsNoTracking().Where(x => x.Id == w.SiteId).Select(x => x.Settings).FirstAsync(ct)).DefaultStoreId
+                                ?? throw new Rejected("This job's site has no default store.");
+                    await SerialUnits.RemoveAsync(db, ctx, unit, w, outcome, store, p.Note, at, ct);
+                }
+                await db.SaveChangesAsync(ct);
                 return new Answer("done");
             }
             case "count.line":
