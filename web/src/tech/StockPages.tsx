@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconChevronLeft, IconPackage, IconPlus, IconSearch } from '@tabler/icons-react';
 import { fmtQty, notifyError, notifySuccess } from '@/components/utils';
-import { available, findPart, queuedCount, searchParts, shortBy, stillReserved } from './stock';
+import { available, canUseByQuantity, findPart, queuedCount, searchParts, shortBy, stillReserved } from './stock';
 import { useTech } from './useTech';
 import type { PlannedLine, StockPart, TechJob } from './types';
 
@@ -88,8 +88,9 @@ export function JobParts({ job }: { job: TechJob }) {
               <Text fz="xs" c="dimmed">{t('techStock.usedOf', { used: fmtQty(l.issued), planned: fmtQty(l.quantity), unit: p?.unitOfMeasure ?? '' })}</Text>
             </div>
             <Group gap={4} wrap="nowrap">
-              {left > 0 && p && <Button size="xs" onClick={() => setUsing(l)}>{t('techStock.markUsed')}</Button>}
-              {l.issued > 0 && p && canIssue && <Button size="xs" variant="subtle" onClick={() => setReturning(l)}>{t('techStock.giveBack')}</Button>}
+              {p && !canUseByQuantity(p) && <Text fz="xs" c="dimmed">{t('techStock.fitInstead')}</Text>}
+              {left > 0 && p && canUseByQuantity(p) && <Button size="xs" onClick={() => setUsing(l)}>{t('techStock.markUsed')}</Button>}
+              {l.issued > 0 && p && canIssue && canUseByQuantity(p) && <Button size="xs" variant="subtle" onClick={() => setReturning(l)}>{t('techStock.giveBack')}</Button>}
             </Group>
           </Group>
         );
@@ -102,7 +103,7 @@ export function JobParts({ job }: { job: TechJob }) {
               <Text fz="sm" fw={500} truncate>{p ? `${p.partNumber} · ${p.name}` : u.partId}</Text>
               <Text fz="xs" c="dimmed">{t('techStock.used', { qty: fmtQty(u.issued), unit: p?.unitOfMeasure ?? '' })}</Text>
             </div>
-            {p && canIssue && <Button size="xs" variant="subtle" onClick={() => setReturning({ id: `used-${u.partId}-${u.storeId}`, partId: u.partId, storeId: u.storeId, quantity: 0, issued: u.issued })}>{t('techStock.giveBack')}</Button>}
+            {p && canIssue && canUseByQuantity(p) && <Button size="xs" variant="subtle" onClick={() => setReturning({ id: `used-${u.partId}-${u.storeId}`, partId: u.partId, storeId: u.storeId, quantity: 0, issued: u.issued })}>{t('techStock.giveBack')}</Button>}
           </Group>
         );
       })}
@@ -120,7 +121,7 @@ export function JobParts({ job }: { job: TechJob }) {
         )}
       </Modal>
       <Modal opened={adding} onClose={() => setAdding(false)} title={t('techStock.addPart')}>
-        {!picked ? <PartSearch onPick={setPicked} autoFocus /> : (
+        {!picked ? <PartSearch onPick={setPicked} autoFocus /> : !canUseByQuantity(picked) ? <Text fz="sm" c="orange">{t('techStock.fitInstead')}</Text> : (
           <QuantityForm part={picked} storeId={job.defaultStoreId} label={t('techStock.use')}
             onSave={(storeId, quantity) => { void send('part.use', { partId: picked.id, storeId, quantity }); setAdding(false); }} />
         )}
@@ -172,7 +173,8 @@ export function PartPage() {
             <Text fz="sm" fw={600}>{fmtQty(l.onHand)} {part.unitOfMeasure}{l.reserved > 0 ? ` (${t('techStock.reserved', { qty: fmtQty(l.reserved) })})` : ''}</Text></Group>;
         })}
       </Stack></Card>
-      {jobs.length > 0 && <Button onClick={() => setIssuing(true)}>{t('techStock.issueToJob')}</Button>}
+      {jobs.length > 0 && canUseByQuantity(part) && <Button onClick={() => setIssuing(true)}>{t('techStock.issueToJob')}</Button>}
+      {!canUseByQuantity(part) && <Text fz="sm" c="dimmed">{t('techStock.fitInstead')}</Text>}
       <Modal opened={issuing} onClose={() => setIssuing(false)} title={t('techStock.issueToJob')}>
         {!job ? (
           <Stack gap="xs">{jobs.map((j) => <Card key={j.id} withBorder p="xs" onClick={() => setJob(j.id)} style={{ cursor: 'pointer' }}><Text fz="sm" fw={600}>{j.number}</Text><Text fz="xs" c="dimmed">{j.title}</Text></Card>)}</Stack>
@@ -214,10 +216,12 @@ export function CountPage() {
         <Card><Stack>
           <Text fw={600}>{part.partNumber} · {part.name}</Text>
           {part.levels.find((l) => l.storeId === count.storeId)?.bin && <Text fz="sm">{t('techStock.bin')} {part.levels.find((l) => l.storeId === count.storeId)?.bin}</Text>}
-          {part.isShelfItem
+          {part.isSerialTracked
+            ? <Text fz="sm" c="orange">{t('techStock.serialCount')}</Text>
+            : part.isShelfItem
             ? <Text fz="sm" c="orange">{t('techStock.shelfCount')}</Text>
             : <NumberInput label={`${t('techStock.countedQty')} (${part.unitOfMeasure})`} min={0} decimalScale={3} value={qty} onChange={(v) => setQty(v === '' ? '' : Number(v))} data-autofocus />}
-          <Group>{!part.isShelfItem && <Button onClick={save} disabled={qty === '' || Number(qty) < 0}>{t('techStock.saveCount')}</Button>}<Button variant="subtle" onClick={() => setPart(null)}>{t('common.cancel')}</Button></Group>
+          <Group>{!part.isShelfItem && !part.isSerialTracked && <Button onClick={save} disabled={qty === '' || Number(qty) < 0}>{t('techStock.saveCount')}</Button>}<Button variant="subtle" onClick={() => setPart(null)}>{t('common.cancel')}</Button></Group>
         </Stack></Card>
       )}
       {counted.length > 0 && (

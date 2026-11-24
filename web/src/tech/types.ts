@@ -40,7 +40,14 @@ export type TechJob = {
   usedParts?: UsedPart[];
   /** The people on the job and its team's members (a crew leader logs their hours). */
   crew?: { employeeId: string; name: string }[];
+  /** 0.24.0: serial units fitted to the job's asset(s). */
+  units?: TechUnit[];
 };
+
+/** A serial unit fitted to one of a job's assets (0.24.0). */
+export type TechUnit = { id: string; assetNumber: string; serialNumber?: string | null; partId: string; partName?: string | null; fittedToId: string };
+/** A serial unit in a store of my sites (0.24.0), for fitting offline. */
+export type StockUnit = { id: string; assetNumber: string; serialNumber?: string | null; partId: string; storeId: string };
 
 export type PlannedLine = { id: string; partId: string; storeId?: string | null; quantity: number; issued: number };
 export type UsedPart = { partId: string; storeId: string; issued: number };
@@ -49,6 +56,8 @@ export type UsedPart = { partId: string; storeId: string; issued: number };
 export type StockPart = {
   id: string; partNumber: string; name: string; unitOfMeasure: string; barcode?: string | null; isShelfItem: boolean; allowNegativeStock: boolean;
   photoId?: string | null; levels: { storeId: string; onHand: number; reserved: number; bin?: string | null }[];
+  /** 0.24.0: its stock is serial units: fitted and removed, not used by quantity. */
+  isSerialTracked?: boolean;
 };
 
 /** Parts, stores, cancel reasons, PM checklists, open counts and (to receive) open purchase orders, for working offline. */
@@ -58,6 +67,8 @@ export type TechStock = {
   cancelReasons: { id: string; name: string }[];
   pmTasks: { id: string; code: string; name: string; steps: string[] }[];
   counts: { id: string; name: string; storeId: string }[];
+  /** 0.24.0: serial units in store at my sites (the newest 500). */
+  units?: StockUnit[];
   purchaseOrders: { id: string; number: string; supplier: string; lines: { id: string; lineNumber: number; partId: string; description: string; unitOfMeasure?: string | null; outstanding: number; storeId?: string | null; packSize?: number }[] }[] | null;
 };
 

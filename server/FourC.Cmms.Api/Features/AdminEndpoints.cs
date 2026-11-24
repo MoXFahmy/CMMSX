@@ -414,14 +414,15 @@ public static class DashboardEndpoints
         {
             var today = DateOnly.FromDateTime(DateTime.UtcNow);
             var in90 = today.AddDays(90);
-            var byStatus = await db.Assets.GroupBy(a => a.Status).Select(x => new { Status = x.Key, Count = x.Count() }).ToListAsync(ct);
-            var byCriticality = await db.Assets.GroupBy(a => a.Criticality).Select(x => new { Criticality = x.Key, Count = x.Count() }).ToListAsync(ct);
-            var byCategory = await db.Assets.GroupBy(a => new { a.CategoryId, Name = a.Category!.Name, Color = a.Category.Color })
+            var assets = db.Assets.Where(AssetEndpoints.NotSpareUnit); // spare units stay off the dashboard (0.24.0)
+            var byStatus = await assets.GroupBy(a => a.Status).Select(x => new { Status = x.Key, Count = x.Count() }).ToListAsync(ct);
+            var byCriticality = await assets.GroupBy(a => a.Criticality).Select(x => new { Criticality = x.Key, Count = x.Count() }).ToListAsync(ct);
+            var byCategory = await assets.GroupBy(a => new { a.CategoryId, Name = a.Category!.Name, Color = a.Category.Color })
                 .Select(x => new { x.Key.CategoryId, Name = x.Key.Name ?? "Uncategorized", x.Key.Color, Count = x.Count() }).OrderByDescending(x => x.Count).Take(10).ToListAsync(ct);
-            var bySite = await db.Assets.GroupBy(a => new { a.SiteId, a.Site!.Name }).Select(x => new { x.Key.SiteId, x.Key.Name, Count = x.Count() }).OrderByDescending(x => x.Count).ToListAsync(ct);
-            var expiring = await db.Assets.AsNoTracking().Where(a => a.WarrantyExpiresOn != null && a.WarrantyExpiresOn >= today && a.WarrantyExpiresOn <= in90)
+            var bySite = await assets.GroupBy(a => new { a.SiteId, a.Site!.Name }).Select(x => new { x.Key.SiteId, x.Key.Name, Count = x.Count() }).OrderByDescending(x => x.Count).ToListAsync(ct);
+            var expiring = await assets.AsNoTracking().Where(a => a.WarrantyExpiresOn != null && a.WarrantyExpiresOn >= today && a.WarrantyExpiresOn <= in90)
                 .OrderBy(a => a.WarrantyExpiresOn).Take(8).Select(a => new { a.Id, a.AssetNumber, a.Name, a.WarrantyExpiresOn, a.WarrantyType }).ToListAsync(ct);
-            var recent = await db.Assets.AsNoTracking().OrderByDescending(a => a.CreatedAt).Take(8)
+            var recent = await assets.AsNoTracking().OrderByDescending(a => a.CreatedAt).Take(8)
                 .Select(a => new { a.Id, a.AssetNumber, a.Name, a.Status, a.CreatedAt, SiteName = a.Site!.Name }).ToListAsync(ct);
             var active = new[] { FourC.Cmms.Core.Work.WorkOrderStatus.Open, FourC.Cmms.Core.Work.WorkOrderStatus.InProgress, FourC.Cmms.Core.Work.WorkOrderStatus.OnHold };
             var since = DateTimeOffset.UtcNow.AddDays(-30);

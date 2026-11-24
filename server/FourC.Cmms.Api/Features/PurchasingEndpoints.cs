@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using FourC.Cmms.Api.Infrastructure;
+using FourC.Cmms.Core.Assets;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Identity;
@@ -24,12 +25,15 @@ public static class PurchasingEndpoints
     public sealed record LineInput(Guid? Id, Guid? PartId, string? Description, string? UnitOfMeasure, decimal Quantity, decimal UnitPrice, decimal DiscountPercent,
         Guid? StoreId, Guid? WorkOrderId, string? AccountCode, Guid? PurchaseRequestLineId = null,
         // The pack (0.18.0): pieces per ordered unit and the supplier's part number; left out (older pages) keeps the line's, 1 on a new line.
-        decimal? PackSize = null, string? SupplierPartNumber = null);
+        decimal? PackSize = null, string? SupplierPartNumber = null,
+        // A repair line (0.24.0): a unit under repair going to the supplier; left out (older pages) keeps the line's.
+        Guid? UnitId = null);
     public sealed record PoInput(Guid? SiteId, Guid? SupplierId, DateOnly? OrderDate, DateOnly? ExpectedDate, string? RequestedBy, string? Currency, decimal? ExchangeRate,
         string? PaymentTerms, string? ShippingMethod, string? DeliverTo, string? SupplierQuoteRef, decimal? TaxPercent, decimal ShippingCost, string? Notes,
         List<LineInput> Lines, Guid? OrderTypeId = null, string? RowVersion = null);
     public sealed record ReasonInput(string? Reason);
-    public sealed record ReceiveLine(Guid LineId, decimal Quantity, Guid? StoreId, string? BatchNumber, DateOnly? ExpiryDate);
+    /// <param name="Serials">A serial-tracked part's serial numbers, one per piece received (quantity × pack size, 0.24.0).</param>
+    public sealed record ReceiveLine(Guid LineId, decimal Quantity, Guid? StoreId, string? BatchNumber, DateOnly? ExpiryDate, List<string>? Serials = null);
     public sealed record ReceiveInput(DateOnly? Date, string? Reference, List<ReceiveLine> Lines);
     public sealed record ProposalLine(Guid PartId, Guid StoreId, decimal Quantity, decimal? UnitPrice, Guid? SupplierId);
     public sealed record FromProposalInput(List<ProposalLine> Lines);
@@ -37,6 +41,9 @@ public static class PurchasingEndpoints
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
     private static Guid UserId(HttpContext http) => Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!);
     private static readonly PurchaseOrderStatus[] Receivable = [PurchaseOrderStatus.Approved, PurchaseOrderStatus.PartiallyReceived];
+    /// <summary>Orders on which a repair line still holds its unit (0.24.0).</summary>
+    private static readonly PurchaseOrderStatus[] OpenRepair =
+        [PurchaseOrderStatus.Draft, PurchaseOrderStatus.Submitted, PurchaseOrderStatus.Approved, PurchaseOrderStatus.PartiallyReceived];
 
     public sealed class PoFilter
     {
@@ -107,17 +114,38 @@ public static class PurchasingEndpoints
             if (r.Quantity > outstanding) throw new DomainException($"Line {line.LineNumber}: only {outstanding:0.###} outstanding.");
             var unitCost = Math.Round(line.NetUnitPrice * o.ExchangeRate, 4);
             var store = r.StoreId ?? line.StoreId;
+            if (line.UnitId is { } repairedId)
+            {
+                // A repair line (0.24.0): the unit comes back into a store with the line's cost in the organization's currency.
+                var back = store is { } backStore ? await db.Stores.FirstOrDefaultAsync(x => x.Id == backStore, tk) : null;
+                if (back is null) throw new DomainException($"Line {line.LineNumber}: Choose the store the unit comes back to.");
+                var repaired = await db.Assets.AllSites().FirstAsync(a => a.Id == repairedId, tk);
+                await SerialUnits.BackFromRepairAsync(db, ctx, repaired, back, Math.Round(line.NetUnitPrice * o.ExchangeRate * r.Quantity, 2), $"Repaired on {o.Number}",
+                    DateTimeOffset.UtcNow, tk, o.Id, line.Id);
+            }
             if (line.PartId is { } partId && store is { } storeId)
             {
                 // Packs become the part's own units (0.18.0): 1 box of 100 books 100 pieces, each at the box's cost ÷ 100.
                 var pieces = r.Quantity * line.PackSize;
                 var pieceCost = PackMath.CostPerPiece(line.NetUnitPrice, o.ExchangeRate, line.PackSize);
-                var rx = await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, partId, storeId, pieces, date, pieceCost,
-                    SupplierId: o.SupplierId, PurchaseOrderId: o.Id, PurchaseOrderLineId: line.Id, Reference: i.Reference.Clean() ?? o.Number,
-                    BatchNumber: r.BatchNumber.Clean(), ExpiryDate: r.ExpiryDate), tk);
-                if (line.WorkOrderId is { } wo) // ordered for a job: receive and issue straight to it
-                    await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, pieces, date, WorkOrderId: wo,
-                        BatchNumber: r.BatchNumber.Clean(), Notes: $"Received on {o.Number}", RelatedTransactionId: rx.Id), tk);
+                var part = await db.Parts.FirstAsync(p => p.Id == partId, tk);
+                if (part.IsSerialTracked)
+                {
+                    // Serial units (0.24.0): one per piece, each with its serial; even ordered for a job they wait in the store until fitted on it.
+                    var serials = await SerialUnitEndpoints.ReceiptSerialsAsync(db, part, pieces, r.Serials, tk, $"Line {line.LineNumber}: ");
+                    var unitStore = await db.Stores.FirstOrDefaultAsync(x => x.Id == storeId, tk) ?? throw new DomainException($"Line {line.LineNumber}: choose the store receiving this part.");
+                    await SerialUnits.ReceiveAsync(db, ctx, part, unitStore, serials, date, pieceCost, new StockPost(StockTransactionType.Receipt, partId, storeId, pieces, date, pieceCost,
+                        SupplierId: o.SupplierId, PurchaseOrderId: o.Id, PurchaseOrderLineId: line.Id, Reference: i.Reference.Clean() ?? o.Number), tk);
+                }
+                else
+                {
+                    var rx = await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, partId, storeId, pieces, date, pieceCost,
+                        SupplierId: o.SupplierId, PurchaseOrderId: o.Id, PurchaseOrderLineId: line.Id, Reference: i.Reference.Clean() ?? o.Number,
+                        BatchNumber: r.BatchNumber.Clean(), ExpiryDate: r.ExpiryDate), tk);
+                    if (line.WorkOrderId is { } wo) // ordered for a job: receive and issue straight to it
+                        await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, pieces, date, WorkOrderId: wo,
+                            BatchNumber: r.BatchNumber.Clean(), Notes: $"Received on {o.Number}", RelatedTransactionId: rx.Id), tk);
+                }
             }
             else if (line.PartId is not null)
                 throw new DomainException($"Line {line.LineNumber}: choose the store receiving this part.");
@@ -233,7 +261,7 @@ public static class PurchasingEndpoints
             var o = await db.PurchaseOrders.AsNoTracking().Include(x => x.Supplier).Include(x => x.Site).Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (o is null) return Results.NotFound();
             var partIds = o.Lines.Where(l => l.PartId is not null).Select(l => l.PartId!.Value).ToList();
-            var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => new { p.PartNumber, p.Name, p.IsShelfItem, p.UnitOfMeasure }, ct);
+            var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => new { p.PartNumber, p.Name, p.IsShelfItem, p.UnitOfMeasure, p.IsSerialTracked }, ct);
             var storeIds = o.Lines.Where(l => l.StoreId is not null).Select(l => l.StoreId!.Value).ToList();
             var stores = await db.Stores.AsNoTracking().Where(x => storeIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Code, ct);
             var woIds = o.Lines.Where(l => l.WorkOrderId is not null).Select(l => l.WorkOrderId!.Value).ToList();
@@ -254,6 +282,8 @@ public static class PurchasingEndpoints
             var approval = await PurchaseApprovals.PanelAsync(db, perms, access, o, UserId(http), ct);
             var byLevels = approval.Waiting;
             var iCanSign = approval.ICanSign;
+            var repairIds = o.Lines.Where(l => l.UnitId is not null).Select(l => l.UnitId!.Value).ToList();
+            var repairUnits = await db.Assets.AllSites().AsNoTracking().Where(a => repairIds.Contains(a.Id)).Select(a => new { a.Id, a.SerialNumber, a.AssetNumber }).ToDictionaryAsync(a => a.Id, ct);
             var draftNeedsLevels = o.Status == PurchaseOrderStatus.Draft && (await PurchaseApprovals.LevelsForAsync(db, o, ct)).Count > 0;
             return Results.Ok(new
             {
@@ -263,9 +293,11 @@ public static class PurchasingEndpoints
                 Lines = o.Lines.OrderBy(l => l.LineNumber).Select(l => new
                 {
                     l.Id, l.LineNumber, l.PartId, PartNumber = l.PartId is { } p ? parts.GetValueOrDefault(p)?.PartNumber : null, IsShelfItem = l.PartId is { } p2 && (parts.GetValueOrDefault(p2)?.IsShelfItem ?? false), PartUnit = l.PartId is { } p3 ? parts.GetValueOrDefault(p3)?.UnitOfMeasure : null,
+                    IsSerialTracked = l.PartId is { } p4 && (parts.GetValueOrDefault(p4)?.IsSerialTracked ?? false),
                     l.Description, l.UnitOfMeasure, l.Quantity, l.UnitPrice, l.DiscountPercent, l.NetUnitPrice, l.LineTotal, l.QuantityReceived, Outstanding = Math.Max(l.Quantity - l.QuantityReceived, 0), l.PackSize, l.SupplierPartNumber,
                     l.StoreId, StoreCode = l.StoreId is { } sid ? stores.GetValueOrDefault(sid) : null, l.WorkOrderId, WorkOrderNumber = l.WorkOrderId is { } wid ? wos.GetValueOrDefault(wid) : null, l.AccountCode,
-                    l.PurchaseRequestLineId,
+                    l.PurchaseRequestLineId, l.UnitId, UnitSerial = l.UnitId is { } u1 ? repairUnits.GetValueOrDefault(u1)?.SerialNumber : null,
+                    UnitAssetNumber = l.UnitId is { } u2 ? repairUnits.GetValueOrDefault(u2)?.AssetNumber : null,
                     Request = l.PurchaseRequestLineId is { } rl && requests.GetValueOrDefault(rl) is { } rq ? new { Id = rq.RequestId, rq.Number } : null,
                 }),
                 Approval = approval.View,
@@ -305,7 +337,7 @@ public static class PurchasingEndpoints
             var o = await db.PurchaseOrders.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (o is null) return Results.NotFound();
             if (o.Status != PurchaseOrderStatus.Draft) throw new DomainException("Only draft purchase orders can be edited. Return it to draft first.");
-            var v = await ValidatePoAsync(i, db, ct, o.SupplierId);
+            var v = await ValidatePoAsync(i, db, ct, o.SupplierId, o.Id);
             if (!v.IsValid) return v.Problem();
             if (i.RowVersion is not null) db.Entry(o).Property(x => x.RowVersion).OriginalValue = i.RowVersion.ToVersion();
             var before = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
@@ -505,6 +537,9 @@ public static class PurchasingEndpoints
         o.TaxPercent = i.TaxPercent ?? o.TaxPercent; o.ShippingCost = i.ShippingCost; o.Notes = i.Notes.Clean(); o.OrderTypeId = i.OrderTypeId;
         var partIds = i.Lines.Where(l => l.PartId is not null).Select(l => l.PartId!.Value).ToList();
         var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, ct);
+        var unitIds = i.Lines.Where(l => l.UnitId is not null).Select(l => l.UnitId!.Value).ToList();
+        var units = await db.Assets.AllSites().AsNoTracking().Where(a => unitIds.Contains(a.Id))
+            .Select(a => new { a.Id, a.SerialNumber, PartName = db.Parts.Where(p => p.Id == a.PartId).Select(p => p.Name).FirstOrDefault() }).ToDictionaryAsync(a => a.Id, ct);
         foreach (var gone in o.Lines.Where(l => i.Lines.All(x => x.Id != l.Id)).ToList()) o.Lines.Remove(gone);
         var n = 1;
         foreach (var x in i.Lines)
@@ -524,10 +559,17 @@ public static class PurchasingEndpoints
             if (x.PurchaseRequestLineId is not null) line.PurchaseRequestLineId = x.PurchaseRequestLineId; // edits keep the line's request (0.16.0)
             if (x.PackSize is { } pack) line.PackSize = pack;
             if (x.SupplierPartNumber is not null || x.PackSize is not null) line.SupplierPartNumber = x.SupplierPartNumber.Clean();
+            if (x.UnitId is { } unitId)
+            {
+                // A repair line is a service line for one unit: no part, quantity 1, "Repair of ‹part› ‹serial›" unless described.
+                var unit = units[unitId];
+                line.UnitId = unitId; line.PartId = null; line.Quantity = 1; line.PackSize = 1;
+                line.Description = x.Description.Clean() ?? $"Repair of {unit.PartName} {unit.SerialNumber}".Trim();
+            }
         }
     }
 
-    private static async Task<Validator> ValidatePoAsync(PoInput i, CmmsDbContext db, CancellationToken ct, Guid? currentSupplierId)
+    private static async Task<Validator> ValidatePoAsync(PoInput i, CmmsDbContext db, CancellationToken ct, Guid? currentSupplierId, Guid? orderId = null)
     {
         var v = new Validator().MaxLength("supplierQuoteRef", i.SupplierQuoteRef, "Quote ref.", 100).MaxLength("notes", i.Notes, "Notes", 4000)
             .When(i.ShippingCost < 0, "shippingCost", "Shipping cannot be negative.").When(i.TaxPercent is < 0 or > 100, "taxPercent", "Tax must be between 0 and 100%.")
@@ -541,7 +583,7 @@ public static class PurchasingEndpoints
         for (var k = 0; k < lines.Count; k++)
         {
             var l = lines[k];
-            if (l.PartId is null && string.IsNullOrWhiteSpace(l.Description)) v.Add($"lines[{k}].description", "Enter a description or choose a part.");
+            if (l.PartId is null && l.UnitId is null && string.IsNullOrWhiteSpace(l.Description)) v.Add($"lines[{k}].description", "Enter a description or choose a part.");
             if (l.Quantity <= 0) v.Add($"lines[{k}].quantity", "Quantity must be positive.");
             if (l.UnitPrice < 0) v.Add($"lines[{k}].unitPrice", "Price cannot be negative.");
             if (l.DiscountPercent is < 0 or > 100) v.Add($"lines[{k}].discountPercent", "Discount must be between 0 and 100%.");
@@ -550,6 +592,17 @@ public static class PurchasingEndpoints
         }
         var partIds = lines.Where(l => l.PartId is not null).Select(l => l.PartId!.Value).Distinct().ToList();
         if (partIds.Count > 0 && await db.Parts.CountAsync(p => partIds.Contains(p.Id), ct) != partIds.Count) v.Add("lines", "Unknown part.");
+        // Repair lines (0.24.0): a unit under repair, on one open repair line at a time.
+        var unitIds = lines.Where(l => l.UnitId is not null).Select(l => l.UnitId!.Value).ToList();
+        if (unitIds.Count != unitIds.Distinct().Count()) v.Add("lines", "List each unit once.");
+        foreach (var unitId in unitIds.Distinct())
+        {
+            if (!await db.Assets.AllSites().AnyAsync(a => a.Id == unitId && a.PartId != null && a.Status == AssetStatus.UnderRepair, ct))
+            { v.Add("lines", "Only units under repair can go on a repair line."); continue; }
+            var other = await db.PurchaseOrderLines.Where(l => l.UnitId == unitId && l.PurchaseOrderId != orderId && l.QuantityReceived < l.Quantity)
+                .Join(db.PurchaseOrders.AllSites().Where(o => OpenRepair.Contains(o.Status)), l => l.PurchaseOrderId, o => o.Id, (l, o) => o.Number).FirstOrDefaultAsync(ct);
+            if (other is not null) v.Add("lines", $"This unit is already on an open repair line ({other}).");
+        }
         var storeIds = lines.Where(l => l.StoreId is not null).Select(l => l.StoreId!.Value).Distinct().ToList();
         if (storeIds.Count > 0 && await db.Stores.CountAsync(s => storeIds.Contains(s.Id), ct) != storeIds.Count) v.Add("lines", "Unknown store.");
         var woIds = lines.Where(l => l.WorkOrderId is not null).Select(l => l.WorkOrderId!.Value).Distinct().ToList();

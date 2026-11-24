@@ -2,11 +2,13 @@ import { ActionIcon, Indicator, Menu, Text } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { IconAlertTriangle, IconBell, IconClipboardText, IconFileCertificate, IconPackage, IconSignature } from '@tabler/icons-react';
+import { IconAlertTriangle, IconBarcode, IconBell, IconClipboardText, IconFileCertificate, IconPackage, IconSignature } from '@tabler/icons-react';
 import { get } from '@/api/client';
 
 /** Counts the signed-in user may see; null means "not for you". */
-type Alerts = { overdueWorkOrders: number | null; myOverdueWorkOrders: number | null; requestsToTriage: number | null; partsBelowReorder: number | null; waitingForMyApproval?: number | null; contractsNeedingAttention?: number | null };
+type Alerts = { overdueWorkOrders: number | null; myOverdueWorkOrders: number | null; requestsToTriage: number | null; partsBelowReorder: number | null; waitingForMyApproval?: number | null; contractsNeedingAttention?: number | null;
+  /** 0.24.0: serial units reaching the end of their life within 30 days. */
+  unitsEndingLife?: number | null };
 
 /** Header bell: what needs attention now, each line opening the filtered list. */
 export function AlertBell() {
@@ -20,8 +22,10 @@ export function AlertBell() {
     data?.waitingForMyApproval ? { key: 'approvals', to: '/approvals', icon: IconSignature, color: 'teal', text: t('alerts.approvals', { count: data.waitingForMyApproval }) } : null,
     data?.contractsNeedingAttention ? { key: 'contracts', to: '/contracts?attention=true', icon: IconFileCertificate, color: 'indigo',
       text: t('alerts.contracts', { count: data.contractsNeedingAttention }) } : null,
+    data?.unitsEndingLife ? { key: 'units', to: '/inventory/units?ending=30', icon: IconBarcode, color: 'grape', text: t('alerts.unitsEnding', { count: data.unitsEndingLife }) } : null,
   ].filter((x) => x !== null);
-  const total = (data?.overdueWorkOrders ?? 0) + (data?.requestsToTriage ?? 0) + (data?.partsBelowReorder ?? 0) + (data?.waitingForMyApproval ?? 0) + (data?.contractsNeedingAttention ?? 0);
+  const total = (data?.overdueWorkOrders ?? 0) + (data?.requestsToTriage ?? 0) + (data?.partsBelowReorder ?? 0) + (data?.waitingForMyApproval ?? 0) + (data?.contractsNeedingAttention ?? 0)
+    + (data?.unitsEndingLife ?? 0);
   return (
     <Menu position="bottom-end" width={300} shadow="md">
       <Menu.Target>

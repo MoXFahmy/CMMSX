@@ -36,3 +36,6 @@ export function queuedCount(queue: QueuedChange[], countId: string, partId: stri
     .filter((x) => x.p.countId === countId && x.p.partId === partId).sort((a, b) => a.at.localeCompare(b.at));
   return mine.length ? mine[mine.length - 1].p.quantity : undefined;
 }
+
+/** Serial parts (0.24.0) are fitted and removed as units on the job, never used or given back by quantity. */
+export const canUseByQuantity = (part: StockPart) => !part.isSerialTracked;

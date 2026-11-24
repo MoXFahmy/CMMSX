@@ -103,7 +103,9 @@ public static class ImportSheets
             T("manufacturerPartNumber", "Manufacturer part number", "رقم القطعة لدى المصنع"), N("standardPrice", "Standard price", "السعر القياسي"),
             I("leadTimeDays", "Lead time (days)", "مدة التوريد (أيام)"), Y("critical", "Critical", "حرجة"), Y("shelfLife", "Shelf-life item", "صنف له صلاحية"),
             Y("allowNegative", "Allow negative stock", "السماح بالرصيد السالب"), T("preferredSupplierCode", "Preferred supplier code", "رمز المورد المفضل"),
-            T("barcode", "Barcode", "الباركود"), Notes, Active]),
+            T("barcode", "Barcode", "الباركود"), Notes, Active,
+            // 0.24.0: serial tracking; switching it on for a part with stock happens on the part page, where its units' serials are entered.
+            Y("serialTracked", "Serial tracked", "يُتتبَّع بالرقم التسلسلي"), I("unitLifeMonths", "Unit life (months)", "عمر الوحدة (أشهر)")]),
         // The supplier catalogue (0.18.0): one row per part and supplier; rows are added and changed, never removed (that's on the part page).
         new("SupplierCatalogue", "Supplier catalogue", "كتالوج الموردين", [T("partNumber", "Part number", "رقم القطعة", true), T("supplierCode", "Supplier code", "رمز المورد", true),
             T("supplierPartNumber", "Supplier's part number", "رقم القطعة لدى المورد"), T("packName", "Pack", "العبوة"), N("packSize", "Pieces per pack", "عدد القطع في العبوة"),

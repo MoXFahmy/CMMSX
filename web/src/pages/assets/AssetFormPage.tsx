@@ -1,5 +1,5 @@
 import { useEffect, useMemo } from 'react';
-import { Button, Card, Center, Checkbox, Grid, Group, Loader, MultiSelect, NumberInput, Select, SimpleGrid, Stack, TextInput, Textarea, Title } from '@mantine/core';
+import { Button, Card, Center, Checkbox, Grid, Group, Loader, MultiSelect, NumberInput, Select, SimpleGrid, Stack, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { CostCentrePicker } from '@/components/CostCentrePicker';
@@ -25,13 +25,15 @@ type Values = {
   runsHoursPerDay: number | ''; runsOn: DayName[]; costCentreId: string | null;
   /** 0.21.0: brand and model from the lists, and the asset's groups. */
   brandId: string | null; modelId: string | null; groupIds: string[];
+  /** 0.24.0: a unit's end of life (its serial number is edited here too; its status and place are not). */
+  endOfLifeOn: Date | null;
 };
 
 const empty: Values = {
   assetNumber: '', name: '', description: '', categoryId: null, siteId: null, locationId: null, parentAssetId: null, status: 'Active', criticality: 'Medium',
   manufacturer: '', model: '', serialNumber: '', barcode: '', operationNumber: '', commissionedOn: null, disposedOn: null, purchasePrice: '', currentValue: '',
   salvageValue: '', expectedLifeYears: '', downtimeCostPerHour: '', warrantyType: 'None', warrantyExpiresOn: null, warrantyNotes: '', notes: '', notesToTechnician: '', customFields: {}, onlyWhenStopped: false,
-  runsHoursPerDay: 24, runsOn: [...DAY_NAMES], costCentreId: null, brandId: null, modelId: null, groupIds: [],
+  runsHoursPerDay: 24, runsOn: [...DAY_NAMES], costCentreId: null, brandId: null, modelId: null, groupIds: [], endOfLifeOn: null,
 };
 
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
@@ -52,6 +54,7 @@ export function AssetFormPage() {
   const { data: groups } = useAssetGroups();
   const editing = !!id;
   const { data: asset, isLoading } = useQuery({ queryKey: ['asset', id], queryFn: () => get<AssetDetail>(`/assets/${id}`), enabled: editing });
+  const isUnit = !!asset?.partId; // 0.24.0: a unit's status and place change through the unit actions
   const parentId = params.get('parentId');
   const { data: parent } = useQuery({ queryKey: ['asset', parentId], queryFn: () => get<AssetDetail>(`/assets/${parentId}`), enabled: !!parentId && !editing });
   const { data: cats } = useQuery({ queryKey: ['categories'], queryFn: () => get<Category[]>('/asset-categories') });
@@ -72,7 +75,7 @@ export function AssetFormPage() {
         salvageValue: n(asset.salvageValue), expectedLifeYears: n(asset.expectedLifeYears), downtimeCostPerHour: n(asset.downtimeCostPerHour),
         warrantyType: asset.warrantyType, warrantyExpiresOn: d(asset.warrantyExpiresOn), warrantyNotes: asset.warrantyNotes ?? '', notes: asset.notes ?? '',
         notesToTechnician: asset.notesToTechnician ?? '', onlyWhenStopped: asset.onlyWhenStopped ?? false, costCentreId: asset.costCentreId ?? null, brandId: asset.brandId ?? null, modelId: asset.modelId ?? null, groupIds: asset.groupIds ?? [], customFields: Object.fromEntries(Object.entries(asset.customFields ?? {}).map(([k, v]) => [k, v ?? ''])),
-        runsHoursPerDay: asset.runsHoursPerDay ?? 24, runsOn: asset.runsOn ?? [...DAY_NAMES],
+        runsHoursPerDay: asset.runsHoursPerDay ?? 24, runsOn: asset.runsOn ?? [...DAY_NAMES], endOfLifeOn: d(asset.endOfLifeOn ?? undefined),
       });
       form.resetDirty();
     } else if (parent) {
@@ -93,6 +96,7 @@ export function AssetFormPage() {
       purchasePrice: num(v.purchasePrice), currentValue: num(v.currentValue), salvageValue: num(v.salvageValue), expectedLifeYears: num(v.expectedLifeYears),
       downtimeCostPerHour: num(v.downtimeCostPerHour), assetNumber: v.assetNumber || null, rowVersion: asset?.rowVersion, managesCostCentre: true, managesBrand: true,
       runsHoursPerDay: v.runsHoursPerDay === '' ? null : v.runsHoursPerDay,
+      endOfLifeOn: toIsoDate(v.endOfLifeOn), managesEndOfLife: isUnit ? true : undefined,
     };
     try {
       const r = editing ? await put<{ id: string }>(`/assets/${id}`, body) : await post<{ id: string; assetNumber: string }>('/assets', body);
@@ -137,12 +141,16 @@ export function AssetFormPage() {
               </SimpleGrid>
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 <Select label={t('assets.category')} data={(cats ?? []).filter((c) => c.isActive || c.id === form.values.categoryId).map((c) => ({ value: c.id, label: c.name }))} searchable clearable {...form.getInputProps('categoryId')} />
-                <Select label={t('common.status')} required data={listItems('assetStatus', t, form.values.status)} {...form.getInputProps('status')} />
+                <Select label={t('common.status')} required data={listItems('assetStatus', t, form.values.status)} disabled={isUnit} {...form.getInputProps('status')} />
                 <Select label={t('criticality.label')} required data={listItems('criticality', t, form.values.criticality)} {...form.getInputProps('criticality')} />
               </SimpleGrid>
               <Textarea label={t('common.description')} autosize minRows={2} {...form.getInputProps('description')} />
             </Section>
-            <Section title={t('assets.placement')}>
+            {isUnit && <Section title={t('units.unitCard')}>
+              <Text fz="sm" c="dimmed">{t('units.placeLocked')}</Text>
+              <DateInput label={t('units.endOfLife')} valueFormat="DD MMM YYYY" clearable {...form.getInputProps('endOfLifeOn')} />
+            </Section>}
+            {!isUnit && <Section title={t('assets.placement')}>
               <LocationPicker siteId={form.values.siteId} locationId={form.values.locationId} siteError={err('siteId')} locationError={err('locationId')}
                 onChange={(s, l) => form.setValues({ siteId: s, locationId: l })} />
               <AssetPicker label={t('assets.parent')} description={t('assets.parentHint')} value={form.values.parentAssetId} excludeId={id}
@@ -150,7 +158,7 @@ export function AssetFormPage() {
                 initial={asset?.parentAsset ?? (parent ? { id: parent.id, assetNumber: parent.assetNumber, name: parent.name } : null)} />
               <CostCentrePicker value={form.values.costCentreId} onChange={(v) => form.setFieldValue('costCentreId', v)} siteId={form.values.siteId}
                 description={t('costCentres.assetHint')} error={err('costCentreId')} />
-            </Section>
+            </Section>}
             <Section title={t('assets.identification')}>
               <BrandModelPicker brandId={form.values.brandId} modelId={form.values.modelId} canAdd={can(P.assetsEdit)}
                 onChange={(b, mo) => form.setValues({ brandId: b, modelId: mo })} errors={{ brand: err('brandId'), model: err('modelId') }} />

@@ -11,7 +11,8 @@ public sealed record StockPost(
     StockTransactionType Type, Guid PartId, Guid StoreId, decimal Quantity, DateOnly Date,
     decimal? UnitCost = null, Guid? WorkOrderId = null, Guid? LocationId = null, Guid? SupplierId = null,
     Guid? PurchaseOrderId = null, Guid? PurchaseOrderLineId = null, string? Reference = null, string? BatchNumber = null,
-    DateOnly? ExpiryDate = null, string? Notes = null, Guid? RelatedTransactionId = null, string? LegacyRef = null, Guid? CostCentreId = null);
+    DateOnly? ExpiryDate = null, string? Notes = null, Guid? RelatedTransactionId = null, string? LegacyRef = null, Guid? CostCentreId = null,
+    bool UnitMove = false);
 
 /// <summary>
 /// The only place stock quantities change. Each call writes one immutable ledger entry and moves the store balance with a
@@ -31,6 +32,7 @@ public static class StockLedger
         if (p.Quantity == 0) throw new DomainException("Quantity must not be zero.");
         if (p.Type != StockTransactionType.Adjustment && p.Quantity < 0) throw new DomainException("Quantity must be positive.");
         var part = await db.Parts.FirstOrDefaultAsync(x => x.Id == p.PartId, ct) ?? throw new DomainException("Part not found.");
+        if (part.IsSerialTracked && !p.UnitMove && p.LegacyRef is null) throw new DomainException(SerialRefusal(p.Type));
         var store = await db.Stores.AsNoTracking().FirstOrDefaultAsync(x => x.Id == p.StoreId, ct) ?? throw new DomainException("Store not found.");
         if (!store.IsActive) throw new DomainException($"Store {store.Code} is inactive.");
         var delta = p.Type switch
@@ -53,6 +55,24 @@ public static class StockLedger
             }
         }
         return (part, store, delta, batch);
+    }
+
+    /// <summary>
+    /// Why a quantity move on a serial-tracked part is refused, and what to do instead (0.24.0): its stock moves only through its
+    /// units, so the quantity in a store always equals the units there.
+    /// </summary>
+    public static string SerialRefusal(StockTransactionType type) => type switch
+    {
+        StockTransactionType.Issue or StockTransactionType.Return => "This part is serial-tracked: fit or remove a unit on the work order.",
+        StockTransactionType.Adjustment => "This part is serial-tracked: scrap a unit or register a found one on the part's units.",
+        StockTransactionType.Receipt => "Enter a serial number for each piece received.",
+        _ => "This part is serial-tracked: transfer units by choosing them on the part's units.",
+    };
+
+    /// <summary>Refuses a quantity move on a serial-tracked part before anything else is checked (the same rule the ledger applies).</summary>
+    public static async Task RefuseSerialAsync(CmmsDbContext db, Guid partId, StockTransactionType type, CancellationToken ct = default)
+    {
+        if (await db.Parts.AnyAsync(x => x.Id == partId && x.IsSerialTracked, ct)) throw new DomainException(SerialRefusal(type));
     }
 
     public static async Task<StockTransaction> PostAsync(CmmsDbContext db, ITenantContext ctx, StockPost p, CancellationToken ct = default)
@@ -131,12 +151,12 @@ public static class StockLedger
 
     /// <summary>Moves stock between stores at the outgoing average cost; returns (out, in).</summary>
     public static async Task<(StockTransaction Out, StockTransaction In)> TransferAsync(CmmsDbContext db, ITenantContext ctx, Guid partId, Guid fromStore, Guid toStore,
-        decimal qty, DateOnly date, string? batch, string? notes, CancellationToken ct = default)
+        decimal qty, DateOnly date, string? batch, string? notes, CancellationToken ct = default, bool unitMove = false)
     {
         if (fromStore == toStore) throw new DomainException("Choose two different stores.");
         var expiry = batch is null ? null : await db.StockTransactions.Where(t => t.PartId == partId && t.StoreId == fromStore && t.BatchNumber == batch).MaxAsync(t => t.ExpiryDate, ct);
-        var o = await PostAsync(db, ctx, new StockPost(StockTransactionType.TransferOut, partId, fromStore, qty, date, BatchNumber: batch, Notes: notes), ct);
-        var i = await PostAsync(db, ctx, new StockPost(StockTransactionType.TransferIn, partId, toStore, qty, date, BatchNumber: batch, ExpiryDate: expiry, Notes: notes, RelatedTransactionId: o.Id), ct);
+        var o = await PostAsync(db, ctx, new StockPost(StockTransactionType.TransferOut, partId, fromStore, qty, date, BatchNumber: batch, Notes: notes, UnitMove: unitMove), ct);
+        var i = await PostAsync(db, ctx, new StockPost(StockTransactionType.TransferIn, partId, toStore, qty, date, BatchNumber: batch, ExpiryDate: expiry, Notes: notes, RelatedTransactionId: o.Id, UnitMove: unitMove), ct);
         o.RelatedTransactionId = i.Id;
         await db.SaveChangesAsync(ct);
         return (o, i);

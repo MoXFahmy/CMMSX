@@ -125,6 +125,9 @@ export type AssetDetail = {
   childCount: number; primaryImageId?: string; createdAt: string; createdBy?: string; updatedAt?: string; updatedBy?: string;
   legacyRef?: string; rowVersion: string;
   runsHoursPerDay: number; runsOn: DayName[]; downSince?: string | null;
+  /** 0.24.0: a unit of a serial-tracked part — its part, its store when in one, its end of life and where it is. */
+  partId?: string | null; partNumber?: string | null; partName?: string | null; storeId?: string | null; storeName?: string | null; endOfLifeOn?: string | null;
+  unitState?: UnitState | null;
 };
 export type DowntimeSource = 'Request' | 'WorkOrder' | 'Manual';
 /** A stop of an asset: no end while it is still down. */
@@ -417,6 +420,8 @@ export type StoreItem = { id: string; code: string; name: string; siteId: string
 export type PartListItem = {
   id: string; partNumber: string; name: string; manufacturer?: string; unitOfMeasure: string; groupName?: string; averageCost: number; isCritical: boolean; isShelfItem: boolean;
   isActive: boolean; onHand: number; reserved: number; available: number; onOrder: number; low: boolean; value: number;
+  /** 0.24.0: its stock is serial units. */
+  isSerialTracked?: boolean;
 };
 export type PartLookup = { id: string; partNumber: string; name: string; unitOfMeasure: string; averageCost: number; lastPurchasePrice?: number; isShelfItem: boolean; preferredSupplierId?: string; onHand: number;
   /** How many the asset's spare-parts list says (only when looked up for an asset). */
@@ -435,6 +440,8 @@ export type PartDetail = {
   /** Assets whose spare-parts list has this part. */
   usedOn: { assetId: string; assetNumber: string; assetName: string; quantity: number; note?: string | null }[];
   legacyRef?: string; rowVersion: string;
+  /** 0.24.0: each piece is a unit with a serial number; its life in months gives each unit's end of life. */
+  isSerialTracked?: boolean; unitLifeMonths?: number | null;
 };
 export type StockTransactionItem = {
   id: string; type: StockTransactionType; date: string; partId: string; partNumber: string; partName: string; unit: string; storeId: string; storeCode: string;
@@ -472,6 +479,8 @@ export type PoLine = {
   purchaseRequestLineId?: string | null; request?: { id: string; number: string } | null;
   /** 0.18.0: pieces per ordered unit and the supplier's part number. */
   packSize: number; supplierPartNumber?: string | null; partUnit?: string | null;
+  /** 0.24.0: a serial part's line asks a serial per piece at receipt; a repair line names the unit under repair. */
+  isSerialTracked?: boolean; unitId?: string | null; unitSerial?: string | null; unitAssetNumber?: string | null;
 };
 export type PoDetail = {
   id: string; number: string; status: PurchaseOrderStatus; siteId: string; siteName: string; supplierId: string;
@@ -557,3 +566,26 @@ export type UnitItem = { id: string; symbol: string; name: string; nameAr?: stri
 export type AssetGroupItem = { id: string; code: string; name: string; siteId?: string | null; siteName?: string | null; isActive: boolean; memberCount: number };
 export type AssetGroupDetail = { id: string; code: string; name: string; siteId?: string | null; isActive: boolean; members: { id: string; assetNumber: string; name: string; siteId: string }[] };
 
+// ---------------- Serial units (0.24.0) ----------------
+export type UnitState = 'InStore' | 'Fitted' | 'AtRepair' | 'Scrapped';
+/** A unit: an asset linked to its serial-tracked part, in a store, fitted to an asset, at repair or scrapped. */
+export type UnitRow = {
+  id: string; assetNumber: string; serialNumber?: string | null; partId: string; partNumber?: string | null; partName?: string | null; state: UnitState;
+  storeId?: string | null; storeName?: string | null; fittedToId?: string | null; fittedToNumber?: string | null; fittedToName?: string | null;
+  siteId: string; siteName?: string | null; endOfLifeOn?: string | null; repairCount: number; repairCost: number;
+};
+export type UnitMovementKind = 'Received' | 'Registered' | 'Fitted' | 'Removed' | 'SentForRepair' | 'BackFromRepair' | 'Scrapped' | 'Transferred';
+export type UnitOutcome = 'Store' | 'Repair' | 'Scrap';
+export type UnitMovement = {
+  kind: UnitMovementKind; at: string; storeId?: string | null; storeName?: string | null; assetId?: string | null; assetNumber?: string | null; assetName?: string | null;
+  workOrderId?: string | null; workOrderNumber?: string | null; purchaseOrderId?: string | null; purchaseOrderNumber?: string | null;
+  outcome?: UnitOutcome | null; note?: string | null; cost?: number | null; byName?: string | null;
+};
+export type UnitDetail = UnitRow & { movements: UnitMovement[] };
+/** A work order's units: fitted to its asset(s). */
+export type WoUnit = { id: string; assetNumber: string; serialNumber?: string | null; partId: string; partNumber?: string | null; partName?: string | null; fittedToId: string; since?: string | null };
+/** An asset's units now and before. */
+export type FittedUnits = {
+  now: { unitId: string; assetNumber: string; serialNumber?: string | null; partName?: string | null; since?: string | null }[];
+  before: { unitId: string; assetNumber: string; serialNumber?: string | null; partName?: string | null; from?: string | null; to: string; outcome?: UnitOutcome | null }[];
+};

@@ -43,6 +43,12 @@ public class Asset : TenantEntity
     /// <summary>The asset's cost centre (0.20.0); none = its parent asset's, else its location's.</summary>
     public Guid? CostCentreId { get; set; }
     public string? SerialNumber { get; set; }
+    /// <summary>Set on a serial unit (0.24.0): the part it is a piece of.</summary>
+    public Guid? PartId { get; set; }
+    /// <summary>A serial unit's store while it is in stock.</summary>
+    public Guid? StoreId { get; set; }
+    /// <summary>A serial unit's end of operating life.</summary>
+    public DateOnly? EndOfLifeOn { get; set; }
     public string? Barcode { get; set; }
     /// <summary>Legacy "Op No" – operation/position number on a line.</summary>
     public string? OperationNumber { get; set; }

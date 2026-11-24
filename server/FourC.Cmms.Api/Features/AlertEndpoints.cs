@@ -16,7 +16,7 @@ public static class AlertEndpoints
         api.MapGet("/alerts", async (CmmsDbContext db, HttpContext http, PermissionService perms, AccessService access, ITenantContext ctx, CancellationToken ct) =>
         {
             var mine = await perms.GetAsync(Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!));
-            int? overdue = null, myOverdue = null, triage = null, lowStock = null, approvals = null, contracts = null;
+            int? overdue = null, myOverdue = null, triage = null, lowStock = null, approvals = null, contracts = null, endingLife = null;
             if (mine.Contains(Permissions.WorkOrdersView))
             {
                 // The same rule as the work order list's "late" filter.
@@ -28,8 +28,14 @@ public static class AlertEndpoints
             if (mine.Contains(Permissions.RequestsManage))
                 triage = await db.WorkRequests.CountAsync(r => r.Status == WorkRequestStatus.New, ct);
             if (mine.Contains(Permissions.InventoryView))
+            {
                 // The same rule as the parts list's "below re-order level" filter.
                 lowStock = await db.Parts.CountAsync(p => p.IsActive && db.StockLevels.Any(l => l.PartId == p.Id && l.ReorderQuantity > 0 && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel), ct);
+                // Units reaching the end of their life within 30 days (0.24.0), not scrapped: the units list's "ending within 30 days".
+                var limit = (await ContractEndpoints.TodayAsync(db, ct)).AddDays(30);
+                endingLife = await db.Assets.CountAsync(a => a.PartId != null && a.EndOfLifeOn != null && a.EndOfLifeOn <= limit
+                    && a.Status != FourC.Cmms.Core.Assets.AssetStatus.Disposed, ct);
+            }
             if (MyApprovals.Approves(mine))
             {
                 // Requests and orders waiting for my signature (0.16.0), by the same rules as My approvals.
@@ -40,7 +46,7 @@ public static class AlertEndpoints
                 // Contracts in their alert window (0.17.0), the ones the person's sites let them see.
                 contracts = await ContractEndpoints.NeedingAttention(db.Contracts, await ContractEndpoints.TodayAsync(db, ct)).CountAsync(ct);
             return Results.Ok(new { OverdueWorkOrders = overdue, MyOverdueWorkOrders = myOverdue, RequestsToTriage = triage, PartsBelowReorder = lowStock, WaitingForMyApproval = approvals,
-                ContractsNeedingAttention = contracts });
+                ContractsNeedingAttention = contracts, UnitsEndingLife = endingLife });
         }).WithTags("Alerts").RequireAuthorization();
     }
 }

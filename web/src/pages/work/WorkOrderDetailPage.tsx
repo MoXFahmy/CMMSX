@@ -6,6 +6,7 @@ import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
+import { WorkOrderUnits } from './WorkOrderUnits';
 import { SlaText } from '@/components/SlaBadge';
 import dayjs from 'dayjs';
 import { IconAlertTriangle, IconCheck, IconCopy, IconDots, IconEdit, IconPrinter, IconInfoCircle, IconMessage, IconPlayerPause, IconPlayerPlay, IconPlus, IconRefresh, IconTrash, IconX, IconLock, IconShieldCheck, IconArrowBackUp, IconSparkles, IconCoin } from '@tabler/icons-react';
@@ -259,7 +260,10 @@ export function WorkOrderDetailPage() {
         <Tabs.Panel value="tasks"><ChecklistPanel w={w} canExec={canExec} onChange={refresh} /></Tabs.Panel>
         <Tabs.Panel value="labor"><Stack><PlannedHoursCard w={w} canPlan={canPlanHours} onChange={refresh} currency={currency} /><LaborPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Stack></Tabs.Panel>
         <Tabs.Panel value="contractors"><ContractorsPanel w={w} canPlan={canPlanHours} canExec={canExec} onChange={refresh} currency={currency} /></Tabs.Panel>
-        <Tabs.Panel value="parts"><WoPartsPanel w={w} canPlan={canPlan} canIssue={can(P.inventoryTransact) && !locked} canOrder={can(P.purchasingCreate) && !locked} onChange={refresh} currency={currency} /></Tabs.Panel>
+        <Tabs.Panel value="parts"><Stack>
+          <WoPartsPanel w={w} canPlan={canPlan} canIssue={can(P.inventoryTransact) && !locked} canOrder={can(P.purchasingCreate) && !locked} onChange={refresh} currency={currency} />
+          <WorkOrderUnits w={w} canAct={can(P.woExecute) && can(P.inventoryTransact) && !locked} />
+        </Stack></Tabs.Panel>
         <Tabs.Panel value="costs"><Stack><PlanVsActualCard w={w} currency={currency} /><CostsPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Stack></Tabs.Panel>
         <Tabs.Panel value="activity"><ActivityPanel id={w.id} /></Tabs.Panel>
         <Tabs.Panel value="files"><Card><Attachments entityType="WorkOrder" entityId={w.id} canEdit={canExec} /></Card></Tabs.Panel>

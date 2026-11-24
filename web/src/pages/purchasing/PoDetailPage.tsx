@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { Fragment, useEffect, useRef, useState } from 'react';
 import { ActionIcon, Alert, Anchor, Badge, Button, Card, Center, Grid, Group, Loader, Menu, Modal, NumberInput, Progress, Select, Stack, Table, Tabs, Text, TextInput, Textarea, Timeline } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
@@ -18,6 +18,8 @@ import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtDateTime, fmtPrice, fmtQty, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { ApprovalPanel } from './ApprovalPanel';
 import { piecesOf } from './packs';
+import { SerialsBox, serialsError } from '@/components/SerialsBox';
+import { parseSerials } from '@/pages/inventory/units';
 import { PoBody } from '@/print/PoBody';
 import { PageSize } from '@/print/PrintTexts';
 import { LayoutChooser, usePrintLayout } from '@/print/usePrintLayout';
@@ -119,6 +121,7 @@ export function PoDetailPage() {
                           <Table.Td c="dimmed">{l.lineNumber}</Table.Td>
                           <Table.Td>{l.partId ? <Anchor component={Link} to={`/inventory/parts/${l.partId}`} fz="sm" fw={600}>{l.partNumber}</Anchor> : null}
                             <Text fz="sm">{l.description}</Text>{l.accountCode && <Text fz="xs" c="dimmed">{t('po.accountCode')}: {l.accountCode}</Text>}
+                            {l.unitId && <Anchor component={Link} to={`/assets/${l.unitId}`} fz="xs">{t('units.repairOf', { serial: l.unitSerial ?? '' })} · {l.unitAssetNumber}</Anchor>}
                             {l.request && <Anchor component={Link} to={`/purchasing/requests/${l.request.id}`} fz="xs">{l.request.number}</Anchor>}</Table.Td>
                           <Table.Td><Stack gap={0}>{l.storeCode && <Text fz="sm">{t('po.intoStore')} {l.storeCode}</Text>}
                             {l.workOrderId && <Anchor component={Link} to={`/work-orders/${l.workOrderId}`} fz="sm">{l.workOrderNumber}</Anchor>}
@@ -212,17 +215,24 @@ function ReceiveModal({ o, onClose, onDone }: { o: PoDetail; onClose: () => void
   const { t } = useTranslation();
   const { data: stores } = useStores();
   const open = o.lines.filter((l) => l.outstanding > 0);
-  const [rows, setRows] = useState(() => Object.fromEntries(open.map((l) => [l.id, { qty: l.outstanding as number | '', storeId: l.storeId ?? null, batch: '', expiry: null as string | null }])));
+  const [rows, setRows] = useState(() => Object.fromEntries(open.map((l) => [l.id, { qty: l.outstanding as number | '', storeId: l.storeId ?? null, batch: '', expiry: null as string | null, serials: '' }])));
+  // Serial parts (0.24.0): a serial for each piece received, pieces = quantity × pack size.
+  const piecesNow = (l: (typeof open)[number]) => piecesOf(rows[l.id].qty === '' ? 0 : rows[l.id].qty as number, l.packSize);
   const [date, setDate] = useState<string | null>(new Date().toISOString().slice(0, 10));
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState(false);
   useEffect(() => { /* keep rows when lines refresh */ }, [o.id]);
   const set = (id: string, patch: Partial<(typeof rows)[string]>) => setRows((r) => ({ ...r, [id]: { ...r[id], ...patch } }));
   const submit = async () => {
+    for (const l of open.filter((x) => x.isSerialTracked && Number(rows[x.id].qty || 0) > 0)) {
+      const problem = serialsError(t, rows[l.id].serials, piecesNow(l));
+      if (problem) { notifyError(new Error(`${t('units.line')} ${l.lineNumber}: ${problem}`)); return; }
+    }
     setBusy(true);
     try {
       await post(`/purchase-orders/${o.id}/receive`, { date: toIsoDate(date), reference: reference || null,
-        lines: open.map((l) => ({ lineId: l.id, quantity: Number(rows[l.id].qty || 0), storeId: rows[l.id].storeId, batchNumber: rows[l.id].batch || null, expiryDate: toIsoDate(rows[l.id].expiry) })).filter((x) => x.quantity > 0) });
+        lines: open.map((l) => ({ lineId: l.id, quantity: Number(rows[l.id].qty || 0), storeId: rows[l.id].storeId, batchNumber: rows[l.id].batch || null, expiryDate: toIsoDate(rows[l.id].expiry),
+          serials: l.isSerialTracked ? parseSerials(rows[l.id].serials) : null })).filter((x) => x.quantity > 0) });
       notifySuccess(t('po.goodsReceived'));
       await onDone(); onClose();
     } catch (e) { notifyError(e); } finally { setBusy(false); }
@@ -238,21 +248,26 @@ function ReceiveModal({ o, onClose, onDone }: { o: PoDetail; onClose: () => void
           <Table verticalSpacing={6}>
             <Table.Thead><Table.Tr><Table.Th>{t('common.description')}</Table.Th><Table.Th ta="right">{t('po.outstanding')}</Table.Th><Table.Th w={120}>{t('po.receiveNow')}</Table.Th><Table.Th w={170}>{t('po.deliverTo')}</Table.Th><Table.Th w={210}>{t('inv.batch')}</Table.Th></Table.Tr></Table.Thead>
             <Table.Tbody>
-              {open.map((l) => (
-                <Table.Tr key={l.id}>
+              {open.map((l) => (<Fragment key={l.id}>
+                <Table.Tr>
                   <Table.Td><Text fz="sm" fw={500}>{l.partNumber ?? l.description}</Text>{l.partNumber && <Text fz="xs" c="dimmed">{l.description}</Text>}</Table.Td>
                   <Table.Td ta="right">{fmtQty(l.outstanding)} {l.unitOfMeasure}
                     {(l.packSize ?? 1) !== 1 && <Text fz="xs" c="dimmed">{t('catalogue.receivesPieces', { pieces: fmtQty(piecesOf(rows[l.id].qty === '' ? 0 : rows[l.id].qty as number, l.packSize)), unit: l.partUnit ?? '' })}</Text>}</Table.Td>
                   <Table.Td><NumberInput size="xs" min={0} max={l.outstanding} decimalScale={3} value={rows[l.id].qty} onChange={(v) => set(l.id, { qty: v === '' ? '' : Number(v) })} aria-label={`${t('po.receiveNow')} ${l.lineNumber}`} /></Table.Td>
-                  <Table.Td>{l.partId
-                    ? <Select size="xs" data={(stores ?? []).map((s) => ({ value: s.id, label: s.code }))} value={rows[l.id].storeId} onChange={(v) => set(l.id, { storeId: v })} aria-label={t('inv.store')} />
+                  <Table.Td>{l.partId || l.unitId
+                    ? <Select size="xs" data={(stores ?? []).map((s) => ({ value: s.id, label: s.code }))} value={rows[l.id].storeId} onChange={(v) => set(l.id, { storeId: v })} aria-label={t('inv.store')}
+                        placeholder={l.unitId ? t('units.backInto') : undefined} />
                     : <Text fz="sm" c="dimmed">{l.workOrderNumber ? t('po.chargeTo', { number: l.workOrderNumber }) : t('po.expense')}</Text>}
                     {l.partId && l.workOrderNumber && <Text fz="xs" c="dimmed">{t('po.thenIssue', { number: l.workOrderNumber })}</Text>}</Table.Td>
                   <Table.Td>{l.isShelfItem ? <Group gap={4} wrap="nowrap">
                     <TextInput size="xs" placeholder={t('inv.batch')} value={rows[l.id].batch} onChange={(e) => set(l.id, { batch: e.currentTarget.value })} w={90} />
                     <DateInput size="xs" placeholder={t('inv.expiry')} value={rows[l.id].expiry} onChange={(v) => set(l.id, { expiry: v })} w={110} valueFormat="DD/MM/YY" /></Group> : <Text fz="sm" c="dimmed">—</Text>}</Table.Td>
                 </Table.Tr>
-              ))}
+                {l.isSerialTracked && Number(rows[l.id].qty || 0) > 0 && <Table.Tr>
+                  <Table.Td colSpan={5}><SerialsBox size="xs" value={rows[l.id].serials} onChange={(v) => set(l.id, { serials: v })} needed={piecesNow(l)}
+                    label={`${t('units.serials')} · ${l.partNumber ?? ''}`} /></Table.Td>
+                </Table.Tr>}
+              </Fragment>))}
             </Table.Tbody>
           </Table>
         </Table.ScrollContainer>

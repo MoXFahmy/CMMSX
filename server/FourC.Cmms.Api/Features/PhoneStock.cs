@@ -64,6 +64,7 @@ public static class PhoneStock
     public static async Task ReturnAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, Guid partId, Guid storeId, decimal quantity, DateTimeOffset at,
         CancellationToken ct)
     {
+        await StockLedger.RefuseSerialAsync(db, partId, StockTransactionType.Return, ct);
         await CheckAsync(db, partId, storeId, quantity, ct);
         var net = -(await db.StockTransactions.Where(x => x.WorkOrderId == w.Id && x.PartId == partId && (x.Type == StockTransactionType.Issue || x.Type == StockTransactionType.Return))
             .SumAsync(x => (decimal?)x.Quantity, ct) ?? 0);

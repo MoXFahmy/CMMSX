@@ -21,14 +21,15 @@ public static class SiteEndpoints
         g.MapGet("/", async (CmmsDbContext db, CancellationToken ct) =>
         {
             var locCounts = await db.Locations.GroupBy(l => l.SiteId).Select(x => new { x.Key, Count = x.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
-            var assetCounts = await db.Assets.GroupBy(a => a.SiteId).Select(x => new { x.Key, Count = x.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
+            // Spare serial units (0.24.0) aren't counted as the site's assets, as on the asset list.
+            var assetCounts = await db.Assets.Where(AssetEndpoints.NotSpareUnit).GroupBy(a => a.SiteId).Select(x => new { x.Key, Count = x.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
             var sites = await db.Sites.AsNoTracking().OrderBy(s => s.Name).ToListAsync(ct);
             return sites.Select(s => ToDto(s, locCounts.GetValueOrDefault(s.Id), assetCounts.GetValueOrDefault(s.Id)));
         }).RequirePermission(Permissions.LocationsView);
 
         g.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
             await db.Sites.AsNoTracking().FirstOrDefaultAsync(s => s.Id == id, ct) is { } s
-                ? Results.Ok(ToDto(s, await db.Locations.CountAsync(l => l.SiteId == id, ct), await db.Assets.CountAsync(a => a.SiteId == id, ct)))
+                ? Results.Ok(ToDto(s, await db.Locations.CountAsync(l => l.SiteId == id, ct), await db.Assets.Where(AssetEndpoints.NotSpareUnit).CountAsync(a => a.SiteId == id, ct)))
                 : Results.NotFound()).RequirePermission(Permissions.LocationsView);
 
         g.MapPost("/", async (SiteInput input, CmmsDbContext db, AccessService access, CancellationToken ct) =>
@@ -172,7 +173,7 @@ public static class LocationEndpoints
         {
             var assetCounts = await db.Assets.Where(a => a.LocationId != null).GroupBy(a => a.LocationId!.Value)
                 .Select(x => new { x.Key, Count = x.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
-            var siteAssetCounts = await db.Assets.Where(a => a.LocationId == null).GroupBy(a => a.SiteId)
+            var siteAssetCounts = await db.Assets.Where(a => a.LocationId == null).Where(AssetEndpoints.NotSpareUnit).GroupBy(a => a.SiteId)
                 .Select(x => new { x.Key, Count = x.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
             var sites = await db.Sites.AsNoTracking().OrderBy(s => s.Name)
                 .Select(s => new { s.Id, s.Code, s.Name, s.IsActive }).ToListAsync(ct);

@@ -13,6 +13,8 @@ public static class StockCountEndpoints
     public sealed record CountInput(Guid StoreId, string? Name);
     public const string Closed = "This count was already posted or cancelled.";
     public const string ShelfCount = "Count shelf-life parts by batch in the office.";
+    /// <summary>Serial parts (0.24.0): their stock is their units, checked on the part's units list.</summary>
+    public const string SerialCount = "Count serial parts by their units on the part's units list.";
 
     public static void MapStockCountEndpoints(this RouteGroupBuilder api)
     {
@@ -37,6 +39,7 @@ public static class StockCountEndpoints
             return Results.Ok(new
             {
                 c.Id, c.Name, c.StoreId, Store = new { c.Store!.Id, c.Store.Code, c.Store.Name }, c.Status, c.CreatedAt, c.PostedAt,
+                SerialPartsLeftOut = await db.StockLevels.CountAsync(l => l.StoreId == c.StoreId && l.Part!.IsSerialTracked, ct),
                 Lines = lines.OrderBy(l => levels.GetValueOrDefault(l.PartId)?.Bin).ThenBy(l => l.PartNumber).Select(l =>
                 {
                     // Expected = on hand now (until posted). Stock moved after the part was counted stays: the difference is
@@ -109,9 +112,11 @@ public static class StockCountEndpoints
         var c = await db.StockCounts.AsNoTracking().FirstOrDefaultAsync(x => x.Id == countId, ct) ?? throw new DomainException("This count no longer exists.");
         if (c.Status != StockCountStatus.Open) throw new DomainException(Closed);
         if (quantity < 0) throw new DomainException("Counted quantities cannot be negative.");
-        var shelf = await db.Parts.Where(p => p.Id == partId).Select(p => (bool?)p.IsShelfItem).FirstOrDefaultAsync(ct) ?? throw new DomainException("Part not found.");
+        var kind = await db.Parts.Where(p => p.Id == partId).Select(p => new { p.IsShelfItem, p.IsSerialTracked }).FirstOrDefaultAsync(ct)
+                   ?? throw new DomainException("Part not found.");
+        if (kind.IsSerialTracked) throw new DomainException(SerialCount);
         // Posting can't adjust them without a batch: refused here, before anyone's count of the store depends on it.
-        if (shelf) throw new DomainException(ShelfCount);
+        if (kind.IsShelfItem) throw new DomainException(ShelfCount);
         var line = await db.StockCountLines.FirstOrDefaultAsync(l => l.StockCountId == countId && l.PartId == partId, ct);
         if (line is null)
             db.StockCountLines.Add(new StockCountLine { StockCountId = countId, PartId = partId, CountedQuantity = quantity, CountedById = ctx.UserId, CountedByName = ctx.UserName, CountedAt = at });

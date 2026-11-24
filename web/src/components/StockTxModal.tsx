@@ -10,6 +10,8 @@ import { useAuth } from '@/auth/AuthContext';
 import { locationOptions, useHierarchy } from './LocationPicker';
 import { CostCentrePicker } from './CostCentrePicker';
 import { PartPicker, useStores } from './PartPicker';
+import { SerialsBox, serialsError } from './SerialsBox';
+import { parseSerials } from '@/pages/inventory/units';
 import { WorkOrderPicker } from './WorkOrderPicker';
 import { fmtPrice, fmtQty, handleFormError, notifySuccess, toIsoDate } from './utils';
 
@@ -34,6 +36,8 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
   const [direction, setDirection] = useState<'add' | 'remove'>('remove');
   // The "Issue anyway?" answer: other work orders this move would leave short. Confirming resends it with confirmReserved.
   const [conflict, setConflict] = useState<ReservedConflict | null>(null);
+  // A serial part's receipt (0.24.0): a serial number for each piece.
+  const [serials, setSerials] = useState('');
   const form = useForm({
     initialValues: {
       partId: '' as string | null, storeId: '' as string | null, toStoreId: '' as string | null, quantity: '' as number | '', unitCost: '' as number | '', date: new Date() as Date | string | null,
@@ -45,7 +49,7 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
     if (!opened) return;
     form.setValues({ partId: defaults?.partId ?? null, storeId: defaults?.storeId ?? (stores?.length === 1 ? stores[0].id : null), toStoreId: null, quantity: defaults?.quantity ?? '', unitCost: '', date: new Date(),
       supplierId: null, reference: '', batchNumber: '', expiryDate: null, workOrderId: defaults?.workOrderId ?? null, locationId: null, notes: '', costCentreId: null });
-    form.clearErrors(); setPart(null); setTarget('wo'); setDirection('remove'); setConflict(null);
+    form.clearErrors(); setPart(null); setTarget('wo'); setDirection('remove'); setConflict(null); setSerials('');
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened]);
   const v = form.getValues();
@@ -57,6 +61,7 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [detail?.id]);
   const shelf = detail?.isShelfItem ?? part?.isShelfItem ?? false;
+  const serialReceipt = kind === 'receive' && !!detail?.isSerialTracked;
   const storeOpts = useMemo(() => (stores ?? []).filter((s) => s.isActive).map((s) => {
     const lvl = detail?.levels.find((l) => l.storeId === s.id);
     return { value: s.id, label: detail ? `${s.code} (${fmtQty(lvl?.quantityOnHand ?? 0)} ${detail.unitOfMeasure})` : `${s.code} · ${s.name}` };
@@ -67,8 +72,13 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
 
   const submit = form.onSubmit(async (x) => {
     const base = { partId: x.partId, quantity: x.quantity || 0, date: toIsoDate(x.date), batchNumber: x.batchNumber || null, notes: x.notes || null, confirmReserved: conflict !== null };
+    if (serialReceipt) {
+      const problem = serialsError(t, serials, Number(x.quantity || 0));
+      if (problem) { form.setFieldError('quantity', problem); return; }
+    }
     try {
-      if (kind === 'receive') await post('/inventory/receive', { ...base, storeId: x.storeId, unitCost: x.unitCost === '' ? null : x.unitCost, supplierId: x.supplierId, reference: x.reference || null, expiryDate: toIsoDate(x.expiryDate) });
+      if (kind === 'receive') await post('/inventory/receive', { ...base, storeId: x.storeId, unitCost: x.unitCost === '' ? null : x.unitCost, supplierId: x.supplierId, reference: x.reference || null, expiryDate: toIsoDate(x.expiryDate),
+        serials: serialReceipt ? parseSerials(serials) : null });
       else if (kind === 'issue' || kind === 'return')
         await post(`/inventory/${kind}`, { ...base, storeId: x.storeId, workOrderId: target === 'wo' ? x.workOrderId : null, locationId: target === 'location' ? x.locationId : null,
           costCentreId: target === 'location' ? x.costCentreId : null });
@@ -114,6 +124,7 @@ export function StockTxModal({ kind, opened, onClose, onDone, defaults }: { kind
                 siteId={(h?.locations ?? []).find((l) => l.id === v.locationId)?.siteId} description={t('costCentres.directHint')} error={form.errors.costCentreId} />}
             </>
           )}
+          {serialReceipt && <SerialsBox value={serials} onChange={setSerials} needed={Number(v.quantity || 0)} />}
           {kind === 'receive' && (
             <SimpleGrid cols={{ base: 1, sm: 2 }}>
               <Select label={t('po.supplier')} data={(suppliers ?? []).map((s) => ({ value: s.id, label: s.name }))} searchable clearable {...form.getInputProps('supplierId')} />
