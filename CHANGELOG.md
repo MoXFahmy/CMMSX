@@ -4,6 +4,36 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.24.0] - 2026-11-24
+
+Serial-numbered parts. Pumps, motors and other repairable spares can be tracked one by one: each piece of a serial-tracked part is
+a unit with its own serial number, label, page and history, in a store, fitted to an asset, at repair or scrapped. The part's stock
+in each store always equals its units there. Parts that aren't serial-tracked work as before. See docs/SERIAL_PARTS.md.
+
+### Added
+- **Serial tracking** on a part: tick it on a new part, or switch it on from the part page with a serial for each piece in stock
+  (each becomes a unit, no stock movement). An optional unit life in months gives each unit its end of life.
+- **Serials at receipt:** manual and purchase-order receipts ask for one serial per piece (packs count their pieces). A line
+  ordered for a work order leaves the units in the store until they're fitted.
+- **Fit and remove on a work order** (Parts tab), on the web and on the phone, offline too: fitting issues the unit to the job and
+  makes it a component of the asset; its running hours can follow the asset's hours meter. Removing sends it back to a store
+  (a return that names no work order), to repair, or to scrap, with a condition note.
+- **Unit actions** on the part's Units tab and the unit's page: transfer, send for repair, back from repair (with a repair cost),
+  scrap, remove without a work order, register a found unit or one already on a machine; "Make this asset a unit" for an existing
+  component with a serial. Units print as asset labels.
+- **Outside repair:** a purchase order repair line for a unit under repair; receiving it brings the unit back to a store with the
+  repair cost on the unit (and on the line's work order, when it names one). Each unit shows its repair count and cost.
+- **Unit and Fitted units cards** on asset pages, a units list, "Show spare units" on the asset list, and an alert for units
+  reaching their end of life within 30 days.
+- **Import:** the Parts sheet has "Serial tracked" and "Unit life (months)".
+
+### Changed
+- Issue, return, adjustment and transfer by quantity are refused on serial parts, with what to do instead. New stock counts and the
+  stock take leave serial parts out; the Stock sheet refuses their opening quantities; the phone doesn't receive them.
+- Units not fitted to an asset stay off the asset list, location tree counts, dashboard and asset pickers until searched for.
+- A unit's status and place change only through fit, remove and the unit actions; a unit is scrapped, not deleted, and an asset
+  with fitted units or a part with units can't be deleted.
+
 ## [0.23.0] - 2026-11-24
 
 Print layouts. Each organization can make its job card, purchase order, request receipt and labels look like its own forms, in
