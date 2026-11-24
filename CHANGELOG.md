@@ -4,6 +4,31 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.22.0] - 2026-11-24
+
+Home pages and roles. Each role can open CMX on what it needs, and everyone can pin the numbers they watch. A role with no home
+page keeps today's dashboard, so nothing changes until an administrator sets one up. See docs/HOME_PAGES_AND_ROLES.md.
+
+### Added
+- **A home page per role** (Settings › Roles › Home page): the administrator picks and orders the role's cards from the pieces
+  of today's dashboard and new cards: my work, unassigned work, late work, assets down now, parts below reorder level, waiting for
+  my approval, report a problem, the location tree (report, create work or add an asset at a picked place) and shortcut tiles.
+  A card someone's permissions don't cover is left out for them, and the role window says which cards the role can't see.
+- **Shortcut tiles:** up to 12 coloured tiles per role, each with a label, an Arabic label and a CMX link.
+- **Counters:** "Show on home page" on any saved view puts a tile under My counters with the number of records it matches right
+  now (the same as its list), refreshed every minute; up to 24, in the person's order.
+- **Menu per role** (Settings › Roles › Menu): hide menu items a role doesn't need. Tidying only: permissions still decide access.
+  An item is hidden for someone when all of their roles that can open it hide it.
+- **Default columns per role:** "Use these columns for a role…" in a list's column menu, optionally resetting the columns of
+  that role's people who changed theirs; they apply until a person picks their own. **Reset columns** on every list.
+- **Duplicate role:** copies permissions, home page, hidden menu items and default columns, without the people.
+- **Unassigned** view on the work order list (open work with no person assigned).
+- People with several roles see the cards of all their roles, in role-name order, without repeats.
+
+### Changed
+- People without dashboard permission and without a role home page now see a short message on the home page instead of an
+  endless loader.
+
 ## [0.21.0] - 2026-11-24
 
 Editable lists, brands and models, units, asset groups and yearly numbering. Each organization can give the fixed lists its own
