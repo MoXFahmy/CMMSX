@@ -29,7 +29,8 @@
     "contracts": "العقود",
     "availability": "التوافر",
     "timesheet": "سجل الساعات",
-    "budgets": "الموازنات"
+    "budgets": "الموازنات",
+    "home": "الرئيسية"
   },
   "unit": {
     "overtime": "إضافية",
@@ -2855,5 +2856,8 @@
     "coversToday_few": "تغطي {{count}} أصول اليوم",
     "coversToday_many": "تغطي {{count}} أصلًا اليوم",
     "coversToday_other": "تغطي {{count}} أصل اليوم"
+  },
+  "home": {
+    "nothingYet": "لا يوجد ما يُعرض في صفحتك الرئيسية بعد. اطلب من المسؤول إعدادها لدورك."
   }
 }

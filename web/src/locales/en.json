@@ -29,7 +29,8 @@
     "contracts": "Contracts",
     "availability": "Availability",
     "timesheet": "Timesheet",
-    "budgets": "Budgets"
+    "budgets": "Budgets",
+    "home": "Home"
   },
   "unit": {
     "overtime": "overtime",
@@ -2731,5 +2732,8 @@
     "pmHint": "The PM follows the group: an asset added later is included from the next visit.",
     "coversToday_one": "Covers {{count}} asset today",
     "coversToday_other": "Covers {{count}} assets today"
+  },
+  "home": {
+    "nothingYet": "Your home page has nothing to show yet. Ask your administrator to set one up for your role."
   }
 }
