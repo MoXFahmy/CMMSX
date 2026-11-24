@@ -1533,7 +1533,8 @@
     "aiNeedsConnection": "Fill with AI needs a connection. Your notes stay here; you can complete without it.",
     "logHoursForMe": "Log {{hours}} h for me",
     "aiNoAnswer": "The AI assistant didn't answer. Try again in a moment.",
-    "passwordExpired": "Your password has expired. Choose a new one when you sign in."
+    "passwordExpired": "Your password has expired. Choose a new one when you sign in.",
+    "safety": "Safety"
   },
   "labels": {
     "title": "QR labels",

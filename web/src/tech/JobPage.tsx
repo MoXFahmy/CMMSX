@@ -89,6 +89,7 @@ export function JobPage() {
       {(job.onlyWhenStopped || (job.accessWindows?.length ?? 0) > 0) && (
         <Card><Stack gap={6}><StoppedBadge show={job.onlyWhenStopped} /><AccessWindowsList windows={job.accessWindows} /></Stack></Card>
       )}
+      {job.safetyNotes && <Alert color="red" title={t('tech.safety')}>{job.safetyNotes}</Alert>}
       {(job.asset?.notesToTechnician || job.location?.notesToTechnician) && (
         <Alert color="yellow" title={t('tech.notesToTech')}>{[job.asset?.notesToTechnician, job.location?.notesToTechnician].filter(Boolean).join('\n\n')}</Alert>
       )}

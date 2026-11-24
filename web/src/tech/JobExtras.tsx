@@ -9,6 +9,7 @@ import { FILE_ACCEPT, fileKind, sizeProblem } from './files';
 import { useTech } from './useTech';
 import type { TechJob } from './types';
 import { listItems } from '@/components/listLabels';
+import { placeFilter } from './bilingualSearch';
 
 /** A picker's local "YYYY-MM-DD HH:mm:ss" (or Date) as an ISO instant. */
 const iso = (v: string | Date | null) => (v ? new Date(typeof v === 'string' ? v.replace(' ', 'T') : v).toISOString() : new Date().toISOString());
@@ -121,8 +122,10 @@ export function NewWorkOrderPage() {
       <Select label={t('priority.label')} data={listItems('priority', t, priority)} value={priority} onChange={setPriority} />
       {(bundle?.symptoms ?? []).length > 0 && <Select label={t('codes.symptom')} clearable searchable
         data={(bundle?.symptoms ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))} value={symptom} onChange={setSymptom} />}
-      <Select label={t('wo.asset')} searchable clearable data={(places?.assets ?? []).map((a) => ({ value: a.id, label: `${a.assetNumber} · ${a.name}` }))} value={asset} onChange={(v) => { setAsset(v); if (v) setLocation(null); }} />
-      {!asset && <Select label={t('wo.location')} searchable clearable data={(places?.locations ?? []).map((l) => ({ value: l.id, label: l.path ?? l.name }))} value={location} onChange={setLocation} />}
+      <Select label={t('wo.asset')} searchable clearable filter={placeFilter(new Map((places?.assets ?? []).map((a) => [a.id, a.otherName])))}
+        data={(places?.assets ?? []).map((a) => ({ value: a.id, label: `${a.assetNumber} · ${a.name}` }))} value={asset} onChange={(v) => { setAsset(v); if (v) setLocation(null); }} />
+      {!asset && <Select label={t('wo.location')} searchable clearable filter={placeFilter(new Map((places?.locations ?? []).map((l) => [l.id, l.otherName])))}
+        data={(places?.locations ?? []).map((l) => ({ value: l.id, label: l.path ?? l.name }))} value={location} onChange={setLocation} />}
       <Button disabled={!title.trim() || !site} onClick={save}>{t('techJob.createWorkOrder')}</Button>
     </Stack>
   );
