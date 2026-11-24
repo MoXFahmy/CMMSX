@@ -47,9 +47,15 @@ public static class BrandEndpoints
                 await MergeBrandAsync(db, brand, other, ct);
                 return Results.Ok(new { other.Id });
             }
+            var renamed = brand.Name != name;
             brand.Name = name; brand.IsActive = i.IsActive;
             await db.SaveChangesAsync(ct);
-            await db.Assets.AllSites().Where(a => a.BrandId == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Manufacturer, name), ct);
+            var followed = await db.Assets.AllSites().Where(a => a.BrandId == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Manufacturer, name), ct);
+            if (renamed && followed > 0)
+            {
+                FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "Brand", id, "Updated", $"Brand renamed to {name}: {FourC.Cmms.Core.Auditing.AuditLog.Count(followed, "asset", "assets")}");
+                await db.SaveChangesAsync(ct);
+            }
             return Results.Ok(new { brand.Id });
         }).RequirePermission(Permissions.AssetsEdit);
 
@@ -85,14 +91,21 @@ public static class BrandEndpoints
             if (other is not null && !i.Merge) return Results.Conflict(new { MergeWith = other.Id, Message = Translator.T("Another model of this brand has this name. Merge the two?") });
             if (other is not null)
             {
-                await db.Assets.AllSites().Where(a => a.ModelId == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.ModelId, other.Id).SetProperty(a => a.Model, other.Name), ct);
+                var moved = await db.Assets.AllSites().Where(a => a.ModelId == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.ModelId, other.Id).SetProperty(a => a.Model, other.Name), ct);
                 db.BrandModels.Remove(model);
+                FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "BrandModel", other.Id, "Updated", $"Model merged into {other.Name}: {FourC.Cmms.Core.Auditing.AuditLog.Count(moved, "asset", "assets")}");
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(new { other.Id });
             }
+            var modelRenamed = model.Name != name;
             model.Name = name; model.IsActive = i.IsActive;
             await db.SaveChangesAsync(ct);
-            await db.Assets.AllSites().Where(a => a.ModelId == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Model, name), ct);
+            var followers = await db.Assets.AllSites().Where(a => a.ModelId == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Model, name), ct);
+            if (modelRenamed && followers > 0)
+            {
+                FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "BrandModel", id, "Updated", $"Model renamed to {name}: {FourC.Cmms.Core.Auditing.AuditLog.Count(followers, "asset", "assets")}");
+                await db.SaveChangesAsync(ct);
+            }
             return Results.Ok(new { model.Id });
         }).RequirePermission(Permissions.AssetsEdit);
 
@@ -127,8 +140,9 @@ public static class BrandEndpoints
             }
             else model.BrandId = into.Id;
         }
-        await db.Assets.AllSites().Where(a => a.BrandId == from.Id).ExecuteUpdateAsync(s => s.SetProperty(a => a.BrandId, into.Id), ct);
+        var moved = await db.Assets.AllSites().Where(a => a.BrandId == from.Id).ExecuteUpdateAsync(s => s.SetProperty(a => a.BrandId, into.Id), ct);
         db.Brands.Remove(from);
+        FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "Brand", into.Id, "Updated", $"Brand merged into {into.Name}: {FourC.Cmms.Core.Auditing.AuditLog.Count(moved, "asset", "assets")}");
         await db.SaveChangesAsync(ct);
         await db.Assets.AllSites().Where(a => a.BrandId == into.Id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Manufacturer, into.Name), ct);
     }

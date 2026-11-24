@@ -46,7 +46,16 @@ public static class UnitEndpoints
             if (other is not null) db.Units.Remove(unit);
             else { unit.Symbol = symbol; unit.Name = NameOf(i.Name, symbol); unit.NameAr = i.NameAr.Clean(); unit.IsActive = i.IsActive; }
             await db.SaveChangesAsync(ct);
-            if (symbol != old) await RenameAsync(db, old, symbol, ct);
+            if (symbol != old)
+            {
+                var (parts, points) = await RenameAsync(db, old, symbol, ct);
+                if (parts + points > 0)
+                {
+                    FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "Unit", other?.Id ?? unit.Id, "Updated",
+                        $"Unit renamed to {symbol}: {FourC.Cmms.Core.Auditing.AuditLog.Count(parts, "part", "parts")} and {FourC.Cmms.Core.Auditing.AuditLog.Count(points, "point or step", "points and steps")}");
+                    await db.SaveChangesAsync(ct);
+                }
+            }
             return Results.Ok(new { Id = other?.Id ?? unit.Id });
         }).RequirePermission(Permissions.SettingsManage);
 
@@ -69,12 +78,13 @@ public static class UnitEndpoints
         name.Clean() is { } n ? n.Length <= 100 ? n : throw new DomainException("A name can be at most 100 characters.") : symbol;
 
     /// <summary>Parts, measurement points and template steps with exactly <paramref name="from"/> (case counts) take <paramref name="to"/>.</summary>
-    private static async Task RenameAsync(CmmsDbContext db, string from, string to, CancellationToken ct)
+    private static async Task<(int Parts, int Points)> RenameAsync(CmmsDbContext db, string from, string to, CancellationToken ct)
     {
-        await db.Parts.AllSites().Where(p => EF.Functions.Collate(p.UnitOfMeasure, Exact) == from).ExecuteUpdateAsync(s => s.SetProperty(p => p.UnitOfMeasure, to), ct);
-        await db.MeasurementPoints.AllSites().Where(p => EF.Functions.Collate(p.Unit!, Exact) == from).ExecuteUpdateAsync(s => s.SetProperty(p => p.Unit, to), ct);
+        var parts = await db.Parts.AllSites().Where(p => EF.Functions.Collate(p.UnitOfMeasure, Exact) == from).ExecuteUpdateAsync(s => s.SetProperty(p => p.UnitOfMeasure, to), ct);
+        var points = await db.MeasurementPoints.AllSites().Where(p => EF.Functions.Collate(p.Unit!, Exact) == from).ExecuteUpdateAsync(s => s.SetProperty(p => p.Unit, to), ct);
         var tasks = db.PmTasks.AllSites().Select(t => t.Id);
-        await db.PmTaskSteps.Where(x => tasks.Contains(x.PmTaskId) && EF.Functions.Collate(x.Unit!, Exact) == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.Unit, to), ct);
+        var steps = await db.PmTaskSteps.Where(x => tasks.Contains(x.PmTaskId) && EF.Functions.Collate(x.Unit!, Exact) == from).ExecuteUpdateAsync(s => s.SetProperty(x => x.Unit, to), ct);
+        return (parts, points + steps);
     }
 
     private static async Task<bool> InUseAsync(CmmsDbContext db, string symbol, CancellationToken ct)

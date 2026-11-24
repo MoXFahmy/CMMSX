@@ -240,7 +240,8 @@ public static class PurchasingEndpoints
             if (await db.WorkOrderContractors.IgnoreQueryFilters([CmmsDbContext.SiteFilter]).AnyAsync(l => l.SupplierId == id, ct)
                 || await db.Contracts.AllSites().AnyAsync(c => c.SupplierId == id, ct) || await db.Employees.AnyAsync(e => e.CompanyId == id, ct))
                 throw new DomainException("This company is used on work orders, contracts or employees. Mark it inactive instead.");
-            await db.Parts.Where(p => p.PreferredSupplierId == id).ExecuteUpdateAsync(u => u.SetProperty(p => p.PreferredSupplierId, (Guid?)null), ct);
+            var unpreferred = await db.Parts.Where(p => p.PreferredSupplierId == id).ExecuteUpdateAsync(u => u.SetProperty(p => p.PreferredSupplierId, (Guid?)null), ct);
+            if (unpreferred > 0) FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "Supplier", id, "Deleted", $"No longer the preferred supplier of {FourC.Cmms.Core.Auditing.AuditLog.Count(unpreferred, "part", "parts")}");
             db.SupplierParts.RemoveRange(await db.SupplierParts.Where(r => r.SupplierId == id).ToListAsync(ct)); // its catalogue rows go with it (0.18.0)
             db.Suppliers.Remove(x);
             await db.SaveChangesAsync(ct);

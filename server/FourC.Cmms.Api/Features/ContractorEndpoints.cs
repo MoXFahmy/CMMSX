@@ -98,7 +98,8 @@ public static class ContractorEndpoints
         w.MapDelete("/{lineId:guid}", async (Guid id, Guid lineId, CmmsDbContext db, CancellationToken ct) =>
         {
             await WorkOrderEndpoints.RequireOpenAsync(db, id, ct);
-            await db.WorkOrderContractors.Where(l => l.Id == lineId && l.WorkOrderId == id).ExecuteDeleteAsync(ct);
+            db.WorkOrderContractors.RemoveRange(await db.WorkOrderContractors.Where(l => l.Id == lineId && l.WorkOrderId == id).ToListAsync(ct)); // logged (0.25.0)
+            await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.WorkOrdersEdit);
     }

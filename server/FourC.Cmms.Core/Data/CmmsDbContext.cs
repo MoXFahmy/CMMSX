@@ -25,7 +25,7 @@ namespace FourC.Cmms.Core.Data;
 public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantContext tenant)
     : IdentityUserContext<AppUser, Guid>(options), IDataProtectionKeyContext
 {
-    private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
+    internal static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new System.Text.Json.Serialization.JsonStringEnumConverter() } };
 
     /// <summary>Evaluated per query; EF parameterizes it so each context instance sees its own tenant.</summary>
     public Guid? CurrentTenantId => tenant.TenantId;
@@ -1251,6 +1251,9 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
          // A sign-in's bookkeeping on the user (0.25.0: sign-ins are logged as events of their own).
          nameof(AppUser.LastLoginAt), nameof(AppUser.AccessFailedCount), nameof(AppUser.ConcurrencyStamp), nameof(AppUser.SecurityStamp),
          nameof(AppUser.NormalizedEmail), nameof(AppUser.NormalizedUserName), nameof(AppUser.LockoutEnd)];
+
+    /// <summary>Who this context acts for (0.25.0: hand-written change entries take it).</summary>
+    public ITenantContext Actor => tenant;
 
     private Guid? _changeId;
     /// <summary>This save's change number: the request's or job run's, else one for this context.</summary>

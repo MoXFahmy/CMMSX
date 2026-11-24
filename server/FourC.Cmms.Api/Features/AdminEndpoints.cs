@@ -189,7 +189,8 @@ public static class AdminEndpoints
         roles.MapDelete("/{id:guid}/columns/{list}", async (Guid id, string list, CmmsDbContext db, CancellationToken ct) =>
         {
             if (!ListKeys.IsValid(list)) throw new DomainException("Unknown list.");
-            await db.RoleListSettings.Where(x => x.RoleId == id && x.List == list).ExecuteDeleteAsync(ct);
+            db.RoleListSettings.RemoveRange(await db.RoleListSettings.Where(x => x.RoleId == id && x.List == list).ToListAsync(ct)); // logged (0.25.0)
+            await db.SaveChangesAsync(ct);
             return Results.NoContent();
         });
 

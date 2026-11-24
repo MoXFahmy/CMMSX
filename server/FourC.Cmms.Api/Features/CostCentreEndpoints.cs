@@ -130,14 +130,26 @@ public static class CostCentreEndpoints
         if (apply)
         {
             var now = DateTimeOffset.UtcNow;
+            var set = new Dictionary<Guid, (int Work, int Issues)>();
             foreach (var group in workTargets.GroupBy(x => x.Cc!.Value))
                 foreach (var chunk in group.Select(x => x.Id).Chunk(1000))
-                    await db.WorkOrders.Where(w => chunk.Contains(w.Id) && w.CostCentreId == null)
+                {
+                    var n = await db.WorkOrders.Where(w => chunk.Contains(w.Id) && w.CostCentreId == null)
                         .ExecuteUpdateAsync(u => u.SetProperty(w => w.CostCentreId, group.Key).SetProperty(w => w.UpdatedAt, now), ct);
+                    set[group.Key] = (set.GetValueOrDefault(group.Key).Work + n, set.GetValueOrDefault(group.Key).Issues);
+                }
             foreach (var group in issueTargets.GroupBy(x => x.Cc!.Value))
                 foreach (var chunk in group.Select(x => x.Id).Chunk(1000))
-                    await db.StockTransactions.Where(t => chunk.Contains(t.Id) && t.CostCentreId == null)
+                {
+                    var n = await db.StockTransactions.Where(t => chunk.Contains(t.Id) && t.CostCentreId == null)
                         .ExecuteUpdateAsync(u => u.SetProperty(t => t.CostCentreId, group.Key), ct);
+                    set[group.Key] = (set.GetValueOrDefault(group.Key).Work, set.GetValueOrDefault(group.Key).Issues + n);
+                }
+            // One entry per cost centre on what the correction filled in (0.25.0).
+            foreach (var (centre, (work, issued)) in set.Where(x => x.Value.Work + x.Value.Issues > 0))
+                FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "CostCentre", centre, "Updated",
+                    $"Cost centre set on {FourC.Cmms.Core.Auditing.AuditLog.Count(work, "work order", "work orders")} and {FourC.Cmms.Core.Auditing.AuditLog.Count(issued, "issue", "issues")}");
+            await db.SaveChangesAsync(ct);
         }
         return new { WorkOrders = workTargets.Count, Issues = issueTargets.Count };
     }

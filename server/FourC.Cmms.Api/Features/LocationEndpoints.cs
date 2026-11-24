@@ -293,8 +293,15 @@ public static class LocationEndpoints
         await db.SaveChangesAsync(ct);
         await LocationTree.RewriteDescendantsAsync(db, oldPath, loc.Path, loc.Depth - oldDepth, loc.SiteId, ct);
         if (siteChanged)
-            await db.Assets.Where(a => a.LocationId != null && db.Locations.Any(x => x.Id == a.LocationId && x.Path.StartsWith(loc.Path)))
+        {
+            var followed = await db.Assets.Where(a => a.LocationId != null && db.Locations.Any(x => x.Id == a.LocationId && x.Path.StartsWith(loc.Path)))
                 .ExecuteUpdateAsync(s => s.SetProperty(a => a.SiteId, loc.SiteId), ct);
+            if (followed > 0)
+            {
+                FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "Location", loc.Id, "Updated", $"Moved to another site: {FourC.Cmms.Core.Auditing.AuditLog.Count(followed, "asset", "assets")} followed");
+                await db.SaveChangesAsync(ct);
+            }
+        }
     }
 
     private static async Task<Validator> ValidateAsync(LocationInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
