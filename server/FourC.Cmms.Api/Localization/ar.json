@@ -1222,5 +1222,8 @@
  "Register its units on the part page first.": "سجّل وحداتها من صفحة القطعة أولًا.",
  "Serial parts' stock comes from their units: register them on the part page.": "رصيد القطع ذات الأرقام التسلسلية يأتي من وحداتها: سجّلها من صفحة القطعة.",
  "This job's site has no default store.": "ليس لموقع هذه المهمة مخزن افتراضي.",
- "This unit no longer exists.": "هذه الوحدة لم تعد موجودة."
+ "This unit no longer exists.": "هذه الوحدة لم تعد موجودة.",
+ "This part has stock at sites you can't see.": "لهذه القطعة رصيد في مواقع لا يمكنك رؤيتها.",
+ "This unit is on repair order {0}: receive it or cancel the order there first.": "هذه الوحدة على أمر الإصلاح {0}: استلمها منه أو ألغِ الأمر أولًا.",
+ "This part has units. Mark it inactive instead.": "لهذه القطعة وحدات. اجعلها غير نشطة بدلًا من ذلك."
 }

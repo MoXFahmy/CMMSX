@@ -193,6 +193,21 @@ public static class SerialUnits
 
     private static DateOnly DateOf(DateTimeOffset at) => DateOnly.FromDateTime(at.UtcDateTime);
 
+    private static readonly FourC.Cmms.Core.Purchasing.PurchaseOrderStatus[] OpenOrder =
+        [FourC.Cmms.Core.Purchasing.PurchaseOrderStatus.Draft, FourC.Cmms.Core.Purchasing.PurchaseOrderStatus.Submitted,
+         FourC.Cmms.Core.Purchasing.PurchaseOrderStatus.Approved, FourC.Cmms.Core.Purchasing.PurchaseOrderStatus.PartiallyReceived];
+
+    /// <summary>
+    /// A unit on an open repair line comes back through that order (its receipt records the repair cost); bringing it back or
+    /// scrapping it any other way would leave the order unable to be received.
+    /// </summary>
+    private static async Task RefuseOnRepairOrderAsync(CmmsDbContext db, Asset unit, CancellationToken ct)
+    {
+        var number = await db.PurchaseOrderLines.Where(l => l.UnitId == unit.Id && l.QuantityReceived < l.Quantity)
+            .Join(db.PurchaseOrders.AllSites().Where(o => OpenOrder.Contains(o.Status)), l => l.PurchaseOrderId, o => o.Id, (l, o) => o.Number).FirstOrDefaultAsync(ct);
+        if (number is not null) throw new DomainException($"This unit is on repair order {number}: receive it or cancel the order there first.");
+    }
+
     private static Guid StoreOf(Asset unit) =>
         UnitRules.StateOf(unit) == UnitState.InStore && unit.StoreId is { } store ? store : throw new DomainException("This unit isn't in a store.");
 
@@ -228,6 +243,7 @@ public static class SerialUnits
     {
         if (UnitRules.StateOf(unit) != UnitState.AtRepair) throw new DomainException("This unit isn't under repair.");
         if (cost < 0) throw new DomainException("Cost cannot be negative.");
+        if (lineId is null) await RefuseOnRepairOrderAsync(db, unit, ct);
         await Adjust(db, ctx, unit, store.Id, 1, $"Unit {unit.SerialNumber} back from repair", at, ct);
         unit.StoreId = store.Id;
         unit.SiteId = store.SiteId;
@@ -243,6 +259,7 @@ public static class SerialUnits
         if (state == UnitState.Scrapped) throw new DomainException("This unit is already scrapped.");
         if (state == UnitState.Fitted) throw new DomainException("Remove the unit first.");
         if (note.Clean() is null) throw new DomainException("Enter why the unit is scrapped.");
+        await RefuseOnRepairOrderAsync(db, unit, ct);
         Guid? from = null;
         if (state == UnitState.InStore && unit.StoreId is { } store)
         {

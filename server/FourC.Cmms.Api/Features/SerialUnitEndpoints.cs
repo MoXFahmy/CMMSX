@@ -98,7 +98,10 @@ public static class SerialUnitEndpoints
             if (!part.IsSerialTracked)
             {
                 var given = (i.Stores ?? []).ToDictionary(s => s.StoreId, s => UnitRules.CleanSerials(s.Serials ?? []));
-                var levels = await db.StockLevels.Where(l => l.PartId == id && l.QuantityOnHand != 0).Select(l => new { l.StoreId, l.QuantityOnHand, l.Store!.Code }).ToListAsync(ct);
+                // Every store holding the part, at every site: a store left without units would be stuck (its stock can't move any more).
+                var levels = await db.StockLevels.AllSites().Where(l => l.PartId == id && l.QuantityOnHand != 0).Select(l => new { l.StoreId, l.QuantityOnHand, l.Store!.Code }).ToListAsync(ct);
+                var visible = await db.Stores.Select(s => s.Id).ToListAsync(ct);
+                if (levels.Any(l => !visible.Contains(l.StoreId))) throw new DomainException("This part has stock at sites you can't see.");
                 foreach (var l in levels)
                     if (l.QuantityOnHand != Math.Floor(l.QuantityOnHand) || given.GetValueOrDefault(l.StoreId)?.Count != (int)l.QuantityOnHand)
                         throw new DomainException($"Enter one serial number for each piece in stock: {l.Code} has {l.QuantityOnHand:0.###}.");
@@ -109,7 +112,7 @@ public static class SerialUnitEndpoints
                     part.IsSerialTracked = true;
                     foreach (var l in levels)
                     {
-                        var store = await db.Stores.FirstAsync(s => s.Id == l.StoreId, tk);
+                        var store = await db.Stores.AllSites().FirstAsync(s => s.Id == l.StoreId, tk);
                         await SerialUnits.RegisterInStoreAsync(db, ctx, part, store, given[l.StoreId], moveStock: false, "Serial tracking switched on", tk);
                     }
                     await db.SaveChangesAsync(tk);
@@ -158,7 +161,10 @@ public static class SerialUnitEndpoints
             CancellationToken ct) =>
         {
             var outcome = OutcomeOf(i.Outcome) ?? throw new DomainException("Choose what happens to the unit.");
-            var unit = await db.Assets.AllSites().FirstOrDefaultAsync(a => a.Id == id && a.PartId != null, ct);
+            // Without a work order, only units the person can see; on a work order, the job's rules decide (its asset may be another branch's).
+            var unit = i.WorkOrderId is null
+                ? await db.Assets.FirstOrDefaultAsync(a => a.Id == id && a.PartId != null, ct)
+                : await db.Assets.AllSites().FirstOrDefaultAsync(a => a.Id == id && a.PartId != null, ct);
             if (unit is null) return Results.NotFound();
             WorkOrder? wo = null;
             if (i.WorkOrderId is { } woId)

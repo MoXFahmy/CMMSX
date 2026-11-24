@@ -652,6 +652,15 @@ internal sealed class AssetImporter : RecordImporter<Asset>
             CostCentreId: Ref(row, c.CostCentres, S(v, "costCentreCode"), "Cost centre"), ManagesCostCentre: true);
         var rules = AssetEndpoints.AssetRules(input, existing?.Id, requireNumber);
         var values = AssetEndpoints.CustomFieldValues(rules, c.AssetFields, input);
+        if (existing?.PartId is { } unitPart)
+        {
+            // A unit (0.24.0): its status and place change through the unit actions; its serial stays its own within the part.
+            if (existing.Status != input.Status || existing.ParentAssetId != input.ParentAssetId || existing.SiteId != input.SiteId || existing.LocationId != input.LocationId)
+                rules.Add("siteId", AssetEndpoints.UnitLocked);
+            if (input.SerialNumber.Clean() is not { } serial) rules.Add("serialNumber", "A unit needs a serial number.");
+            else if (await c.Db.Assets.AllSites().AnyAsync(a => a.PartId == unitPart && a.Id != existing.Id && a.SerialNumber == serial, ct))
+                rules.Add("serialNumber", $"Serial number {serial} is already used by a unit of this part.");
+        }
         if (!Accept(row, rules)) return null;
         // A new category is added only once the row is known to be good.
         if (categoryCode is not null && categoryId is null) input = input with { CategoryId = c.EnsureLookup(c.Categories, categoryCode, "Categories") };

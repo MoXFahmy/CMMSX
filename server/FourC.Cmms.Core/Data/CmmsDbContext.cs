@@ -1152,8 +1152,9 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         else
         {
             b.Entity<Location>().HasQueryFilter(SiteFilter, l => CurrentSiteIds!.Contains(l.SiteId) && CurrentBranchPaths!.Any(p => l.Path.StartsWith(p)));
+            // Spare serial units (0.24.0: in a store, at repair or scrapped) have no place in the tree: the site lets people see them.
             b.Entity<Asset>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId)
-                && e.LocationId != null && CurrentBranchPaths!.Any(p => e.Location!.Path.StartsWith(p)));
+                && ((e.LocationId != null && CurrentBranchPaths!.Any(p => e.Location!.Path.StartsWith(p))) || (e.PartId != null && e.ParentAssetId == null)));
             b.Entity<WorkRequest>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId)
                 && e.LocationId != null && CurrentBranchPaths!.Any(p => e.Location!.Path.StartsWith(p)));
             b.Entity<WorkOrder>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId)

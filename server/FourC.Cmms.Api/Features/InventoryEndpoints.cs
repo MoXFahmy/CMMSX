@@ -259,6 +259,8 @@ public static class InventoryEndpoints
             // A part is shared by every site: whether it's in use counts in all of them, not only the ones this person sees.
             if (await db.StockTransactions.AllSites().AnyAsync(t => t.PartId == id, ct) || await db.PurchaseOrderLines.AllSites().AnyAsync(l => l.PartId == id, ct))
                 throw new DomainException("This part has stock or purchasing history. Mark it inactive instead.");
+            // Its serial units (0.24.0), even scrapped, keep their history on the part.
+            if (await db.Assets.AllSites().AnyAsync(a => a.PartId == id, ct)) throw new DomainException("This part has units. Mark it inactive instead.");
             // Only work orders and PM tasks still in use count (deleted ones keep their rows but are filtered out of WorkOrders/PmTasks).
             if (await db.WorkOrderParts.AllSites().AnyAsync(l => l.PartId == id && db.WorkOrders.Any(w => w.Id == l.WorkOrderId), ct)
                 || await db.PmTaskParts.AnyAsync(l => l.PartId == id && db.PmTasks.Any(x => x.Id == l.PmTaskId), ct))
