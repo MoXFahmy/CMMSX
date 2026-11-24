@@ -81,13 +81,16 @@ public static class RoleHomes
         return cards;
     }
 
-    /// <summary>A menu item is hidden when every one of the person's roles that gives its permission hides it.</summary>
+    /// <summary>
+    /// A menu item is hidden when every one of the person's roles that gives its permission hides it. The Administrator role
+    /// gives every permission, whatever its stored list says (an older organization's list lacks newer codes).
+    /// </summary>
     public static List<string> Hidden(IEnumerable<Role> roles)
     {
         var list = roles.ToList();
         return MenuModules.All.Where(m =>
         {
-            var able = list.Where(r => r.Permissions.Intersect(m.AnyOf).Any()).ToList();
+            var able = list.Where(r => r.IsSystem || r.Permissions.Intersect(m.AnyOf).Any()).ToList();
             return able.Count > 0 && able.All(r => r.HiddenModules.Contains(m.Key));
         }).Select(m => m.Key).ToList();
     }

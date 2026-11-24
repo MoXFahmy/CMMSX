@@ -103,4 +103,19 @@ public class HomePinTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(0, (await Ok(await c.GetAsync("/api/work-orders?unassigned=true&mine=true"))).GetProperty("total").GetInt32());
         Assert.Equal(3, (await Ok(await c.GetAsync("/api/work-orders"))).GetProperty("total").GetInt32());
     }
+
+    [SkippableFact]
+    public async Task Due_soonest_sort_puts_undated_work_last()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await OrgAsync(fx);
+        var site = (await Ok(await c.PostAsJsonAsync("/api/sites", new { code = "S", name = "Site", isActive = true }))).GetProperty("id").GetGuid();
+        async Task Wo(string title, string? dueDate) =>
+            await Ok(await c.PostAsJsonAsync("/api/work-orders", new { title, siteId = site, type = "Corrective", priority = "Medium", dueDate, tasks = Array.Empty<string>() }));
+        await Wo("Undated", null);
+        await Wo("Later", DateTime.UtcNow.Date.AddDays(5).ToString("yyyy-MM-dd"));
+        await Wo("Sooner", DateTime.UtcNow.Date.AddDays(1).ToString("yyyy-MM-dd"));
+        var list = await Ok(await c.GetAsync("/api/work-orders?sort=dueSoonest&dir=asc"));
+        Assert.Equal(["Sooner", "Later", "Undated"], list.GetProperty("items").EnumerateArray().Select(w => w.GetProperty("title").GetString()));
+    }
 }

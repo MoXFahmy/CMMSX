@@ -1,5 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
 using static FourC.Cmms.Tests.RoleHomeTests;
 
 namespace FourC.Cmms.Tests;
@@ -79,5 +81,24 @@ public class RoleHomeMergeTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var p2 = await NewRoleAsync(admin, "P2", ["purchasing.view"]);
         Assert.DoesNotContain("purchasing", await HiddenFor(p1, p2));
         Assert.Contains("purchasing", await HiddenFor(p1));
+    }
+
+    [SkippableFact]
+    public async Task Administrator_counts_as_able_for_every_menu_item()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var admin = await OrgAsync(fx);
+        var adminRole = (await RoleAsync(admin, "Administrator")).GetProperty("id").GetGuid();
+        // An organization from before contracts existed: its stored Administrator list lacks the newer codes.
+        using (var scope = fx.Factory!.Services.CreateScope())
+        {
+            var db = scope.ServiceProvider.GetRequiredService<FourC.Cmms.Core.Data.CmmsDbContext>();
+            var role = await db.Roles.IgnoreQueryFilters().SingleAsync(r => r.Id == adminRole);
+            role.Permissions = role.Permissions.Where(p => p != "contracts.view" && p != "contracts.manage").ToList();
+            await db.SaveChangesAsync();
+        }
+        var hider = await NewRoleAsync(admin, "Hider", ["contracts.view"], hidden: ["contracts"]);
+        var home = await HomeAsync(await UserAsync(admin, adminRole, hider));
+        Assert.DoesNotContain("contracts", Strings(home.GetProperty("hiddenModules")));
     }
 }

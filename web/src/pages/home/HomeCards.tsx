@@ -1,5 +1,5 @@
 import { useMemo, useState, type ReactNode } from 'react';
-import { Anchor, Badge, Button, Card, Center, Group, Loader, SimpleGrid, Stack, Text, Title, UnstyledButton } from '@mantine/core';
+import { Anchor, Badge, Button, Card, Center, Group, Loader, SimpleGrid, Stack, Text, Title, Tooltip, UnstyledButton } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useQuery } from '@tanstack/react-query';
 import { Link } from 'react-router';
@@ -18,7 +18,7 @@ import { CARD_INFO, gridRows, type HomeCard, type HomeCardType, type HomeTile } 
 import {
   AssetsByCategory, AssetsBySite, AssetsByStatus, AssetSummary, RecentAssets, UrgentWork, useDashboard, WarrantySoon, WorkBySite, WorkSummary,
 } from './DashboardSections';
-import { listCardRequest, type ListCardType } from './listCards';
+import { cardContent, listCardRequest, type ListCardType } from './listCards';
 
 const DASHBOARD_PIECES: Partial<Record<HomeCardType, (p: { data: Dashboard }) => ReactNode>> = {
   'work-summary': WorkSummary, 'work-by-site': WorkBySite, 'urgent-work': UrgentWork, 'asset-summary': AssetSummary,
@@ -45,6 +45,12 @@ function Frame({ title, count, link, children }: { title: string; count?: number
 
 const Loading = () => <Center h={80}><Loader size="sm" /></Center>;
 
+/** A card whose request failed says so, with the reason on hover. */
+function Failed({ error }: { error: unknown }) {
+  const { t } = useTranslation();
+  return <Tooltip label={error instanceof Error ? error.message : String(error)}><Text c="dimmed" fz="sm">{t('home.cardError')}</Text></Tooltip>;
+}
+
 function Row({ to, main, sub, right }: { to: string; main: ReactNode; sub?: ReactNode; right?: ReactNode }) {
   return (
     <Group justify="space-between" wrap="nowrap" gap="xs">
@@ -62,11 +68,12 @@ function ListCard({ type }: { type: ListCardType }) {
   const { t } = useTranslation();
   const { can } = useAuth();
   const req = listCardRequest(type, can);
-  const { data, isLoading } = useQuery({ queryKey: ['home-card', type, req.query], queryFn: () => get<Paged<unknown>>(req.path, req.query) });
+  const { data, isLoading, isError, error } = useQuery({ queryKey: ['home-card', type, req.query], queryFn: () => get<Paged<unknown>>(req.path, req.query) });
   const rows = data?.items ?? [];
+  const show = cardContent({ isLoading, isError, count: rows.length });
   return (
     <Frame title={t(`home.cards.${type}`)} count={data?.total} link={req.link}>
-      {isLoading ? <Loading /> : rows.length === 0 ? <Text c="dimmed" fz="sm">{t(`home.empty.${type}`)}</Text> : (
+      {show === 'loading' ? <Loading /> : show === 'error' ? <Failed error={error} /> : show === 'empty' ? <Text c="dimmed" fz="sm">{t(`home.empty.${type}`)}</Text> : (
         <Stack gap={8}>
           {type === 'assets-down' ? (rows as AssetListItem[]).map((a) => (
             <Row key={a.id} to={`/assets/${a.id}`} main={`${a.assetNumber} · ${a.name}`} sub={a.locationPath ?? a.siteName} right={<StatusBadge status={a.status} />} />
@@ -91,14 +98,15 @@ type Approvals = {
 
 function ApprovalsCard() {
   const { t } = useTranslation();
-  const { data, isLoading } = useQuery({ queryKey: ['my-approvals'], queryFn: () => get<Approvals>('/approvals/mine') });
+  const { data, isLoading, isError, error } = useQuery({ queryKey: ['my-approvals'], queryFn: () => get<Approvals>('/approvals/mine') });
   const items = [
     ...(data?.requests ?? []).map((r) => ({ id: r.id, to: `/purchasing/requests/${r.id}`, main: r.number, sub: [r.siteName, r.requestedByName].filter(Boolean).join(' · '), kind: t('home.purchaseRequest') })),
     ...(data?.orders ?? []).map((o) => ({ id: o.id, to: `/purchasing/orders/${o.id}`, main: o.number, sub: `${o.supplierName} · ${o.siteName}`, kind: t('home.purchaseOrder') })),
   ];
+  const show = cardContent({ isLoading, isError, count: items.length });
   return (
     <Frame title={t('home.cards.my-approvals')} count={data ? items.length : undefined} link="/approvals">
-      {isLoading ? <Loading /> : items.length === 0 ? <Text c="dimmed" fz="sm">{t('home.empty.my-approvals')}</Text> : (
+      {show === 'loading' ? <Loading /> : show === 'error' ? <Failed error={error} /> : show === 'empty' ? <Text c="dimmed" fz="sm">{t('home.empty.my-approvals')}</Text> : (
         <Stack gap={8}>
           {items.slice(0, 8).map((i) => <Row key={i.to} to={i.to} main={i.main} sub={i.sub} right={<Badge size="sm" variant="default">{i.kind}</Badge>} />)}
         </Stack>

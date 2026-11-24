@@ -88,7 +88,10 @@ public static class WorkOrderEndpoints
     private static readonly Dictionary<string, Expression<Func<WorkOrder, object?>>> SortMap = new(StringComparer.OrdinalIgnoreCase)
     {
         ["number"] = w => w.Number, ["title"] = w => w.Title, ["status"] = w => w.Status, ["priority"] = w => w.Priority, ["type"] = w => w.Type,
-        ["dueDate"] = w => w.DueDate, ["createdAt"] = w => w.CreatedAt, ["site"] = w => w.Site!.Name, ["asset"] = w => w.Asset!.AssetNumber,
+        ["dueDate"] = w => w.DueDate,
+        // Earliest due first with undated work last (the home page's My work and Late work, 0.22.0).
+        ["dueSoonest"] = w => w.DueDate ?? DateOnly.MaxValue,
+        ["createdAt"] = w => w.CreatedAt, ["site"] = w => w.Site!.Name, ["asset"] = w => w.Asset!.AssetNumber,
         ["completedAt"] = w => w.CompletedAt,
     };
 

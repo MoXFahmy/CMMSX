@@ -2803,7 +2803,8 @@
       "parts": "Parts",
       "purchase-orders": "Purchase orders",
       "assets": "Assets"
-    }
+    },
+    "cardError": "Couldn't load this card. Try again later."
   },
   "roles": {
     "tabs": {

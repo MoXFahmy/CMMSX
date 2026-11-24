@@ -8,12 +8,19 @@ export type ListCardType = 'my-work' | 'unassigned-work' | 'late-work' | 'assets
  * the most pressing first (the closest sort the list has).
  */
 export const LIST_CARDS: Record<ListCardType, { list: ListKey; address: string; sort?: string; dir?: 'asc' | 'desc' }> = {
-  'my-work': { list: 'work-orders', address: 'view=mine', sort: 'dueDate', dir: 'asc' },
+  'my-work': { list: 'work-orders', address: 'view=mine', sort: 'dueSoonest', dir: 'asc' },
   'unassigned-work': { list: 'work-orders', address: 'view=unassigned', sort: 'priority', dir: 'desc' },
-  'late-work': { list: 'work-orders', address: 'view=overdue', sort: 'dueDate', dir: 'asc' },
+  'late-work': { list: 'work-orders', address: 'view=overdue', sort: 'dueSoonest', dir: 'asc' },
   'assets-down': { list: 'assets', address: 'downNow=true', sort: 'criticality', dir: 'desc' },
   'low-stock': { list: 'parts', address: 'low=true' },
 };
+
+/** What a card shows: a loader, an error (never "nothing" when it couldn't ask), its empty line, or its rows. */
+export function cardContent(s: { isLoading: boolean; isError: boolean; count: number }): 'loading' | 'error' | 'empty' | 'rows' {
+  if (s.isLoading) return 'loading';
+  if (s.isError) return 'error';
+  return s.count === 0 ? 'empty' : 'rows';
+}
 
 /** Rows a list card shows. */
 export const LIST_CARD_ROWS = 8;
