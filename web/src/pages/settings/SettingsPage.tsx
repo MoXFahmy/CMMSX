@@ -28,6 +28,7 @@ import { ContractSettings } from './ContractSettings';
 import { CostCentresSettings } from './CostCentresSettings';
 import { ListsSettings } from './ListsSettings';
 import { RoleSettings } from './RoleSettings';
+import { PrintLayoutsSettings } from './PrintLayoutsSettings';
 import { BrandsSettings } from './BrandsSettings';
 import { UnitsSettings } from './UnitsSettings';
 import { AssetGroupsSettings } from './AssetGroupsSettings';
@@ -64,6 +65,7 @@ export function SettingsPage() {
     { value: 'contracts', label: t('contracts.title'), show: can(P.settingsManage) },
     { value: 'users', label: t('settings.users'), show: can(P.usersManage) },
     { value: 'roles', label: t('settings.roles'), show: can(P.usersManage) },
+    { value: 'print-layouts', label: t('print.title'), show: can(P.settingsManage) },
     { value: 'import', label: t('settings.import'), show: can(P.settingsManage) },
     { value: 'ai-usage', label: t('ai.usageTab'), show: can(P.settingsManage) },
   ].filter((x) => x.show);
@@ -86,6 +88,7 @@ export function SettingsPage() {
         <Tabs.Panel value="cancel-reasons"><LookupTable path="/cancel-reasons" title={t('settings.cancelReasons')} newLabel={t('settings.newCancelReason')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="users"><UserSettings /></Tabs.Panel>
         <Tabs.Panel value="roles"><RoleSettings /></Tabs.Panel>
+        <Tabs.Panel value="print-layouts"><PrintLayoutsSettings /></Tabs.Panel>
         <Tabs.Panel value="import"><ImportSettings /></Tabs.Panel>
         <Tabs.Panel value="ai-usage"><AiUsageSettings /></Tabs.Panel>
         <Tabs.Panel value="lists"><ListsSettings editable={can(P.settingsManage)} /></Tabs.Panel>
