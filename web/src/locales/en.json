@@ -2861,7 +2861,8 @@
     "repairLineHint": "A unit under repair goes to the supplier; receiving the line brings it back to a store with the line's cost.",
     "noneAtRepair": "No units under repair",
     "backInto": "Back into…",
-    "placeLocked": "A unit's status, store and place change through fit, remove and the unit actions."
+    "placeLocked": "A unit's status, store and place change through fit, remove and the unit actions.",
+    "capped": "Showing the first 500 units."
   },
   "assetGroups": {
     "title": "Asset groups",

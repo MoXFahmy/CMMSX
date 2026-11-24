@@ -590,6 +590,8 @@ export type UnitRow = {
   storeId?: string | null; storeName?: string | null; fittedToId?: string | null; fittedToNumber?: string | null; fittedToName?: string | null;
   siteId: string; siteName?: string | null; endOfLifeOn?: string | null; repairCount: number; repairCost: number;
 };
+/** The units list answers at most 500 rows; capped says more matched (0.26.1). */
+export type UnitList = { items: UnitRow[]; capped: boolean };
 export type UnitMovementKind = 'Received' | 'Registered' | 'Fitted' | 'Removed' | 'SentForRepair' | 'BackFromRepair' | 'Scrapped' | 'Transferred';
 export type UnitOutcome = 'Store' | 'Repair' | 'Scrap';
 export type UnitMovement = {

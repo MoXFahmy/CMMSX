@@ -40,6 +40,9 @@ public class UnitMovement : Entity, ITenantOwned
 /// <summary>Serial units' rules that need no database.</summary>
 public static class UnitRules
 {
+    public const string SerialShelf = "A serial-tracked part can't also be a shelf-life item.";
+    public const string RepairWhole = "Receive a repair line whole.";
+
     private static readonly HashSet<string> HoursUnits = new(StringComparer.OrdinalIgnoreCase) { "h", "hr", "hrs", "hour", "hours", "ساعة", "ساعات" };
 
     public static UnitState StateOf(Asset unit) => unit.Status switch

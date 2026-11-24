@@ -42,7 +42,8 @@ public static class StockLedger
             _ => p.Quantity,
         };
         var batch = string.IsNullOrWhiteSpace(p.BatchNumber) ? null : p.BatchNumber.Trim();
-        if (part.IsShelfItem && p.LegacyRef is null)
+        // A part that is somehow both serial-tracked and shelf-life is handled as a serial part (0.26.1): its units carry no batch.
+        if (part.IsShelfItem && !part.IsSerialTracked && p.LegacyRef is null)
         {
             if (batch is null) throw new DomainException($"{part.PartNumber} is a shelf-life item: enter the batch number.");
             if (p.Type == StockTransactionType.Receipt && p.ExpiryDate is null) throw new DomainException($"{part.PartNumber} is a shelf-life item: enter the batch expiry date.");
@@ -138,7 +139,7 @@ public static class StockLedger
             if (o.Quantity <= 0) throw new DomainException("Quantity must be positive.");
             if (!o.Store.IsActive) throw new DomainException($"Store {o.Store.Code} is inactive.");
             var batch = string.IsNullOrWhiteSpace(o.BatchNumber) ? null : o.BatchNumber.Trim();
-            if (o.Part.IsShelfItem && batch is null) throw new DomainException($"{o.Part.PartNumber} is a shelf-life item: enter the batch number.");
+            if (o.Part.IsShelfItem && !o.Part.IsSerialTracked && batch is null) throw new DomainException($"{o.Part.PartNumber} is a shelf-life item: enter the batch number.");
             o.Level.QuantityOnHand += o.Quantity;
             db.StockTransactions.Add(new StockTransaction
             {

@@ -16,7 +16,7 @@ type AssetRef = { id: string; assetNumber: string; name: string };
 function FitUnitModal({ w, assets, onClose }: { w: WorkOrderDetail; assets: AssetRef[]; onClose: () => void }) {
   const { t } = useTranslation();
   const qc = useQueryClient();
-  const { data: spares } = useQuery({ queryKey: ['serial-units', 'in-store', w.siteId], queryFn: () => get<UnitRow[]>('/serial-units', { state: 'InStore', siteId: w.siteId }) });
+  const { data: spares } = useQuery({ queryKey: ['serial-units', 'to-fit', w.siteId], queryFn: () => get<UnitRow[]>('/serial-units/to-fit', { siteId: w.siteId }) });
   const [partId, setPartId] = useState<string | null>(null);
   const [unitId, setUnitId] = useState<string | null>(null);
   const [assetId, setAssetId] = useState<string | null>(assets.length === 1 ? assets[0].id : null);

@@ -112,6 +112,8 @@ public static class PurchasingEndpoints
             if (r.Quantity < 0) throw new DomainException($"Line {line.LineNumber}: quantity must be positive.");
             var outstanding = line.Quantity - line.QuantityReceived;
             if (r.Quantity > outstanding) throw new DomainException($"Line {line.LineNumber}: only {outstanding:0.###} outstanding.");
+            // A repair line brings one unit back: all of it or nothing, so its cost isn't split (0.26.1).
+            if (line.UnitId is not null && r.Quantity != outstanding) throw new DomainException($"Line {line.LineNumber}: {UnitRules.RepairWhole}");
             var unitCost = Math.Round(line.NetUnitPrice * o.ExchangeRate, 4);
             var store = r.StoreId ?? line.StoreId;
             if (line.UnitId is { } repairedId)

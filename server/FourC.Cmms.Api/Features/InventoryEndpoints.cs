@@ -215,6 +215,7 @@ public static class InventoryEndpoints
             var v = await ValidatePartAsync(i, null, db, ct);
             if (!v.IsValid) return v.Problem();
             UnitRules.CheckLife(i.UnitLifeMonths);
+            if ((i.IsSerialTracked ?? false) && i.IsShelfItem) throw new DomainException(UnitRules.SerialShelf);
             var p = CreatePart(db, i);
             p.IsSerialTracked = i.IsSerialTracked ?? false;
             p.UnitLifeMonths = i.UnitLifeMonths;
@@ -232,6 +233,7 @@ public static class InventoryEndpoints
             var v = await ValidatePartAsync(i with { PartNumber = p.PartNumber }, id, db, ct); // part numbers are permanent (as in 4CSQL)
             if (!v.IsValid) return v.Problem();
             if (i.RowVersion is not null) db.Entry(p).Property(x => x.RowVersion).OriginalValue = i.RowVersion.ToVersion();
+            if (p.IsSerialTracked && i.IsShelfItem && !p.IsShelfItem) throw new DomainException(UnitRules.SerialShelf);
             UpdatePart(p, i);
             if (p.PreferredSupplierId is { } preferred) await CatalogueEndpoints.EnsureRowAsync(db, p, preferred, ct);
             if (i.Levels is not null)

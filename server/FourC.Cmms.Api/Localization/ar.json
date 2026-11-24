@@ -1268,5 +1268,8 @@
  "Your check didn't finish": "لم يكتمل الفحص الخاص بك",
  "Open the import": "فتح الاستيراد",
  "This file has {0} rows; the limit is 20,000 in one file. Split it into smaller files.": "في هذا الملف {0} صفًا؛ الحد 20,000 في الملف الواحد. قسّمه إلى ملفات أصغر.",
- "This file has more than {0} rows. Split it into smaller files.": "في هذا الملف أكثر من {0} صف. قسّمه إلى ملفات أصغر."
+ "This file has more than {0} rows. Split it into smaller files.": "في هذا الملف أكثر من {0} صف. قسّمه إلى ملفات أصغر.",
+ "A serial-tracked part can't also be a shelf-life item.": "لا يمكن أن تكون القطعة المتتبعة بالرقم التسلسلي صنفاً ذا عمر تخزيني أيضاً.",
+ "Receive a repair line whole.": "استلم سطر الإصلاح بالكامل.",
+ "Line {0}: Receive a repair line whole.": "السطر {0}: استلم سطر الإصلاح بالكامل."
 }

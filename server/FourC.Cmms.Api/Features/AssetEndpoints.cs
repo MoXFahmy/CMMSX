@@ -271,6 +271,8 @@ public static class AssetEndpoints
                     frontier = kids.Select(k => k.Id).ToList();
                 }
             }
+            else
+                moving.AddRange(await db.Assets.AllSites().Where(a => a.ParentAssetId == id && a.PartId != null).ToListAsync(ct)); // its fitted units go with it (0.26.1)
             foreach (var a in moving)
             {
                 db.AssetTransfers.Add(NewTransfer(a, input.SiteId, input.LocationId, input.Reason.Clean(), ctx));

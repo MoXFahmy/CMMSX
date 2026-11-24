@@ -32,16 +32,33 @@ public static class SerialUnitEndpoints
         Guid? StoreId, string? StoreName, Guid? FittedToId, string? FittedToNumber, string? FittedToName, Guid SiteId, string? SiteName, DateOnly? EndOfLifeOn,
         int RepairCount, decimal RepairCost);
 
-    private static IQueryable<UnitRow> Rows(CmmsDbContext db, IQueryable<Asset> q) => q.Select(a => new UnitRow(
-        a.Id, a.AssetNumber, a.SerialNumber, a.PartId,
-        db.Parts.Where(p => p.Id == a.PartId).Select(p => p.PartNumber).FirstOrDefault(), db.Parts.Where(p => p.Id == a.PartId).Select(p => p.Name).FirstOrDefault(),
-        a.Status == AssetStatus.Disposed ? "Scrapped" : a.Status == AssetStatus.UnderRepair ? "AtRepair" : a.ParentAssetId != null ? "Fitted" : "InStore",
-        a.StoreId, db.Stores.AllSites().Where(x => x.Id == a.StoreId).Select(x => x.Name).FirstOrDefault(),
-        a.ParentAssetId, db.Assets.AllSites().Where(x => x.Id == a.ParentAssetId).Select(x => x.AssetNumber).FirstOrDefault(),
-        db.Assets.AllSites().Where(x => x.Id == a.ParentAssetId).Select(x => x.Name).FirstOrDefault(),
-        a.SiteId, db.Sites.AllSites().Where(x => x.Id == a.SiteId).Select(x => x.Name).FirstOrDefault(), a.EndOfLifeOn,
-        db.UnitMovements.Count(m => m.UnitId == a.Id && m.Kind == UnitMovementKind.BackFromRepair),
-        db.UnitMovements.Where(m => m.UnitId == a.Id && m.Kind == UnitMovementKind.BackFromRepair).Sum(m => m.Cost) ?? 0));
+    private sealed record UnitBase(Guid Id, string AssetNumber, string? SerialNumber, Guid? PartId, string? PartNumber, string? PartName, string State,
+        Guid? StoreId, Guid? FittedToId, Guid SiteId, DateOnly? EndOfLifeOn, int RepairCount, decimal RepairCost);
+
+    /// <summary>
+    /// Units as the lists show them. The names of their stores, sites and assets are looked up afterwards: an <c>AllSites()</c>
+    /// inside the units' own query would lift the site limits from the whole query, units included (0.26.1).
+    /// </summary>
+    private static async Task<List<UnitRow>> RowsAsync(CmmsDbContext db, IQueryable<Asset> q, CancellationToken ct)
+    {
+        var rows = await q.Select(a => new UnitBase(
+            a.Id, a.AssetNumber, a.SerialNumber, a.PartId,
+            db.Parts.Where(p => p.Id == a.PartId).Select(p => p.PartNumber).FirstOrDefault(), db.Parts.Where(p => p.Id == a.PartId).Select(p => p.Name).FirstOrDefault(),
+            a.Status == AssetStatus.Disposed ? "Scrapped" : a.Status == AssetStatus.UnderRepair ? "AtRepair" : a.ParentAssetId != null ? "Fitted" : "InStore",
+            a.StoreId, a.ParentAssetId, a.SiteId, a.EndOfLifeOn,
+            db.UnitMovements.Count(m => m.UnitId == a.Id && m.Kind == UnitMovementKind.BackFromRepair),
+            db.UnitMovements.Where(m => m.UnitId == a.Id && m.Kind == UnitMovementKind.BackFromRepair).Sum(m => m.Cost) ?? 0)).ToListAsync(ct);
+        var storeIds = rows.Where(r => r.StoreId != null).Select(r => r.StoreId!.Value).Distinct().ToList();
+        var parentIds = rows.Where(r => r.FittedToId != null).Select(r => r.FittedToId!.Value).Distinct().ToList();
+        var siteIds = rows.Select(r => r.SiteId).Distinct().ToList();
+        var stores = await db.Stores.AllSites().AsNoTracking().Where(x => storeIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+        var parents = await db.Assets.AllSites().AsNoTracking().Where(x => parentIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => new { x.AssetNumber, x.Name }, ct);
+        var sites = await db.Sites.AllSites().AsNoTracking().Where(x => siteIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+        return rows.Select(r => new UnitRow(r.Id, r.AssetNumber, r.SerialNumber, r.PartId, r.PartNumber, r.PartName, r.State,
+            r.StoreId, r.StoreId is { } st ? stores.GetValueOrDefault(st) : null,
+            r.FittedToId, r.FittedToId is { } f ? parents.GetValueOrDefault(f)?.AssetNumber : null, r.FittedToId is { } f2 ? parents.GetValueOrDefault(f2)?.Name : null,
+            r.SiteId, sites.GetValueOrDefault(r.SiteId), r.EndOfLifeOn, r.RepairCount, r.RepairCost)).ToList();
+    }
 
     private static async Task<Store> StoreAsync(CmmsDbContext db, Guid? id, CancellationToken ct) =>
         id is { } sid ? await db.Stores.FirstOrDefaultAsync(s => s.Id == sid, ct) ?? throw new DomainException("Store not found.") : throw new DomainException("Choose a store.");
@@ -77,6 +94,9 @@ public static class SerialUnitEndpoints
     internal static UnitOutcome? OutcomeOf(string? text) =>
         Enum.TryParse<UnitOutcome>(text?.Trim(), ignoreCase: true, out var o) && Enum.IsDefined(o) && !int.TryParse(text, out _) ? o : null;
 
+    /// <summary>The most units a list answers with.</summary>
+    internal const int UnitListCap = 500;
+
     public static void MapSerialUnitEndpoints(this RouteGroupBuilder api)
     {
         // Serial tracking on an existing part: on, with a serial for each piece in stock; off only when no unit is left.
@@ -97,6 +117,7 @@ public static class SerialUnitEndpoints
             part.UnitLifeMonths = i.UnitLifeMonths;
             if (!part.IsSerialTracked)
             {
+                if (part.IsShelfItem) throw new DomainException(UnitRules.SerialShelf);
                 var given = (i.Stores ?? []).ToDictionary(s => s.StoreId, s => UnitRules.CleanSerials(s.Serials ?? []));
                 // Every store holding the part, at every site: a store left without units would be stuck (its stock can't move any more).
                 var levels = await db.StockLevels.AllSites().Where(l => l.PartId == id && l.QuantityOnHand != 0).Select(l => new { l.StoreId, l.QuantityOnHand, l.Store!.Code }).ToListAsync(ct);
@@ -254,6 +275,7 @@ public static class SerialUnitEndpoints
                 "fitted" => q.Where(a => a.Status != AssetStatus.Disposed && a.Status != AssetStatus.UnderRepair && a.ParentAssetId != null),
                 "atrepair" => q.Where(a => a.Status == AssetStatus.UnderRepair),
                 "scrapped" => q.Where(a => a.Status == AssetStatus.Disposed),
+                "active" => q.Where(a => a.Status != AssetStatus.Disposed),
                 _ => q,
             };
             if (endingWithinDays is { } days)
@@ -263,12 +285,27 @@ public static class SerialUnitEndpoints
             }
             if (search.Clean() is { } t)
                 q = q.Where(a => a.SerialNumber!.Contains(t) || a.AssetNumber.Contains(t) || db.Parts.Any(p => p.Id == a.PartId && (p.PartNumber.Contains(t) || p.Name.Contains(t))));
-            return await Rows(db, q.OrderBy(a => a.SerialNumber).Take(500)).ToListAsync(ct);
+            // Filtered before the cap; the answer says when more matched than it shows (0.26.1).
+            var rows = await RowsAsync(db, q.OrderBy(a => a.SerialNumber).Take(UnitListCap + 1), ct);
+            return Results.Ok(new { Items = rows.Take(UnitListCap), Capped = rows.Count > UnitListCap });
         }).RequirePermission(Permissions.InventoryView);
+
+        // Pickers open to whoever may do the action, without View inventory (0.26.1): in-store units to fit on a job...
+        api.MapGet("/serial-units/to-fit", async (CmmsDbContext db, Guid? partId, Guid? siteId, CancellationToken ct) =>
+        {
+            var q = db.Assets.AsNoTracking().Where(a => a.PartId != null && a.Status != AssetStatus.Disposed && a.Status != AssetStatus.UnderRepair && a.ParentAssetId == null);
+            if (partId is not null) q = q.Where(a => a.PartId == partId);
+            if (siteId is not null) q = q.Where(a => a.SiteId == siteId);
+            return await RowsAsync(db, q.OrderBy(a => a.SerialNumber).Take(UnitListCap), ct);
+        }).RequirePermission(Permissions.WorkOrdersExecute).RequirePermission(Permissions.InventoryTransact);
+        // ...and units away for repair, for a purchase order's repair line.
+        api.MapGet("/serial-units/at-repair", async (CmmsDbContext db, CancellationToken ct) =>
+            await RowsAsync(db, db.Assets.AsNoTracking().Where(a => a.PartId != null && a.Status == AssetStatus.UnderRepair).OrderBy(a => a.SerialNumber).Take(UnitListCap), ct))
+            .RequirePermission(Permissions.PurchasingCreate);
 
         api.MapGet("/serial-units/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
-            var r = await Rows(db, db.Assets.AsNoTracking().Where(a => a.Id == id && a.PartId != null)).FirstOrDefaultAsync(ct);
+            var r = (await RowsAsync(db, db.Assets.AsNoTracking().Where(a => a.Id == id && a.PartId != null), ct)).FirstOrDefault();
             if (r is null) return Results.NotFound();
             var movements = await db.UnitMovements.AsNoTracking().Where(m => m.UnitId == id).OrderByDescending(m => m.At).Select(m => new
             {
@@ -289,6 +326,7 @@ public static class SerialUnitEndpoints
         // The units on an asset now, and those taken off it before.
         api.MapGet("/assets/{id:guid}/fitted-units", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
+            if (!await db.Assets.AnyAsync(a => a.Id == id, ct)) return Results.NotFound(); // site limits (0.26.1)
             var now = await db.Assets.AllSites().AsNoTracking()
                 .Where(a => a.ParentAssetId == id && a.PartId != null && a.Status != AssetStatus.Disposed && a.Status != AssetStatus.UnderRepair).OrderBy(a => a.AssetNumber)
                 .Select(a => new
