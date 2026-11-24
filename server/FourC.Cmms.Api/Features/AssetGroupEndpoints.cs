@@ -37,7 +37,7 @@ public static class AssetGroupEndpoints
             var members = await (from m in db.AssetGroupMembers where m.AssetGroupId == id
                                  join a in db.Assets on m.AssetId equals a.Id
                                  orderby a.AssetNumber
-                                 select new { a.Id, a.AssetNumber, a.Name, a.SiteId }).ToListAsync(ct);
+                                 select new { a.Id, a.AssetNumber, Name = Bilingual.Arabic && a.NameAr != null ? a.NameAr : a.Name, a.SiteId }).ToListAsync(ct);
             return Results.Ok(new { x.Id, x.Code, x.Name, x.SiteId, x.IsActive, Members = members });
         }).RequirePermission(Permissions.AssetsView);
 

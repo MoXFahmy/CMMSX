@@ -18,7 +18,9 @@ public static class WorkOrderEndpoints
         Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? PlannedStart, DateOnly? DueDate, decimal? EstimatedHours, List<string>? Tasks, string? RowVersion = null,
         string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null, bool? AssetIsDown = null, Guid? TeamId = null,
         bool? ManagesTeam = null, List<AccessWindow>? AccessWindows = null, bool? OnlyWhenStopped = null, Guid? TemplateId = null,
-        Guid? SymptomId = null, bool? ManagesSymptom = null, Guid? ContractId = null, bool? ManagesContract = null, Guid? CostCentreId = null, bool? ManagesCostCentre = null);
+        Guid? SymptomId = null, bool? ManagesSymptom = null, Guid? ContractId = null, bool? ManagesContract = null, Guid? CostCentreId = null, bool? ManagesCostCentre = null,
+        // 0.28.0: the Arabic title and the safety notes (copied from a template when left out); left out on an update = kept, blank = cleared.
+        string? TitleAr = null, string? SafetyNotes = null, string? SafetyNotesAr = null);
     public sealed record StatusInput(WorkOrderStatus Status, HoldReason? HoldReason, string? Note, string? CompletionNotes, string? CauseNotes,
         Guid? FailureCodeId, bool? AssetWasDown, decimal? DowntimeHours, string? PreventionNotes = null, DateTimeOffset? ActualStart = null, DateTimeOffset? ActualEnd = null,
         DateTimeOffset? At = null, Guid? CancelReasonId = null, Guid? RemedyId = null, Guid? SymptomId = null);
@@ -27,7 +29,7 @@ public static class WorkOrderEndpoints
     /// <summary>A cost-centre correction (0.20.0) on one or many work orders, in any status.</summary>
     public sealed record CostCentreChangeInput(Guid[]? Ids, Guid? CostCentreId);
     public sealed record TaskInput(string? Description, bool? IsDone, string? Reading = null, string? Remarks = null, StepAnswer? Answer = null, decimal? Value = null,
-        string? Text = null, Guid? MeterId = null, bool Confirm = false);
+        string? Text = null, Guid? MeterId = null, bool Confirm = false, string? DescriptionAr = null);
     public sealed record LaborInput(Guid EmployeeId, DateOnly WorkDate, decimal Hours, decimal OvertimeHours, string? Notes);
     public sealed record CostInput(string Description, decimal Quantity, decimal UnitCost, string? Vendor, string? Reference = null);
     public sealed record CommentInput(string Body);
@@ -131,8 +133,8 @@ public static class WorkOrderEndpoints
             if (w.Location is not null)
             {
                 var ids = LocationEndpoints.PathIds(w.Location.Path).ToList();
-                trail.AddRange((await db.Locations.AsNoTracking().Where(l => ids.Contains(l.Id)).Select(l => new { l.Id, l.Name, l.Depth, l.NotesToTechnician }).ToListAsync(ct))
-                    .OrderBy(l => l.Depth).Select(l => new { l.Id, l.Name }));
+                trail.AddRange((await db.Locations.AsNoTracking().Where(l => ids.Contains(l.Id)).Select(l => new { l.Id, l.Name, l.NameAr, l.Depth }).ToListAsync(ct))
+                    .OrderBy(l => l.Depth).Select(l => new { l.Id, Name = Bilingual.Pick(l.Name, l.NameAr) }));
             }
             var tasks = await db.WorkOrderTasks.AsNoTracking().Where(t => t.WorkOrderId == id).OrderBy(t => t.Sequence).ToListAsync(ct);
             var followIds = tasks.SelectMany(t => new[] { t.FollowUpWorkOrderId, t.FollowUpRequestId }).OfType<Guid>().ToList();
@@ -147,7 +149,7 @@ public static class WorkOrderEndpoints
             var stepPhotos = (await db.Attachments.AsNoTracking().Where(a => a.EntityType == "WorkOrder" && a.EntityId == id && a.WorkOrderTaskId != null).OrderBy(a => a.CreatedAt)
                 .Select(a => new { TaskId = a.WorkOrderTaskId!.Value, a.Id, a.FileName, a.ContentType }).ToListAsync(ct)).ToLookup(a => a.TaskId, a => new { a.Id, a.FileName, a.ContentType });
             var roundAssets = await db.WorkOrderAssets.AsNoTracking().Where(a => a.WorkOrderId == id && a.Asset != null).OrderBy(a => a.Sequence)
-                .Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name }).ToListAsync(ct);
+                .Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, Name = Bilingual.Arabic && a.Asset.NameAr != null ? a.Asset.NameAr : a.Asset.Name }).ToListAsync(ct);
             var labor = await db.WorkOrderLabor.AsNoTracking().Where(l => l.WorkOrderId == id).OrderByDescending(l => l.WorkDate).ThenByDescending(l => l.CreatedAt)
                 .Select(l => new { l.Id, l.EmployeeId, EmployeeName = l.Employee!.FullName, l.WorkDate, l.CreatedAt, l.Hours, l.OvertimeHours, l.Rate, l.OvertimeRate, l.Notes,
                     Cost = l.Hours * l.Rate + l.OvertimeHours * l.OvertimeRate, CompanyName = l.Employee.CompanyRecord == null ? null : l.Employee.CompanyRecord.Name }).ToListAsync(ct);
@@ -168,7 +170,7 @@ public static class WorkOrderEndpoints
                 .Select(c => new { c.Id, c.Description, c.Quantity, c.UnitCost, c.Vendor, c.Reference, Total = c.Quantity * c.UnitCost, c.CreatedAt }).ToListAsync(ct);
             var parts = await db.StockTransactions.AsNoTracking().Where(t => t.WorkOrderId == id && (t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Issue || t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Return))
                 .OrderByDescending(t => t.Date).ThenByDescending(t => t.CreatedAt)
-                .Select(t => new { t.Id, t.Type, t.Date, t.PartId, t.Part!.PartNumber, PartName = t.Part.Name, t.Part.UnitOfMeasure, t.StoreId, StoreCode = t.Store!.Code,
+                .Select(t => new { t.Id, t.Type, t.Date, t.PartId, t.Part!.PartNumber, PartName = Bilingual.Arabic && t.Part.NameAr != null ? t.Part.NameAr : t.Part.Name, t.Part.UnitOfMeasure, t.StoreId, StoreCode = t.Store!.Code,
                     Quantity = -t.Quantity, t.UnitCost, Total = Math.Round(-t.Quantity * t.UnitCost, 2), t.BatchNumber, t.Notes, t.CreatedByName }).ToListAsync(ct);
             var request = w.WorkRequestId is { } rid ? await db.WorkRequests.AsNoTracking().Where(r => r.Id == rid)
                 .Select(r => new { r.Id, r.Number, r.RequesterName, r.RespondBy, r.DecidedAt, r.Status, AwaitingFeedback = r.AwaitingFeedbackSince != null }).FirstOrDefaultAsync(ct) : null;
@@ -213,21 +215,22 @@ public static class WorkOrderEndpoints
                 .OrderBy(u => u.FullName).Select(u => new { u.Id, u.FullName }).ToListAsync(ct);
             return Results.Ok(new
             {
-                w.Id, w.Number, w.Title, w.Description, w.Type, w.Priority, w.Status, w.HoldReason,
+                w.Id, w.Number, w.Title, w.TitleAr, w.SafetyNotes, w.SafetyNotesAr, w.Description, w.Type, w.Priority, w.Status, w.HoldReason,
                 w.SiteId, Site = new { w.Site!.Id, w.Site.Name }, w.LocationId, LocationTrail = trail,
-                w.AssetId, Asset = w.Asset is null ? null : new { w.Asset.Id, w.Asset.AssetNumber, w.Asset.Name, w.Asset.SerialNumber, w.Asset.Status, w.Asset.Criticality, w.Asset.NotesToTechnician,
+                w.AssetId, Asset = w.Asset is null ? null : new { w.Asset.Id, w.Asset.AssetNumber, Name = Bilingual.Pick(w.Asset.Name, w.Asset.NameAr), w.Asset.SerialNumber, w.Asset.Status, w.Asset.Criticality,
+                    NotesToTechnician = Bilingual.PickNote(w.Asset.NotesToTechnician, w.Asset.NotesToTechnicianAr),
                     w.Asset.WarrantyType, w.Asset.WarrantyExpiresOn, UnderWarranty = w.Asset.WarrantyType != FourC.Cmms.Core.Assets.WarrantyType.None && w.Asset.WarrantyExpiresOn >= Today },
                 w.RequestedBy, w.PreventionNotes,
-                w.TradeId, TradeName = w.Trade?.Name, w.TeamId, Team = w.Team is null ? null : new { w.Team.Id, w.Team.Code, w.Team.Name, w.Team.Color }, w.FailureCodeId, FailureCode = w.FailureCode is null ? null : new { w.FailureCode.Id, w.FailureCode.Code, w.FailureCode.Name },
-                w.SymptomId, Symptom = w.Symptom is null ? null : new { w.Symptom.Id, w.Symptom.Code, w.Symptom.Name },
-                w.RemedyId, Remedy = w.Remedy is null ? null : new { w.Remedy.Id, w.Remedy.Code, w.Remedy.Name },
+                w.TradeId, TradeName = w.Trade?.Name, w.TeamId, Team = w.Team is null ? null : new { w.Team.Id, w.Team.Code, w.Team.Name, w.Team.Color }, w.FailureCodeId, FailureCode = w.FailureCode is null ? null : new { w.FailureCode.Id, w.FailureCode.Code, Name = Bilingual.Pick(w.FailureCode.Name, w.FailureCode.NameAr) },
+                w.SymptomId, Symptom = w.Symptom is null ? null : new { w.Symptom.Id, w.Symptom.Code, Name = Bilingual.Pick(w.Symptom.Name, w.Symptom.NameAr) },
+                w.RemedyId, Remedy = w.Remedy is null ? null : new { w.Remedy.Id, w.Remedy.Code, Name = Bilingual.Pick(w.Remedy.Name, w.Remedy.NameAr) },
                 Assignees = w.Assignees.Select(a => new { a.EmployeeId, a.Employee!.FullName, a.Employee.Code, a.PlannedHours, a.Employee.HourlyRate }),
                 w.PlannedStart, w.DueDate, w.DueAt, w.DueFromTarget, w.StartBy, w.RespondedAt, w.EstimatedHours, w.StartedAt, w.CompletedAt, w.ClosedAt, w.CompletionNotes, w.CauseNotes, w.AssetWasDown, w.DowntimeHours,
                 Downtime = downtime, AssetDownSince = assetDownSince,
                 LocationNotesToTechnician = locationNotes,
                 // Planned on a day none of its access windows touches.
                 OutsideWindows = w.PlannedStart is { } plannedDay && !AccessWindows.Covers(w.AccessWindows, plannedDay, Sla.Zone(settings.TimeZone)),
-                CancelReason = w.CancelReason is null ? null : new { w.CancelReason.Id, w.CancelReason.Code, w.CancelReason.Name },
+                CancelReason = w.CancelReason is null ? null : new { w.CancelReason.Id, w.CancelReason.Code, Name = Bilingual.Pick(w.CancelReason.Name, w.CancelReason.NameAr) },
                 Request = request is null ? null : new
                 {
                     request.Id, request.Number, request.RequesterName, request.RespondBy, request.DecidedAt, request.Status, request.AwaitingFeedback,
@@ -240,7 +243,7 @@ public static class WorkOrderEndpoints
                 Assets = roundAssets,
                 Tasks = tasks.Select(t => new
                 {
-                    t.Id, t.Sequence, t.Description, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName,
+                    t.Id, t.Sequence, t.Description, t.DescriptionAr, t.IsDone, t.DoneAt, t.DoneBy, t.AssetId, t.Reading, t.Remarks, t.UpdatedAt, t.UpdatedByName,
                     t.Type, Unit = t.Unit ?? stepPoints.FirstOrDefault(p => p.Id == t.MeasurementPointId)?.Unit, Decimals = t.Decimals ?? stepPoints.FirstOrDefault(p => p.Id == t.MeasurementPointId)?.Decimals,
                     t.MeasurementPointId, t.MeterId, MeterName = t.MeterId is { } mid ? meterNames.GetValueOrDefault(mid) : null, t.PhotoRequired, t.BeforeStart,
                     FollowUpKind = t.FollowUp, Answer = StepRules.ShownAnswer(t), t.Value, t.TextValue, t.Level, Photos = stepPhotos[t.Id],
@@ -465,7 +468,7 @@ public static class WorkOrderEndpoints
             var v = new Validator().Required("description", input.Description, "Task", 1000);
             if (!v.IsValid) return v.Problem();
             var seq = (await db.WorkOrderTasks.Where(t => t.WorkOrderId == id).MaxAsync(t => (int?)t.Sequence, ct) ?? 0) + 1;
-            var task = new WorkOrderTask { WorkOrderId = id, Sequence = seq, Description = input.Description!.Trim() };
+            var task = new WorkOrderTask { WorkOrderId = id, Sequence = seq, Description = input.Description!.Trim(), DescriptionAr = Cut(input.DescriptionAr.Clean(), 1000) };
             db.WorkOrderTasks.Add(task);
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { task.Id });
@@ -481,6 +484,7 @@ public static class WorkOrderEndpoints
                 .When(input.Remarks is { Length: > 2000 }, "remarks", "Remarks can be at most 2000 characters.");
             if (!v.IsValid) return v.Problem();
             if (input.Description.Clean() is { } d) t.Description = d.Length > 1000 ? d[..1000] : d;
+            if (input.DescriptionAr is not null) t.DescriptionAr = Cut(input.DescriptionAr.Clean(), 1000);
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(x => x.Id == db.CurrentTenantId, ct)).Settings;
             // One transaction: the answer, its follow-up and an automatic start are saved together or not at all.
             return await db.InTransactionAsync(async tk =>
@@ -717,14 +721,16 @@ public static class WorkOrderEndpoints
         var q = await FilterAsync(db, f, ctx, includeStatus: true, ct);
         var settings = await SlaQueries.SettingsAsync(db, ct);
         var now = DateTimeOffset.UtcNow;
+        var ar = Bilingual.Arabic;
         var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "createdAt").Select(w => new
         {
             w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason, w.SiteId, SiteName = w.Site!.Name, w.LocationId, LocationPath = w.Location!.Path,
-            w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, TradeName = w.Trade!.Name, TeamName = w.Team!.Name,
+            w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = ar && w.Asset.NameAr != null ? w.Asset.NameAr : w.Asset.Name, TradeName = w.Trade!.Name, TeamName = w.Team!.Name,
             Assignees = w.Assignees.Select(a => a.Employee!.FullName).ToList(), w.DueDate, w.CreatedAt, w.CompletedAt,
-            w.DueAt, w.StartBy, w.RespondedAt, w.DueFromTarget, CancelReasonName = w.CancelReason!.Name, w.OnlyWhenStopped,
+            w.DueAt, w.StartBy, w.RespondedAt, w.DueFromTarget, CancelReasonName = ar && w.CancelReason!.NameAr != null ? w.CancelReason.NameAr : w.CancelReason!.Name, w.OnlyWhenStopped,
             w.GroupId, GroupNumber = db.WorkOrderGroups.Where(g => g.Id == w.GroupId).Select(g => g.Number).FirstOrDefault(),
-            SymptomName = w.Symptom!.Name, CauseName = w.FailureCode!.Name, RemedyName = w.Remedy!.Name,
+            SymptomName = ar && w.Symptom!.NameAr != null ? w.Symptom.NameAr : w.Symptom!.Name, CauseName = ar && w.FailureCode!.NameAr != null ? w.FailureCode.NameAr : w.FailureCode!.Name,
+            RemedyName = ar && w.Remedy!.NameAr != null ? w.Remedy.NameAr : w.Remedy!.Name,
         }).ToPagedAsync(page, pageSize, ct, maxPageSize);
         var names = await LocationEndpoints.ResolvePathNamesAsync(db, paged.Items.Select(i => i.LocationPath), ct);
         return new PagedResult<WorkOrderListItem>(paged.Items.Select(w =>
@@ -741,7 +747,7 @@ public static class WorkOrderEndpoints
     private static async Task<IQueryable<WorkOrder>> FilterAsync(CmmsDbContext db, WorkOrderFilter f, ITenantContext ctx, bool includeStatus, CancellationToken ct)
     {
         var q = db.WorkOrders.AsNoTracking();
-        if (f.Search.Clean() is { } s) q = q.Where(w => w.Number.Contains(s) || w.Title.Contains(s) || w.Asset!.AssetNumber.Contains(s) || w.Asset.Name.Contains(s));
+        if (f.Search.Clean() is { } s) q = q.Where(w => w.Number.Contains(s) || w.Title.Contains(s) || w.Asset!.AssetNumber.Contains(s) || w.Asset.Name.Contains(s) || w.Asset.NameAr!.Contains(s));
         if (includeStatus && ParseEnums<WorkOrderStatus>(f.Status) is { Count: > 0 } st) q = q.Where(w => st.Contains(w.Status));
         if (f.ActiveOnly == true) q = q.Where(w => w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold);
         if (ParseEnums<WorkPriority>(f.Priority) is { Count: > 0 } pr) q = q.Where(w => pr.Contains(w.Priority));
@@ -838,7 +844,8 @@ public static class WorkOrderEndpoints
     {
         // The due time's day in the organization's time zone (01:00 in Cairo is still the same local day).
         var dueDay = i.DueAt is { } da ? Sla.LocalDay(da, Sla.Zone((await SlaQueries.SettingsAsync(db, ct)).TimeZone)) : i.DueDate;
-        var v = new Validator().Required("title", i.Title, "Title", 300)
+        var v = new Validator().Required("title", i.Title, "Title", 300).MaxLength("titleAr", i.TitleAr, "Title (Arabic)", 300)
+            .MaxLength("safetyNotes", i.SafetyNotes, "Safety notes", 4000).MaxLength("safetyNotesAr", i.SafetyNotesAr, "Safety notes (Arabic)", 4000)
             .When(!Enum.IsDefined(i.Type), "type", "Choose a work type.").When(!Enum.IsDefined(i.Priority), "priority", "Choose a priority.")
             .When(i.EstimatedHours < 0, "estimatedHours", "Estimate cannot be negative.")
             .When(i.PlannedStart is { } ps && dueDay is { } dd && dd < ps, "dueDate", "Due date cannot be before the planned start.");
@@ -913,7 +920,11 @@ public static class WorkOrderEndpoints
 
     private static void Apply(WorkOrder w, WorkOrderInput i)
     {
-        w.Title = i.Title.Trim(); w.Description = i.Description.Clean(); w.Type = i.Type; w.Priority = i.Priority; w.SiteId = i.SiteId; w.LocationId = i.LocationId;
+        w.Title = i.Title.Trim();
+        if (i.TitleAr is not null) w.TitleAr = i.TitleAr.Clean();
+        if (i.SafetyNotes is not null) w.SafetyNotes = i.SafetyNotes.Clean();
+        if (i.SafetyNotesAr is not null) w.SafetyNotesAr = i.SafetyNotesAr.Clean();
+        w.Description = i.Description.Clean(); w.Type = i.Type; w.Priority = i.Priority; w.SiteId = i.SiteId; w.LocationId = i.LocationId;
         w.AssetId = i.AssetId; w.TradeId = i.TradeId; w.TeamId = i.TeamId; w.PlannedStart = i.PlannedStart; w.EstimatedHours = i.EstimatedHours; // deadlines: Deadlines
         w.RequestedBy = i.RequestedBy.Clean() is { } rb && rb.Length > 200 ? rb[..200] : i.RequestedBy.Clean();
         // Left out (older pages, the phone): unchanged.
@@ -981,4 +992,7 @@ public static class WorkOrderEndpoints
 
     private static Validator ValidateCost(CostInput i) => new Validator().Required("description", i.Description, "Description", 500)
         .MaxLength("vendor", i.Vendor, "Vendor", 200).MaxLength("reference", i.Reference, "Reference", 100).When(i.Quantity <= 0, "quantity", "Quantity must be positive.").When(i.UnitCost < 0, "unitCost", "Cost cannot be negative.");
+
+    /// <summary>A text cut to the column's length (step texts are cut, as the main text is).</summary>
+    private static string? Cut(string? s, int max) => s is { } x && x.Length > max ? x[..max] : s;
 }

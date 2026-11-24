@@ -12,6 +12,8 @@ public class AssetCategory : TenantEntity
 {
     public required string Code { get; set; }
     public required string Name { get; set; }
+    /// <summary>0.28.0: the name in Arabic; empty = the main name for everyone.</summary>
+    public string? NameAr { get; set; }
     public string? Description { get; set; }
     public string? Color { get; set; }
     public bool IsActive { get; set; } = true;
@@ -23,6 +25,8 @@ public class Asset : TenantEntity
 {
     public required string AssetNumber { get; set; }
     public required string Name { get; set; }
+    /// <summary>0.28.0: the name in Arabic; empty = the main name for everyone.</summary>
+    public string? NameAr { get; set; }
     public string? Description { get; set; }
     public Guid? CategoryId { get; set; }
     public AssetCategory? Category { get; set; }
@@ -67,6 +71,7 @@ public class Asset : TenantEntity
 
     public string? Notes { get; set; }
     public string? NotesToTechnician { get; set; }
+    public string? NotesToTechnicianAr { get; set; }
     /// <summary>Maintenance only while the asset is stopped; copied to its requests, work orders and PMs.</summary>
     public bool OnlyWhenStopped { get; set; }
     public Dictionary<string, string?> CustomFields { get; set; } = [];

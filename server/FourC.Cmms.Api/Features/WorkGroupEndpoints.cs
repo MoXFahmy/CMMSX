@@ -66,7 +66,7 @@ public static partial class WorkGroups
             var children = await db.WorkOrders.AsNoTracking().Where(w => w.GroupId == id).OrderBy(w => w.Number)
                 .Select(w => new
                 {
-                    w.Id, w.Number, w.Title, w.Status, w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, w.DueDate, w.CompletedAt,
+                    w.Id, w.Number, w.Title, w.Status, w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = Bilingual.Arabic && w.Asset.NameAr != null ? w.Asset.NameAr : w.Asset.Name, w.DueDate, w.CompletedAt,
                     Assignees = w.Assignees.Select(a => new { a.EmployeeId, a.Employee!.FullName }).ToList(),
                     StepsDone = db.WorkOrderTasks.Count(t => t.WorkOrderId == w.Id && t.IsDone), StepsTotal = db.WorkOrderTasks.Count(t => t.WorkOrderId == w.Id),
                     LaborHours = db.WorkOrderLabor.Where(l => l.WorkOrderId == w.Id).Sum(l => (decimal?)(l.Hours + l.OvertimeHours)) ?? 0,

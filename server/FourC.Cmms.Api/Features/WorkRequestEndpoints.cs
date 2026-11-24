@@ -66,11 +66,12 @@ public static class WorkRequestEndpoints
         var now = DateTimeOffset.UtcNow;
         if (f.Late == true) q = SlaQueries.LateRequests(q, now);
         var settings = await SlaQueries.SettingsAsync(db, ct);
+        var ar = Bilingual.Arabic;
         var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "createdAt").Select(r => new
         {
-            r.Id, r.Number, r.Title, r.Status, r.Priority, r.Type, r.SiteId, SiteName = r.Site!.Name, LocationName = r.Location!.Name,
-            r.AssetId, AssetNumber = r.Asset!.AssetNumber, AssetName = r.Asset.Name, r.RequesterName, r.RequiredBy, r.CreatedAt, r.WorkOrderId,
-            r.RespondBy, r.DueAt, r.DueFromTarget, r.DecidedAt, RequestTypeName = r.RequestType!.Name, SymptomName = r.Symptom!.Name,
+            r.Id, r.Number, r.Title, r.Status, r.Priority, r.Type, r.SiteId, SiteName = r.Site!.Name, LocationName = ar && r.Location!.NameAr != null ? r.Location.NameAr : r.Location!.Name,
+            r.AssetId, AssetNumber = r.Asset!.AssetNumber, AssetName = ar && r.Asset.NameAr != null ? r.Asset.NameAr : r.Asset.Name, r.RequesterName, r.RequiredBy, r.CreatedAt, r.WorkOrderId,
+            r.RespondBy, r.DueAt, r.DueFromTarget, r.DecidedAt, RequestTypeName = ar && r.RequestType!.NameAr != null ? r.RequestType.NameAr : r.RequestType!.Name, SymptomName = ar && r.Symptom!.NameAr != null ? r.Symptom.NameAr : r.Symptom!.Name,
             Work = db.WorkOrders.Where(w => w.Id == r.WorkOrderId)
                 .Select(w => new { w.Number, w.Priority, w.Status, w.StartBy, w.RespondedAt, w.DueAt, w.DueFromTarget, w.CompletedAt }).FirstOrDefault(),
         }).ToPagedAsync(page, pageSize, ct, maxPageSize);
@@ -120,15 +121,15 @@ public static class WorkRequestEndpoints
                 work is null ? null : SlaQueries.Work(settings, work.Priority, work.Status, work.StartBy, work.RespondedAt, work.DueAt, work.DueFromTarget, work.CompletedAt, now).Completion, now);
             return Results.Ok(new
             {
-                r.Id, r.Number, r.Title, r.Description, r.Status, r.Priority, r.Type, r.SiteId, Site = new { r.Site!.Id, r.Site.Name }, r.LocationId, LocationName = r.Location?.Name,
-                r.AssetId, Asset = r.Asset is null ? null : new { r.Asset.Id, r.Asset.AssetNumber, r.Asset.Name }, r.RequesterName, r.RequesterEmail, r.RequesterPhone,
+                r.Id, r.Number, r.Title, r.Description, r.Status, r.Priority, r.Type, r.SiteId, Site = new { r.Site!.Id, r.Site.Name }, r.LocationId, LocationName = r.Location is null ? null : Bilingual.Pick(r.Location.Name, r.Location.NameAr),
+                r.AssetId, Asset = r.Asset is null ? null : new { r.Asset.Id, r.Asset.AssetNumber, Name = Bilingual.Pick(r.Asset.Name, r.Asset.NameAr) }, r.RequesterName, r.RequesterEmail, r.RequesterPhone,
                 r.RequiredBy, r.RespondBy, DueAt = r.Status is WorkRequestStatus.Approved or WorkRequestStatus.Closed && work is not null ? work.DueAt : r.DueAt, r.DueFromTarget, Sla = sla,
                 r.DecisionNote, r.DecidedAt, DecidedBy = r.DecidedById is { } d ? users.GetValueOrDefault(d) : null, WorkOrder = wo, r.DowntimeEventId,
                 r.CreatedAt, CreatedBy = r.CreatedById is { } c ? users.GetValueOrDefault(c) : null, CanCancel = r.Status == WorkRequestStatus.New && r.CreatedById == ctx.UserId,
-                r.RequestTypeId, RequestType = r.RequestType is null ? null : new { r.RequestType.Id, r.RequestType.Name, r.RequestType.DefaultTradeId },
+                r.RequestTypeId, RequestType = r.RequestType is null ? null : new { r.RequestType.Id, Name = Bilingual.Pick(r.RequestType.Name, r.RequestType.NameAr), r.RequestType.DefaultTradeId },
                 ExtraRecipients = extra, r.AccessWindows, r.OnlyWhenStopped,
                 CoveredBy = await ContractEndpoints.CoveredByAsync(db, r.AssetId, null, ct),
-                r.SymptomId, Symptom = r.Symptom is null ? null : new { r.Symptom.Id, r.Symptom.Code, r.Symptom.Name },
+                r.SymptomId, Symptom = r.Symptom is null ? null : new { r.Symptom.Id, r.Symptom.Code, Name = Bilingual.Pick(r.Symptom.Name, r.Symptom.NameAr) },
                 AwaitingFeedback = r.AwaitingFeedbackSince != null, r.AwaitingFeedbackSince, CanAnswer = canAnswer,
                 Feedback = feedback, Source = await Checklists.SourceAsync(db, r.SourceWorkOrderId, r.SourceTaskId, ct),
             });

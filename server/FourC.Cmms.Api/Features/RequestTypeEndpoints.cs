@@ -11,7 +11,7 @@ namespace FourC.Cmms.Api.Features;
 public static class RequestTypeEndpoints
 {
     public sealed record RequestTypeInput(string Code, string Name, bool IsActive, Guid? DefaultTradeId, WorkPriority? DefaultPriority, List<Guid>? RecipientIds,
-        bool AutoApprove, Guid? TeamId);
+        bool AutoApprove, Guid? TeamId, string? NameAr = null);
 
     public static void MapRequestTypeEndpoints(this RouteGroupBuilder api)
     {
@@ -19,7 +19,7 @@ public static class RequestTypeEndpoints
 
         g.MapGet("/", async (CmmsDbContext db, CancellationToken ct) =>
             await db.RequestTypes.AsNoTracking().OrderBy(t => t.Name)
-                .Select(t => new { t.Id, t.Code, t.Name, t.IsActive, t.DefaultTradeId, t.DefaultPriority, t.RecipientIds, t.AutoApprove, t.TeamId }).ToListAsync(ct))
+                .Select(t => new { t.Id, t.Code, t.Name, t.NameAr, t.IsActive, t.DefaultTradeId, t.DefaultPriority, t.RecipientIds, t.AutoApprove, t.TeamId }).ToListAsync(ct))
             .RequireAuthorization();
 
         g.MapPost("/", async (RequestTypeInput input, CmmsDbContext db, CancellationToken ct) =>
@@ -58,13 +58,13 @@ public static class RequestTypeEndpoints
 
     private static void Apply(RequestType t, RequestTypeInput i)
     {
-        t.Code = i.Code.Trim(); t.Name = i.Name.Trim(); t.IsActive = i.IsActive; t.DefaultTradeId = i.DefaultTradeId; t.DefaultPriority = i.DefaultPriority;
+        t.Code = i.Code.Trim(); t.Name = i.Name.Trim(); if (i.NameAr is not null) t.NameAr = i.NameAr.Clean(); t.IsActive = i.IsActive; t.DefaultTradeId = i.DefaultTradeId; t.DefaultPriority = i.DefaultPriority;
         t.RecipientIds = (i.RecipientIds ?? []).Distinct().ToList(); t.AutoApprove = i.AutoApprove; t.TeamId = i.TeamId;
     }
 
     private static async Task<Validator> ValidateAsync(CmmsDbContext db, RequestTypeInput i, Guid? id, CancellationToken ct)
     {
-        var v = PeopleEndpoints.LookupRules(new PeopleEndpoints.LookupInput(i.Code, i.Name, null, i.IsActive))
+        var v = PeopleEndpoints.LookupRules(new PeopleEndpoints.LookupInput(i.Code, i.Name, null, i.IsActive, i.NameAr))
             .When(i.DefaultPriority is { } p && !Enum.IsDefined(p), "defaultPriority", "Choose a priority.")
             .When(i.AutoApprove && i.DefaultTradeId is null && i.TeamId is null, "autoApprove", "Choose the trade or team the work goes to.");
         if (!string.IsNullOrWhiteSpace(i.Code) && await db.RequestTypes.AnyAsync(x => x.Code == i.Code.Trim() && x.Id != id, ct)) v.Add("code", "This code is already used.");

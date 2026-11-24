@@ -278,10 +278,17 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
+                    b.Property<string>("NameAr")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<string>("NotesToTechnician")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NotesToTechnicianAr")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<bool>("OnlyWhenStopped")
@@ -434,6 +441,10 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("NameAr")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
@@ -2060,6 +2071,10 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
+                    b.Property<string>("NameAr")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<string>("Notes")
                         .HasColumnType("nvarchar(max)");
 
@@ -2706,7 +2721,14 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
+                    b.Property<string>("NameAr")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<string>("NotesToTechnician")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("NotesToTechnicianAr")
                         .HasColumnType("nvarchar(max)");
 
                     b.Property<Guid?>("ParentId")
@@ -3876,6 +3898,10 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
+                    b.Property<string>("NameAr")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<DateOnly?>("NextDueDate")
                         .HasColumnType("date");
 
@@ -4122,6 +4148,10 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
+                    b.Property<string>("NameAr")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
                     b.Property<int?>("Priority")
                         .HasColumnType("int");
 
@@ -4140,10 +4170,17 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<string>("SafetyNotes")
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<string>("SafetyNotesAr")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("TenantId")
                         .HasColumnType("uniqueidentifier");
 
                     b.Property<string>("Title")
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("TitleAr")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
@@ -4213,6 +4250,10 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.Property<string>("Description")
                         .IsRequired()
+                        .HasMaxLength(2000)
+                        .HasColumnType("nvarchar(2000)");
+
+                    b.Property<string>("DescriptionAr")
                         .HasMaxLength(2000)
                         .HasColumnType("nvarchar(2000)");
 
@@ -5708,6 +5749,10 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("NameAr")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -5770,6 +5815,10 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("NameAr")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.Property<byte[]>("RowVersion")
                         .IsConcurrencyToken()
                         .IsRequired()
@@ -5829,6 +5878,10 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("NameAr")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
@@ -5954,6 +6007,10 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
+                    b.Property<string>("NameAr")
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
                     b.PrimitiveCollection<string>("RecipientIds")
                         .IsRequired()
                         .ValueGeneratedOnAdd()
@@ -6026,6 +6083,10 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.Property<string>("Name")
                         .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("nvarchar(200)");
+
+                    b.Property<string>("NameAr")
                         .HasMaxLength(200)
                         .HasColumnType("nvarchar(200)");
 
@@ -6244,6 +6305,12 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .ValueGeneratedOnAddOrUpdate()
                         .HasColumnType("rowversion");
 
+                    b.Property<string>("SafetyNotes")
+                        .HasColumnType("nvarchar(max)");
+
+                    b.Property<string>("SafetyNotesAr")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<Guid>("SiteId")
                         .HasColumnType("uniqueidentifier");
 
@@ -6273,6 +6340,10 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.Property<string>("Title")
                         .IsRequired()
+                        .HasMaxLength(300)
+                        .HasColumnType("nvarchar(300)");
+
+                    b.Property<string>("TitleAr")
                         .HasMaxLength(300)
                         .HasColumnType("nvarchar(300)");
 
@@ -6840,6 +6911,10 @@ namespace FourC.Cmms.Core.Data.Migrations
 
                     b.Property<string>("Description")
                         .IsRequired()
+                        .HasMaxLength(1000)
+                        .HasColumnType("nvarchar(1000)");
+
+                    b.Property<string>("DescriptionAr")
                         .HasMaxLength(1000)
                         .HasColumnType("nvarchar(1000)");
 

@@ -178,7 +178,7 @@ public static class ContractEndpoints
             // Covered assets the person may see (the asset's own site filter hides the others).
             var assets = await (from ca in db.ContractAssets.AsNoTracking() join a in db.Assets.AsNoTracking() on ca.AssetId equals a.Id
                                 where ca.ContractId == id orderby a.AssetNumber
-                                select new { ca.AssetId, a.AssetNumber, a.Name, SiteName = a.Site!.Name, ca.YearlyCost }).ToListAsync(ct);
+                                select new { ca.AssetId, a.AssetNumber, Name = Bilingual.Arabic && a.NameAr != null ? a.NameAr : a.Name, SiteName = a.Site!.Name, ca.YearlyCost }).ToListAsync(ct);
             var work = db.WorkOrders.AsNoTracking().Where(w => w.ContractId == id);
             var workOrders = await work.OrderByDescending(w => w.CreatedAt).Take(50)
                 .Select(w => new { w.Id, w.Number, w.Title, w.Status, w.CompletedAt, w.DueDate }).ToListAsync(ct);

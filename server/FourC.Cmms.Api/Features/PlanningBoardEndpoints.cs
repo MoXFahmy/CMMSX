@@ -67,7 +67,7 @@ public static class PlanningBoardEndpoints
     private static IQueryable<JobRow> Project(IQueryable<WorkOrder> q, IQueryable<FourC.Cmms.Core.Pm.PmTask> tasks) => q.Select(w => new JobRow
     {
         Id = w.Id, Number = w.Number, Title = w.Title, Priority = w.Priority, Status = w.Status, SiteId = w.SiteId, AssetId = w.AssetId,
-        AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, Day = w.PlannedStart ?? w.DueDate, PlannedStart = w.PlannedStart, DueAt = w.DueAt,
+        AssetNumber = w.Asset!.AssetNumber, AssetName = Bilingual.Arabic && w.Asset.NameAr != null ? w.Asset.NameAr : w.Asset.Name, Day = w.PlannedStart ?? w.DueDate, PlannedStart = w.PlannedStart, DueAt = w.DueAt,
         DueFromTarget = w.DueFromTarget, StartBy = w.StartBy, RespondedAt = w.RespondedAt, CompletedAt = w.CompletedAt, EstimatedHours = w.EstimatedHours,
         Assignees = w.Assignees.Select(a => new AssigneeRow { EmployeeId = a.EmployeeId, PlannedHours = a.PlannedHours }).ToList(),
         AccessWindows = w.AccessWindows, OnlyWhenStopped = w.OnlyWhenStopped,

@@ -109,8 +109,8 @@ public static class ActivityEndpoints
     {
         var ids = new List<Guid>();
         ids.AddRange(await db.WorkOrders.AllSites().Where(x => x.Number.Contains(s) || x.Title.Contains(s)).Select(x => x.Id).Take(100).ToListAsync(ct));
-        ids.AddRange(await db.Assets.AllSites().Where(x => x.AssetNumber.Contains(s) || x.Name.Contains(s)).Select(x => x.Id).Take(100).ToListAsync(ct));
-        ids.AddRange(await db.Parts.Where(x => x.PartNumber.Contains(s) || x.Name.Contains(s)).Select(x => x.Id).Take(100).ToListAsync(ct));
+        ids.AddRange(await db.Assets.AllSites().Where(x => x.AssetNumber.Contains(s) || x.Name.Contains(s) || x.NameAr!.Contains(s)).Select(x => x.Id).Take(100).ToListAsync(ct));
+        ids.AddRange(await db.Parts.Where(x => x.PartNumber.Contains(s) || x.Name.Contains(s) || x.NameAr!.Contains(s)).Select(x => x.Id).Take(100).ToListAsync(ct));
         ids.AddRange(await db.WorkRequests.AllSites().Where(x => x.Number.Contains(s) || x.Title.Contains(s)).Select(x => x.Id).Take(50).ToListAsync(ct));
         ids.AddRange(await db.PurchaseOrders.AllSites().Where(x => x.Number.Contains(s)).Select(x => x.Id).Take(50).ToListAsync(ct));
         ids.AddRange(await db.Users.Where(x => x.TenantId == db.CurrentTenantId && x.FullName.Contains(s)).Select(x => x.Id).Take(50).ToListAsync(ct));
@@ -131,9 +131,9 @@ public static class ActivityLabels
         if (byType.TryGetValue("WorkOrder", out var w))
             foreach (var x in await db.WorkOrders.IgnoreQueryFilters().Where(x => x.TenantId == tenant && w.Contains(x.Id)).Select(x => new { x.Id, x.Number, x.Title }).ToListAsync(ct)) labels[("WorkOrder", x.Id)] = $"{x.Number} · {x.Title}";
         if (byType.TryGetValue("Asset", out var a))
-            foreach (var x in await db.Assets.IgnoreQueryFilters().Where(x => x.TenantId == tenant && a.Contains(x.Id)).Select(x => new { x.Id, x.AssetNumber, x.Name }).ToListAsync(ct)) labels[("Asset", x.Id)] = $"{x.AssetNumber} · {x.Name}";
+            foreach (var x in await db.Assets.IgnoreQueryFilters().Where(x => x.TenantId == tenant && a.Contains(x.Id)).Select(x => new { x.Id, x.AssetNumber, Name = Bilingual.Arabic && x.NameAr != null ? x.NameAr : x.Name }).ToListAsync(ct)) labels[("Asset", x.Id)] = $"{x.AssetNumber} · {x.Name}";
         if (byType.TryGetValue("Part", out var p))
-            foreach (var x in await db.Parts.IgnoreQueryFilters().Where(x => x.TenantId == tenant && p.Contains(x.Id)).Select(x => new { x.Id, x.PartNumber, x.Name }).ToListAsync(ct)) labels[("Part", x.Id)] = $"{x.PartNumber} · {x.Name}";
+            foreach (var x in await db.Parts.IgnoreQueryFilters().Where(x => x.TenantId == tenant && p.Contains(x.Id)).Select(x => new { x.Id, x.PartNumber, Name = Bilingual.Arabic && x.NameAr != null ? x.NameAr : x.Name }).ToListAsync(ct)) labels[("Part", x.Id)] = $"{x.PartNumber} · {x.Name}";
         if (byType.TryGetValue("WorkRequest", out var r))
             foreach (var x in await db.WorkRequests.IgnoreQueryFilters().Where(x => x.TenantId == tenant && r.Contains(x.Id)).Select(x => new { x.Id, x.Number, x.Title }).ToListAsync(ct)) labels[("WorkRequest", x.Id)] = $"{x.Number} · {x.Title}";
         if (byType.TryGetValue("PurchaseOrder", out var po))

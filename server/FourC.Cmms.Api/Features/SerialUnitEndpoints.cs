@@ -52,7 +52,7 @@ public static class SerialUnitEndpoints
         var parentIds = rows.Where(r => r.FittedToId != null).Select(r => r.FittedToId!.Value).Distinct().ToList();
         var siteIds = rows.Select(r => r.SiteId).Distinct().ToList();
         var stores = await db.Stores.AllSites().AsNoTracking().Where(x => storeIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name, ct);
-        var parents = await db.Assets.AllSites().AsNoTracking().Where(x => parentIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => new { x.AssetNumber, x.Name }, ct);
+        var parents = await db.Assets.AllSites().AsNoTracking().Where(x => parentIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => new { x.AssetNumber, Name = Bilingual.Pick(x.Name, x.NameAr) }, ct);
         var sites = await db.Sites.AllSites().AsNoTracking().Where(x => siteIds.Contains(x.Id)).ToDictionaryAsync(x => x.Id, x => x.Name, ct);
         return rows.Select(r => new UnitRow(r.Id, r.AssetNumber, r.SerialNumber, r.PartId, r.PartNumber, r.PartName, r.State,
             r.StoreId, r.StoreId is { } st ? stores.GetValueOrDefault(st) : null,
@@ -156,7 +156,7 @@ public static class SerialUnitEndpoints
                 .OrderBy(a => a.AssetNumber).Select(a => new
                 {
                     a.Id, a.AssetNumber, a.SerialNumber, a.PartId, PartNumber = db.Parts.Where(p => p.Id == a.PartId).Select(p => p.PartNumber).FirstOrDefault(),
-                    PartName = db.Parts.Where(p => p.Id == a.PartId).Select(p => p.Name).FirstOrDefault(), FittedToId = a.ParentAssetId,
+                    PartName = db.Parts.Where(p => p.Id == a.PartId).Select(p => Bilingual.Arabic && p.NameAr != null ? p.NameAr : p.Name).FirstOrDefault(), FittedToId = a.ParentAssetId,
                     Since = db.UnitMovements.Where(m => m.UnitId == a.Id && m.Kind == UnitMovementKind.Fitted).Max(m => (DateTimeOffset?)m.At),
                 }).ToListAsync(ct);
             return Results.Ok(rows);
@@ -284,7 +284,7 @@ public static class SerialUnitEndpoints
                 q = q.Where(a => a.EndOfLifeOn != null && a.EndOfLifeOn <= limit && a.Status != AssetStatus.Disposed);
             }
             if (search.Clean() is { } t)
-                q = q.Where(a => a.SerialNumber!.Contains(t) || a.AssetNumber.Contains(t) || db.Parts.Any(p => p.Id == a.PartId && (p.PartNumber.Contains(t) || p.Name.Contains(t))));
+                q = q.Where(a => a.SerialNumber!.Contains(t) || a.AssetNumber.Contains(t) || db.Parts.Any(p => p.Id == a.PartId && (p.PartNumber.Contains(t) || p.Name.Contains(t) || p.NameAr!.Contains(t))));
             // Filtered before the cap; the answer says when more matched than it shows (0.26.1).
             var rows = await RowsAsync(db, q.OrderBy(a => a.SerialNumber).Take(UnitListCap + 1), ct);
             return Results.Ok(new { Items = rows.Take(UnitListCap), Capped = rows.Count > UnitListCap });
@@ -311,7 +311,7 @@ public static class SerialUnitEndpoints
             {
                 m.Kind, m.At, m.StoreId, StoreName = db.Stores.AllSites().Where(x => x.Id == m.StoreId).Select(x => x.Name).FirstOrDefault(),
                 m.AssetId, AssetNumber = db.Assets.AllSites().Where(x => x.Id == m.AssetId).Select(x => x.AssetNumber).FirstOrDefault(),
-                AssetName = db.Assets.AllSites().Where(x => x.Id == m.AssetId).Select(x => x.Name).FirstOrDefault(),
+                AssetName = db.Assets.AllSites().Where(x => x.Id == m.AssetId).Select(x => Bilingual.Arabic && x.NameAr != null ? x.NameAr : x.Name).FirstOrDefault(),
                 m.WorkOrderId, WorkOrderNumber = db.WorkOrders.AllSites().Where(x => x.Id == m.WorkOrderId).Select(x => x.Number).FirstOrDefault(),
                 m.PurchaseOrderId, PurchaseOrderNumber = db.PurchaseOrders.AllSites().Where(x => x.Id == m.PurchaseOrderId).Select(x => x.Number).FirstOrDefault(),
                 m.Outcome, m.Note, m.Cost, m.ByName,
@@ -331,14 +331,14 @@ public static class SerialUnitEndpoints
                 .Where(a => a.ParentAssetId == id && a.PartId != null && a.Status != AssetStatus.Disposed && a.Status != AssetStatus.UnderRepair).OrderBy(a => a.AssetNumber)
                 .Select(a => new
                 {
-                    UnitId = a.Id, a.AssetNumber, a.SerialNumber, PartName = db.Parts.Where(p => p.Id == a.PartId).Select(p => p.Name).FirstOrDefault(),
+                    UnitId = a.Id, a.AssetNumber, a.SerialNumber, PartName = db.Parts.Where(p => p.Id == a.PartId).Select(p => Bilingual.Arabic && p.NameAr != null ? p.NameAr : p.Name).FirstOrDefault(),
                     Since = db.UnitMovements.Where(m => m.UnitId == a.Id && m.AssetId == id && (m.Kind == UnitMovementKind.Fitted || m.Kind == UnitMovementKind.Registered))
                         .Max(m => (DateTimeOffset?)m.At),
                 }).ToListAsync(ct);
             var removed = await db.UnitMovements.AsNoTracking().Where(m => m.AssetId == id && m.Kind == UnitMovementKind.Removed).OrderByDescending(m => m.At).Take(200).ToListAsync(ct);
             var unitIds = removed.Select(m => m.UnitId).Distinct().ToList();
             var units = await db.Assets.AllSites().AsNoTracking().Where(a => unitIds.Contains(a.Id))
-                .Select(a => new { a.Id, a.AssetNumber, a.SerialNumber, PartName = db.Parts.Where(p => p.Id == a.PartId).Select(p => p.Name).FirstOrDefault() }).ToDictionaryAsync(a => a.Id, ct);
+                .Select(a => new { a.Id, a.AssetNumber, a.SerialNumber, PartName = db.Parts.Where(p => p.Id == a.PartId).Select(p => Bilingual.Arabic && p.NameAr != null ? p.NameAr : p.Name).FirstOrDefault() }).ToDictionaryAsync(a => a.Id, ct);
             var fits = await db.UnitMovements.AsNoTracking()
                 .Where(m => m.AssetId == id && unitIds.Contains(m.UnitId) && (m.Kind == UnitMovementKind.Fitted || m.Kind == UnitMovementKind.Registered)).ToListAsync(ct);
             var before = removed.Where(m => units.ContainsKey(m.UnitId)).Select(m => new

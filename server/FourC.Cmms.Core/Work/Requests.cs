@@ -10,6 +10,8 @@ public class RequestType : TenantEntity, ICodeLookup
 {
     public required string Code { get; set; }
     public required string Name { get; set; }
+    /// <summary>0.28.0: the name in Arabic; empty = the main name for everyone.</summary>
+    public string? NameAr { get; set; }
     public bool IsActive { get; set; } = true;
     public Guid? DefaultTradeId { get; set; }
     public WorkPriority? DefaultPriority { get; set; }
@@ -22,10 +24,11 @@ public class RequestType : TenantEntity, ICodeLookup
 }
 
 /// <summary>Why a work order was cancelled (an editable list).</summary>
-public class CancelReason : TenantEntity, ICodeLookup
+public class CancelReason : TenantEntity, ICodeLookup, IBilingualName
 {
     public required string Code { get; set; }
     public required string Name { get; set; }
+    public string? NameAr { get; set; }
     public bool IsActive { get; set; } = true;
 }
 

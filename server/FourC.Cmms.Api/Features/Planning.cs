@@ -1,3 +1,4 @@
+using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Inventory;
 using FourC.Cmms.Core.Work;
@@ -80,7 +81,7 @@ public static class Planning
     public static async Task<List<PlannedPartView>> LinesAsync(CmmsDbContext db, WorkOrder w, CancellationToken ct)
     {
         var lines = await db.WorkOrderParts.AsNoTracking().Where(p => p.WorkOrderId == w.Id).OrderBy(p => p.Part!.PartNumber)
-            .Select(p => new { p.Id, p.PartId, p.Part!.PartNumber, p.Part.Name, p.Part.UnitOfMeasure, p.Part.AverageCost, p.StoreId, StoreCode = p.Store != null ? p.Store.Code : null, p.Quantity, p.Notes })
+            .Select(p => new { p.Id, p.PartId, p.Part!.PartNumber, Name = Bilingual.Arabic && p.Part.NameAr != null ? p.Part.NameAr : p.Part.Name, p.Part.UnitOfMeasure, p.Part.AverageCost, p.StoreId, StoreCode = p.Store != null ? p.Store.Code : null, p.Quantity, p.Notes })
             .ToListAsync(ct);
         if (lines.Count == 0) return [];
         var issued = await NetIssuedAsync(db, w.Id, ct);
