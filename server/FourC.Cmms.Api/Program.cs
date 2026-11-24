@@ -183,6 +183,7 @@ api.MapBrandEndpoints();
 api.MapUnitEndpoints();
 api.MapSecurityEndpoints();
 api.MapActivityEndpoints();
+api.MapAnonymiseEndpoints();
 api.MapAssetGroupEndpoints();
 api.MapPmEndpoints();
 api.MapPmCalendarEndpoints();

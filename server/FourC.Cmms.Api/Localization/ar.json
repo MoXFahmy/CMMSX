@@ -1235,5 +1235,10 @@
  "Enter 0 to 24.": "أدخل من 0 إلى 24.",
  "Keep at least 12 months, at most 120, or leave it empty.": "احتفظ بـ 12 شهرًا على الأقل و120 على الأكثر، أو اتركه فارغًا.",
  "You're signed in on another device.": "أنت مسجّل الدخول على جهاز آخر.",
- "Organization settings": "إعدادات المؤسسة"
+ "Organization settings": "إعدادات المؤسسة",
+ "Make the person inactive first.": "اجعل الشخص غير نشط أولاً.",
+ "Make their sign-in inactive first.": "اجعل حساب الدخول الخاص به غير نشط أولاً.",
+ "This person is already anonymised.": "تمت إزالة هوية هذا الشخص بالفعل.",
+ "Type {0} to confirm.": "اكتب {0} للتأكيد.",
+ "This sign-in was anonymised and can't be used again.": "تمت إزالة هوية حساب الدخول هذا ولا يمكن استخدامه مرة أخرى."
 }

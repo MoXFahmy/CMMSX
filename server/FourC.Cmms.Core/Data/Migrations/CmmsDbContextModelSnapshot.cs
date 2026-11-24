@@ -1597,6 +1597,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<int>("AccessFailedCount")
                         .HasColumnType("int");
 
+                    b.Property<DateTimeOffset?>("AnonymisedAt")
+                        .HasColumnType("datetimeoffset");
+
                     b.Property<string>("ConcurrencyStamp")
                         .IsConcurrencyToken()
                         .HasColumnType("nvarchar(max)");
@@ -2857,6 +2860,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uniqueidentifier");
+
+                    b.Property<DateTimeOffset?>("AnonymisedAt")
+                        .HasColumnType("datetimeoffset");
 
                     b.Property<string>("Code")
                         .IsRequired()

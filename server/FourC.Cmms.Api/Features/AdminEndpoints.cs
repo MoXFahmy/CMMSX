@@ -40,7 +40,7 @@ public static class AdminEndpoints
             await db.Users.AsNoTracking().Where(u => u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
                 .Select(u => new
                 {
-                    u.Id, u.FullName, u.Email, u.JobTitle, u.Phone, u.IsActive, u.LastLoginAt, u.CreatedAt, u.PurchaseApprovalLimit, u.SiteIds, u.LocationIds,
+                    u.Id, u.FullName, u.Email, u.JobTitle, u.Phone, u.IsActive, u.AnonymisedAt, u.LastLoginAt, u.CreatedAt, u.PurchaseApprovalLimit, u.SiteIds, u.LocationIds,
                     Roles = db.UserRoles.Where(r => r.UserId == u.Id).Select(r => new { r.RoleId, r.Role!.Name }).ToList(),
                 }).ToListAsync(ct));
 
@@ -70,6 +70,7 @@ public static class AdminEndpoints
             if (user is null) return Results.NotFound();
             var editor = Access.Of(http) ?? UserAccess.Everything;
             if (await UserAccessRules.OutsideAsync(db, editor, user, ct) is { } outside) throw new DomainException(outside);
+            if (user.AnonymisedAt is not null) throw new DomainException(AnonymiseEndpoints.Closed);
             var v = await ValidateUserAsync(input, id, db, um, ct);
             var access = await CheckAccessAsync(input, user, db, editor, v, ct);
             if (id == ctx.UserId && !input.IsActive) v.Add("isActive", "You cannot deactivate your own account.");
@@ -100,6 +101,7 @@ public static class AdminEndpoints
             var user = await db.Users.FirstOrDefaultAsync(u => u.Id == id && u.TenantId == db.CurrentTenantId, ct);
             if (user is null) return Results.NotFound();
             if (await UserAccessRules.OutsideAsync(db, Access.Of(http) ?? UserAccess.Everything, user, ct) is { } outside) throw new DomainException(outside);
+            if (user.AnonymisedAt is not null) throw new DomainException(AnonymiseEndpoints.Closed);
             var v = new Validator();
             foreach (var pv in um.PasswordValidators)
                 foreach (var e in (await pv.ValidateAsync(um, user, input.Password ?? "")).Errors) v.Add("password", e.Description);
