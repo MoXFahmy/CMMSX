@@ -4,6 +4,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { homeChoice } from './cards';
 import { ClassicDashboard, useGreeting } from './DashboardSections';
+import { Counters } from './Counters';
 import { RoleHome } from './HomeCards';
 
 /**
@@ -15,7 +16,7 @@ export function HomePage() {
   const { me, can } = useAuth();
   const greeting = useGreeting();
   const choice = homeChoice(me?.home?.cards ?? [], can, me ?? {});
-  const top = null;
+  const top = <Counters />;
 
   if (choice.kind === 'classic') return <ClassicDashboard top={top} />;
   return (

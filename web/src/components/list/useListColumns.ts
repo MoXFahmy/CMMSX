@@ -1,10 +1,10 @@
 import { useEffect } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { get, put } from '@/api/client';
+import { del, get, put } from '@/api/client';
 import { notifyError } from '@/components/utils';
 import type { ListColumn, ListKey } from './types';
 
-type Settings = Record<string, { hiddenColumns: string[] }>;
+type Settings = Record<string, { hiddenColumns: string[]; fromRole?: boolean }>;
 
 export type ListColumns<T> = ReturnType<typeof useListColumns<T>>;
 
@@ -53,5 +53,11 @@ export function useListColumns<T>(list: ListKey, all: ListColumn<T>[],
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isSuccess]);
 
-  return { all, columns: all.filter((c) => isVisible(String(c.accessor))), tokens, setTokens, isVisible, toggle };
+  /** Drops the person's own choice: their role's default columns (0.22.0), or the list's own, apply again. */
+  const reset = async () => {
+    try { await del(`/auth/me/list-settings/${list}`); } catch (e) { notifyError(e); }
+    await qc.invalidateQueries({ queryKey: ['list-settings'] });
+  };
+
+  return { all, columns: all.filter((c) => isVisible(String(c.accessor))), tokens, setTokens, isVisible, toggle, reset, fromRole: !!settings?.[list]?.fromRole };
 }

@@ -1359,7 +1359,20 @@
     "resume": "Resume",
     "markActive": "Mark active",
     "markInactive": "Mark inactive",
-    "statusConfirm": "This marks {{count}} work orders {{status}}. Reopening them later needs the close permission."
+    "statusConfirm": "This marks {{count}} work orders {{status}}. Reopening them later needs the close permission.",
+    "pinToHome": "Show on home page",
+    "unpinFromHome": "Remove from home page",
+    "pinned": "Shown on your home page.",
+    "unpinned": "Removed from your home page.",
+    "resetColumns": "Reset columns",
+    "columnsForRole": "Use these columns for a role…",
+    "columnsForRoleHint": "People with this role see these columns on this list until they pick their own.",
+    "role": "Role",
+    "roleColumnsSaved": "Saved as the role's default columns.",
+    "roleColumnsSavedReset_one": "Saved as the role's default columns. {{count}} person's columns were reset.",
+    "roleColumnsSavedReset_other": "Saved as the role's default columns. {{count}} people's columns were reset.",
+    "resetMembers_one": "Also reset the columns of the {{count}} person with this role who changed theirs.",
+    "resetMembers_other": "Also reset the columns of the {{count}} people with this role who changed theirs."
   },
   "tech": {
     "title": "Technician view",
@@ -2775,6 +2788,21 @@
       "assets-down": "No assets are down.",
       "low-stock": "No parts are below their reorder level.",
       "my-approvals": "Nothing is waiting for you."
+    },
+    "myCounters": "My counters",
+    "pinHint": "Pin a saved view to see its count here.",
+    "noAccess": "No access",
+    "tileMenu": "Counter options",
+    "moveEarlier": "Move earlier",
+    "moveLater": "Move later",
+    "removeFromHome": "Remove from home",
+    "lists": {
+      "work-orders": "Work orders",
+      "work-requests": "Work requests",
+      "pm-schedules": "PM schedules",
+      "parts": "Parts",
+      "purchase-orders": "Purchase orders",
+      "assets": "Assets"
     }
   }
 }
