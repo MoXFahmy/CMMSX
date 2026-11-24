@@ -17,7 +17,7 @@ internal static class SheetImporters
 {
     public static IEnumerable<ISheetImporter> All(IReadOnlyList<CustomFieldDefinition> customFields) =>
     [
-        new SiteImporter(), new CostCentreImporter(), new BudgetImporter(), new LocationImporter(), new CategoryImporter(), new TradeImporter(), new PartGroupImporter(),
+        new SiteImporter(), new CostCentreImporter(), new BudgetImporter(), new LocationImporter(), new CategoryImporter(), new BrandModelImporter(), new TradeImporter(), new PartGroupImporter(),
         new SymptomImporter(), new CauseImporter(), new RemedyImporter(),
         new SupplierImporter(), new StoreImporter(), new AssetImporter(), new PeopleImporter(), new PartImporter(), new StockImporter(),
         new SupplierCatalogueImporter(), new AssetPartImporter(), new PmTaskImporter(), new MeasurementPointImporter(), new PmStepImporter(), new PmPartImporter(), new PmScheduleImporter(),
@@ -1516,3 +1516,65 @@ internal sealed class BudgetImporter : ISheetImporter
     private static RowResult Result(ImportRow row, string key, RowOutcome outcome, List<FieldChange>? changes = null) =>
         row.HasProblems ? ImportRun.Problem(row, key) : new RowResult(row.Number, key, outcome, changes ?? [], []);
 }
+
+/// <summary>
+/// Brands and models (0.21.0): a row with no model is the brand itself; a row with one adds or updates that model (adding the
+/// brand when it's new). Names match whatever their case and spacing; Active applies to the model when given, else the brand.
+/// </summary>
+internal sealed class BrandModelImporter : ISheetImporter
+{
+    private readonly Dictionary<string, FourC.Cmms.Core.Assets.Brand> _brands = new(StringComparer.OrdinalIgnoreCase);
+
+    public string Sheet => "BrandsAndModels";
+    // Only the brand is required; a row's key is its brand and model, so each model row stands on its own.
+    public IReadOnlyList<string> KeyColumns => ["brand"];
+    public string KeyOf(ImportRow row) => $"{Tidy(row.Get<string>("brand")).ToLowerInvariant()}|{Tidy(row.Get<string>("model")).ToLowerInvariant()}";
+
+    private static string Tidy(string? s) => s is null ? "" : FourC.Cmms.Core.Services.ReferenceLists.Tidy(s);
+
+    public async Task LoadAsync(ImportContext c, IReadOnlyList<ImportRow> rows, CancellationToken ct)
+    {
+        foreach (var b in await c.Db.Brands.Include(x => x.Models).ToListAsync(ct)) _brands[Tidy(b.Name)] = b;
+    }
+
+    public Task<RowResult> ImportAsync(ImportContext c, ImportRow row, CancellationToken ct)
+    {
+        var brandName = Tidy(row.Get<string>("brand"));
+        var modelName = Tidy(row.Get<string>("model"));
+        var active = row.Get<bool?>("active");
+        var shown = modelName.Length == 0 ? brandName : $"{brandName} · {modelName}";
+        if (brandName.Length == 0) row.Problem(Translator.T($"{row.Sheet.Column("brand").Heading} is required."));
+        if (brandName.Length > 100 || modelName.Length > 100) row.Problem(Translator.T("A name can be at most 100 characters."));
+        if (row.HasProblems) return Task.FromResult(ImportRun.Problem(row, shown));
+        var heading = row.Sheet.Column("active").Heading;
+        if (!_brands.TryGetValue(brandName, out var brand))
+        {
+            brand = new FourC.Cmms.Core.Assets.Brand { Name = brandName, IsActive = modelName.Length > 0 || active != false };
+            c.Db.Brands.Add(brand);
+            _brands[brandName] = brand;
+            if (modelName.Length == 0) return Task.FromResult(new RowResult(row.Number, shown, RowOutcome.New, [], []));
+        }
+        else if (modelName.Length == 0)
+        {
+            if (active is not { } a || a == brand.IsActive) return Task.FromResult(new RowResult(row.Number, shown, RowOutcome.Unchanged, [], []));
+            var before = brand.IsActive;
+            brand.IsActive = a;
+            return Task.FromResult(new RowResult(row.Number, shown, RowOutcome.Changed, [new(heading, ImportValues.Show(before), ImportValues.Show(a))], []));
+        }
+        var model = brand.Models.FirstOrDefault(m => !m.IsDeleted && string.Equals(Tidy(m.Name), modelName, StringComparison.OrdinalIgnoreCase));
+        if (model is null)
+        {
+            model = new FourC.Cmms.Core.Assets.BrandModel { BrandId = brand.Id, Name = modelName, IsActive = active != false };
+            brand.Models.Add(model);
+            c.Db.BrandModels.Add(model);
+            return Task.FromResult(new RowResult(row.Number, shown, RowOutcome.New, [], []));
+        }
+        if (active is not { } on || on == model.IsActive) return Task.FromResult(new RowResult(row.Number, shown, RowOutcome.Unchanged, [], []));
+        var was = model.IsActive;
+        model.IsActive = on;
+        return Task.FromResult(new RowResult(row.Number, shown, RowOutcome.Changed, [new(heading, ImportValues.Show(was), ImportValues.Show(on))], []));
+    }
+
+    public Task FinishAsync(ImportContext c, CancellationToken ct) => Task.CompletedTask;
+}
+

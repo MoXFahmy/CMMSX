@@ -138,6 +138,17 @@ public static class ImportWorkbook
                     .Select(b => new Dictionary<string, object?> { ["costCentreCode"] = b.Code, ["year"] = b.Year, ["month"] = b.Month, ["amount"] = b.Amount }).ToList();
             case "Locations": return Of(new LocationImporter(), c, await db.Locations.AsNoTracking().OrderBy(x => x.Path).Take(take).ToListAsync(ct));
             case "Categories": return Of(new CategoryImporter(), c, await db.AssetCategories.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
+            case "BrandsAndModels":
+            {
+                // A row per brand (its own active) and one per model, so the file imports back with no changes.
+                var rows = new List<Dictionary<string, object?>>();
+                foreach (var b in await db.Brands.AsNoTracking().Include(x => x.Models).OrderBy(x => x.Name).ToListAsync(ct))
+                {
+                    rows.Add(new() { ["brand"] = b.Name, ["model"] = null, ["active"] = b.IsActive });
+                    rows.AddRange(b.Models.Where(m => !m.IsDeleted).OrderBy(m => m.Name).Select(m => new Dictionary<string, object?> { ["brand"] = b.Name, ["model"] = m.Name, ["active"] = m.IsActive }));
+                }
+                return rows.Take(take).ToList();
+            }
             case "Trades": return Of(new TradeImporter(), c, await db.Trades.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
             case "Symptoms": return Of(new SymptomImporter(), c, await db.Symptoms.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));
             case "Causes": return Of(new CauseImporter(), c, await db.FailureCodes.AsNoTracking().OrderBy(x => x.Code).Take(take).ToListAsync(ct));

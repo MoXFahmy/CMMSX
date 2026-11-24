@@ -68,6 +68,8 @@ public static class ImportSheets
             C<LocationType>("type", "Type", "النوع"), C<Criticality>("criticality", "Criticality", "الأهمية"), Description,
             T("notesToTechnician", "Notes to technician", "ملاحظات للفني"), T("costCentreCode", "Cost centre code", "رمز مركز التكلفة"), Active]),
         new("Categories", "Categories", "الفئات", [Code, Name, T("color", "Color", "اللون"), N("downtimeCostPerHour", "Downtime cost per hour", "تكلفة التوقف للساعة"), Active]),
+        // 0.21.0: a brand row (no model) or a model row; Active applies to the model when there is one, else to the brand.
+        new("BrandsAndModels", "Brands and models", "العلامات التجارية والطرازات", [T("brand", "Brand", "العلامة التجارية", true), T("model", "Model", "الطراز"), Active]),
         new("Trades", "Trades", "التخصصات", [Code, Name, T("color", "Color", "اللون"), Active]),
         new("PartGroups", "Part groups", "مجموعات القطع", [Code, Name, Active]),
         new("Symptoms", "Symptoms", "الأعراض", [Code, Name, Active]),
