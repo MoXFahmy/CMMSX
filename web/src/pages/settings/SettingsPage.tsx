@@ -1,6 +1,8 @@
 import { AiSettings } from './AiSettings';
 import { AiUsageSettings } from './AiUsageSettings';
 import { SecuritySettings } from './SecuritySettings';
+import { ActivityLog } from './ActivityLog';
+import { StorageSettings } from './StorageSettings';
 import { useEffect, useState } from 'react';
 import { ActionIcon, Badge, Button, Card, Checkbox, ColorInput, FileButton, Group, Modal, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Tabs, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
@@ -10,8 +12,9 @@ import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { ChecklistsCard } from '@/pages/assets/AssetChecklists';
 import { DataTable } from 'mantine-datatable';
-import { IconDevices, IconEdit, IconKey, IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconDevices, IconEdit, IconKey, IconPlus, IconTrash, IconUserOff } from '@tabler/icons-react';
 import { DevicesModal } from '@/components/DevicesModal';
+import { AnonymiseModal } from '@/components/AnonymiseModal';
 import { TargetsEditor, timeZones } from './TargetsEditor';
 import { WorkingHoursEditor, organizationHours } from '@/components/WorkingHoursEditor';
 import { LANGUAGES } from '@/language';
@@ -67,6 +70,8 @@ export function SettingsPage() {
     { value: 'users', label: t('settings.users'), show: can(P.usersManage) },
     { value: 'roles', label: t('settings.roles'), show: can(P.usersManage) },
     { value: 'security', label: t('security.title'), show: can(P.settingsManage) },
+    { value: 'activity', label: t('activity.title'), show: can(P.settingsManage) },
+    { value: 'storage', label: t('storage.title'), show: can(P.settingsManage) },
     { value: 'print-layouts', label: t('print.title'), show: can(P.settingsManage) },
     { value: 'import', label: t('settings.import'), show: can(P.settingsManage) },
     { value: 'ai-usage', label: t('ai.usageTab'), show: can(P.settingsManage) },
@@ -91,6 +96,8 @@ export function SettingsPage() {
         <Tabs.Panel value="users"><UserSettings /></Tabs.Panel>
         <Tabs.Panel value="roles"><RoleSettings /></Tabs.Panel>
         <Tabs.Panel value="security"><SecuritySettings editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="activity"><ActivityLog /></Tabs.Panel>
+        <Tabs.Panel value="storage"><StorageSettings /></Tabs.Panel>
         <Tabs.Panel value="print-layouts"><PrintLayoutsSettings /></Tabs.Panel>
         <Tabs.Panel value="import"><ImportSettings /></Tabs.Panel>
         <Tabs.Panel value="ai-usage"><AiUsageSettings /></Tabs.Panel>
@@ -357,6 +364,7 @@ function FieldSettings() {
 function UserSettings() {
   const { t } = useTranslation();
   const qc = useQueryClient();
+  const [anonymiseUser, setAnonymiseUser] = useState<string | null>(null);
   const { data, isFetching } = useQuery({ queryKey: ['users'], queryFn: () => get<User[]>('/users') });
   const { data: roles } = useQuery({ queryKey: ['roles'], queryFn: () => get<Role[]>('/roles') });
   // Every site and place the editor may see, whatever site the header switch is on.
@@ -399,14 +407,18 @@ function UserSettings() {
           : u.siteIds?.length ? <Text fz="sm" lineClamp={1}>{u.siteIds.map((id) => siteName(id) ?? '…').join(', ')}</Text>
           : <Text fz="sm" c="dimmed">{t('access.allSites', { sites: terms.sites.toLowerCase() })}</Text>) },
         { accessor: 'lastLoginAt', title: t('settings.lastLogin'), render: (u) => (u.lastLoginAt ? fromNow(u.lastLoginAt) : t('settings.never')) },
-        { accessor: 'isActive', title: t('common.status'), render: (u) => <Badge color={u.isActive ? 'teal' : 'gray'}>{u.isActive ? t('common.active') : t('common.inactive')}</Badge> },
-        { accessor: 'actions', title: '', width: 120, render: (u) => (
+        { accessor: 'isActive', title: t('common.status'), render: (u) => (u.anonymisedAt ? <Badge color="dark" variant="light">{t('anonymise.badge')}</Badge>
+          : <Badge color={u.isActive ? 'teal' : 'gray'}>{u.isActive ? t('common.active') : t('common.inactive')}</Badge>) },
+        { accessor: 'actions', title: '', width: 150, render: (u) => (u.anonymisedAt ? null : (
           <Group gap={4} justify="flex-end" wrap="nowrap">
             <ActionIcon variant="subtle" onClick={() => open(u)} aria-label={t('common.edit')}><IconEdit size={16} /></ActionIcon>
             <ActionIcon variant="subtle" color="gray" onClick={() => setPwUser(u)} aria-label={t('settings.resetPassword')}><IconKey size={16} /></ActionIcon>
             <ActionIcon variant="subtle" color="gray" onClick={() => setDevicesUser(u)} aria-label={t('devices.title')}><IconDevices size={16} /></ActionIcon>
-          </Group>) },
+            {/* 0.25.0: an inactive sign-in (with or without an employee record) can be anonymised. */}
+            {!u.isActive && <ActionIcon variant="subtle" color="gray" onClick={() => setAnonymiseUser(u.id)} aria-label={t('anonymise.action')}><IconUserOff size={16} /></ActionIcon>}
+          </Group>)) },
       ]} />
+      <AnonymiseModal who={anonymiseUser ? { userId: anonymiseUser } : null} onClose={() => setAnonymiseUser(null)} />
       <Modal opened={opened} onClose={m.close} title={editing ? t('settings.editUser') : t('settings.newUser')} size="lg">
         <form onSubmit={submit}><Stack>
           <SimpleGrid cols={2}>
