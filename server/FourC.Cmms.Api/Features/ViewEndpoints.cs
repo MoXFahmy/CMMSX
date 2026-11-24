@@ -82,11 +82,28 @@ public static class ViewEndpoints
 
         var s = api.MapGroup("/auth/me/list-settings").WithTags("Saved views").RequireAuthorization();
 
+        // The person's own column choices; for a list they haven't chosen on, the default of the first of their roles (by name) that has one (0.22.0).
         s.MapGet("/", async (CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
             var me = Me(ctx);
             var rows = await db.UserListSettings.AsNoTracking().Where(x => x.UserId == me).ToListAsync(ct);
-            return rows.ToDictionary(x => x.List, x => new { x.HiddenColumns });
+            var result = rows.ToDictionary(x => x.List, x => new { x.HiddenColumns, FromRole = false });
+            var roleDefaults = await (from ur in db.UserRoles
+                                      join rs in db.RoleListSettings on ur.RoleId equals rs.RoleId
+                                      where ur.UserId == me
+                                      select new { rs.List, rs.HiddenColumns, ur.Role!.Name }).AsNoTracking().ToListAsync(ct);
+            foreach (var d in roleDefaults.OrderBy(d => d.Name, StringComparer.OrdinalIgnoreCase))
+                result.TryAdd(d.List, new { d.HiddenColumns, FromRole = true });
+            return result;
+        });
+
+        // "Reset columns": the person's own choice goes, so their role's default (or the list's own) applies again.
+        s.MapDelete("/{list}", async (string list, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        {
+            if (!ListKeys.IsValid(list)) throw new DomainException("Unknown list.");
+            var me = Me(ctx);
+            await db.UserListSettings.Where(x => x.UserId == me && x.List == list).ExecuteDeleteAsync(ct);
+            return Results.NoContent();
         });
 
         s.MapPut("/{list}", async (string list, ListSettingInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
@@ -114,9 +131,9 @@ public static class ViewEndpoints
 
     private static Guid Me(ITenantContext ctx) => ctx.UserId ?? throw new UnauthorizedAccessException();
 
-    private static List<string> Columns(List<string>? cols) => (cols ?? []).Select(c => c.Trim()).Where(c => c.Length > 0).Distinct().ToList();
+    internal static List<string> Columns(List<string>? cols) => (cols ?? []).Select(c => c.Trim()).Where(c => c.Length > 0).Distinct().ToList();
 
-    private static Validator ValidateColumns(Validator v, List<string>? cols) => v
+    internal static Validator ValidateColumns(Validator v, List<string>? cols) => v
         .When((cols?.Count ?? 0) > MaxColumns, "hiddenColumns", $"Hide at most {MaxColumns} columns.")
         .When(cols?.Any(c => c is null || c.Length > MaxColumnLength) == true, "hiddenColumns", "A column name is too long.");
 

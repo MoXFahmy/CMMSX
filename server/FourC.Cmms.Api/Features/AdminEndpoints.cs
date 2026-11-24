@@ -20,6 +20,7 @@ public static class AdminEndpoints
     public sealed record UserInput(string FullName, string Email, string? JobTitle, string? Phone, bool IsActive, List<Guid> RoleIds, string? Password, decimal? PurchaseApprovalLimit = null,
         List<Guid>? SiteIds = null, List<Guid>? LocationIds = null);
     /// <summary>A role. Home and HiddenModules (0.22.0) are left unchanged when null, so older clients never clear them.</summary>
+    public sealed record RoleColumnsInput(List<string>? HiddenColumns, bool ResetMembers = false);
     public sealed record RoleInput(string Name, string? Description, List<string> Permissions, List<HomeCardInput>? Home = null, List<string>? HiddenModules = null);
     public sealed record SettingsInput(string Name, TenantSettings Settings);
     public sealed record ListLabelsInput(Dictionary<string, Dictionary<string, ListLabel>>? ListLabels);
@@ -148,6 +149,50 @@ public static class AdminEndpoints
             PermissionService.Invalidate(role.TenantId);
             return Results.Ok(new { role.Id });
         });
+        // A role's default columns on a list (0.22.0), and how many of its people have their own there.
+        roles.MapGet("/{id:guid}/columns/{list}", async (Guid id, string list, CmmsDbContext db, CancellationToken ct) =>
+        {
+            if (!ListKeys.IsValid(list)) throw new DomainException("Unknown list.");
+            if (!await db.Roles.AnyAsync(r => r.Id == id, ct)) return Results.NotFound();
+            var row = await db.RoleListSettings.AsNoTracking().FirstOrDefaultAsync(x => x.RoleId == id && x.List == list, ct);
+            var members = await db.UserListSettings.CountAsync(x => x.List == list && db.UserRoles.Any(r => r.RoleId == id && r.UserId == x.UserId), ct);
+            return Results.Ok(new { HiddenColumns = row?.HiddenColumns, MembersWithOwn = members });
+        });
+        roles.MapPut("/{id:guid}/columns/{list}", async (Guid id, string list, RoleColumnsInput input, CmmsDbContext db, CancellationToken ct) =>
+        {
+            if (!ListKeys.IsValid(list)) throw new DomainException("Unknown list.");
+            var v = ViewEndpoints.ValidateColumns(new Validator(), input.HiddenColumns);
+            if (!v.IsValid) return v.Problem();
+            if (!await db.Roles.AnyAsync(r => r.Id == id, ct)) return Results.NotFound();
+            var cols = ViewEndpoints.Columns(input.HiddenColumns);
+            for (var attempt = 1; ; attempt++)
+            {
+                try
+                {
+                    // The default and the members' reset land together.
+                    var reset = await db.InTransactionAsync(async t =>
+                    {
+                        var row = await db.RoleListSettings.FirstOrDefaultAsync(x => x.RoleId == id && x.List == list, t);
+                        if (row is null) db.RoleListSettings.Add(row = new RoleListSetting { RoleId = id, List = list });
+                        row.HiddenColumns = cols;
+                        await db.SaveChangesAsync(t);
+                        return input.ResetMembers
+                            ? await db.UserListSettings.Where(x => x.List == list && db.UserRoles.Any(r => r.RoleId == id && r.UserId == x.UserId)).ExecuteDeleteAsync(t)
+                            : 0;
+                    }, ct);
+                    return Results.Ok(new { HiddenColumns = cols, ResetCount = reset });
+                }
+                // Two quick saves on a list with no row yet: the other one inserted first, so update its row instead.
+                catch (DbUpdateException) when (attempt < 3) { db.ChangeTracker.Clear(); }
+            }
+        });
+        roles.MapDelete("/{id:guid}/columns/{list}", async (Guid id, string list, CmmsDbContext db, CancellationToken ct) =>
+        {
+            if (!ListKeys.IsValid(list)) throw new DomainException("Unknown list.");
+            await db.RoleListSettings.Where(x => x.RoleId == id && x.List == list).ExecuteDeleteAsync(ct);
+            return Results.NoContent();
+        });
+
         // A copy with the same permissions, home, hidden menu items and default columns, and nobody in it (0.22.0).
         roles.MapPost("/{id:guid}/duplicate", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
