@@ -87,7 +87,7 @@ What happens:
   signed out (and by whom), password changed, password renewed, other sessions ended by one session per person, anonymised.
 - **Not in the log**: the stock ledger, unit movements, meter readings, device sessions, password history, e-mails sent and other
   system rows; they have their own screens.
-- **Source**: **Web**, **Phone** (the technician view), **Import** (an Excel import) or **Automatic** (PM generation, e-mails and
+- **Source**: **Web**, **Phone** (the technician view), **Import** (an Excel import), **API** (an API key, 0.26.0; see docs/API.md) or **Automatic** (PM generation, e-mails and
   other work done without a signed-in person).
 - **One action, one change number**: everything one save changed shares it. Expand a row and choose **Show everything this action
   changed** (for example a work order with its checklist steps).

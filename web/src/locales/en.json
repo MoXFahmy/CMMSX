@@ -1619,7 +1619,7 @@
   },
   "import": {
     "title": "Import data",
-    "intro": "Load or update locations, assets, parts and stock, people, suppliers and PM from one Excel workbook. Rows are matched by code: a new code adds a record, a known code updates it. Blank cells keep the current value and nothing is deleted (set Active to No instead). Up to 25 MB, 20,000 rows a sheet and 50,000 in all.",
+    "intro": "Load or update locations, assets, parts and stock, people, suppliers and PM from one Excel workbook. Rows are matched by code: a new code adds a record, a known code updates it. Blank cells keep the current value and nothing is deleted (set Active to No instead). Up to 25 MB, 20,000 rows a sheet and 30,000 in all.",
     "step1": "1. Get a workbook",
     "template": "Download empty template",
     "current": "Download current data",

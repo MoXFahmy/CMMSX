@@ -154,10 +154,10 @@ public class ImportJobTests(ManualImportFixture fx) : IClassFixture<ManualImport
         Assert.Equal(HttpStatusCode.BadRequest, tooMany.StatusCode);
         Assert.Contains("Symptoms has 20,001 rows; the limit is 20,000 per sheet. Split it into smaller files.", await tooMany.Content.ReadAsStringAsync());
         var rows = (int n, string p) => Enumerable.Range(1, n).Select(i => new object?[] { $"{p}{i}", $"{p} {i}" }).ToArray();
-        var file = Book(new Sheet("Symptoms", Lookup, rows(20_000, "S")), new Sheet("Causes", Lookup, rows(20_000, "C")), new Sheet("Remedies", Lookup, rows(10_001, "R")));
+        var file = Book(new Sheet("Symptoms", Lookup, rows(20_000, "S")), new Sheet("Causes", Lookup, rows(10_001, "C")));
         var total = await PostAsync(org.Admin, "/api/import/check", file);
         Assert.Equal(HttpStatusCode.BadRequest, total.StatusCode);
-        Assert.Contains("This file has 50,001 rows; the limit is 50,000 in one file. Split it into smaller files.", await total.Content.ReadAsStringAsync());
+        Assert.Contains("This file has 30,001 rows; the limit is 30,000 in one file. Split it into smaller files.", await total.Content.ReadAsStringAsync());
     }
 
     [SkippableFact]

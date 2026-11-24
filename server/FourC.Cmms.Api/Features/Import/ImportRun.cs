@@ -184,7 +184,8 @@ internal interface ISheetImporter
 public static class ImportRun
 {
     public const int MaxRowsPerSheet = 20_000;
-    public const int MaxRowsPerFile = 50_000;
+    /// <summary>Measured (0.26.0): 20,000 asset rows add about 280 MB while they import; 30,000 keeps a 1 GB server safe.</summary>
+    public const int MaxRowsPerFile = 30_000;
     public const string TooBig = "This import took too long. Split it into smaller files.";
 
     private sealed class Stopped : Exception;
@@ -203,7 +204,7 @@ public static class ImportRun
                 throw new DomainException(Translator.T($"{def.Name} has {count:N0} rows; the limit is 20,000 per sheet. Split it into smaller files."));
             total += count;
         }
-        if (total > MaxRowsPerFile) throw new DomainException(Translator.T($"This file has {total:N0} rows; the limit is 50,000 in one file. Split it into smaller files."));
+        if (total > MaxRowsPerFile) throw new DomainException(Translator.T($"This file has {total:N0} rows; the limit is 30,000 in one file. Split it into smaller files."));
         return total;
     }
 
