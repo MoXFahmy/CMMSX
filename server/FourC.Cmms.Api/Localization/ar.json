@@ -1196,5 +1196,20 @@
  "Choose what happens to the unit.": "اختر ما يحدث للوحدة.",
  "Choose an asset of this work order.": "اختر أصلًا من أصول أمر العمل هذا.",
  "This unit isn't fitted to this work order's asset.": "هذه الوحدة غير مركّبة على أصل أمر العمل هذا.",
- "Choose a unit.": "اختر وحدة."
+ "Choose a unit.": "اختر وحدة.",
+ "This unit isn't under repair.": "هذه الوحدة ليست قيد الإصلاح.",
+ "This unit is already scrapped.": "هذه الوحدة مُتلفة بالفعل.",
+ "Remove the unit first.": "انزع الوحدة أولًا.",
+ "Enter why the unit is scrapped.": "أدخل سبب إتلاف الوحدة.",
+ "This asset is already a unit.": "هذا الأصل وحدة بالفعل.",
+ "Only an asset fitted to another asset can be made a unit.": "لا يمكن جعل الأصل وحدة إلا إذا كان مركّبًا على أصل آخر.",
+ "Give the asset a serial number first.": "أدخل رقمًا تسلسليًا للأصل أولًا.",
+ "Choose a serial-tracked part.": "اختر قطعة تُتتبَّع بالرقم التسلسلي.",
+ "This part isn't serial-tracked.": "هذه القطعة لا تُتتبَّع بالرقم التسلسلي.",
+ "Enter the serial number.": "أدخل الرقم التسلسلي.",
+ "Choose the asset it is on.": "اختر الأصل المركّبة عليه.",
+ "A unit's status and place change through fit, remove and the unit actions.": "تتغير حالة الوحدة ومكانها عبر التركيب والنزع وإجراءات الوحدة.",
+ "A unit needs a serial number.": "تحتاج الوحدة إلى رقم تسلسلي.",
+ "A unit can't be deleted; scrap it instead.": "لا يمكن حذف وحدة؛ أتلفها بدلًا من ذلك.",
+ "Remove its fitted units first.": "انزع وحداته المركّبة أولًا."
 }

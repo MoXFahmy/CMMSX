@@ -190,4 +190,101 @@ public static class SerialUnits
         }
         Move(db, ctx, unit, UnitMovementKind.Removed, at, storeId: store?.Id, assetId: from, workOrderId: wo?.Id, outcome: outcome, note: note);
     }
+
+    private static DateOnly DateOf(DateTimeOffset at) => DateOnly.FromDateTime(at.UtcDateTime);
+
+    private static Guid StoreOf(Asset unit) =>
+        UnitRules.StateOf(unit) == UnitState.InStore && unit.StoreId is { } store ? store : throw new DomainException("This unit isn't in a store.");
+
+    private static Task Adjust(CmmsDbContext db, ITenantContext ctx, Asset unit, Guid storeId, int quantity, string notes, DateTimeOffset at, CancellationToken ct) =>
+        StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Adjustment, unit.PartId!.Value, storeId, quantity, DateOf(at), Notes: notes, UnitMove: true), ct);
+
+    /// <summary>A unit in a store moves to another store: stock out of one, into the other; its site follows the store.</summary>
+    public static async Task TransferAsync(CmmsDbContext db, ITenantContext ctx, Asset unit, Store to, string? note, DateTimeOffset at, CancellationToken ct)
+    {
+        var from = StoreOf(unit);
+        await StockLedger.TransferAsync(db, ctx, unit.PartId!.Value, from, to.Id, 1, DateOf(at), null, note.Clean() ?? $"Unit {unit.SerialNumber}", ct, unitMove: true);
+        unit.StoreId = to.Id;
+        unit.SiteId = to.SiteId;
+        Move(db, ctx, unit, UnitMovementKind.Transferred, at, storeId: to.Id, note: note);
+    }
+
+    /// <summary>A unit in a store goes out for repair: out of stock, Under repair.</summary>
+    public static async Task SendForRepairAsync(CmmsDbContext db, ITenantContext ctx, Asset unit, string? note, DateTimeOffset at, CancellationToken ct)
+    {
+        var from = StoreOf(unit);
+        await Adjust(db, ctx, unit, from, -1, $"Unit {unit.SerialNumber} sent for repair", at, ct);
+        unit.StoreId = null;
+        unit.Status = AssetStatus.UnderRepair;
+        Move(db, ctx, unit, UnitMovementKind.SentForRepair, at, storeId: from, note: note);
+    }
+
+    /// <summary>
+    /// A unit under repair comes back into a store (stock +1), with what the repair cost: the cost goes on the unit, not on the
+    /// stock's value. A repair order line's receipt passes its order and line.
+    /// </summary>
+    public static async Task BackFromRepairAsync(CmmsDbContext db, ITenantContext ctx, Asset unit, Store store, decimal? cost, string? note, DateTimeOffset at,
+        CancellationToken ct, Guid? purchaseOrderId = null, Guid? lineId = null)
+    {
+        if (UnitRules.StateOf(unit) != UnitState.AtRepair) throw new DomainException("This unit isn't under repair.");
+        if (cost < 0) throw new DomainException("Cost cannot be negative.");
+        await Adjust(db, ctx, unit, store.Id, 1, $"Unit {unit.SerialNumber} back from repair", at, ct);
+        unit.StoreId = store.Id;
+        unit.SiteId = store.SiteId;
+        unit.Status = AssetStatus.InStorage;
+        Move(db, ctx, unit, UnitMovementKind.BackFromRepair, at, storeId: store.Id, purchaseOrderId: purchaseOrderId, lineId: lineId, note: note,
+            cost: cost is { } c ? Math.Round(c, 2) : null);
+    }
+
+    /// <summary>Scraps a unit in a store (stock −1) or under repair (no stock move); a fitted unit is removed first.</summary>
+    public static async Task ScrapAsync(CmmsDbContext db, ITenantContext ctx, Asset unit, string? note, DateTimeOffset at, CancellationToken ct)
+    {
+        var state = UnitRules.StateOf(unit);
+        if (state == UnitState.Scrapped) throw new DomainException("This unit is already scrapped.");
+        if (state == UnitState.Fitted) throw new DomainException("Remove the unit first.");
+        if (note.Clean() is null) throw new DomainException("Enter why the unit is scrapped.");
+        Guid? from = null;
+        if (state == UnitState.InStore && unit.StoreId is { } store)
+        {
+            from = store;
+            await Adjust(db, ctx, unit, store, -1, $"Unit {unit.SerialNumber} scrapped", at, ct);
+        }
+        unit.StoreId = null;
+        unit.Status = AssetStatus.Disposed;
+        unit.DisposedOn = await ContractEndpoints.TodayAsync(db, ct);
+        Move(db, ctx, unit, UnitMovementKind.Scrapped, at, storeId: from, note: note);
+    }
+
+    /// <summary>A unit already on a machine (at go-live): created fitted to <paramref name="target"/>, with no stock move.</summary>
+    public static async Task<Asset> RegisterFittedAsync(CmmsDbContext db, ITenantContext ctx, Part part, Asset target, string serial, string? note, DateTimeOffset at,
+        CancellationToken ct)
+    {
+        await CheckNewSerialsAsync(db, part, [serial], 1, ct);
+        var settings = await SettingsAsync(db, ct);
+        var unit = new Asset
+        {
+            AssetNumber = await AssetEndpoints.NextAssetNumberAsync(db, settings, ct, target.SiteId), Name = part.Name, SiteId = target.SiteId, LocationId = target.LocationId,
+            ParentAssetId = target.Id, Status = AssetStatus.Active, PartId = part.Id, SerialNumber = serial, Manufacturer = part.Manufacturer, Model = part.ManufacturerPartNumber,
+            PurchasePrice = part.AverageCost, EndOfLifeOn = UnitRules.EndOfLife(DateOf(at), part.UnitLifeMonths),
+        };
+        db.Assets.Add(unit);
+        Move(db, ctx, unit, UnitMovementKind.Registered, at, assetId: target.Id, note: note);
+        return unit;
+    }
+
+    /// <summary>An existing asset fitted to another becomes a unit of <paramref name="part"/> (no stock move).</summary>
+    public static async Task MakeUnitAsync(CmmsDbContext db, ITenantContext ctx, Asset asset, Part? part, DateTimeOffset at, CancellationToken ct)
+    {
+        if (asset.PartId is not null) throw new DomainException("This asset is already a unit.");
+        if (asset.ParentAssetId is null || asset.Status is AssetStatus.Disposed or AssetStatus.UnderRepair)
+            throw new DomainException("Only an asset fitted to another asset can be made a unit.");
+        if (asset.SerialNumber.Clean() is not { } serial) throw new DomainException("Give the asset a serial number first.");
+        if (part is not { IsSerialTracked: true }) throw new DomainException("Choose a serial-tracked part.");
+        await CheckNewSerialsAsync(db, part, [serial], 1, ct);
+        asset.PartId = part.Id;
+        asset.SerialNumber = serial;
+        asset.StoreId = null;
+        Move(db, ctx, asset, UnitMovementKind.Registered, at, assetId: asset.ParentAssetId);
+    }
 }
+

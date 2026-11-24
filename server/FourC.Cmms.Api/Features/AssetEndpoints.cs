@@ -7,6 +7,7 @@ using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Services;
 using FourC.Cmms.Core.Identity;
+using FourC.Cmms.Core.Inventory;
 using FourC.Cmms.Core.Locations;
 using Microsoft.EntityFrameworkCore;
 
@@ -21,7 +22,12 @@ public static class AssetEndpoints
         decimal? ExpectedLifeYears, decimal? DowntimeCostPerHour, WarrantyType WarrantyType, DateOnly? WarrantyExpiresOn, string? WarrantyNotes,
         string? Notes, string? NotesToTechnician, Dictionary<string, string?>? CustomFields, string? RowVersion = null,
         decimal? RunsHoursPerDay = null, List<DayOfWeek>? RunsOn = null, bool? OnlyWhenStopped = null, Guid? CostCentreId = null, bool? ManagesCostCentre = null,
-        Guid? BrandId = null, Guid? ModelId = null, bool? ManagesBrand = null, List<Guid>? GroupIds = null);
+        Guid? BrandId = null, Guid? ModelId = null, bool? ManagesBrand = null, List<Guid>? GroupIds = null,
+        // 0.24.0: a unit's end of life; pages from before leave it as it is.
+        DateOnly? EndOfLifeOn = null, bool? ManagesEndOfLife = null);
+
+    /// <summary>A unit's status and place change only through fit, remove and the unit actions (0.24.0).</summary>
+    internal const string UnitLocked = "A unit's status and place change through fit, remove and the unit actions.";
 
     public sealed record TransferInput(Guid SiteId, Guid? LocationId, string? Reason, bool IncludeChildren = true);
     public sealed record BulkInput(Guid[] Ids, AssetStatus? Status, Criticality? Criticality, Guid? CategoryId);
@@ -138,6 +144,9 @@ public static class AssetEndpoints
             }
             var userIds = new[] { a.CreatedById, a.UpdatedById }.Where(x => x is not null).ToList();
             var users = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
+            // A unit (0.24.0): its part, its store and where it is.
+            var unitPart = a.PartId is { } pid ? await db.Parts.AsNoTracking().Where(p => p.Id == pid).Select(p => new { p.PartNumber, p.Name }).FirstOrDefaultAsync(ct) : null;
+            var storeName = a.StoreId is { } sid ? await db.Stores.AllSites().AsNoTracking().Where(s => s.Id == sid).Select(s => s.Name).FirstOrDefaultAsync(ct) : null;
             var image = await db.Attachments.AsNoTracking().Where(x => x.EntityType == "Asset" && x.EntityId == id && x.ContentType.StartsWith("image/"))
                 .OrderByDescending(x => x.IsPrimaryImage).ThenBy(x => x.CreatedAt).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
             return Results.Ok(new
@@ -149,7 +158,8 @@ public static class AssetEndpoints
                 a.CommissionedOn, a.DisposedOn, a.PurchasePrice, a.CurrentValue, a.SalvageValue, a.ExpectedLifeYears, a.DowntimeCostPerHour,
                 a.WarrantyType, a.WarrantyExpiresOn, a.WarrantyNotes, a.Notes, a.NotesToTechnician, a.CustomFields, a.OnlyWhenStopped, a.CostCentreId, a.BrandId, a.ModelId,
                 GroupIds = db.AssetGroupMembers.Where(m => m.AssetId == a.Id && db.AssetGroups.Any(g => g.Id == m.AssetGroupId)).Select(m => m.AssetGroupId).ToList(),
-                a.RunsHoursPerDay, a.RunsOn, a.PartId, a.StoreId, a.EndOfLifeOn,
+                a.RunsHoursPerDay, a.RunsOn, a.PartId, PartNumber = unitPart?.PartNumber, PartName = unitPart?.Name, a.StoreId, StoreName = storeName, a.EndOfLifeOn,
+                UnitState = a.PartId is null ? null : UnitRules.StateOf(a).ToString(),
                 DownSince = await db.DowntimeEvents.Where(e => e.AssetId == id && e.EndedAt == null).Select(e => (DateTimeOffset?)e.StartedAt).FirstOrDefaultAsync(ct),
                 ChildCount = await db.Assets.CountAsync(x => x.ParentAssetId == id, ct),
                 PrimaryImageId = image,
@@ -200,6 +210,13 @@ public static class AssetEndpoints
             if (asset is null) return Results.NotFound();
             var (v, custom) = await ValidateAsync(input, id, db, requireNumber: true, ct);
             if (!v.IsValid) return v.Problem();
+            if (asset.PartId is { } unitPart)
+            {
+                // A unit keeps a serial number of its own within its part.
+                var serial = input.SerialNumber.Clean() ?? throw new DomainException("A unit needs a serial number.");
+                if (await db.Assets.AllSites().AnyAsync(a => a.PartId == unitPart && a.Id != id && a.SerialNumber == serial, ct))
+                    throw new DomainException($"Serial number {serial} is already used by a unit of this part.");
+            }
             if (input.RowVersion is not null) db.Entry(asset).Property(a => a.RowVersion).OriginalValue = input.RowVersion.ToVersion();
             UpdateAsset(db, asset, input, custom, ctx);
             if (input.ManagesBrand == true) await BrandEndpoints.SetAsync(db, asset, input.BrandId, input.ModelId, ct);
@@ -212,6 +229,9 @@ public static class AssetEndpoints
         {
             var asset = await db.Assets.FirstOrDefaultAsync(a => a.Id == id, ct);
             if (asset is null) return Results.NotFound();
+            if (asset.PartId is not null) throw new DomainException("A unit can't be deleted; scrap it instead.");
+            if (await db.Assets.AllSites().AnyAsync(a => a.ParentAssetId == id && a.PartId != null && a.Status != AssetStatus.Disposed && a.Status != AssetStatus.UnderRepair, ct))
+                throw new DomainException("Remove its fitted units first.");
             if (await db.Assets.AnyAsync(a => a.ParentAssetId == id, ct))
                 throw new DomainException("This asset has child assets. Re-assign or delete them first.");
             db.Assets.Remove(asset);
@@ -224,6 +244,7 @@ public static class AssetEndpoints
         {
             var asset = await db.Assets.FirstOrDefaultAsync(a => a.Id == id, ct);
             if (asset is null) return Results.NotFound();
+            if (asset.PartId is not null) throw new DomainException(UnitLocked); // fitted units move with the asset they're on
             var v = new Validator().MaxLength("reason", input.Reason, "Reason", 1000);
             if (!await db.Sites.AnyAsync(s => s.Id == input.SiteId, ct)) v.Add("siteId", "Choose a site.");
             Access.RequireLocation(db, v, input.LocationId);
@@ -275,6 +296,7 @@ public static class AssetEndpoints
             var ids = Bulk.Ids(input.Ids, "assets"); // the same limit as the other lists (500)
             if (input.CategoryId is not null && !await db.AssetCategories.AnyAsync(c => c.Id == input.CategoryId, ct)) throw new DomainException("Category not found.");
             var assets = await db.Assets.Where(a => ids.Contains(a.Id)).ToListAsync(ct);
+            if (input.Status is not null && assets.Any(a => a.PartId is not null)) throw new DomainException(UnitLocked);
             foreach (var a in assets)
             {
                 if (input.Status is { } s) a.Status = s;
@@ -400,6 +422,8 @@ public static class AssetEndpoints
     /// <summary>Updates an asset; a new site or location is recorded as a transfer, as when editing on screen.</summary>
     internal static void UpdateAsset(CmmsDbContext db, Asset asset, AssetInput i, Dictionary<string, string?> custom, ITenantContext ctx)
     {
+        if (asset.PartId is not null && (asset.Status != i.Status || asset.ParentAssetId != i.ParentAssetId || asset.SiteId != i.SiteId || asset.LocationId != i.LocationId))
+            throw new DomainException(UnitLocked);
         if (asset.SiteId != i.SiteId || asset.LocationId != i.LocationId)
             db.AssetTransfers.Add(NewTransfer(asset, i.SiteId, i.LocationId, "Location changed while editing the asset", ctx));
         asset.AssetNumber = i.AssetNumber!.Trim(); asset.Name = i.Name.Trim(); asset.SiteId = i.SiteId;
@@ -462,6 +486,7 @@ public static class AssetEndpoints
         if (i.RunsHoursPerDay is { } hours) a.RunsHoursPerDay = Math.Round(hours, 2); // kept to 2 decimals, as stored
         if (i.RunsOn is { Count: > 0 } days) a.RunsOn = days.Distinct().OrderBy(d => d).ToList();
         if (i.OnlyWhenStopped is { } stopped) a.OnlyWhenStopped = stopped;
+        if (i.ManagesEndOfLife == true) a.EndOfLifeOn = i.EndOfLifeOn;
         // Pages and sheets from before cost centres (0.20.0) leave it as it is; a new asset takes what was sent.
         if (i.ManagesCostCentre == true || a.CreatedAt == default) a.CostCentreId = i.CostCentreId;
         // Preserve values of fields that don't apply to the current category (e.g. imported legacy data).
