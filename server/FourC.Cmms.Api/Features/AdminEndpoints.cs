@@ -466,7 +466,7 @@ public static class DashboardEndpoints
                 RequestsAwaiting = await db.WorkRequests.CountAsync(r => r.Status == FourC.Cmms.Core.Work.WorkRequestStatus.New, ct),
                 ByStatus = woByStatus, ByPriority = woByPriority,
                 Urgent = await db.WorkOrders.AsNoTracking().Where(w => active.Contains(w.Status)).OrderByDescending(w => w.Priority).ThenBy(w => w.DueDate).Take(6)
-                    .Select(w => new { w.Id, w.Number, w.Title, w.Priority, w.Status, w.DueDate, AssetNumber = w.Asset!.AssetNumber }).ToListAsync(ct),
+                    .Select(w => new { w.Id, w.Number, Title = Bilingual.Arabic && w.TitleAr != null ? w.TitleAr : w.Title, w.Priority, w.Status, w.DueDate, AssetNumber = w.Asset!.AssetNumber }).ToListAsync(ct),
             };
             // People who see several sites: the work at each, side by side (each number opens that site's list).
             var visibleSites = await db.Sites.AsNoTracking().OrderBy(s => s.Name).Select(s => new { s.Id, s.Name }).ToListAsync(ct);

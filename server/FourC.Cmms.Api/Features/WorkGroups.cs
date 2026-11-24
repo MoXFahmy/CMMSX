@@ -26,6 +26,9 @@ public static partial class WorkGroups
         var number = await Numbering.NextAsync(db, sequence, prefix, 5, n => db.WorkOrderGroups.AllSites().AnyAsync(g => g.Number == n, ct),
             p => db.WorkOrderGroups.AllSites().Where(g => g.Number.StartsWith(p)).Select(g => g.Number).ToListAsync(ct), ct);
         var title = task.Title is { Length: > 0 } tt ? tt : task.Id == s.PmTaskId ? s.Name : $"{s.Name} — {task.Name}";
+        // Its Arabic twin from the same source (0.28.0); none when that source has no Arabic text.
+        var titleAr = task.Title is { Length: > 0 } ? task.TitleAr : task.Id == s.PmTaskId ? s.NameAr
+            : s.NameAr is null && task.NameAr is null ? null : $"{s.NameAr ?? s.Name} — {task.NameAr ?? task.Name}";
         var start = PmCalendar.NextWorkingDay(due ?? DateOnly.FromDateTime(DateTime.UtcNow), nonWorkingDays);
         var group = new WorkOrderGroup
         {
@@ -50,11 +53,12 @@ public static partial class WorkGroups
             // Split shares the PM template's plan among the work orders that use it; an asset's own template keeps its whole plan.
             var share = s.GroupPlan == GroupPlan.Split && t.Id == task.Id && shared > 0 ? shared : 1;
             var childTitle = $"{group.Title} · {numbers.GetValueOrDefault(asset.Id)}";
-            var description = string.Join("\n\n", new[] { t.Description ?? s.Description, t.SafetyNotes is { Length: > 0 } sn ? $"Safety: {sn}" : null }
-                .Where(x => !string.IsNullOrWhiteSpace(x)));
+            var childTitleAr = titleAr is null ? null : $"{titleAr} · {numbers.GetValueOrDefault(asset.Id)}";
+            var description = string.Join("\n\n", new[] { t.Description ?? s.Description }.Where(x => !string.IsNullOrWhiteSpace(x)));
             var input = new WorkOrderEndpoints.WorkOrderInput(childTitle.Length > 300 ? childTitle[..300] : childTitle, description.Length == 0 ? null : description,
                 task.WorkType, task.Priority ?? s.Priority, s.SiteId, asset.LocationId, asset.Id, s.TradeId ?? t.TradeId, assignees, start, group.DueDate,
-                t.EstimatedHours is { } h ? Math.Round(h / share, 2) : null, null, TeamId: s.TeamId, CostCentreId: s.CostCentreId);
+                t.EstimatedHours is { } h ? Math.Round(h / share, 2) : null, null, TeamId: s.TeamId, CostCentreId: s.CostCentreId,
+                TitleAr: childTitleAr is { Length: > 300 } ? childTitleAr[..300] : childTitleAr, SafetyNotes: t.SafetyNotes, SafetyNotesAr: t.SafetyNotesAr);
             var planned = new List<WorkOrderPart>();
             foreach (var p in t.Parts)
                 planned.Add(new WorkOrderPart { PartId = p.PartId, Quantity = Math.Round(p.Quantity / share, 3), StoreId = await Planning.DefaultStoreAsync(db, p.PartId, s.SiteId, ct) });

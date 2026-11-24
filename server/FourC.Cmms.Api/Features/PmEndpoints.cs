@@ -91,14 +91,14 @@ public static class PmEndpoints
         if (f.ActiveOnly == true) q = q.Where(x => x.IsActive);
         if (f.DueWithinDays is { } d) { var until = Today.AddDays(d); q = q.Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= until); }
         var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "nextDueDate").Include(x => x.Meter).Include(x => x.ExtraTasks)
-            .Select(x => new { S = x, SiteName = x.Site!.Name, AssetNumber = x.Asset!.AssetNumber, AssetName = Bilingual.Arabic && x.Asset.NameAr != null ? x.Asset.NameAr : x.Asset.Name, LocationName = Bilingual.Arabic && x.Location!.NameAr != null ? x.Location.NameAr : x.Location!.Name, TaskCode = x.PmTask!.Code, TaskName = x.PmTask.Name,
+            .Select(x => new { S = x, SiteName = x.Site!.Name, AssetNumber = x.Asset!.AssetNumber, AssetName = Bilingual.Arabic && x.Asset.NameAr != null ? x.Asset.NameAr : x.Asset.Name, LocationName = Bilingual.Arabic && x.Location!.NameAr != null ? x.Location.NameAr : x.Location!.Name, TaskCode = x.PmTask!.Code, TaskName = Bilingual.Arabic && x.PmTask.NameAr != null ? x.PmTask.NameAr : x.PmTask.Name,
                 MeterUnit = x.Meter!.Unit, MeterReading = x.Meter.CurrentReading, AssetCount = x.Assets.Count,
                 LastWorkOrderNumber = db.WorkOrders.Where(w => w.Id == x.LastWorkOrderId).Select(w => w.Number).FirstOrDefault(),
                 OpenWorkOrders = db.WorkOrders.Count(w => w.PmScheduleId == x.Id && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold)) })
             .ToPagedAsync(page, pageSize, ct, maxPageSize);
         var today = Today;
         return new PagedResult<PmScheduleListItem>(paged.Items.Select(i => new PmScheduleListItem(
-            i.S.Id, i.S.Code, i.S.Name, i.S.Type, i.S.Basis, i.S.IsActive, i.S.SiteId, i.SiteName, i.S.AssetId, i.AssetNumber, i.AssetName, i.LocationName,
+            i.S.Id, i.S.Code, Bilingual.Pick(i.S.Name, i.S.NameAr), i.S.Type, i.S.Basis, i.S.IsActive, i.S.SiteId, i.SiteName, i.S.AssetId, i.AssetNumber, i.AssetName, i.LocationName,
             i.TaskCode, i.TaskName, PmCalendar.Describe(i.S, Translator.CurrentLanguage), i.S.NextDueDate, i.S.NextDueReading, i.MeterUnit, i.MeterReading, i.S.LastGeneratedAt,
             i.S.LastWorkOrderId, i.LastWorkOrderNumber, i.OpenWorkOrders, i.S.IsActive && i.S.NextDueDate < today, i.S.ExtraTasks.Count, i.AssetCount, i.S.OnlyWhenStopped)).ToList(),
             paged.Total, paged.Page, paged.PageSize);
@@ -113,7 +113,8 @@ public static class PmEndpoints
             var q = db.PmTasks.AsNoTracking();
             if (search.Clean() is { } s) q = q.Where(x => x.Code.Contains(s) || x.Name.Contains(s) || x.NameAr!.Contains(s));
             var used = await db.PmSchedules.GroupBy(x => x.PmTaskId).Select(g => new { g.Key, C = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.C, ct);
-            var list = await q.OrderBy(x => x.Code).Select(x => new { x.Id, x.Code, x.Name, x.TradeId, x.EstimatedHours, x.IsActive, StepCount = x.Steps.Count }).ToListAsync(ct);
+            var ar = Bilingual.Arabic;
+            var list = await q.OrderBy(x => x.Code).Select(x => new { x.Id, x.Code, Name = ar && x.NameAr != null ? x.NameAr : x.Name, x.TradeId, x.EstimatedHours, x.IsActive, StepCount = x.Steps.Count }).ToListAsync(ct);
             return list.Select(x => new { x.Id, x.Code, x.Name, x.TradeId, x.EstimatedHours, x.IsActive, x.StepCount, ScheduleCount = used.GetValueOrDefault(x.Id) });
         }).RequirePermission(Permissions.PmView);
         t.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
@@ -201,14 +202,14 @@ public static class PmEndpoints
             var extraIds = s.ExtraMeters.Select(m => m.MeterId).ToList();
             var extraMeters = await db.Meters.AsNoTracking().Where(m => extraIds.Contains(m.Id)).ToDictionaryAsync(m => m.Id, ct);
             var recent = await db.WorkOrders.AsNoTracking().Where(w => w.PmScheduleId == id).OrderByDescending(w => w.CreatedAt).Take(10)
-                .Select(w => new { w.Id, w.Number, w.Title, w.Status, w.PmDueDate, w.CompletedAt }).ToListAsync(ct);
+                .Select(w => new { w.Id, w.Number, Title = Bilingual.Arabic && w.TitleAr != null ? w.TitleAr : w.Title, w.Status, w.PmDueDate, w.CompletedAt }).ToListAsync(ct);
             var visitCost = (await PmCost.ForSchedulesAsync(db, [s], ct))[(s.Id, s.PmTaskId)];
             return Results.Ok(new
             {
                 s.Id, s.Code, s.Name, s.NameAr, s.Description, s.SiteId, s.LocationId, s.AssetId, Asset = s.Asset is null ? null : new { s.Asset.Id, s.Asset.AssetNumber, Name = Bilingual.Pick(s.Asset.Name, s.Asset.NameAr) },
                 Assets = s.Assets.Where(a => a.Asset is not null).OrderBy(a => a.Sequence).Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, Name = Bilingual.Pick(a.Asset.Name, a.Asset.NameAr), a.PmTaskId }),
                 s.SkipStatusesOverride, s.NonWorkingDaysOverride, s.NoStackingOverride, s.MultiAssetMode, s.GroupPlan, s.SpreadParts, s.SpreadIndex, s.CycleStart,
-                s.TradeId, s.TeamId, s.Priority, s.AssigneeIds, s.RecipientIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, s.PmTask.Name }, s.OnlyWhenStopped, s.ContractId, s.CostCentreId, s.AssetGroupId,
+                s.TradeId, s.TeamId, s.Priority, s.AssigneeIds, s.RecipientIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, Name = Bilingual.Pick(s.PmTask.Name, s.PmTask.NameAr) }, s.OnlyWhenStopped, s.ContractId, s.CostCentreId, s.AssetGroupId,
                 GroupAssets = await GroupAssetsAsync(db, s, ct),
                 ExtraTasks = s.ExtraTasks.Select(e => new { e.PmTaskId, e.EveryNth }), s.Type, s.Basis, s.Frequency, s.Unit, s.WeekOfMonth, s.DayOfWeek, s.DayOfMonth,
                 s.WorkPeriodDays, s.WholeMonth, s.LeadDays, s.StartDate, s.NextDueDate, s.LastDueDate, s.LastGeneratedAt, s.GenerationCount,
@@ -379,11 +380,13 @@ public static class PmEndpoints
             var code = stem;
             for (var n = 2; await db.PmTasks.AnyAsync(x => x.Code == code, ct); n++) code = $"{stem}-{n}";
             var name = $"{src.Name} ({sch.Code})";
+            var nameAr = src.NameAr is null ? null : $"{src.NameAr} ({sch.Code})";
             var copy = new PmTask
             {
                 Code = code, Name = name.Length > 300 ? name[..300] : name, Description = src.Description, TradeId = src.TradeId, EstimatedHours = src.EstimatedHours,
                 SafetyNotes = src.SafetyNotes, IsActive = true, Title = src.Title, WorkType = src.WorkType, Priority = src.Priority, RecipientIds = [.. src.RecipientIds],
                 ExpectedStopHours = src.ExpectedStopHours,
+                NameAr = nameAr is { Length: > 300 } ? nameAr[..300] : nameAr, TitleAr = src.TitleAr, SafetyNotesAr = src.SafetyNotesAr,
             };
             foreach (var st in src.Steps.OrderBy(x => x.Sequence)) copy.Steps.Add(StepCopy.Copy(st, copy.Id));
             foreach (var pt in src.Parts) copy.Parts.Add(new PmTaskPart { PmTaskId = copy.Id, PartId = pt.PartId, Quantity = pt.Quantity });
@@ -1005,8 +1008,8 @@ public static class PmEndpoints
     {
         var q = db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Assets).Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= to);
         if (siteId is not null) q = q.Where(x => x.SiteId == siteId);
-        var list = await q.Select(x => new { S = x, AssetNumber = x.Asset!.AssetNumber, TaskName = x.PmTask!.Name, SiteName = x.Site!.Name }).ToListAsync(ct);
-        var taskNames = await db.PmTasks.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+        var list = await q.Select(x => new { S = x, AssetNumber = x.Asset!.AssetNumber, TaskName = Bilingual.Arabic && x.PmTask!.NameAr != null ? x.PmTask.NameAr : x.PmTask!.Name, SiteName = x.Site!.Name }).ToListAsync(ct);
+        var taskNames = await db.PmTasks.AsNoTracking().ToDictionaryAsync(x => x.Id, x => Bilingual.Pick(x.Name, x.NameAr), ct);
         // Estimated cost per visit, worked out once per schedule and task (not per forecast row).
         var costs = (await PmCost.ForSchedulesAsync(db, list.Select(i => i.S).ToList(), ct)).ToDictionary(x => x.Key, x => x.Value.Total);
         // Each PM's shared calendars (0.12.0), read once for the whole list.
@@ -1016,7 +1019,7 @@ public static class PmEndpoints
         IReadOnlyList<ScheduleCalendar> CalendarsOf(Guid id) => links[id].Where(calendars.ContainsKey).Select(c => calendars[c]).ToList();
         return list.SelectMany(i => PmTriggers.Forecast(i.S, to, perSchedule, CalendarsOf(i.S.Id)).Select((d, k) => new ForecastRow
         {
-            Date = d, Id = i.S.Id, Code = i.S.Code, Name = i.S.Name, AssetId = i.S.AssetId, AssetNumber = i.AssetNumber, SiteId = i.S.SiteId, SiteName = i.SiteName, Type = i.S.Type,
+            Date = d, Id = i.S.Id, Code = i.S.Code, Name = Bilingual.Pick(i.S.Name, i.S.NameAr), AssetId = i.S.AssetId, AssetNumber = i.AssetNumber, SiteId = i.S.SiteId, SiteName = i.SiteName, Type = i.S.Type,
             TaskName = taskNames.GetValueOrDefault(PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + PmTriggers.PeriodOffset(i.S, k))) ?? i.TaskName,
             Cost = costs.GetValueOrDefault((i.S.Id, PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + PmTriggers.PeriodOffset(i.S, k)))),
             Overdue = d < Today,

@@ -9,13 +9,14 @@ public static class StepCopy
     {
         WorkOrderId = workOrderId, Sequence = sequence, AssetId = assetId,
         Description = s.Description.Length > 1000 ? s.Description[..1000] : s.Description,
+        DescriptionAr = s.DescriptionAr is { Length: > 1000 } ar ? ar[..1000] : s.DescriptionAr,
         Type = s.Type, Unit = s.Unit, Decimals = s.Decimals, MeasurementPointId = s.MeasurementPointId, PhotoRequired = s.PhotoRequired, BeforeStart = s.BeforeStart,
         FollowUp = s.FollowUp, FollowUpTemplateId = s.FollowUpTemplateId,
     };
 
     public static PmTaskStep Copy(PmTaskStep s, Guid pmTaskId) => new()
     {
-        PmTaskId = pmTaskId, Sequence = s.Sequence, Description = s.Description,
+        PmTaskId = pmTaskId, Sequence = s.Sequence, Description = s.Description, DescriptionAr = s.DescriptionAr,
         Type = s.Type, Unit = s.Unit, Decimals = s.Decimals, MeasurementPointId = s.MeasurementPointId, PhotoRequired = s.PhotoRequired, BeforeStart = s.BeforeStart,
         FollowUp = s.FollowUp, FollowUpTemplateId = s.FollowUpTemplateId,
     };

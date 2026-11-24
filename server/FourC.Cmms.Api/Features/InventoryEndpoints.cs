@@ -192,7 +192,7 @@ public static class InventoryEndpoints
             }
             var order = Reservations.InOrderOfNeed(holders.Select(h => h.Line)).Select((x, n) => (x.LineId, n)).ToDictionary(x => x.LineId, x => x.n);
             var holderIds = holders.Select(h => h.Line.WorkOrderId).ToList();
-            var titles = await db.WorkOrders.AsNoTracking().Where(w => holderIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => w.Title, ct);
+            var titles = await db.WorkOrders.AsNoTracking().Where(w => holderIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => Bilingual.Pick(w.Title, w.TitleAr), ct);
             var reservedFor = holders.OrderBy(h => order[h.Line.LineId]).Select(h => new
             {
                 h.Line.WorkOrderId, h.Line.WorkOrderNumber, Title = titles.GetValueOrDefault(h.Line.WorkOrderId), h.StoreCode, Reserved = h.Line.StillReserved, h.Short, h.Line.DueDate,
@@ -543,7 +543,7 @@ public static class InventoryEndpoints
         var changes = Reservations.WouldShort(onHand, lines, quantity, toWorkOrderId);
         if (changes.Count == 0) return null;
         var ids = changes.Select(c => c.WorkOrderId).ToList();
-        var titles = await db.WorkOrders.AsNoTracking().Where(w => ids.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => w.Title, ct);
+        var titles = await db.WorkOrders.AsNoTracking().Where(w => ids.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => Bilingual.Pick(w.Title, w.TitleAr), ct);
         return Results.Json(new
         {
             Status = 409, Title = "This takes stock reserved for other work.",

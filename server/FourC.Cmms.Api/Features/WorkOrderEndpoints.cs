@@ -97,6 +97,9 @@ public static class WorkOrderEndpoints
         ["completedAt"] = w => w.CompletedAt,
     };
 
+    /// <summary>The same sorts for Arabic readers: the title sorts by the text they see (0.28.0).</summary>
+    private static readonly Dictionary<string, Expression<Func<WorkOrder, object?>>> SortMapAr = new(SortMap, StringComparer.OrdinalIgnoreCase) { ["title"] = w => w.TitleAr ?? w.Title };
+
     public sealed record WorkOrderListItem(Guid Id, string Number, string Title, WorkType Type, WorkPriority Priority, WorkOrderStatus Status, HoldReason? HoldReason,
         Guid SiteId, string SiteName, Guid? LocationId, string? LocationPath, Guid? AssetId, string? AssetNumber, string? AssetName, string? TradeName,
         List<string> Assignees, DateOnly? DueDate, DateTimeOffset CreatedAt, DateTimeOffset? CompletedAt, bool IsOverdue,
@@ -202,10 +205,10 @@ public static class WorkOrderEndpoints
             var planned = await Planning.LinesAsync(db, w, ct);
             var labour = Planning.Labour(w.Assignees.Select(a => (a.PlannedHours, a.Employee?.HourlyRate)).ToList(), w.EstimatedHours);
             var plannedParts = planned.Sum(p => p.PlannedCost);
-            var pm = w.PmScheduleId is { } pmId ? await db.PmSchedules.AsNoTracking().Where(p => p.Id == pmId).Select(p => new { p.Id, p.Code, p.Name }).FirstOrDefaultAsync(ct) : null;
+            var pm = w.PmScheduleId is { } pmId ? await db.PmSchedules.AsNoTracking().Where(p => p.Id == pmId).Select(p => new { p.Id, p.Code, Name = Bilingual.Arabic && p.NameAr != null ? p.NameAr : p.Name }).FirstOrDefaultAsync(ct) : null;
             // The work template it was made from (0.12.0): its documents are shown, not copied, so they follow changes.
             var template = w.PmTaskId is { } tplId ? await db.PmTasks.AsNoTracking().Where(t => t.Id == tplId)
-                .Select(t => new { t.Id, t.Code, t.Name, t.ExpectedStopHours }).FirstOrDefaultAsync(ct) : null;
+                .Select(t => new { t.Id, t.Code, Name = Bilingual.Arabic && t.NameAr != null ? t.NameAr : t.Name, t.ExpectedStopHours }).FirstOrDefaultAsync(ct) : null;
             var templateDocuments = template is null ? [] : await db.Attachments.AsNoTracking().Where(a => a.EntityType == "PmTask" && a.EntityId == template.Id)
                 .OrderBy(a => a.FileName).Select(a => new { a.Id, a.FileName, a.ContentType, a.Size }).ToListAsync(ct);
             // Its group (0.12.0): the group's comments are shown here, not copied.
@@ -451,7 +454,7 @@ public static class WorkOrderEndpoints
             var a = await db.Assets.AsNoTracking().Where(x => x.Id == assetId).Select(x => new { x.Id, x.Status, x.WarrantyType, x.WarrantyExpiresOn }).FirstOrDefaultAsync(ct);
             if (a is null) return Results.NotFound();
             var orders = await db.WorkOrders.AsNoTracking().Where(w => (w.AssetId == assetId || w.Assets.Any(a => a.AssetId == assetId)) && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold))
-                .OrderByDescending(w => w.CreatedAt).Take(10).Select(w => new { w.Id, w.Number, w.Title, w.Status, w.Priority }).ToListAsync(ct);
+                .OrderByDescending(w => w.CreatedAt).Take(10).Select(w => new { w.Id, w.Number, Title = Bilingual.Arabic && w.TitleAr != null ? w.TitleAr : w.Title, w.Status, w.Priority }).ToListAsync(ct);
             var requests = await db.WorkRequests.AsNoTracking().Where(r => r.AssetId == assetId && r.Status == WorkRequestStatus.New)
                 .OrderByDescending(r => r.CreatedAt).Take(10).Select(r => new { r.Id, r.Number, r.Title }).ToListAsync(ct);
             return Results.Ok(new
@@ -722,9 +725,9 @@ public static class WorkOrderEndpoints
         var settings = await SlaQueries.SettingsAsync(db, ct);
         var now = DateTimeOffset.UtcNow;
         var ar = Bilingual.Arabic;
-        var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "createdAt").Select(w => new
+        var paged = await q.SortBy(f.Sort, f.Dir, ar ? SortMapAr : SortMap, "createdAt").Select(w => new
         {
-            w.Id, w.Number, w.Title, w.Type, w.Priority, w.Status, w.HoldReason, w.SiteId, SiteName = w.Site!.Name, w.LocationId, LocationPath = w.Location!.Path,
+            w.Id, w.Number, Title = ar && w.TitleAr != null ? w.TitleAr : w.Title, w.Type, w.Priority, w.Status, w.HoldReason, w.SiteId, SiteName = w.Site!.Name, w.LocationId, LocationPath = w.Location!.Path,
             w.AssetId, AssetNumber = w.Asset!.AssetNumber, AssetName = ar && w.Asset.NameAr != null ? w.Asset.NameAr : w.Asset.Name, TradeName = w.Trade!.Name, TeamName = w.Team!.Name,
             Assignees = w.Assignees.Select(a => a.Employee!.FullName).ToList(), w.DueDate, w.CreatedAt, w.CompletedAt,
             w.DueAt, w.StartBy, w.RespondedAt, w.DueFromTarget, CancelReasonName = ar && w.CancelReason!.NameAr != null ? w.CancelReason.NameAr : w.CancelReason!.Name, w.OnlyWhenStopped,
@@ -747,7 +750,7 @@ public static class WorkOrderEndpoints
     private static async Task<IQueryable<WorkOrder>> FilterAsync(CmmsDbContext db, WorkOrderFilter f, ITenantContext ctx, bool includeStatus, CancellationToken ct)
     {
         var q = db.WorkOrders.AsNoTracking();
-        if (f.Search.Clean() is { } s) q = q.Where(w => w.Number.Contains(s) || w.Title.Contains(s) || w.Asset!.AssetNumber.Contains(s) || w.Asset.Name.Contains(s) || w.Asset.NameAr!.Contains(s));
+        if (f.Search.Clean() is { } s) q = q.Where(w => w.Number.Contains(s) || w.Title.Contains(s) || w.TitleAr!.Contains(s) || w.Asset!.AssetNumber.Contains(s) || w.Asset.Name.Contains(s) || w.Asset.NameAr!.Contains(s));
         if (includeStatus && ParseEnums<WorkOrderStatus>(f.Status) is { Count: > 0 } st) q = q.Where(w => st.Contains(w.Status));
         if (f.ActiveOnly == true) q = q.Where(w => w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold);
         if (ParseEnums<WorkPriority>(f.Priority) is { Count: > 0 } pr) q = q.Where(w => pr.Contains(w.Priority));
@@ -889,6 +892,9 @@ public static class WorkOrderEndpoints
         {
             w.PmTaskId = template.Id;
             w.RecipientIds = [.. template.RecipientIds];
+            // Both texts from the template (0.28.0) unless the form sent its own.
+            if (input.TitleAr is null) w.TitleAr = template.TitleAr ?? template.NameAr;
+            if (input.SafetyNotes is null && input.SafetyNotesAr is null) { w.SafetyNotes = template.SafetyNotes; w.SafetyNotesAr = template.SafetyNotesAr; }
             // Typed steps (0.13.0): the template's own, or the form's texts matched to them.
             typedSteps ??= input.Tasks is null ? template.Steps.OrderBy(x => x.Sequence).ToList() : StepCopy.Match(input.Tasks.Select(x => x.Clean()).OfType<string>(), template.Steps);
             foreach (var tp in template.Parts)
