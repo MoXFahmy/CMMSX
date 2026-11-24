@@ -33,7 +33,7 @@ public static class LabelEndpoints
 
             var baseUrl = (config["App:PublicUrl"] is { Length: > 0 } u ? u : $"{http.Request.Scheme}://{http.Request.Host}").TrimEnd('/');
             string Link(Guid id) => $"{baseUrl}/q/{type}/{id}";
-            var names = await db.Locations.AsNoTracking().ToDictionaryAsync(l => l.Id, l => l.Name, ct);
+            var names = await db.Locations.AsNoTracking().ToDictionaryAsync(l => l.Id, l => Bilingual.Pick(l.Name, l.NameAr), ct);
             string? PathText(string? path) => path is null ? null : string.Join(" › ", LocationEndpoints.PathIds(path).Select(id => names.GetValueOrDefault(id)).Where(n => n is not null));
 
             List<Label> labels;
@@ -41,7 +41,7 @@ public static class LabelEndpoints
             {
                 case "asset":
                     labels = (await db.Assets.AsNoTracking().Where(a => ids.Contains(a.Id))
-                            .Select(a => new { a.Id, a.AssetNumber, a.Name, Path = a.Location != null ? a.Location.Path : null, Site = a.Site!.Name }).ToListAsync(ct))
+                            .Select(a => new { a.Id, a.AssetNumber, Name = Bilingual.Arabic && a.NameAr != null ? a.NameAr : a.Name, Path = a.Location != null ? a.Location.Path : null, Site = a.Site!.Name }).ToListAsync(ct))
                         .Select(a => new Label(a.Id, a.AssetNumber, a.Name, PathText(a.Path), Link(a.Id), a.Site)).ToList();
                     break;
                 case "location":
@@ -57,14 +57,14 @@ public static class LabelEndpoints
                         if (below.Count > MaxLabels) return Results.Problem(title: Translator.T($"That is {below.Count} locations; print at most {MaxLabels} labels at a time."), statusCode: 400);
                         q = db.Locations.AsNoTracking().Where(l => below.Contains(l.Id));
                     }
-                    labels = (await q.Select(l => new { l.Id, l.Code, l.Name, l.Path, l.ParentId, Site = l.Site!.Name }).ToListAsync(ct))
+                    labels = (await q.Select(l => new { l.Id, l.Code, Name = Bilingual.Arabic && l.NameAr != null ? l.NameAr : l.Name, l.Path, l.ParentId, Site = l.Site!.Name }).ToListAsync(ct))
                         .Select(l => new Label(l.Id, l.Code, l.Name, l.ParentId is null ? null : PathText(l.Path) is { } p && p.LastIndexOf(" › ", StringComparison.Ordinal) is var i && i > 0 ? p[..i] : null, Link(l.Id), l.Site))
                         .ToList();
                     break;
                 }
                 default:
                     labels = (await db.Parts.AsNoTracking().Where(p => ids.Contains(p.Id))
-                            .Select(p => new { p.Id, p.PartNumber, p.Name, p.Manufacturer, Group = p.Group != null ? p.Group.Name : null }).ToListAsync(ct))
+                            .Select(p => new { p.Id, p.PartNumber, Name = Bilingual.Arabic && p.NameAr != null ? p.NameAr : p.Name, p.Manufacturer, Group = p.Group != null ? p.Group.Name : null }).ToListAsync(ct))
                         .Select(p => new Label(p.Id, p.PartNumber, p.Name, p.Manufacturer ?? p.Group, Link(p.Id))).ToList();
                     break;
             }
