@@ -62,7 +62,7 @@ public class UnitVisibilityTests(ApiFixture fx) : IClassFixture<ApiFixture>
             await db.SaveChangesAsync();
         }
         Assert.Equal(1, (await Ok(await o.Admin.GetAsync("/api/alerts"))).GetProperty("unitsEndingLife").GetInt32());
-        var ending = (await Ok(await o.Admin.GetAsync("/api/serial-units?endingWithinDays=30"))).EnumerateArray().ToList();
+        var ending = (await Ok(await o.Admin.GetAsync("/api/serial-units?endingWithinDays=30"))).GetProperty("items").EnumerateArray().ToList();
         Assert.Equal("E-1", Assert.Single(ending).GetProperty("serialNumber").GetString());
     }
 
