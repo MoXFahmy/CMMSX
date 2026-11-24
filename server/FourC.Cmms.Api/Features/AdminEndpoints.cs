@@ -51,9 +51,13 @@ public static class AdminEndpoints
             var access = await CheckAccessAsync(input, null, db, Access.Of(http) ?? UserAccess.Everything, v, ct);
             if (!v.IsValid) return v.Problem();
             var user = TenantProvisioning.NewUser(db.CurrentTenantId!.Value, input.FullName, input.Email);
+            // The organization's password rules (0.25.0).
+            foreach (var p in await PasswordRules.ProblemsAsync(db, hasher, user, input.Password!, ct)) v.Add("password", p);
+            if (!v.IsValid) return v.Problem();
             user.JobTitle = input.JobTitle.Clean(); user.Phone = input.Phone.Clean(); user.IsActive = input.IsActive; user.PurchaseApprovalLimit = input.PurchaseApprovalLimit;
             (user.SiteIds, user.LocationIds) = access;
             user.PasswordHash = hasher.HashPassword(user, input.Password!);
+            await PasswordRules.RecordAsync(db, user, ct);
             db.Users.Add(user);
             db.UserRoles.AddRange(input.RoleIds.Distinct().Select(r => new UserRole { UserId = user.Id, RoleId = r }));
             await db.SaveChangesAsync(ct);
@@ -99,8 +103,10 @@ public static class AdminEndpoints
             var v = new Validator();
             foreach (var pv in um.PasswordValidators)
                 foreach (var e in (await pv.ValidateAsync(um, user, input.Password ?? "")).Errors) v.Add("password", e.Description);
+            if (v.IsValid) foreach (var p in await PasswordRules.ProblemsAsync(db, um.PasswordHasher, user, input.Password!, ct)) v.Add("password", p);
             if (!v.IsValid) return v.Problem();
             user.PasswordHash = um.PasswordHasher.HashPassword(user, input.Password!);
+            await PasswordRules.RecordAsync(db, user, ct);
             user.SecurityStamp = Guid.NewGuid().ToString("N");
             user.LockoutEnd = null; user.AccessFailedCount = 0;
             await db.SaveChangesAsync(ct);
@@ -276,6 +282,8 @@ public static class AdminEndpoints
             input.Settings.LogoContentType = t.Settings.LogoContentType;
             // The lists' wording (0.21.0) changes only through its own page, whatever this page sends.
             input.Settings.ListLabels = t.Settings.ListLabels ?? [];
+            // The security rules (0.25.0) change only through Settings › Security, whatever this page sends.
+            input.Settings.Security = t.Settings.Security ?? new();
             t.Settings = input.Settings;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { t.Name, t.Settings });

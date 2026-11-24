@@ -14,6 +14,8 @@ public class AppUser : IdentityUser<Guid>
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public DateTimeOffset? LastLoginAt { get; set; }
+    /// <summary>When the password was last set (0.25.0), for expiry; null = before 0.25.0's migration ran (set to the migration time).</summary>
+    public DateTimeOffset? PasswordChangedAt { get; set; }
     /// <summary>"Sign out other devices": sign-ins without a device session (from before 0.4.0) issued before this are refused.</summary>
     public DateTimeOffset? SignedOutBefore { get; set; }
     public string? LegacyRef { get; set; }

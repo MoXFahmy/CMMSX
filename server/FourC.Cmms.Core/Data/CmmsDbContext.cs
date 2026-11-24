@@ -57,6 +57,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<DowntimeEvent> DowntimeEvents => Set<DowntimeEvent>();
     public DbSet<CustomFieldDefinition> CustomFields => Set<CustomFieldDefinition>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
+    public DbSet<PasswordHistory> PasswordHistories => Set<PasswordHistory>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<NumberSequence> NumberSequences => Set<NumberSequence>();
     public DbSet<Trade> Trades => Set<Trade>();
@@ -330,6 +331,12 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Key).HasMaxLength(100);
             e.Property(x => x.Label).HasMaxLength(200);
             e.HasIndex(x => new { x.TenantId, x.EntityType, x.Key }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
+
+        b.Entity<PasswordHistory>(e =>
+        {
+            e.HasIndex(x => new { x.UserId, x.SetAt });
+            e.HasIndex(x => x.TenantId);
         });
 
         b.Entity<AuditEntry>(e =>

@@ -1225,5 +1225,13 @@
  "This unit no longer exists.": "هذه الوحدة لم تعد موجودة.",
  "This part has stock at sites you can't see.": "لهذه القطعة رصيد في مواقع لا يمكنك رؤيتها.",
  "This unit is on repair order {0}: receive it or cancel the order there first.": "هذه الوحدة على أمر الإصلاح {0}: استلمها منه أو ألغِ الأمر أولًا.",
- "This part has units. Mark it inactive instead.": "لهذه القطعة وحدات. اجعلها غير نشطة بدلًا من ذلك."
+ "This part has units. Mark it inactive instead.": "لهذه القطعة وحدات. اجعلها غير نشطة بدلًا من ذلك.",
+ "Use at least {0} characters.": "استخدم {0} أحرف على الأقل.",
+ "You used this password recently. Choose another one.": "استخدمت كلمة المرور هذه مؤخرًا. اختر كلمة أخرى.",
+ "Your password has expired. Choose a new one.": "انتهت صلاحية كلمة المرور. اختر كلمة جديدة.",
+ "Your organization's password rules changed. Choose a new password.": "تغيّرت قواعد كلمات المرور في مؤسستك. اختر كلمة مرور جديدة.",
+ "Enter a minimum length from 8 to 64.": "أدخل حدًا أدنى للطول من 8 إلى 64.",
+ "Enter 0 (never) or 30 to 730 days.": "أدخل 0 (أبدًا) أو من 30 إلى 730 يومًا.",
+ "Enter 0 to 24.": "أدخل من 0 إلى 24.",
+ "Keep at least 12 months, at most 120, or leave it empty.": "احتفظ بـ 12 شهرًا على الأقل و120 على الأكثر، أو اتركه فارغًا."
 }

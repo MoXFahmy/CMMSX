@@ -181,6 +181,7 @@ api.MapCostCentreEndpoints();
 api.MapBudgetEndpoints();
 api.MapBrandEndpoints();
 api.MapUnitEndpoints();
+api.MapSecurityEndpoints();
 api.MapAssetGroupEndpoints();
 api.MapPmEndpoints();
 api.MapPmCalendarEndpoints();
