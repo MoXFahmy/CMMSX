@@ -1216,5 +1216,9 @@
  "This unit is already on an open repair line ({0}).": "هذه الوحدة على سطر إصلاح مفتوح بالفعل ({0}).",
  "List each unit once.": "اذكر كل وحدة مرة واحدة.",
  "Choose the store the unit comes back to.": "اختر المخزن الذي تعود إليه الوحدة.",
- "Line {0}: Choose the store the unit comes back to.": "السطر {0}: اختر المخزن الذي تعود إليه الوحدة."
+ "Line {0}: Choose the store the unit comes back to.": "السطر {0}: اختر المخزن الذي تعود إليه الوحدة.",
+ "Count serial parts by their units on the part's units list.": "اجرد القطع ذات الأرقام التسلسلية بوحداتها من قائمة وحدات القطعة.",
+ "Receive serial parts on the web, where their serial numbers are entered.": "استلم القطع ذات الأرقام التسلسلية من الويب حيث تُدخل أرقامها التسلسلية.",
+ "Register its units on the part page first.": "سجّل وحداتها من صفحة القطعة أولًا.",
+ "Serial parts' stock comes from their units: register them on the part page.": "رصيد القطع ذات الأرقام التسلسلية يأتي من وحداتها: سجّلها من صفحة القطعة."
 }

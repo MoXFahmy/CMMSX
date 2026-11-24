@@ -383,7 +383,7 @@ public static class InventoryEndpoints
 
         // Stock take: counted quantities become adjustments for the differences.
         t.MapGet("/stock-take", async (Guid storeId, CmmsDbContext db, CancellationToken ct) =>
-            await db.StockLevels.AsNoTracking().Where(l => l.StoreId == storeId && l.Part!.IsActive).OrderBy(l => l.Bin).ThenBy(l => l.Part!.PartNumber)
+            await db.StockLevels.AsNoTracking().Where(l => l.StoreId == storeId && l.Part!.IsActive && !l.Part.IsSerialTracked).OrderBy(l => l.Bin).ThenBy(l => l.Part!.PartNumber)
                 .Select(l => new { l.PartId, l.Part!.PartNumber, l.Part.Name, l.Part.UnitOfMeasure, l.Bin, l.QuantityOnHand, l.Part.IsShelfItem }).ToListAsync(ct))
             .RequirePermission(Permissions.InventoryView);
         t.MapPost("/stock-take", async (StockTakeInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
@@ -490,6 +490,7 @@ public static class InventoryEndpoints
         foreach (var (partId, counted) in lines)
         {
             if (counted < 0) throw new DomainException("Counted quantities cannot be negative.");
+            await StockLedger.RefuseSerialAsync(db, partId, StockTransactionType.Adjustment, tk); // their stock is their units (0.24.0)
             var onHand = await db.StockLevels.Where(l => l.StoreId == storeId && l.PartId == partId).Select(l => (decimal?)l.QuantityOnHand).FirstOrDefaultAsync(tk) ?? 0;
             var diff = counted - onHand;
             if (diff == 0) continue;

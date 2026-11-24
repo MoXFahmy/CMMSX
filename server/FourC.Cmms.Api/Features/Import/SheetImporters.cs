@@ -745,13 +745,13 @@ internal sealed class PartImporter : RecordImporter<Part>
         ["specification"] = p.Specification, ["manufacturer"] = p.Manufacturer, ["manufacturerPartNumber"] = p.ManufacturerPartNumber,
         ["standardPrice"] = p.StandardPrice, ["leadTimeDays"] = p.LeadTimeDays, ["critical"] = p.IsCritical, ["shelfLife"] = p.IsShelfItem,
         ["allowNegative"] = p.AllowNegativeStock, ["preferredSupplierCode"] = p.PreferredSupplierId is { } s ? c.CodeOf.GetValueOrDefault(s) : null,
-        ["barcode"] = p.Barcode, ["notes"] = p.Notes, ["active"] = p.IsActive,
+        ["barcode"] = p.Barcode, ["notes"] = p.Notes, ["active"] = p.IsActive, ["serialTracked"] = p.IsSerialTracked, ["unitLifeMonths"] = p.UnitLifeMonths,
     };
 
     protected override Dictionary<string, object?> Defaults() => new()
-    { ["standardPrice"] = 0m, ["critical"] = false, ["shelfLife"] = false, ["allowNegative"] = false, ["active"] = true };
+    { ["standardPrice"] = 0m, ["critical"] = false, ["shelfLife"] = false, ["allowNegative"] = false, ["active"] = true, ["serialTracked"] = false };
 
-    protected override Task<Part?> SaveAsync(ImportContext c, ImportRow row, Part? existing, Dictionary<string, object?> v, CancellationToken ct)
+    protected override async Task<Part?> SaveAsync(ImportContext c, ImportRow row, Part? existing, Dictionary<string, object?> v, CancellationToken ct)
     {
         var supplierId = Ref(row, c.Suppliers, S(v, "preferredSupplierCode"), "Supplier");
         var groupCode = S(v, "groupCode");
@@ -759,12 +759,25 @@ internal sealed class PartImporter : RecordImporter<Part>
         var input = new InventoryEndpoints.PartInput(S(v, "partNumber")!, S(v, "name") ?? "", S(v, "specification"), S(v, "manufacturer"),
             S(v, "manufacturerPartNumber"), S(v, "unit") ?? "", groupId, N(v, "standardPrice") ?? 0, I(v, "leadTimeDays"), B(v, "critical"), B(v, "shelfLife"),
             B(v, "allowNegative"), supplierId, S(v, "barcode"), existing?.AlternatePartIds, S(v, "notes"), B(v, "active", true));
-        if (row.HasProblems || !Accept(row, InventoryEndpoints.PartRules(input))) return Task.FromResult<Part?>(null);
+        // Serial tracking (0.24.0): the part page's rules — on only while the part has no stock (its units are registered there), off
+        // only when no unit is left.
+        var serial = B(v, "serialTracked");
+        var life = I(v, "unitLifeMonths");
+        var rules = InventoryEndpoints.PartRules(input).When(life is < 1 or > 600, "unitLifeMonths", "Enter the life in months, from 1 to 600.");
+        if (existing is not null && serial && !existing.IsSerialTracked
+            && await c.Db.StockLevels.AllSites().AnyAsync(l => l.PartId == existing.Id && l.QuantityOnHand != 0, ct))
+            rules.Add("serialTracked", "Register its units on the part page first.");
+        if (existing is not null && !serial && existing.IsSerialTracked
+            && await c.Db.Assets.AllSites().AnyAsync(a => a.PartId == existing.Id && a.Status != FourC.Cmms.Core.Assets.AssetStatus.Disposed, ct))
+            rules.Add("serialTracked", "This part still has units that aren't scrapped.");
+        if (row.HasProblems || !Accept(row, rules)) return null;
         // A new group is added only once the row is known to be good.
         if (groupCode is not null && groupId is null) input = input with { GroupId = c.EnsureLookup(c.PartGroups, groupCode, "PartGroups") };
         var part = existing ?? InventoryEndpoints.CreatePart(c.Db, input);
         if (existing is not null) InventoryEndpoints.UpdatePart(existing, input);
-        return Task.FromResult(WithCatalogue(c, part, existing is null ? part : null));
+        part.IsSerialTracked = serial;
+        part.UnitLifeMonths = life;
+        return WithCatalogue(c, part, existing is null ? part : null);
     }
 
     /// <summary>The preferred supplier always has a catalogue row (0.18.0); a company added earlier in this run is found among the new ones.</summary>
@@ -840,6 +853,8 @@ internal sealed class StockImporter : RecordImporter<StockLevel>
         if (opening < 0) rules.Add("levels", "Levels cannot be negative.");
         if (opening > 0 && _parts.GetValueOrDefault(partId.Value) is { IsShelfItem: true } part && (S(v, "batch") is null || D(v, "expiry") is null))
             rules.Add("batch", $"{part.PartNumber} is a shelf-life item: enter the batch and expiry.");
+        if (opening > 0 && _parts.GetValueOrDefault(partId.Value) is { IsSerialTracked: true })
+            rules.Add("openingQuantity", "Serial parts' stock comes from their units: register them on the part page.");
         if (opening > 0 && _stores.GetValueOrDefault(storeId.Value) is { IsActive: false } store)
             rules.Add("storeId", $"Store {store.Code} is inactive.");
         if (!Accept(row, rules)) return null;

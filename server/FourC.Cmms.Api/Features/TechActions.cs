@@ -315,6 +315,9 @@ public static partial class TechEndpoints
             {
                 Require(allowed, Permissions.PurchasingReceive);
                 var p = Read<ReceivePayload>(input.Payload, options);
+                // Serial parts need a serial number per piece (0.24.0), entered on the web.
+                if (await db.PurchaseOrderLines.AnyAsync(l => l.Id == p.LineId && db.Parts.Any(x => x.Id == l.PartId && x.IsSerialTracked), ct))
+                    throw new Rejected("Receive serial parts on the web, where their serial numbers are entered.");
                 var day = Sla.LocalDay(at, Sla.Zone((await SlaQueries.SettingsAsync(db, ct)).TimeZone));
                 await PurchasingEndpoints.ReceiveCoreAsync(db, ctx, mail, p.PurchaseOrderId,
                     new PurchasingEndpoints.ReceiveInput(day, null, [new PurchasingEndpoints.ReceiveLine(p.LineId, p.Quantity, p.StoreId, p.BatchNumber, p.ExpiryDate)]), day, ct);

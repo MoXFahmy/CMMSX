@@ -27,6 +27,9 @@ public static class AssetEndpoints
         DateOnly? EndOfLifeOn = null, bool? ManagesEndOfLife = null);
 
     /// <summary>A unit's status and place change only through fit, remove and the unit actions (0.24.0).</summary>
+    /// <summary>Not a spare unit: a plain asset, or a unit fitted to another asset (spares stay off the asset list and dashboard, 0.24.0).</summary>
+    internal static readonly Expression<Func<Asset, bool>> NotSpareUnit = a => a.PartId == null || a.ParentAssetId != null;
+
     internal const string UnitLocked = "A unit's status and place change through fit, remove and the unit actions.";
 
     public sealed record TransferInput(Guid SiteId, Guid? LocationId, string? Reason, bool IncludeChildren = true);
@@ -51,6 +54,8 @@ public static class AssetEndpoints
         public Guid? ModelId { get; set; }
         /// <summary>0.21.0: members of an asset group.</summary>
         public Guid? AssetGroupId { get; set; }
+        /// <summary>0.24.0: units in a store, at repair or scrapped (no parent) are left out unless this is on or a search is given.</summary>
+        public bool? SpareUnits { get; set; }
         public string? Sort { get; set; }
         public string? Dir { get; set; }
         public int? Page { get; set; }
@@ -75,7 +80,9 @@ public static class AssetEndpoints
         g.MapGet("/lookup", async (CmmsDbContext db, string? search, Guid? excludeId, Guid? siteId, CancellationToken ct) =>
         {
             var q = db.Assets.AsNoTracking();
-            if (search.Clean() is { } s) q = q.Where(a => a.AssetNumber.Contains(s) || a.Name.Contains(s));
+            // Pickers find spare units by number or serial (0.24.0); an empty search lists the machines.
+            if (search.Clean() is { } s) q = q.Where(a => a.AssetNumber.Contains(s) || a.Name.Contains(s) || a.SerialNumber!.Contains(s));
+            else q = q.Where(NotSpareUnit);
             if (excludeId is not null) q = q.Where(a => a.Id != excludeId);
             if (siteId is not null) q = q.Where(a => a.SiteId == siteId);
             return await q.OrderBy(a => a.AssetNumber).Take(30).Select(a => new { a.Id, a.AssetNumber, a.Name, a.SiteId, a.LocationId }).ToListAsync(ct);
@@ -335,6 +342,7 @@ public static class AssetEndpoints
         if (f.Search.Clean() is { } s)
             q = q.Where(a => a.AssetNumber.Contains(s) || a.Name.Contains(s) || a.SerialNumber!.Contains(s) || a.Barcode!.Contains(s)
                              || a.Model!.Contains(s) || a.Manufacturer!.Contains(s) || a.OperationNumber!.Contains(s));
+        else if (f.SpareUnits != true) q = q.Where(NotSpareUnit);
         if (f.SiteId is not null) q = q.Where(a => a.SiteId == f.SiteId);
         if (f.LocationId is not null)
         {
