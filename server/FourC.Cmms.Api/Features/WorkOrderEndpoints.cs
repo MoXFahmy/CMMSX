@@ -62,6 +62,8 @@ public static class WorkOrderEndpoints
         /// <summary>The failure tree's work (0.14.0): a code recorded, or a breakdown — so a report line opens the same work orders.</summary>
         public bool? InFailureTree { get; set; }
         public bool? Mine { get; set; }
+        /// <summary>No person assigned (a team may be set): the home page's "Unassigned work" (0.22.0).</summary>
+        public bool? Unassigned { get; set; }
         /// <summary>Old name of <see cref="Late"/> (phones and bookmarks).</summary>
         public bool? Overdue { get; set; }
         /// <summary>Past the due time, or past the start-by with nobody having acted on it.</summary>
@@ -769,6 +771,7 @@ public static class WorkOrderEndpoints
             _ => q,
         };
         if (f.AssigneeId is not null) q = q.Where(w => w.Assignees.Any(a => a.EmployeeId == f.AssigneeId));
+        if (f.Unassigned == true) q = q.Where(w => !w.Assignees.Any());
         if (f.Mine == true)
         {
             var me = await db.Employees.Where(e => e.UserId == ctx.UserId).Select(e => (Guid?)e.Id).FirstOrDefaultAsync(ct);

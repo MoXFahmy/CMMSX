@@ -14,12 +14,16 @@ public static class ViewEndpoints
 {
     public sealed record ViewInput(string? List, string? Name, string? Query, List<string>? HiddenColumns, bool IsDefault);
     public sealed record ListSettingInput(List<string>? HiddenColumns);
+    public sealed record PinInput(bool Pinned);
+    public sealed record HomeOrderInput(List<Guid>? Ids);
 
     private const int MaxViewsPerList = 50;
     private const int MaxNameLength = 60;
     private const int MaxQueryLength = 2000;
     private const int MaxColumns = 100;
     private const int MaxColumnLength = 80;
+    /// <summary>Counter tiles a person may have on their home page (0.22.0).</summary>
+    public const int MaxPinned = 24;
 
     public static void MapViewEndpoints(this RouteGroupBuilder api)
     {
@@ -30,7 +34,43 @@ public static class ViewEndpoints
             if (!ListKeys.IsValid(list)) throw new DomainException("Unknown list.");
             var me = Me(ctx);
             return await db.SavedViews.AsNoTracking().Where(v => v.UserId == me && v.List == list).OrderBy(v => v.Name)
-                .Select(v => new { v.Id, v.Name, v.Query, v.HiddenColumns, v.IsDefault }).ToListAsync(ct);
+                .Select(v => new { v.Id, v.Name, v.Query, v.HiddenColumns, v.IsDefault, v.PinnedToHome }).ToListAsync(ct);
+        });
+
+        // The person's views pinned to the home page, in their order (0.22.0).
+        g.MapGet("/home", async (CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        {
+            var me = Me(ctx);
+            return await db.SavedViews.AsNoTracking().Where(v => v.UserId == me && v.PinnedToHome).OrderBy(v => v.HomeOrder).ThenBy(v => v.Name)
+                .Select(v => new { v.Id, v.List, v.Name, v.Query }).ToListAsync(ct);
+        });
+
+        g.MapPut("/{id:guid}/pin", async (Guid id, PinInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        {
+            var me = Me(ctx);
+            var view = await db.SavedViews.FirstOrDefaultAsync(x => x.Id == id && x.UserId == me, ct);
+            if (view is null) return Results.NotFound();
+            if (input.Pinned && !view.PinnedToHome)
+            {
+                var pinned = await db.SavedViews.Where(x => x.UserId == me && x.PinnedToHome).Select(x => (int?)x.HomeOrder).ToListAsync(ct);
+                if (pinned.Count >= MaxPinned) throw new DomainException($"You can pin up to {MaxPinned} views to your home page. Unpin one first.");
+                view.HomeOrder = (pinned.Max() ?? -1) + 1;
+            }
+            view.PinnedToHome = input.Pinned;
+            await db.SaveChangesAsync(ct);
+            return Results.Ok(new { view.PinnedToHome, view.HomeOrder });
+        });
+
+        // The order of the tiles: listed views first, in that order; pinned views left out follow, keeping theirs.
+        g.MapPut("/home-order", async (HomeOrderInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        {
+            var me = Me(ctx);
+            var pinned = await db.SavedViews.Where(x => x.UserId == me && x.PinnedToHome).OrderBy(x => x.HomeOrder).ThenBy(x => x.Name).ToListAsync(ct);
+            var ids = (input.Ids ?? []).Distinct().ToList();
+            var ordered = ids.Select(i => pinned.FirstOrDefault(v => v.Id == i)).OfType<SavedView>().Concat(pinned.Where(v => !ids.Contains(v.Id))).ToList();
+            for (var i = 0; i < ordered.Count; i++) ordered[i].HomeOrder = i;
+            await db.SaveChangesAsync(ct);
+            return Results.NoContent();
         });
 
         g.MapPost("/", async (ViewInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>

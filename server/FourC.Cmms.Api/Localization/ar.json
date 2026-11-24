@@ -1144,5 +1144,6 @@
  "Give every tile a label.": "أعطِ كل مربع اسمًا.",
  "Keep tile labels to {0} characters.": "اجعل أسماء المربعات في حدود {0} حرفًا.",
  "A tile link must be a CMX address starting with /.": "يجب أن يكون رابط المربع عنوانًا داخل CMX يبدأ بـ /.",
- "Choose menu items from the list.": "اختر عناصر القائمة من القائمة."
+ "Choose menu items from the list.": "اختر عناصر القائمة من القائمة.",
+ "You can pin up to {0} views to your home page. Unpin one first.": "يمكنك تثبيت {0} عرضًا كحد أقصى في صفحتك الرئيسية. ألغِ تثبيت أحدها أولًا."
 }
