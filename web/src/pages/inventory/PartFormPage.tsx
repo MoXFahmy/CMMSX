@@ -18,10 +18,13 @@ type Values = {
   partNumber: string; name: string; specification: string; manufacturer: string; manufacturerPartNumber: string; unitOfMeasure: string; groupId: string | null;
   standardPrice: number | ''; leadTimeDays: number | ''; isCritical: boolean; isShelfItem: boolean; allowNegativeStock: boolean; preferredSupplierId: string | null;
   barcode: string; alternatePartIds: string[]; notes: string; isActive: boolean; levels: Level[];
+  /** 0.24.0, on a new part only: later it is switched on the part page, with a serial for each piece in stock. */
+  isSerialTracked: boolean; unitLifeMonths: number | '';
 };
 const empty: Values = {
   partNumber: '', name: '', specification: '', manufacturer: '', manufacturerPartNumber: '', unitOfMeasure: 'EA', groupId: null, standardPrice: '', leadTimeDays: '',
   isCritical: false, isShelfItem: false, allowNegativeStock: false, preferredSupplierId: null, barcode: '', alternatePartIds: [], notes: '', isActive: true, levels: [],
+  isSerialTracked: false, unitLifeMonths: '',
 };
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
@@ -49,7 +52,7 @@ export function PartFormPage() {
       partNumber: part.partNumber, name: part.name, specification: part.specification ?? '', manufacturer: part.manufacturer ?? '', manufacturerPartNumber: part.manufacturerPartNumber ?? '',
       unitOfMeasure: part.unitOfMeasure, groupId: part.groupId ?? null, standardPrice: part.standardPrice, leadTimeDays: part.leadTimeDays ?? '', isCritical: part.isCritical,
       isShelfItem: part.isShelfItem, allowNegativeStock: part.allowNegativeStock, preferredSupplierId: part.preferredSupplierId ?? null, barcode: part.barcode ?? '',
-      alternatePartIds: part.alternatePartIds, notes: part.notes ?? '', isActive: part.isActive,
+      alternatePartIds: part.alternatePartIds, notes: part.notes ?? '', isActive: part.isActive, isSerialTracked: !!part.isSerialTracked, unitLifeMonths: part.unitLifeMonths ?? '',
       levels: part.levels.map((l) => ({ storeId: l.storeId, bin: l.bin ?? '', minLevel: l.minLevel, reorderLevel: l.reorderLevel, maxLevel: l.maxLevel, reorderQuantity: l.reorderQuantity, quantityOnHand: l.quantityOnHand })),
     });
     form.resetDirty();
@@ -68,6 +71,7 @@ export function PartFormPage() {
     const n = (x: number | '') => (x === '' ? 0 : x);
     const body = {
       ...v, standardPrice: n(v.standardPrice), leadTimeDays: v.leadTimeDays === '' ? null : v.leadTimeDays, rowVersion: part?.rowVersion,
+      isSerialTracked: editing ? undefined : v.isSerialTracked, unitLifeMonths: editing || !v.isSerialTracked || v.unitLifeMonths === '' ? undefined : v.unitLifeMonths,
       levels: v.levels.filter((l) => l.storeId).map((l) => ({ storeId: l.storeId, bin: l.bin, minLevel: n(l.minLevel), reorderLevel: n(l.reorderLevel), maxLevel: n(l.maxLevel), reorderQuantity: n(l.reorderQuantity) })),
     };
     try {
@@ -146,6 +150,11 @@ export function PartFormPage() {
               <Checkbox label={t('inv.critical')} description={t('inv.criticalHint')} {...form.getInputProps('isCritical', { type: 'checkbox' })} />
               <Checkbox label={t('inv.shelfLife')} description={t('inv.shelfLifeHint')} {...form.getInputProps('isShelfItem', { type: 'checkbox' })} />
               <Checkbox label={t('inv.allowNegative')} description={t('inv.allowNegativeHint')} {...form.getInputProps('allowNegativeStock', { type: 'checkbox' })} />
+              {editing
+                ? <Text fz="xs" c="dimmed">{t(part?.isSerialTracked ? 'units.formOn' : 'units.formOff')}</Text>
+                : <Checkbox label={t('units.serialTracked')} description={t('units.serialTrackedHint')} {...form.getInputProps('isSerialTracked', { type: 'checkbox' })} />}
+              {!editing && form.getValues().isSerialTracked &&
+                <NumberInput label={t('units.lifeMonths')} description={t('units.lifeHint')} min={1} max={600} {...form.getInputProps('unitLifeMonths')} />}
               <Checkbox label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />
             </Section>
           </Stack>

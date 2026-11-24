@@ -3,7 +3,7 @@ import { Alert, Badge, Button, Card, Center, Grid, Group, Loader, Menu, SimpleGr
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { IconAdjustments, IconArrowBackUp, IconArrowsExchange, IconDots, IconEdit, IconPackageExport, IconPackageImport, IconShoppingCart, IconTrash } from '@tabler/icons-react';
+import { IconAdjustments, IconArrowBackUp, IconArrowsExchange, IconBarcode, IconDots, IconEdit, IconPackageExport, IconPackageImport, IconShoppingCart, IconTrash } from '@tabler/icons-react';
 import { del, get } from '@/api/client';
 import type { PartDetail } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -15,6 +15,7 @@ import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtPrice, fmtQty, notifyError } from '@/components/utils';
 import { TransactionsTable } from './InventoryPage';
 import { PartSuppliers } from './PartSuppliers';
+import { PartUnits, SerialTrackingModal } from './PartUnits';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={0}><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{label}</Text><Text fz="sm" component="div">{children ?? '—'}</Text></Stack>;
@@ -33,11 +34,14 @@ export function PartDetailPage() {
   const currency = me?.tenant.settings.currency ?? 'USD';
   const [tab, setTab] = useState<string | null>('stock');
   const [tx, setTx] = useState<{ kind: StockTxKind; storeId?: string } | null>(null);
+  const [tracking, setTracking] = useState(false);
   const { data: p, isLoading, error } = useQuery({ queryKey: ['part', id], queryFn: () => get<PartDetail>(`/parts/${id}`) });
   if (isLoading) return <Center h={300}><Loader /></Center>;
   if (error || !p) return <Alert color="red">{(error as Error)?.message}</Alert>;
   const low = p.levels.some((l) => l.reorderQuantity > 0 && l.available <= l.reorderLevel);
   const defaults = { partId: p.id, part: { id: p.id, partNumber: p.partNumber, name: p.name } };
+  // A serial part's stock moves through its units (0.24.0): only receipts (with serials) are offered by quantity.
+  const serial = !!p.isSerialTracked;
   const actions: { kind: StockTxKind; icon: typeof IconPackageImport }[] = [
     { kind: 'receive', icon: IconPackageImport }, { kind: 'issue', icon: IconPackageExport }, { kind: 'return', icon: IconArrowBackUp },
     { kind: 'transfer', icon: IconArrowsExchange }, { kind: 'adjust', icon: IconAdjustments },
@@ -46,23 +50,24 @@ export function PartDetailPage() {
   return (
     <>
       <PageHeader crumbs={[{ label: t('inv.title'), to: '/inventory' }, { label: p.partNumber }]} title={p.name}
-        badge={<Group gap={6}>{p.isCritical && <Badge color="red">{t('inv.critical')}</Badge>}{p.isShelfItem && <Badge color="grape" variant="light">{t('inv.shelfLife')}</Badge>}
+        badge={<Group gap={6}>{p.isCritical && <Badge color="red">{t('inv.critical')}</Badge>}{p.isShelfItem && <Badge color="grape" variant="light">{t('inv.shelfLife')}</Badge>}{serial && <Badge color="indigo" variant="light">{t('units.serialTracked')}</Badge>}
           {!p.isActive && <Badge color="gray">{t('common.inactive')}</Badge>}{low && <Badge color="orange" variant="light">{t('inv.atReorder')}</Badge>}</Group>}
         subtitle={<>{p.partNumber}{p.groupName && ` · ${p.groupName}`}{p.manufacturer && ` · ${p.manufacturer}`}{p.manufacturerPartNumber && ` ${p.manufacturerPartNumber}`}</>}
         actions={<>
           {can(P.inventoryTransact) && <>
-            <Button leftSection={<IconPackageExport size={16} />} onClick={() => setTx({ kind: 'issue' })}>{t('inv.tx.issue')}</Button>
-            <Button variant="default" leftSection={<IconPackageImport size={16} />} onClick={() => setTx({ kind: 'receive' })}>{t('inv.tx.receive')}</Button>
+            {!serial && <Button leftSection={<IconPackageExport size={16} />} onClick={() => setTx({ kind: 'issue' })}>{t('inv.tx.issue')}</Button>}
+            <Button variant={serial ? 'filled' : 'default'} leftSection={<IconPackageImport size={16} />} onClick={() => setTx({ kind: 'receive' })}>{t('inv.tx.receive')}</Button>
           </>}
           <Menu position="bottom-end">
             <Menu.Target><ActionIcon variant="default" size="lg" aria-label={t('common.actions')}><IconDots size={16} /></ActionIcon></Menu.Target>
             <Menu.Dropdown>
-              {can(P.inventoryTransact) && actions.filter((a) => a.kind !== 'issue' && a.kind !== 'receive').map((a) =>
+              {can(P.inventoryTransact) && !serial && actions.filter((a) => a.kind !== 'issue' && a.kind !== 'receive').map((a) =>
                 <Menu.Item key={a.kind} leftSection={<a.icon size={16} />} onClick={() => setTx({ kind: a.kind })}>{t(`inv.tx.${a.kind}`)}</Menu.Item>)}
               {can(P.purchasingCreate) && <Menu.Item leftSection={<IconShoppingCart size={16} />} component={Link} to={`/purchasing/orders/new?partId=${p.id}`}>{t('inv.orderPart')}</Menu.Item>}
               {can(P.inventoryManage) && <>
                 <Menu.Divider />
                 <Menu.Item leftSection={<IconEdit size={16} />} component={Link} to={`/inventory/parts/${p.id}/edit`}>{t('common.edit')}</Menu.Item>
+                <Menu.Item leftSection={<IconBarcode size={16} />} onClick={() => setTracking(true)}>{t('units.serialTracking')}</Menu.Item>
                 <Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={() => confirmDelete(p.partNumber, async () => {
                   try { await del(`/parts/${p.id}`); await qc.invalidateQueries({ queryKey: ['parts'] }); navigate('/inventory'); } catch (e) { notifyError(e); } })}>{t('common.delete')}</Menu.Item>
               </>}
@@ -80,6 +85,7 @@ export function PartDetailPage() {
       <Tabs value={tab} onChange={setTab} keepMounted={false}>
         <Tabs.List mb="md">
           <Tabs.Tab value="stock">{t('inv.stockLevels')}</Tabs.Tab>
+          {serial && <Tabs.Tab value="units">{t('units.tab')}</Tabs.Tab>}
           <Tabs.Tab value="suppliers">{t('catalogue.title')}</Tabs.Tab>
           <Tabs.Tab value="history">{t('inv.tabs.transactions')}</Tabs.Tab>
           <Tabs.Tab value="details">{t('common.details')}</Tabs.Tab>
@@ -110,7 +116,7 @@ export function PartDetailPage() {
                         <Table.Td ta="right"><Text fz="sm" c={l.available < 0 ? 'red' : undefined}>{fmtQty(l.available)}</Text></Table.Td>
                         <Table.Td ta="right">{fmtQty(l.minLevel)}</Table.Td><Table.Td ta="right">{fmtQty(l.reorderLevel)}</Table.Td><Table.Td ta="right">{fmtQty(l.maxLevel)}</Table.Td><Table.Td ta="right">{fmtQty(l.reorderQuantity)}</Table.Td>
                         <Table.Td ta="right">{can(P.inventoryTransact) && <Group gap={4} justify="flex-end" wrap="nowrap">
-                          <Button size="compact-xs" variant="light" onClick={() => setTx({ kind: 'issue', storeId: l.storeId })}>{t('inv.issueShort')}</Button>
+                          {!serial && <Button size="compact-xs" variant="light" onClick={() => setTx({ kind: 'issue', storeId: l.storeId })}>{t('inv.issueShort')}</Button>}
                           <Button size="compact-xs" variant="default" onClick={() => setTx({ kind: 'receive', storeId: l.storeId })}>{t('inv.receiveShort')}</Button></Group>}</Table.Td>
                       </Table.Tr>
                     );
@@ -157,6 +163,7 @@ export function PartDetailPage() {
             </Card>
           )}
         </Tabs.Panel>
+        {serial && <Tabs.Panel value="units"><PartUnits part={p} /></Tabs.Panel>}
         <Tabs.Panel value="suppliers"><PartSuppliers partId={p.id} unit={p.unitOfMeasure} /></Tabs.Panel>
         <Tabs.Panel value="history"><TransactionsTable partId={p.id} /></Tabs.Panel>
         <Tabs.Panel value="details">
@@ -174,6 +181,8 @@ export function PartDetailPage() {
                   <Field label={t('inv.preferredSupplier')}>{p.preferredSupplier?.name}</Field>
                   <Field label={t('inv.leadTimeLabel')}>{p.leadTimeDays ? t('inv.days', { count: p.leadTimeDays }) : null}</Field>
                   <Field label={t('inv.allowNegative')}>{p.allowNegativeStock ? t('common.yes') : t('common.no')}</Field>
+                  <Field label={t('units.serialTracked')}>{serial ? t('common.yes') : t('common.no')}</Field>
+                  {serial && <Field label={t('units.lifeMonths')}>{p.unitLifeMonths ?? null}</Field>}
                   {p.legacyRef && <Field label={t('assets.legacyRef')}>{p.legacyRef}</Field>}
                 </SimpleGrid>
                 {p.specification && <><Text fz="xs" c="dimmed" tt="uppercase" fw={600} mt="lg">{t('inv.specification')}</Text><Text fz="sm" style={{ whiteSpace: 'pre-wrap' }}>{p.specification}</Text></>}
@@ -202,6 +211,7 @@ export function PartDetailPage() {
         <Tabs.Panel value="files"><Card><Attachments entityType="Part" entityId={p.id} canEdit={can(P.inventoryManage)} /></Card></Tabs.Panel>
         <Tabs.Panel value="audit"><Card><AuditTimeline entityType="Part" entityId={p.id} /></Card></Tabs.Panel>
       </Tabs>
+      {tracking && <SerialTrackingModal part={p} onClose={() => setTracking(false)} />}
       {tx && <StockTxModal kind={tx.kind} opened onClose={() => setTx(null)} defaults={{ ...defaults, storeId: tx.storeId ?? (p.levels.length === 1 ? p.levels[0].storeId : null) }} />}
     </>
   );

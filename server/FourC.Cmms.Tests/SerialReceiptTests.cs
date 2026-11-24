@@ -116,7 +116,9 @@ public class SerialReceiptTests(ApiFixture fx) : IClassFixture<ApiFixture>
             lines = new[] { new { partId = (Guid?)part, description = "Pump pack", quantity = 1m, unitPrice = 1000m, discountPercent = 0m, storeId = (Guid?)o.Store, workOrderId = (Guid?)wo, packSize = (decimal?)2 } },
         })));
         await Ok(await o.Admin.PostAsync($"/api/purchase-orders/{po}/approve", null));
-        var line = (await Ok(await o.Admin.GetAsync($"/api/purchase-orders/{po}"))).GetProperty("lines")[0].GetProperty("id").GetGuid();
+        var poLine = (await Ok(await o.Admin.GetAsync($"/api/purchase-orders/{po}"))).GetProperty("lines")[0];
+        Assert.True(poLine.GetProperty("isSerialTracked").GetBoolean()); // the receive form asks for serials
+        var line = poLine.GetProperty("id").GetGuid();
         await Refused(await o.Admin.PostAsJsonAsync($"/api/purchase-orders/{po}/receive", new { lines = new[] { new { lineId = line, quantity = 1m, storeId = o.Store, serials = new[] { "K1" } } } }),
             "Enter 2 serial numbers, one for each piece received.");
         await Ok(await o.Admin.PostAsJsonAsync($"/api/purchase-orders/{po}/receive", new { lines = new[] { new { lineId = line, quantity = 1m, storeId = o.Store, serials = new[] { "K1", "K2" } } } }));
