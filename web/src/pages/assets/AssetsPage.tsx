@@ -8,13 +8,14 @@ import { IconFilterOff, IconPlus, IconSearch, IconEdit, IconQrcode } from '@tabl
 import { openLabels } from '@/pages/labels/LabelsPage';
 import { BulkBar } from '@/components/list';
 import { get, post } from '@/api/client';
-import { ASSET_STATUSES, CRITICALITIES, type AssetListItem, type Category, type CustomField, type Paged } from '@/api/types';
+import { type AssetStatus, type Criticality, type AssetListItem, type Category, type CustomField, type Paged } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { CriticalityBadge, StatusBadge } from '@/components/Badges';
 import { PageHeader } from '@/components/PageHeader';
 import { locationOptions, useHierarchy } from '@/components/LocationPicker';
 import { fmtDate, fmtDateTime, notifyError, notifySuccess } from '@/components/utils';
 import { FilterChips, ListTools, listText, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
+import { listItems } from '@/components/listLabels';
 
 const PAGE_SIZES = [25, 50, 100];
 const DEFAULT_HIDDEN = ['manufacturer', 'model', 'serialNumber', 'commissionedOn', 'warrantyExpiresOn', 'parentAssetNumber'];
@@ -107,9 +108,9 @@ export function AssetsPage() {
             onChange={(v) => set({ locationId: v })} comboboxProps={{ width: 'max-content', position: 'bottom-start' }} />
           <Select placeholder={t('assets.category')} data={(cats ?? []).map((c) => ({ value: c.id, label: c.name }))} value={p('categoryId') || null} clearable searchable w={{ base: '100%', xs: 190 }}
             onChange={(v) => set({ categoryId: v })} />
-          <MultiSelect placeholder={p('status') ? undefined : t('common.status')} data={ASSET_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))} w={{ base: '100%', xs: 200 }}
+          <MultiSelect placeholder={p('status') ? undefined : t('common.status')} data={listItems('assetStatus', t, null, true)} w={{ base: '100%', xs: 200 }}
             value={p('status') ? p('status').split(',') : []} onChange={(v) => set({ status: v.join(',') || null })} clearable />
-          <MultiSelect placeholder={p('criticality') ? undefined : t('criticality.label')} data={CRITICALITIES.map((s) => ({ value: s, label: t(`criticality.${s}`) }))} w={{ base: '100%', xs: 190 }}
+          <MultiSelect placeholder={p('criticality') ? undefined : t('criticality.label')} data={listItems('criticality', t, null, true)} w={{ base: '100%', xs: 190 }}
             value={p('criticality') ? p('criticality').split(',') : []} onChange={(v) => set({ criticality: v.join(',') || null })} clearable />
           <Switch label={t('assets.topLevelOnly')} checked={p('topLevelOnly') === 'true'} onChange={(e) => set({ topLevelOnly: e.currentTarget.checked ? 'true' : null })} mb={8} />
           <Switch label={t('downtime.downNow')} color="red" checked={p('downNow') === 'true'} onChange={(e) => set({ downNow: e.currentTarget.checked ? 'true' : null })} mb={8} />
@@ -123,9 +124,9 @@ export function AssetsPage() {
       {can(P.assetsEdit) && (
         <BulkBar count={selected.length} onClear={() => setSelected([])}>
             <Menu><Menu.Target><Button size="xs" variant="white" leftSection={<IconEdit size={14} />}>{t('assets.setStatus')}</Button></Menu.Target>
-              <Menu.Dropdown>{ASSET_STATUSES.map((s) => <Menu.Item key={s} onClick={() => bulk.mutate({ status: s })}>{t(`status.${s}`)}</Menu.Item>)}</Menu.Dropdown></Menu>
+              <Menu.Dropdown>{listItems('assetStatus', t).map((s) => <Menu.Item key={s.value} onClick={() => bulk.mutate({ status: s.value as AssetStatus })}>{s.label}</Menu.Item>)}</Menu.Dropdown></Menu>
             <Menu><Menu.Target><Button size="xs" variant="white">{t('assets.setCriticality')}</Button></Menu.Target>
-              <Menu.Dropdown>{CRITICALITIES.map((s) => <Menu.Item key={s} onClick={() => bulk.mutate({ criticality: s })}>{t(`criticality.${s}`)}</Menu.Item>)}</Menu.Dropdown></Menu>
+              <Menu.Dropdown>{listItems('criticality', t).map((s) => <Menu.Item key={s.value} onClick={() => bulk.mutate({ criticality: s.value as Criticality })}>{s.label}</Menu.Item>)}</Menu.Dropdown></Menu>
             <Menu><Menu.Target><Button size="xs" variant="white">{t('assets.setCategory')}</Button></Menu.Target>
               <Menu.Dropdown mah={300} style={{ overflowY: 'auto' }}>{(cats ?? []).map((c) => <Menu.Item key={c.id} onClick={() => bulk.mutate({ categoryId: c.id })}>{c.name}</Menu.Item>)}</Menu.Dropdown></Menu>
             <Button size="xs" variant="white" leftSection={<IconQrcode size={14} />} onClick={() => openLabels('asset', selected.map((s) => s.id))}>{t('labels.printLabels')}</Button>

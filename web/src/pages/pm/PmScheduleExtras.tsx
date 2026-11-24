@@ -4,9 +4,10 @@ import { useQuery } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { get } from '@/api/client';
-import { ASSET_STATUSES, DAY_NAMES, type MeterItem, type ScheduleCalendarItem } from '@/api/types';
+import { DAY_NAMES, type MeterItem, type ScheduleCalendarItem } from '@/api/types';
 import { spreadBlocks } from './spread';
 import type { V } from './PmScheduleFormPage';
+import { listItems } from '@/components/listLabels';
 
 type Form = UseFormReturnType<V>;
 type Option = { value: string; label: string };
@@ -53,7 +54,7 @@ export function PeopleRulesCard({ form }: { form: Form }) {
         data={(people ?? []).map((p) => ({ value: p.id, label: p.fullName }))} value={v.recipientIds} onChange={(x) => form.setFieldValue('recipientIds', x)} />
       <Switch mt="xs" label={t('pm12.useOrgRules')} checked={v.useOrgRules} onChange={(e) => form.setFieldValue('useOrgRules', e.currentTarget.checked)} />
       {!v.useOrgRules && <>
-        <MultiSelect label={t('pm12.skipStatuses')} data={ASSET_STATUSES.map((x) => ({ value: x, label: t(`status.${x}`) }))} value={v.skipStatusesOverride}
+        <MultiSelect label={t('pm12.skipStatuses')} data={listItems('assetStatus', t, null, true)} value={v.skipStatusesOverride}
           onChange={(x) => form.setFieldValue('skipStatusesOverride', x)} clearable />
         <MultiSelect label={t('pm12.nonWorkingDays')} data={DAY_NAMES.map((x) => ({ value: x, label: t(`pm.days.${x}`) }))} value={v.nonWorkingDaysOverride}
           onChange={(x) => form.setFieldValue('nonWorkingDaysOverride', x)} error={form.errors.nonWorkingDaysOverride} clearable />

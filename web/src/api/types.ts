@@ -15,7 +15,14 @@ export const WARRANTY_TYPES: WarrantyType[] = ['None', 'Warranty', 'ServiceContr
 export const FIELD_TYPES: CustomFieldType[] = ['Text', 'LongText', 'Number', 'Date', 'Select', 'Boolean'];
 
 export type Terminology = { site: string; sites: string; location: string; locations: string; asset: string; assets: string };
+/** 0.21.0: an organization's wording for one value of a fixed list (names, colour, order, hidden). */
+export type ListLabel = { name?: string | null; nameAr?: string | null; color?: string | null; order?: number | null; hidden?: boolean };
+export type ListKey = 'workType' | 'priority' | 'assetStatus' | 'criticality';
+export type ListLabels = Partial<Record<ListKey, Record<string, ListLabel>>>;
+
 export type TenantSettings = {
+  /** 0.21.0 */
+  listLabels?: ListLabels; restartNumbersYearly?: boolean;
   terminology: Terminology; terminologyArabic?: Terminology; defaultLanguage?: 'en' | 'ar'; assetNumberPrefix: string; assetNumberPadding: number; autoNumberAssets: boolean;
   workOrderNumberPrefix: string; workRequestNumberPrefix: string; requireCompletionNotes: boolean; autoGeneratePm: boolean;
   purchaseOrderNumberPrefix: string; purchaseRequestNumberPrefix?: string; purchaseRequestRecipientIds?: string[]; defaultTaxPercent: number; currency: string; dateFormat: string; timeZone: string;

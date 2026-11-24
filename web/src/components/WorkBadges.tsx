@@ -2,6 +2,7 @@ import { Badge } from '@mantine/core';
 import { useTranslation } from 'react-i18next';
 import { IconArrowDown, IconArrowUp, IconEqual, IconFlame } from '@tabler/icons-react';
 import type { WorkOrderStatus, WorkPriority, WorkRequestStatus } from '@/api/types';
+import { listColorOf } from './listLabels';
 
 const woColor: Record<WorkOrderStatus, string> = { Open: 'blue', InProgress: 'cyan', OnHold: 'yellow', Completed: 'teal', Closed: 'gray', Cancelled: 'dark' };
 const prColor: Record<WorkPriority, string> = { Low: 'gray', Medium: 'blue', High: 'orange', Urgent: 'red' };
@@ -20,7 +21,7 @@ export function WoStatusBadge({ status }: { status: WorkOrderStatus }) {
 export function PriorityBadge({ value }: { value: WorkPriority }) {
   const { t } = useTranslation();
   const Icon = prIcon[value];
-  return <Badge color={prColor[value]} variant="outline" leftSection={<Icon size={12} />} {...fixed}>{t(`priority.${value}`)}</Badge>;
+  return <Badge color={listColorOf('priority', value, prColor[value])} variant="outline" leftSection={<Icon size={12} />} {...fixed}>{t(`priority.${value}`)}</Badge>;
 }
 
 export function WrStatusBadge({ status }: { status: WorkRequestStatus }) {

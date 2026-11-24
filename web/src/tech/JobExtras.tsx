@@ -4,11 +4,11 @@ import { DateTimePicker } from '@mantine/dates';
 import { useNavigate } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconChevronLeft, IconFileUpload, IconHandStop, IconListCheck, IconPlayerPlay, IconX } from '@tabler/icons-react';
-import { WORK_PRIORITIES } from '@/api/types';
 import { dateTimeFormat, fmtDateTime, notifyError, notifySuccess } from '@/components/utils';
 import { FILE_ACCEPT, fileKind, sizeProblem } from './files';
 import { useTech } from './useTech';
 import type { TechJob } from './types';
+import { listItems } from '@/components/listLabels';
 
 /** A picker's local "YYYY-MM-DD HH:mm:ss" (or Date) as an ISO instant. */
 const iso = (v: string | Date | null) => (v ? new Date(typeof v === 'string' ? v.replace(' ', 'T') : v).toISOString() : new Date().toISOString());
@@ -118,7 +118,7 @@ export function NewWorkOrderPage() {
       <Title order={4}>{t('techJob.newWorkOrder')}</Title>
       <TextInput label={t('techJob.whatToDo')} required value={title} onChange={(e) => setTitle(e.currentTarget.value)} data-autofocus />
       <Textarea label={t('common.description')} autosize value={description} onChange={(e) => setDescription(e.currentTarget.value)} />
-      <Select label={t('priority.label')} data={WORK_PRIORITIES.map((p) => ({ value: p, label: t(`priority.${p}`) }))} value={priority} onChange={setPriority} />
+      <Select label={t('priority.label')} data={listItems('priority', t, priority)} value={priority} onChange={setPriority} />
       {(bundle?.symptoms ?? []).length > 0 && <Select label={t('codes.symptom')} clearable searchable
         data={(bundle?.symptoms ?? []).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))} value={symptom} onChange={setSymptom} />}
       <Select label={t('wo.asset')} searchable clearable data={(places?.assets ?? []).map((a) => ({ value: a.id, label: `${a.assetNumber} · ${a.name}` }))} value={asset} onChange={(v) => { setAsset(v); if (v) setLocation(null); }} />

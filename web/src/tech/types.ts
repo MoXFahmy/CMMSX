@@ -62,6 +62,8 @@ export type TechStock = {
 };
 
 export type TechBundle = {
+  /** 0.21.0: the organization's names for the fixed lists. */
+  listLabels?: import('@/api/types').ListLabels;
   employeeId: string; userId: string; jobs: TechJob[];
   failureCodes: { id: string; code: string; name: string }[];
   /** Symptoms and remedies (0.14.0), and the codes most often recorded together, for ordering offline. */

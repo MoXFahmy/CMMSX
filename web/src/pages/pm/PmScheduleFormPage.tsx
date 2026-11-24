@@ -9,7 +9,7 @@ import { Link, useNavigate, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconPlus, IconTrash } from '@tabler/icons-react';
 import { del, get, post, put } from '@/api/client';
-import { DAY_NAMES, FREQ_UNITS, PM_TYPES, WORK_PRIORITIES, type AssetDetail, type Lookup, type MeterItem, type PmScheduleDetail, type PmTaskListItem } from '@/api/types';
+import { DAY_NAMES, FREQ_UNITS, PM_TYPES, type AssetDetail, type Lookup, type MeterItem, type PmScheduleDetail, type PmTaskListItem } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { LocationPicker } from '@/components/LocationPicker';
@@ -24,6 +24,7 @@ import { OccurrencesDrawer } from './OccurrencesDrawer';
 import { ContractSelect } from '@/components/ContractSelect';
 import { generateNow } from './generateNow';
 import { fmtDate, fmtDateTime, fmtMoney, handleFormError, notifyError, notifySuccess, notifyWarning, toIsoDate } from '@/components/utils';
+import { listItems } from '@/components/listLabels';
 
 export type V = {
   code: string; name: string; description: string; siteId: string | null; locationId: string | null; assetId: string | null; tradeId: string | null; teamId: string | null; priority: string;
@@ -181,7 +182,7 @@ export function PmScheduleFormPage() {
                 {(teams?.length ?? 0) > 0 && <Select label={t('teams.team')} clearable data={teamOptions(teams, form.values.teamId)} {...form.getInputProps('teamId')} />}
                 <ContractSelect siteId={form.values.siteId} assetId={form.values.target === 'asset' ? form.values.assetId : null} value={form.values.contractId}
                   onChange={(v) => form.setFieldValue('contractId', v)} error={form.errors.contractId} />
-                <Select label={t('priority.label')} data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))} {...form.getInputProps('priority')} />
+                <Select label={t('priority.label')} data={listItems('priority', t, form.values.priority)} {...form.getInputProps('priority')} />
                 <Checkbox label={t('accessWindows.onlyWhenStopped')} description={v.onlyWhenStopped === null ? t('accessWindows.fromAsset') : undefined} mt="sm"
                   checked={!!v.onlyWhenStopped} onChange={(e) => form.setFieldValue('onlyWhenStopped', e.currentTarget.checked)} />
               </SimpleGrid>

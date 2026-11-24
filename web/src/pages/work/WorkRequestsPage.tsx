@@ -14,7 +14,7 @@ import { IconCheck, IconPlus, IconSearch, IconX } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
 import { SourceBanner } from './SourceBanner';
 import { CoveredBanner } from '@/components/CoveredBanner';
-import { WORK_PRIORITIES, WORK_TYPES, type AccessWindow, type AssetDetail, type Lookup, type Paged, type RequestType, type TenantSettings, type WorkRequestDetail, type WorkRequestListItem, type WorkRequestStatus } from '@/api/types';
+import { type AccessWindow, type AssetDetail, type Lookup, type Paged, type RequestType, type TenantSettings, type WorkRequestDetail, type WorkRequestListItem, type WorkRequestStatus } from '@/api/types';
 import { AccessWindowsEditor, AccessWindowsList, StoppedBadge } from '@/components/AccessWindowsEditor';
 import { windowProblem } from '@/components/accessWindows';
 import { CodeSelect } from '@/components/CodeSelect';
@@ -30,6 +30,7 @@ import { AssetCheck } from '@/components/AssetCheck';
 import { PriorityBadge, WrStatusBadge } from '@/components/WorkBadges';
 import { dateTimeFormat, fmtDate, fmtDateTime, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
+import { listDefault, listItems } from '@/components/listLabels';
 
 const TABS: { key: string; status?: WorkRequestStatus; late?: boolean }[] = [{ key: 'New', status: 'New' }, { key: 'late', late: true }, { key: 'Approved', status: 'Approved' }, { key: 'Closed', status: 'Closed' }, { key: 'Rejected', status: 'Rejected' }, { key: 'Cancelled', status: 'Cancelled' }, { key: 'all' }];
 
@@ -123,7 +124,7 @@ export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean
   const { me } = useAuth();
   const qc = useQueryClient();
   const { data: asset } = useQuery({ queryKey: ['asset', assetId], queryFn: () => get<AssetDetail>(`/assets/${assetId}`), enabled: !!assetId && opened });
-  const blank = { title: '', description: '', siteId: null as string | null, locationId: null as string | null, assetId: null as string | null, priority: 'Medium', type: 'Corrective',
+  const blank = { title: '', description: '', siteId: null as string | null, locationId: null as string | null, assetId: null as string | null, priority: listDefault('priority', 'Medium'), type: listDefault('workType', 'Corrective'),
     requesterName: me?.user.fullName ?? '', requesterPhone: '', requiredBy: null as Date | null, assetIsDown: false,
     requestTypeId: null as string | null, extraRecipientIds: [] as string[], accessWindows: [] as AccessWindow[], symptomId: null as string | null,
     costCentreId: null as string | null };
@@ -170,8 +171,8 @@ export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean
         {form.values.assetId && <Checkbox label={t('downtime.assetIsDown')} description={t('downtime.assetIsDownHint')} color="red"
           {...form.getInputProps('assetIsDown', { type: 'checkbox' })} />}
         <SimpleGrid cols={{ base: 1, sm: 3 }}>
-          <Select label={t('priority.label')} data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))} {...form.getInputProps('priority')} />
-          <Select label={t('workType.label')} data={WORK_TYPES.map((x) => ({ value: x, label: t(`workType.${x}`) }))} {...form.getInputProps('type')} />
+          <Select label={t('priority.label')} data={listItems('priority', t, form.values.priority)} {...form.getInputProps('priority')} />
+          <Select label={t('workType.label')} data={listItems('workType', t, form.values.type)} {...form.getInputProps('type')} />
           <DateInput label={t('wr.requiredBy')} clearable valueFormat="DD MMM YYYY" {...form.getInputProps('requiredBy')} />
         </SimpleGrid>
         <SimpleGrid cols={2}>
@@ -253,8 +254,8 @@ function RequestDrawer({ id, onClose }: { id: string | null; onClose: () => void
       <Modal opened={approveOpen} onClose={approve.close} title={t('wr.approveTitle')} size="lg">
         <form onSubmit={doApprove}><Stack>
           <SimpleGrid cols={{ base: 1, sm: 3 }}>
-            <Select label={t('priority.label')} data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))} {...af.getInputProps('priority')} />
-            <Select label={t('workType.label')} data={WORK_TYPES.map((x) => ({ value: x, label: t(`workType.${x}`) }))} {...af.getInputProps('type')} />
+            <Select label={t('priority.label')} data={listItems('priority', t, af.values.priority)} {...af.getInputProps('priority')} />
+            <Select label={t('workType.label')} data={listItems('workType', t, af.values.type)} {...af.getInputProps('type')} />
             <Select label={t('wo.trade')} clearable data={(trades ?? []).filter((x) => x.isActive).map((x) => ({ value: x.id, label: x.name }))} {...af.getInputProps('tradeId')} />
           </SimpleGrid>
           <EmployeePicker label={t('wo.assignees')} value={af.values.assigneeIds} onChange={(v) => af.setFieldValue('assigneeIds', v)} siteId={r?.siteId} tradeId={af.values.tradeId} />

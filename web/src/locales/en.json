@@ -2659,5 +2659,23 @@
     "discard": "Discard the changes you haven't saved?",
     "noCostCentres": "Add cost centres first.",
     "hint": "Type a total to spread it evenly over the months. In the report, a cost centre's budget includes the cost centres under it."
+  },
+  "lists": {
+    "title": "Lists",
+    "hint": "Your own names, colours and order for work types, priorities, asset statuses and criticality. Their meaning stays the same, so rules, targets and reports keep working. A hidden value stays on old records but isn't offered for new ones.",
+    "workTypes": "Work types",
+    "priorities": "Priorities",
+    "assetStatuses": "Asset statuses",
+    "criticality": "Criticality",
+    "builtIn": "Built-in",
+    "nameEn": "Name (English)",
+    "nameAr": "Name (Arabic)",
+    "colour": "Colour",
+    "screenColour": "Screen's own",
+    "hidden": "Hidden",
+    "up": "Move up",
+    "down": "Move down",
+    "reset": "Back to the built-in name",
+    "keepOne": "Leave at least one showing."
   }
 }

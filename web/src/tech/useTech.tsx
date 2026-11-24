@@ -7,6 +7,8 @@ import { enqueue, getMeta, idbOutboxStore, loadBundle, loadPlaces, loadStock, qu
 import type { TechBundle, TechPlaces, TechStock } from './types';
 import { registerTechWorker } from './worker';
 import { keepData } from './persist';
+import i18n from '@/i18n';
+import { applyListLabels } from '@/components/listLabels';
 
 /** starting → ready; or why the technician view can't show jobs. */
 export type Phase = 'starting' | 'ready' | 'signedOut' | 'revoked' | 'locked' | 'noCopy';
@@ -43,6 +45,9 @@ export function TechProvider({ children }: { children: ReactNode }) {
   const [userId, setUserId] = useState<string>();
   const [fullName, setFullName] = useState<string>();
   const [bundle, setBundle] = useState<TechBundle>();
+  // The organization's names for the fixed lists (0.21.0) come with the jobs, so they show offline too.
+  const labelsKey = JSON.stringify(bundle?.listLabels ?? {});
+  useMemo(() => applyListLabels(i18n, bundle?.listLabels), [labelsKey]); // eslint-disable-line react-hooks/exhaustive-deps
   const [places, setPlaces] = useState<TechPlaces>();
   const [stock, setStock] = useState<TechStock>();
   const [queue, setQueue] = useState<QueuedChange[]>([]);

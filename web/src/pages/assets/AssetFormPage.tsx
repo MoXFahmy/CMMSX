@@ -7,12 +7,13 @@ import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { get, post, put } from '@/api/client';
-import { ASSET_STATUSES, CRITICALITIES, DAY_NAMES, WARRANTY_TYPES, type AssetDetail, type Category, type CustomField, type DayName } from '@/api/types';
+import { DAY_NAMES, WARRANTY_TYPES, type AssetDetail, type Category, type CustomField, type DayName } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { LocationPicker } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
 import { handleFormError, notifySuccess, toIsoDate } from '@/components/utils';
+import { listDefault, listItems } from '@/components/listLabels';
 
 type Values = {
   assetNumber: string; name: string; description: string; categoryId: string | null; siteId: string | null; locationId: string | null; parentAssetId: string | null;
@@ -51,7 +52,9 @@ export function AssetFormPage() {
   const { data: parent } = useQuery({ queryKey: ['asset', parentId], queryFn: () => get<AssetDetail>(`/assets/${parentId}`), enabled: !!parentId && !editing });
   const { data: cats } = useQuery({ queryKey: ['categories'], queryFn: () => get<Category[]>('/asset-categories') });
   const { data: fields } = useQuery({ queryKey: ['custom-fields', 'Asset'], queryFn: () => get<CustomField[]>('/custom-fields', { entityType: 'Asset' }) });
-  const form = useForm<Values>({ initialValues: empty });
+  // A new asset's status and criticality, unless the organization hid them (0.21.0).
+  const start = useMemo<Values>(() => ({ ...empty, status: listDefault('assetStatus', empty.status), criticality: listDefault('criticality', empty.criticality) }), []);
+  const form = useForm<Values>({ initialValues: start });
   const currency = me?.tenant.settings.currency ?? 'USD';
   const auto = me?.tenant.settings.autoNumberAssets ?? true;
 
@@ -69,10 +72,10 @@ export function AssetFormPage() {
       });
       form.resetDirty();
     } else if (parent) {
-      form.setValues({ ...empty, siteId: parent.siteId, locationId: parent.locationId ?? null, parentAssetId: parent.id, categoryId: parent.categoryId ?? null });
+      form.setValues({ ...start, siteId: parent.siteId, locationId: parent.locationId ?? null, parentAssetId: parent.id, categoryId: parent.categoryId ?? null });
     } else if (!editing) {
       const siteId = params.get('siteId');
-      if (siteId) form.setValues({ ...empty, siteId, locationId: params.get('locationId') });
+      if (siteId) form.setValues({ ...start, siteId, locationId: params.get('locationId') });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [asset, parent]);
@@ -130,8 +133,8 @@ export function AssetFormPage() {
               </SimpleGrid>
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 <Select label={t('assets.category')} data={(cats ?? []).filter((c) => c.isActive || c.id === form.values.categoryId).map((c) => ({ value: c.id, label: c.name }))} searchable clearable {...form.getInputProps('categoryId')} />
-                <Select label={t('common.status')} required data={ASSET_STATUSES.map((s) => ({ value: s, label: t(`status.${s}`) }))} {...form.getInputProps('status')} />
-                <Select label={t('criticality.label')} required data={CRITICALITIES.map((s) => ({ value: s, label: t(`criticality.${s}`) }))} {...form.getInputProps('criticality')} />
+                <Select label={t('common.status')} required data={listItems('assetStatus', t, form.values.status)} {...form.getInputProps('status')} />
+                <Select label={t('criticality.label')} required data={listItems('criticality', t, form.values.criticality)} {...form.getInputProps('criticality')} />
               </SimpleGrid>
               <Textarea label={t('common.description')} autosize minRows={2} {...form.getInputProps('description')} />
             </Section>

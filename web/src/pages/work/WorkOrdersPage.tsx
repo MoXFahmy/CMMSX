@@ -10,7 +10,7 @@ import { SlaText } from '@/components/SlaBadge';
 import { DataTable } from 'mantine-datatable';
 import { IconAdjustmentsHorizontal, IconFilterOff, IconFlag, IconPlus, IconSearch, IconUserPlus, IconCoin, IconArrowsExchange } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
-import { HOLD_REASONS, WORK_PRIORITIES, WORK_TYPES, type HoldReason, type Lookup, type Paged, type WorkOrderListItem, type WorkOrderStatus, type WorkPriority } from '@/api/types';
+import { HOLD_REASONS, type HoldReason, type Lookup, type Paged, type WorkOrderListItem, type WorkOrderStatus, type WorkPriority } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { teamOptions, useTeams } from '@/components/teams';
@@ -22,6 +22,7 @@ import { fmtDate, notifyError } from '@/components/utils';
 import { StoppedBadge } from '@/components/AccessWindowsEditor';
 import { ChangeCostCentreModal } from './ChangeCostCentre';
 import { BulkBar, FilterChips, ListTools, listText, rangeText, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
+import { listItems } from '@/components/listLabels';
 
 /** Filters behind "More filters"; they live in the address like the others. */
 const EXTRA_FILTERS = ['locationId', 'assetId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source', 'completedFrom', 'cancelReasonId', 'onlyWhenStopped', 'groupId',
@@ -189,9 +190,9 @@ export function WorkOrdersPage() {
           ]} />
           <TextInput placeholder={t('wo.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 240 }} />
           <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v, locationId: null, assetId: null, assigneeId: null })} clearable searchable w={{ base: '100%', xs: 180 }} />
-          <MultiSelect placeholder={p('priority') ? undefined : t('priority.label')} data={WORK_PRIORITIES.map((x) => ({ value: x, label: t(`priority.${x}`) }))}
+          <MultiSelect placeholder={p('priority') ? undefined : t('priority.label')} data={listItems('priority', t, null, true)}
             value={p('priority') ? p('priority').split(',') : []} onChange={(v) => set({ priority: v.join(',') || null })} clearable w={{ base: '100%', xs: 170 }} />
-          <MultiSelect placeholder={p('type') ? undefined : t('workType.label')} data={WORK_TYPES.map((x) => ({ value: x, label: t(`workType.${x}`) }))}
+          <MultiSelect placeholder={p('type') ? undefined : t('workType.label')} data={listItems('workType', t, null, true)}
             value={p('type') ? p('type').split(',') : []} onChange={(v) => set({ type: v.join(',') || null })} clearable w={{ base: '100%', xs: 170 }} />
           <Select placeholder={t('wo.trade')} data={tradeOpts} value={p('tradeId') || null} onChange={(v) => set({ tradeId: v })} clearable w={{ base: '100%', xs: 160 }} />
           <Button variant={moreOpen ? 'light' : 'default'} leftSection={<IconAdjustmentsHorizontal size={16} />} onClick={more.toggle} aria-expanded={moreOpen}
@@ -246,7 +247,7 @@ export function WorkOrdersPage() {
         )}
         {canBulkEdit && (
           <Menu><Menu.Target><Button size="xs" variant="white" leftSection={<IconFlag size={14} />}>{t('list.setPriority')}</Button></Menu.Target>
-            <Menu.Dropdown>{WORK_PRIORITIES.map((x) => <Menu.Item key={x} onClick={() => bulk.mutate({ priority: x })}>{t(`priority.${x}`)}</Menu.Item>)}</Menu.Dropdown></Menu>
+            <Menu.Dropdown>{listItems('priority', t).map((x) => <Menu.Item key={x.value} onClick={() => bulk.mutate({ priority: x.value as WorkPriority })}>{x.label}</Menu.Item>)}</Menu.Dropdown></Menu>
         )}
         {canBulkEdit && <Button size="xs" variant="white" leftSection={<IconUserPlus size={14} />} onClick={() => setTechOpen(true)}>{t('list.addTechnicians')}</Button>}
         {canBulkEdit && <Button size="xs" variant="white" leftSection={<IconCoin size={14} />} onClick={() => setCostCentreOpen(true)}>{t('costCentres.change')}</Button>}

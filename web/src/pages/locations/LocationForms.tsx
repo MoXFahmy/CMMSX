@@ -7,10 +7,11 @@ import { useEffect, useMemo } from 'react';
 import { get, post, put } from '@/api/client';
 import { WorkingHoursEditor, organizationHours } from '@/components/WorkingHoursEditor';
 import type { WorkingDay } from '@/components/workingHours';
-import { CRITICALITIES, LOCATION_TYPES, type LocationDetail, type Site } from '@/api/types';
+import { LOCATION_TYPES, type LocationDetail, type Site } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { locationOptions, useHierarchy } from '@/components/LocationPicker';
 import { handleFormError, notifySuccess } from '@/components/utils';
+import { listItems } from '@/components/listLabels';
 
 export function SiteFormModal({ opened, onClose, site, onSaved }: { opened: boolean; onClose: () => void; site?: Site | null; onSaved?: (id: string) => void }) {
   const { t } = useTranslation();
@@ -164,7 +165,7 @@ export function LocationFormModal({ opened, onClose, location, init, onSaved }: 
           </SimpleGrid>
           <SimpleGrid cols={2}>
             <Select label={t('common.type')} required data={LOCATION_TYPES.map((x) => ({ value: x, label: t(`locationType.${x}`) }))} {...form.getInputProps('type')} />
-            <Select label={t('criticality.label')} required data={CRITICALITIES.map((x) => ({ value: x, label: t(`criticality.${x}`) }))} {...form.getInputProps('criticality')} />
+            <Select label={t('criticality.label')} required data={listItems('criticality', t, form.values.criticality)} {...form.getInputProps('criticality')} />
           </SimpleGrid>
           <CostCentrePicker value={form.values.costCentreId} onChange={(v) => form.setFieldValue('costCentreId', v)} siteId={siteId}
             description={t('costCentres.locationHint')} error={form.errors.costCentreId} />
