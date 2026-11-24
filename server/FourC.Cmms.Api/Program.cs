@@ -116,7 +116,19 @@ services.ConfigureHttpJsonOptions(o =>
     o.SerializerOptions.Converters.Add(new JsonStringEnumConverter());
     o.SerializerOptions.DefaultIgnoreCondition = JsonIgnoreCondition.Never;
 });
-services.AddOpenApi();
+// The API description declares the key scheme (0.26.0), so the docs' "Try it" takes a key.
+services.AddOpenApi(o => o.AddDocumentTransformer((doc, _, _) =>
+{
+    doc.Components ??= new Microsoft.OpenApi.OpenApiComponents();
+    doc.Components.SecuritySchemes ??= new Dictionary<string, Microsoft.OpenApi.IOpenApiSecurityScheme>();
+    doc.Components.SecuritySchemes["ApiKey"] = new Microsoft.OpenApi.OpenApiSecurityScheme
+    {
+        Type = Microsoft.OpenApi.SecuritySchemeType.Http, Scheme = "bearer",
+        Description = "An API key from Settings › API keys: \"Authorization: Bearer cmx_…\" (or the X-Api-Key header).",
+    };
+    doc.Security = [new Microsoft.OpenApi.OpenApiSecurityRequirement { [new Microsoft.OpenApi.OpenApiSecuritySchemeReference("ApiKey", doc)] = [] }];
+    return Task.CompletedTask;
+}));
 
 var app = builder.Build();
 
@@ -151,8 +163,9 @@ app.UseRateLimiter();
 app.UseApiKeyRules();
 app.UseAuthorization();
 
-app.MapOpenApi();
-app.MapScalarApiReference("/api/docs");
+// Signed in or with a key (0.26.0): the description isn't public.
+app.MapOpenApi().RequireAuthorization();
+app.MapScalarApiReference("/api/docs").RequireAuthorization();
 
 var api = app.MapGroup("/api");
 var version = app.Configuration["App:Version"] is { Length: > 0 } v ? v : "dev";
