@@ -3,6 +3,8 @@ using FourC.Cmms.Core.Assets;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Inventory;
+using FourC.Cmms.Core.Pm;
+using FourC.Cmms.Core.Work;
 using Microsoft.EntityFrameworkCore;
 
 namespace FourC.Cmms.Api.Features;
@@ -94,5 +96,98 @@ public static class SerialUnits
             units.Add(unit);
         }
         return units;
+    }
+
+    /// <summary>
+    /// Fits a unit from its store onto <paramref name="target"/>: an issue of 1 (to the work order when there is one), the unit takes
+    /// the target's site and location, and, when <paramref name="countHours"/>, its running-hours meter follows the target's hours meter.
+    /// </summary>
+    public static async Task FitAsync(CmmsDbContext db, ITenantContext ctx, Asset unit, Asset target, WorkOrder? wo, bool countHours, Guid? hoursMeterId,
+        DateTimeOffset at, CancellationToken ct)
+    {
+        if (unit.PartId is not { } partId || UnitRules.StateOf(unit) != UnitState.InStore || unit.StoreId is not { } storeId)
+            throw new DomainException("This unit isn't in a store.");
+        var store = await db.Stores.AllSites().AsNoTracking().FirstAsync(s => s.Id == storeId, ct);
+        if (store.SiteId != target.SiteId) throw new DomainException("Move the unit to a store at that site first.");
+        if (await IsUnitOrUnderAsync(db, target, unit.Id, ct)) throw new DomainException("A unit can't be fitted to itself or to one of its own units.");
+        Meter? source = null;
+        if (countHours)
+            source = hoursMeterId is { } mid
+                ? await db.Meters.AllSites().FirstOrDefaultAsync(m => m.Id == mid && m.AssetId == target.Id, ct) ?? throw new DomainException("Choose a meter of that asset.")
+                : (await db.Meters.AllSites().Where(m => m.AssetId == target.Id && m.IsActive).OrderBy(m => m.Code).ToListAsync(ct)).FirstOrDefault(m => UnitRules.IsHoursUnit(m.Unit));
+
+        await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, 1, DateOnly.FromDateTime(at.UtcDateTime), WorkOrderId: wo?.Id,
+            LocationId: wo is null ? target.LocationId : null, Notes: $"Unit {unit.SerialNumber} fitted to {target.AssetNumber}", UnitMove: true), ct);
+        unit.ParentAssetId = target.Id;
+        unit.SiteId = target.SiteId;
+        unit.LocationId = target.LocationId;
+        unit.StoreId = null;
+        unit.Status = AssetStatus.Active;
+        Move(db, ctx, unit, UnitMovementKind.Fitted, at, storeId: storeId, assetId: target.Id, workOrderId: wo?.Id);
+
+        if (source is not null)
+        {
+            var own = (await db.Meters.AllSites().Where(m => m.AssetId == unit.Id).ToListAsync(ct)).FirstOrDefault(m => UnitRules.IsHoursUnit(m.Unit));
+            if (own is null)
+            {
+                // Meter codes are the organization's: the unit's asset number keeps each unit's own.
+                var code = $"RH-{unit.AssetNumber}";
+                own = new Meter { Code = code.Length > 50 ? code[..50] : code, Name = "Running hours", AssetId = unit.Id, Unit = "h" };
+                db.Meters.Add(own);
+            }
+            own.SourceMeterId = source.Id;
+            own.IsActive = true;
+        }
+    }
+
+    /// <summary>The target is the unit itself or sits (at any depth) under it.</summary>
+    private static async Task<bool> IsUnitOrUnderAsync(CmmsDbContext db, Asset target, Guid unitId, CancellationToken ct)
+    {
+        Guid? id = target.Id;
+        for (var depth = 0; id is { } current && depth < 50; depth++)
+        {
+            if (current == unitId) return true;
+            id = await db.Assets.AllSites().Where(a => a.Id == current).Select(a => a.ParentAssetId).FirstOrDefaultAsync(ct);
+        }
+        return false;
+    }
+
+    /// <summary>
+    /// Takes a fitted unit off its asset: back to a store (a return of 1 that names no work order: the job that fitted it keeps its
+    /// cost), out for repair, or scrapped. Its running hours stop following the asset.
+    /// </summary>
+    public static async Task RemoveAsync(CmmsDbContext db, ITenantContext ctx, Asset unit, WorkOrder? wo, UnitOutcome outcome, Guid? storeId, string? note,
+        DateTimeOffset at, CancellationToken ct)
+    {
+        if (unit.PartId is not { } partId || UnitRules.StateOf(unit) != UnitState.Fitted || unit.ParentAssetId is not { } from)
+            throw new DomainException("This unit isn't fitted.");
+        Store? store = null;
+        if (outcome == UnitOutcome.Store)
+            store = storeId is { } sid
+                ? await db.Stores.FirstOrDefaultAsync(s => s.Id == sid, ct) ?? throw new DomainException("Store not found.")
+                : throw new DomainException("Choose the store it goes back to.");
+        foreach (var m in await db.Meters.AllSites().Where(m => m.AssetId == unit.Id && m.SourceMeterId != null).ToListAsync(ct))
+            if (UnitRules.IsHoursUnit(m.Unit)) m.SourceMeterId = null;
+
+        unit.ParentAssetId = null;
+        unit.LocationId = null;
+        switch (outcome)
+        {
+            case UnitOutcome.Store:
+                await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Return, partId, store!.Id, 1, DateOnly.FromDateTime(at.UtcDateTime),
+                    Notes: $"Unit {unit.SerialNumber} removed", UnitMove: true), ct);
+                unit.StoreId = store.Id;
+                unit.SiteId = store.SiteId;
+                unit.Status = AssetStatus.InStorage;
+                break;
+            case UnitOutcome.Repair:
+                unit.Status = AssetStatus.UnderRepair;
+                break;
+            default:
+                unit.Status = AssetStatus.Disposed;
+                unit.DisposedOn = await ContractEndpoints.TodayAsync(db, ct);
+                break;
+        }
+        Move(db, ctx, unit, UnitMovementKind.Removed, at, storeId: store?.Id, assetId: from, workOrderId: wo?.Id, outcome: outcome, note: note);
     }
 }

@@ -11,8 +11,6 @@ namespace FourC.Cmms.Tests;
 /// <summary>Serial tracking on parts and serial numbers at receipt (0.24.0).</summary>
 public class SerialReceiptTests(ApiFixture fx) : IClassFixture<ApiFixture>
 {
-    internal static Guid Id(JsonElement e) => e.GetProperty("id").GetGuid();
-
     internal static async Task Refused(HttpResponseMessage r, string message)
     {
         var body = await r.Content.ReadAsStringAsync();

@@ -1186,5 +1186,15 @@
  "Enter one serial number for each piece in stock: {0} has {1}.": "أدخل رقمًا تسلسليًا لكل قطعة في المخزون: لدى {0} عدد {1}.",
  "This part still has units that aren't scrapped.": "لا تزال لهذه القطعة وحدات غير مُتلفة.",
  "Enter the life in months, from 1 to 600.": "أدخل العمر بالأشهر، من 1 إلى 600.",
- "Line {0}: Enter a serial number for each piece received.": "السطر {0}: أدخل رقمًا تسلسليًا لكل قطعة مستلمة."
+ "Line {0}: Enter a serial number for each piece received.": "السطر {0}: أدخل رقمًا تسلسليًا لكل قطعة مستلمة.",
+ "This unit isn't in a store.": "هذه الوحدة ليست في مخزن.",
+ "Move the unit to a store at that site first.": "انقل الوحدة أولًا إلى مخزن في ذلك الموقع.",
+ "A unit can't be fitted to itself or to one of its own units.": "لا يمكن تركيب وحدة على نفسها أو على إحدى وحداتها.",
+ "Choose a meter of that asset.": "اختر عدادًا لذلك الأصل.",
+ "This unit isn't fitted.": "هذه الوحدة غير مركّبة.",
+ "Choose the store it goes back to.": "اختر المخزن الذي تعود إليه.",
+ "Choose what happens to the unit.": "اختر ما يحدث للوحدة.",
+ "Choose an asset of this work order.": "اختر أصلًا من أصول أمر العمل هذا.",
+ "This unit isn't fitted to this work order's asset.": "هذه الوحدة غير مركّبة على أصل أمر العمل هذا.",
+ "Choose a unit.": "اختر وحدة."
 }
