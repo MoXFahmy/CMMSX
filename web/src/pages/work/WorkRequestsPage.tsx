@@ -116,7 +116,8 @@ export function WorkRequestsPage() {
   );
 }
 
-export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean; onClose: () => void; assetId?: string }) {
+/** The new-request form. `place` starts it at a site or location (the home page's location card, 0.22.0). */
+export function RequestFormModal({ opened, onClose, assetId, place }: { opened: boolean; onClose: () => void; assetId?: string; place?: { siteId: string; locationId?: string | null } }) {
   const { t } = useTranslation();
   const { me } = useAuth();
   const qc = useQueryClient();
@@ -135,9 +136,10 @@ export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean
   };
   useEffect(() => {
     if (!opened) return;
-    form.setValues(asset ? { ...blank, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id } : blank);
+    form.setValues(asset ? { ...blank, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id }
+      : place ? { ...blank, siteId: place.siteId, locationId: place.locationId ?? null } : blank);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened, asset]);
+  }, [opened, asset, place?.siteId, place?.locationId]);
   const submit = form.onSubmit(async (v) => {
     try {
       const r = await post<{ id: string; number: string }>('/work-requests', { ...v, requiredBy: toIsoDate(v.requiredBy), assetIsDown: !!v.assetId && v.assetIsDown });

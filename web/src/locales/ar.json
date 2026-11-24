@@ -2858,6 +2858,51 @@
     "coversToday_other": "تغطي {{count}} أصل اليوم"
   },
   "home": {
-    "nothingYet": "لا يوجد ما يُعرض في صفحتك الرئيسية بعد. اطلب من المسؤول إعدادها لدورك."
+    "nothingYet": "لا يوجد ما يُعرض في صفحتك الرئيسية بعد. اطلب من المسؤول إعدادها لدورك.",
+    "viewAll": "عرض الكل",
+    "due": "الاستحقاق {{date}}",
+    "available_zero": "لم يتبقَّ شيء",
+    "available_one": "تبقّى {{count}} {{unit}}",
+    "available_two": "تبقّى {{count}} {{unit}}",
+    "available_few": "تبقّى {{count}} {{unit}}",
+    "available_many": "تبقّى {{count}} {{unit}}",
+    "available_other": "تبقّى {{count}} {{unit}}",
+    "purchaseRequest": "طلب",
+    "purchaseOrder": "أمر شراء",
+    "quickRequestText": "هل هناك شيء معطّل أو لا يعمل؟ أبلغ فريق الصيانة.",
+    "reportProblem": "الإبلاغ عن مشكلة",
+    "reportHere": "الإبلاغ عن مشكلة هنا",
+    "newWorkOrderHere": "أمر عمل جديد هنا",
+    "newAssetHere": "أصل جديد هنا",
+    "open": "فتح",
+    "pickPlace": "اختر موقعًا أو مكانًا لترى ما يمكنك فعله فيه.",
+    "cards": {
+      "work-summary": "عدّادات العمل",
+      "work-by-site": "العمل حسب الموقع",
+      "urgent-work": "العمل العاجل",
+      "asset-summary": "عدّادات الأصول",
+      "assets-by-status": "الأصول حسب الحالة",
+      "assets-by-category": "الأصول حسب الفئة",
+      "assets-by-site": "الأصول حسب الموقع",
+      "warranty-soon": "ضمانات تنتهي قريبًا",
+      "recent-assets": "أصول أُضيفت حديثًا",
+      "my-work": "عملي",
+      "unassigned-work": "عمل غير مُسند",
+      "late-work": "العمل المتأخر",
+      "assets-down": "أصول متوقفة الآن",
+      "low-stock": "قطع تحت حد إعادة الطلب",
+      "my-approvals": "بانتظار موافقتي",
+      "quick-request": "الإبلاغ عن مشكلة",
+      "location-tree": "الأماكن",
+      "shortcuts": "مربعات الاختصار"
+    },
+    "empty": {
+      "my-work": "لا يوجد عمل مُسند إليك الآن.",
+      "unassigned-work": "كل العمل المفتوح مُسند لأحد.",
+      "late-work": "لا يوجد عمل متأخر.",
+      "assets-down": "لا توجد أصول متوقفة.",
+      "low-stock": "لا توجد قطع تحت حد إعادة الطلب.",
+      "my-approvals": "لا يوجد ما ينتظرك."
+    }
   }
 }

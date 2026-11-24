@@ -2734,6 +2734,47 @@
     "coversToday_other": "Covers {{count}} assets today"
   },
   "home": {
-    "nothingYet": "Your home page has nothing to show yet. Ask your administrator to set one up for your role."
+    "nothingYet": "Your home page has nothing to show yet. Ask your administrator to set one up for your role.",
+    "viewAll": "View all",
+    "due": "due {{date}}",
+    "available_one": "{{count}} {{unit}} left",
+    "available_other": "{{count}} {{unit}} left",
+    "purchaseRequest": "Request",
+    "purchaseOrder": "Order",
+    "quickRequestText": "Something broken or not working? Tell the maintenance team.",
+    "reportProblem": "Report a problem",
+    "reportHere": "Report a problem here",
+    "newWorkOrderHere": "New work order here",
+    "newAssetHere": "New asset here",
+    "open": "Open",
+    "pickPlace": "Pick a site or location to see what you can do there.",
+    "cards": {
+      "work-summary": "Work counters",
+      "work-by-site": "Work by site",
+      "urgent-work": "Urgent work",
+      "asset-summary": "Asset counters",
+      "assets-by-status": "Assets by status",
+      "assets-by-category": "Assets by category",
+      "assets-by-site": "Assets by site",
+      "warranty-soon": "Warranties ending soon",
+      "recent-assets": "Recently added assets",
+      "my-work": "My work",
+      "unassigned-work": "Unassigned work",
+      "late-work": "Late work",
+      "assets-down": "Assets down now",
+      "low-stock": "Parts below reorder level",
+      "my-approvals": "Waiting for my approval",
+      "quick-request": "Report a problem",
+      "location-tree": "Locations",
+      "shortcuts": "Shortcut tiles"
+    },
+    "empty": {
+      "my-work": "Nothing assigned to you right now.",
+      "unassigned-work": "Everything open has someone on it.",
+      "late-work": "Nothing late.",
+      "assets-down": "No assets are down.",
+      "low-stock": "No parts are below their reorder level.",
+      "my-approvals": "Nothing is waiting for you."
+    }
   }
 }
