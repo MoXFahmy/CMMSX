@@ -79,8 +79,8 @@ public static class ServiceAccountEndpoints
         });
     }
 
-    /// <summary>Revokes every key of a deleted service account (API keys arrive with the next step of 0.26.0).</summary>
-    private static Task RevokeKeysAsync(CmmsDbContext db, Guid accountId, HttpContext http, CancellationToken ct) => Task.CompletedTask;
+    private static Task RevokeKeysAsync(CmmsDbContext db, Guid accountId, HttpContext http, CancellationToken ct) =>
+        ApiKeyEndpoints.RevokeAllAsync(db, accountId, http.RequestServices.GetRequiredService<ITenantContext>().UserId, ct);
 
     private static AdminEndpoints.UserInput AsUser(ServiceAccountInput i) =>
         new(i.FullName, "service@service.invalid", null, null, i.IsActive, i.RoleIds ?? [], null, null, i.SiteIds, i.LocationIds);

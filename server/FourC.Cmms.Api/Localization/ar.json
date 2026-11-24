@@ -1243,5 +1243,8 @@
  "This sign-in was anonymised and can't be used again.": "تمت إزالة هوية حساب الدخول هذا ولا يمكن استخدامه مرة أخرى.",
  "Edit service accounts under Service accounts.": "عدّل حسابات الخدمة من قسم حسابات الخدمة.",
  "Service accounts have no password.": "حسابات الخدمة ليس لها كلمة مرور.",
- "Service accounts aren't people.": "حسابات الخدمة ليست أشخاصًا."
+ "Service accounts aren't people.": "حسابات الخدمة ليست أشخاصًا.",
+ "The API key isn't valid.": "مفتاح الواجهة البرمجية غير صالح.",
+ "Choose a service account.": "اختر حساب خدمة.",
+ "Choose an expiry date in the future.": "اختر تاريخ انتهاء في المستقبل."
 }

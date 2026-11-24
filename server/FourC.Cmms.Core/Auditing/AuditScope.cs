@@ -62,6 +62,7 @@ public static class AuditScope
         [typeof(AssetPart)] = ("Asset", nameof(AssetPart.AssetId)),
         [typeof(RoleListSetting)] = ("Role", nameof(RoleListSetting.RoleId)),
         [typeof(UserRole)] = ("AppUser", nameof(UserRole.UserId)),
+        [typeof(ApiKey)] = ("AppUser", nameof(ApiKey.ServiceAccountId)),
         [typeof(Attachment)] = null, // its EntityType and EntityId
         [typeof(AppUser)] = null,
         [typeof(Role)] = null,
@@ -99,5 +100,6 @@ public static class AuditScope
     /// <summary>Fields whose values never reach the log: hashes, stamps, tokens and secrets.</summary>
     public static bool IsSensitive(string property) =>
         SensitiveNames.Contains(property) || property.EndsWith("Hash", StringComparison.Ordinal)
-        || property.Contains("Token", StringComparison.Ordinal) || property.Contains("Secret", StringComparison.Ordinal);
+        || property.Contains("Token", StringComparison.Ordinal) || property.Contains("Secret", StringComparison.Ordinal)
+        || property.Contains("Password", StringComparison.Ordinal) || property.Contains("ApiKey", StringComparison.Ordinal);
 }

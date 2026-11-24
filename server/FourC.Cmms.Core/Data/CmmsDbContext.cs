@@ -58,6 +58,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<CustomFieldDefinition> CustomFields => Set<CustomFieldDefinition>();
     public DbSet<AuditEntry> AuditEntries => Set<AuditEntry>();
     public DbSet<PasswordHistory> PasswordHistories => Set<PasswordHistory>();
+    public DbSet<ApiKey> ApiKeys => Set<ApiKey>();
     public DbSet<Attachment> Attachments => Set<Attachment>();
     public DbSet<NumberSequence> NumberSequences => Set<NumberSequence>();
     public DbSet<Trade> Trades => Set<Trade>();
@@ -337,6 +338,16 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         {
             e.HasIndex(x => new { x.UserId, x.SetAt });
             e.HasIndex(x => x.TenantId);
+        });
+
+        b.Entity<ApiKey>(e =>
+        {
+            e.Property(x => x.Name).HasMaxLength(100);
+            e.Property(x => x.Prefix).HasMaxLength(8);
+            e.Property(x => x.Hash).HasMaxLength(64);
+            e.Property(x => x.CreatedByName).HasMaxLength(200);
+            e.HasIndex(x => x.Prefix);
+            e.HasIndex(x => new { x.TenantId, x.ServiceAccountId });
         });
 
         b.Entity<AuditEntry>(e =>

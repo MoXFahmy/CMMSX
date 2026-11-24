@@ -37,7 +37,11 @@ services.AddIdentityCore<AppUser>(o =>
 // Sign-in cookies are encrypted with keys kept in the database, so sessions survive restarts and redeployments.
 services.AddDataProtection().SetApplicationName("FourC.Cmms").PersistKeysToDbContext<CmmsDbContext>();
 
-services.AddAuthentication(IdentityConstants.ApplicationScheme).AddIdentityCookies();
+// A request carrying an API key (0.26.0) is signed in by the key, never by a cookie it also carries; everything else by the cookie.
+services.AddAuthentication(ApiKeyAuth.Smart)
+    .AddPolicyScheme(ApiKeyAuth.Smart, null, o => o.ForwardDefaultSelector = http => ApiKeyAuth.Read(http.Request) is not null ? ApiKeyAuth.Scheme : IdentityConstants.ApplicationScheme)
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiKeyHandler>(ApiKeyAuth.Scheme, null);
+services.AddAuthentication().AddIdentityCookies();
 services.ConfigureApplicationCookie(o =>
 {
     o.Cookie.Name = "cmms.auth";
@@ -186,6 +190,7 @@ api.MapActivityEndpoints();
 api.MapAnonymiseEndpoints();
 api.MapStorageEndpoints();
 api.MapServiceAccountEndpoints();
+api.MapApiKeyEndpoints();
 api.MapAssetGroupEndpoints();
 api.MapPmEndpoints();
 api.MapPmCalendarEndpoints();

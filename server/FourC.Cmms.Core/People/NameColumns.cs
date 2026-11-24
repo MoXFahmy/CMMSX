@@ -43,6 +43,7 @@ public static class NameColumns
         (typeof(Attachment), nameof(Attachment.SignedBy), null),
         (typeof(AiCall), nameof(AiCall.UserName), nameof(AiCall.UserId)),
         (typeof(AiDiagnosis), nameof(AiDiagnosis.CreatedByName), nameof(AiDiagnosis.CreatedById)),
+        (typeof(ApiKey), nameof(ApiKey.CreatedByName), nameof(ApiKey.CreatedById)),
     ];
 
     /// <summary>

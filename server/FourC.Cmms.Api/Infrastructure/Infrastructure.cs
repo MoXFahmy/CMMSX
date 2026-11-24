@@ -38,9 +38,9 @@ public sealed class HttpTenantContext(IHttpContextAccessor accessor) : ITenantCo
     public IReadOnlyList<Guid>? SiteIds => Scope?.SiteIds;
     public IReadOnlyList<string>? BranchPaths => Scope?.BranchPaths;
     /// <summary>The technician app's calls are the phone's; the import's are the import's; the rest are the web's (0.25.0).</summary>
-    public string Source => accessor.HttpContext?.Request.Path is { } p
-        ? p.StartsWithSegments("/api/tech") ? "Phone" : p.StartsWithSegments("/api/import") ? "Import" : "Web"
-        : "Web";
+    public string Source => accessor.HttpContext is not { } http ? "Web"
+        : ApiKeyAuth.IsKey(http.User) ? "API" // a request made with an API key (0.26.0)
+        : http.Request.Path.StartsWithSegments("/api/tech") ? "Phone" : http.Request.Path.StartsWithSegments("/api/import") ? "Import" : "Web";
     /// <summary>One change number per request.</summary>
     public Guid ChangeId
     {
