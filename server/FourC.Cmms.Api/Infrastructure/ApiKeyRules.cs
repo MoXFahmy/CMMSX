@@ -21,7 +21,16 @@ public static class ApiKeyRules
 
     public static bool Blocked(string method, PathString path) =>
         Closed.Any(p => path.StartsWithSegments(p))
+        || IsDevices(path) // a person's phones and their sign-ins, whatever the method (0.26.1)
         || (!HttpMethods.IsGet(method) && !HttpMethods.IsHead(method) && ReadOnlyAreas.Any(p => path.StartsWithSegments(p)));
+
+    /// <summary>/api/users/{id}/devices and below.</summary>
+    private static bool IsDevices(PathString path)
+    {
+        var parts = (path.Value ?? "").Split('/', StringSplitOptions.RemoveEmptyEntries);
+        return parts.Length >= 4 && parts[0].Equals("api", StringComparison.OrdinalIgnoreCase) && parts[1].Equals("users", StringComparison.OrdinalIgnoreCase)
+               && parts[3].Equals("devices", StringComparison.OrdinalIgnoreCase);
+    }
 
     /// <summary>Refuses what a key may not do (after it has signed the request in, before permissions are checked).</summary>
     public static IApplicationBuilder UseApiKeyRules(this IApplicationBuilder app) => app.Use(async (http, next) =>

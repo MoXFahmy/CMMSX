@@ -567,11 +567,11 @@ public static class PmEndpoints
         return v;
     }
 
-    /// <summary>Recipients must be users of this organization.</summary>
+    /// <summary>Recipients must be people (not service accounts, 0.26.1) of this organization.</summary>
     internal static async Task CheckRecipientsAsync(CmmsDbContext db, Validator v, List<Guid>? recipientIds, CancellationToken ct)
     {
         var who = (recipientIds ?? []).Distinct().ToList();
-        if (who.Count > 0 && await db.Users.CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId, ct) != who.Count) v.Add("recipientIds", "Unknown user.");
+        if (who.Count > 0 && await db.Users.People().CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId, ct) != who.Count) v.Add("recipientIds", "Unknown user.");
     }
 
     /// <summary>Where a template is used: the PMs (and how), the asset checklists, and its open work orders.</summary>

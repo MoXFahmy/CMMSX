@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { ImportJob, ImportResult, SheetResult } from '@/api/types';
 import en from '@/locales/en.json';
 import ar from '@/locales/ar.json';
-import { canImport, fileKey, jobLabel, totals } from './importView';
+import { anyActive, canImport, fileKey, jobLabel, refreshesAll, totals } from './importView';
 
 const sheet = (counts: Partial<Pick<SheetResult, 'new' | 'changed' | 'unchanged' | 'problems'>>, key = 'Sites'): SheetResult => ({
   sheet: key, new: 0, changed: 0, unchanged: 0, problems: 0, rows: [], ignoredColumns: [], ...counts,
@@ -54,5 +54,20 @@ describe('import view', () => {
       expect((en.import.sheets as Record<string, string>)[k], k).toBeTruthy();
       expect((ar.import.sheets as Record<string, string>)[k], k).toBeTruthy();
     }
+  });
+
+  it('the history keeps up while any job waits or runs', () => {
+    expect(anyActive([{ status: 'Done' }, { status: 'Running' }])).toBe(true);
+    expect(anyActive([{ status: 'Queued' }])).toBe(true);
+    expect(anyActive([{ status: 'Done' }, { status: 'Failed' }])).toBe(false);
+    expect(anyActive(undefined)).toBe(false);
+  });
+
+  it('only an import this page watched finish refreshes every screen', () => {
+    const done = { id: 'j1', save: true, status: 'Done' as const };
+    expect(refreshesAll(done, 'j1')).toBe(true);
+    expect(refreshesAll(done, null)).toBe(false); // opened from the history after it finished
+    expect(refreshesAll({ ...done, save: false }, 'j1')).toBe(false);
+    expect(refreshesAll({ ...done, status: 'Failed' as const }, 'j1')).toBe(false);
   });
 });

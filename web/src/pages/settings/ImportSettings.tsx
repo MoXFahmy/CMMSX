@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Accordion, Alert, Badge, Button, Card, FileInput, Group, List, Progress, Stack, Table, Text, Title } from '@mantine/core';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
@@ -8,7 +8,7 @@ import { IconAlertTriangle, IconCheck, IconDownload, IconFileSpreadsheet, IconUp
 import { api, apiBlob, get } from '@/api/client';
 import type { ImportJob, ImportResult, RowResult, SheetResult } from '@/api/types';
 import { fmtDateTime, fromNow, notifyError } from '@/components/utils';
-import { canImport, fileKey, jobLabel, totals, type Checked } from './importView';
+import { anyActive, canImport, fileKey, jobLabel, refreshesAll, totals, type Checked } from './importView';
 
 /** At most this many rows of a sheet are listed in the preview; the rest are counted. */
 const SHOWN = 200;
@@ -45,14 +45,19 @@ export function ImportSettings() {
     enabled: !!jobId,
     refetchInterval: (q) => (q.state.data && (q.state.data.status === 'Queued' || q.state.data.status === 'Running') ? 1500 : false),
   });
-  const { data: history, isFetching: historyLoading } = useQuery({ queryKey: ['import-jobs'], queryFn: () => get<ImportJob[]>('/import/jobs') });
+  const { data: history, isFetching: historyLoading } = useQuery({
+    queryKey: ['import-jobs'], queryFn: () => get<ImportJob[]>('/import/jobs'), refetchInterval: (q) => (anyActive(q.state.data) ? 3000 : false),
+  });
+  // The job this page saw waiting or running: only its finish refreshes every screen.
+  const watched = useRef<string | null>(null);
+  useEffect(() => { if (job && (job.status === 'Queued' || job.status === 'Running')) watched.current = job.id; }, [job?.id, job?.status]); // eslint-disable-line react-hooks/exhaustive-deps
   const finished = job?.status === 'Done' || job?.status === 'Failed';
   const result: ImportResult | null = job?.status === 'Done' ? job.result ?? null : null;
   // When a job finishes: the history shows it, and a saved import refreshes every screen.
   useEffect(() => {
     if (!finished) return;
     void qc.invalidateQueries({ queryKey: ['import-jobs'] });
-    if (job?.save && job.status === 'Done') void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'import-job' });
+    if (refreshesAll(job, watched.current)) void qc.invalidateQueries({ predicate: (q) => q.queryKey[0] !== 'import-job' });
   }, [finished, job?.id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const form = () => { const fd = new FormData(); fd.append('file', file!); return fd; };
@@ -62,6 +67,7 @@ export function ImportSettings() {
     try {
       const r = await api<{ id: string }>(`/import/${step}`, { method: 'POST', body: form() });
       setJobId(r.id);
+      watched.current = r.id; // sent from here: its finish counts even if it ends before the page first sees it running
       if (step === 'check') setChecked({ jobId: r.id, key: fileKey(file) });
       if (params.has('job')) { params.delete('job'); setParams(params, { replace: true }); }
       await qc.invalidateQueries({ queryKey: ['import-jobs'] });

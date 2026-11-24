@@ -210,10 +210,11 @@ public static class ImportRun
 
     /// <summary>
     /// As above, with the time taken so far read from <paramref name="elapsed"/> (tests stand in a clock) and progress reported
-    /// as (sheet, rows done, rows in the sheet) at least every 100 rows.
+    /// as (sheet, rows done, rows in the sheet) at least every 100 rows. An import runs <paramref name="beforeCommit"/> with its
+    /// result inside its own transaction, just before it commits (0.26.1: the job is marked done in the same save).
     /// </summary>
     public static async Task<ImportResult> RunAsync(CmmsDbContext db, ITenantContext ctx, SpreadsheetBook book, bool save, TimeSpan budget,
-        Func<TimeSpan>? elapsed, CancellationToken ct, Func<string, int, int, Task>? progress = null)
+        Func<TimeSpan>? elapsed, CancellationToken ct, Func<string, int, int, Task>? progress = null, Func<ImportResult, CancellationToken, Task>? beforeCommit = null)
     {
         var stopwatch = Stopwatch.StartNew();
         var clock = elapsed ?? (() => stopwatch.Elapsed);
@@ -244,7 +245,12 @@ public static class ImportRun
                 if (listNotes.Count > 0) result = result with { Notes = [.. result.Notes, .. listNotes] };
                 // The last word on time: nothing is committed once the page may have given up waiting.
                 if (clock() > budget) throw new Stopped();
-                if (save) { await tx.CommitAsync(CancellationToken.None); Infrastructure.AccessService.LocationsChanged(); } // locations may have moved
+                if (save)
+                {
+                    if (beforeCommit is not null) await beforeCommit(result with { Saved = true }, token);
+                    await tx.CommitAsync(CancellationToken.None);
+                    Infrastructure.AccessService.LocationsChanged(); // locations may have moved
+                }
                 else await tx.RollbackAsync(CancellationToken.None);
                 db.ChangeTracker.Clear();
                 return result with { Saved = save };

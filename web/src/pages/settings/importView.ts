@@ -32,3 +32,14 @@ export function jobLabel(job: Pick<ImportJob, 'status' | 'save' | 'sheet' | 'row
   const sheet = job.sheet ? t(`import.sheets.${job.sheet}`) : '';
   return t(job.save ? 'import.importing' : 'import.checking', { sheet, done: n(job.rowsDone), total: n(job.rowsTotal) });
 }
+
+/** Whether any job in the history is waiting or running: the history then keeps itself up to date (0.26.1). */
+export const anyActive = (jobs: Pick<ImportJob, 'status'>[] | null | undefined): boolean =>
+  (jobs ?? []).some((j) => j.status === 'Queued' || j.status === 'Running');
+
+/**
+ * Every screen is refreshed only for an import this page watched finish (0.26.1); opening an import that had already
+ * finished from the history changes nothing.
+ */
+export const refreshesAll = (job: Pick<ImportJob, 'id' | 'save' | 'status'> | null | undefined, watched: string | null): boolean =>
+  !!job && job.save && job.status === 'Done' && job.id === watched;
