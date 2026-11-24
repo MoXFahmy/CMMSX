@@ -103,7 +103,7 @@ public static class ActivityEndpoints
     }
 
     /// <summary>Ids of the main records whose number, code or name contains the text (at most 500).</summary>
-    private static async Task<List<Guid>> MatchingRecordsAsync(CmmsDbContext db, string s, CancellationToken ct)
+    internal static async Task<List<Guid>> MatchingRecordsAsync(CmmsDbContext db, string s, CancellationToken ct)
     {
         var ids = new List<Guid>();
         ids.AddRange(await db.WorkOrders.AllSites().Where(x => x.Number.Contains(s) || x.Title.Contains(s)).Select(x => x.Id).Take(100).ToListAsync(ct));

@@ -184,6 +184,7 @@ api.MapUnitEndpoints();
 api.MapSecurityEndpoints();
 api.MapActivityEndpoints();
 api.MapAnonymiseEndpoints();
+api.MapStorageEndpoints();
 api.MapAssetGroupEndpoints();
 api.MapPmEndpoints();
 api.MapPmCalendarEndpoints();
