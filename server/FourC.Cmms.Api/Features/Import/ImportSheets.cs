@@ -69,9 +69,6 @@ public static class ImportSheets
             T("notesToTechnician", "Notes to technician", "ملاحظات للفني"), T("costCentreCode", "Cost centre code", "رمز مركز التكلفة"), Active]),
         new("Categories", "Categories", "الفئات", [Code, Name, T("color", "Color", "اللون"), N("downtimeCostPerHour", "Downtime cost per hour", "تكلفة التوقف للساعة"), Active]),
         // 0.21.0: a brand row (no model) or a model row; Active applies to the model when there is one, else to the brand.
-        // 0.21.0: asset groups and their members (re-importing members adds, never removes).
-        new("AssetGroups", "Asset groups", "مجموعات الأصول", [Code, Name, T("siteCode", "Site code", "رمز الموقع"), Active]),
-        new("AssetGroupMembers", "Asset group members", "أعضاء مجموعات الأصول", [T("groupCode", "Group code", "رمز المجموعة", true), T("assetNumber", "Asset number", "رقم الأصل", true)]),
         new("BrandsAndModels", "Brands and models", "العلامات التجارية والطرازات", [T("brand", "Brand", "العلامة التجارية", true), T("model", "Model", "الطراز"), Active]),
         new("Trades", "Trades", "التخصصات", [Code, Name, T("color", "Color", "اللون"), Active]),
         new("PartGroups", "Part groups", "مجموعات القطع", [Code, Name, Active]),
@@ -94,6 +91,9 @@ public static class ImportSheets
             C<WarrantyType>("warrantyType", "Warranty type", "نوع الضمان"), D("warrantyExpiresOn", "Warranty expires on", "انتهاء الضمان"),
             T("warrantyNotes", "Warranty notes", "ملاحظات الضمان"), Description, Notes, T("notesToTechnician", "Notes to technician", "ملاحظات للفني"),
             N("runsHoursPerDay", "Runs hours a day", "ساعات التشغيل في اليوم"), CL<DayOfWeek>("runsOn", "Runs on", "يعمل في"), T("costCentreCode", "Cost centre code", "رمز مركز التكلفة")]),
+        // 0.21.0: asset groups and their members (re-importing members adds, never removes).
+        new("AssetGroups", "Asset groups", "مجموعات الأصول", [Code, Name, T("siteCode", "Site code", "رمز الموقع"), Active]),
+        new("AssetGroupMembers", "Asset group members", "أعضاء مجموعات الأصول", [T("groupCode", "Group code", "رمز المجموعة", true), T("assetNumber", "Asset number", "رقم الأصل", true)]),
         new("People", "People", "الأفراد", [Code, T("fullName", "Full name", "الاسم الكامل", true), T("jobTitle", "Job title", "المسمى الوظيفي"),
             T("email", "Email", "البريد الإلكتروني"), T("phone", "Phone", "الهاتف"), L("trades", "Trades", "التخصصات"), L("sites", "Sites", "المواقع"),
             N("hourlyRate", "Hourly rate", "أجر الساعة"), N("overtimeRate", "Overtime rate", "أجر الساعة الإضافية"), Y("contractor", "Contractor", "مقاول"),

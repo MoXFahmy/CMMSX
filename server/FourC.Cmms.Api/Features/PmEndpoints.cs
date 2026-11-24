@@ -80,7 +80,8 @@ public static class PmEndpoints
             var q = db.PmSchedules.AsNoTracking();
         if (f.Search.Clean() is { } s) q = q.Where(x => x.Code.Contains(s) || x.Name.Contains(s) || x.Asset!.AssetNumber.Contains(s));
         if (f.SiteId is not null) q = q.Where(x => x.SiteId == f.SiteId);
-        if (f.AssetId is not null) q = q.Where(x => x.AssetId == f.AssetId || (x.Asset != null && x.Asset.ParentAssetId == f.AssetId) || x.Assets.Any(a => a.AssetId == f.AssetId));
+        if (f.AssetId is not null) q = q.Where(x => x.AssetId == f.AssetId || (x.Asset != null && x.Asset.ParentAssetId == f.AssetId) || x.Assets.Any(a => a.AssetId == f.AssetId)
+            || (x.AssetGroupId != null && db.AssetGroupMembers.Any(m => m.AssetGroupId == x.AssetGroupId && m.AssetId == f.AssetId))); // and PMs on its groups (0.21.0)
         if (f.Type is not null) q = q.Where(x => x.Type == f.Type);
         if (f.ActiveOnly == true) q = q.Where(x => x.IsActive);
         if (f.DueWithinDays is { } d) { var until = Today.AddDays(d); q = q.Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= until); }

@@ -66,6 +66,8 @@ public static class AssetGroupEndpoints
         {
             var group = await db.AssetGroups.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (group is null) return Results.NotFound();
+            // A shared group reaches sites a limited person can't see: only people who see every site delete one.
+            if (group.SiteId is null && db.CurrentSiteIds is not null) throw new DomainException("Only people who see every site can delete a shared asset group.");
             if (await db.PmSchedules.AllSites().AnyAsync(s => s.AssetGroupId == id, ct)) throw new DomainException("This asset group is used by a PM. Make it inactive instead.");
             await db.AssetGroupMembers.Where(m => m.AssetGroupId == id).ExecuteDeleteAsync(ct);
             db.AssetGroups.Remove(group);
@@ -101,6 +103,8 @@ public static class AssetGroupEndpoints
     private static async Task<Validator> CheckAsync(CmmsDbContext db, GroupInput i, AssetGroup? existing, CancellationToken ct)
     {
         var v = new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200);
+        // People with limited access give their groups a site, as their teams (a shared group would reach sites they can't see).
+        if (i.SiteId is null && db.CurrentSiteIds is not null) v.Add("siteId", "People with limited access give their asset groups a site.");
         var code = i.Code.Clean();
         if (code is not null && await db.AssetGroups.AllSites().AnyAsync(x => x.Code == code && x.Id != (existing == null ? Guid.Empty : existing.Id), ct))
             v.Add("code", "This code is already used.");
@@ -123,9 +127,10 @@ public static class AssetGroupEndpoints
     {
         var visible = await db.AssetGroups.Select(x => new { x.Id, x.SiteId }).ToListAsync(ct);
         if (wanted.Any(w => visible.All(x => x.Id != w))) throw new DomainException("An asset group wasn't found.");
-        if (visible.Any(x => wanted.Contains(x.Id) && x.SiteId is { } s && s != siteId)) throw new DomainException("Choose groups of the asset's site or shared groups.");
         var ids = visible.Select(x => x.Id).ToList();
         var current = await db.AssetGroupMembers.Where(m => m.AssetId == assetId && ids.Contains(m.AssetGroupId)).Select(m => m.AssetGroupId).ToListAsync(ct);
+        // Only groups the asset joins now must be of its site (one moved to another site keeps the groups it's already in).
+        if (visible.Any(x => wanted.Contains(x.Id) && !current.Contains(x.Id) && x.SiteId is { } s && s != siteId)) throw new DomainException("Choose groups of the asset's site or shared groups.");
         foreach (var g in wanted.Except(current)) db.AssetGroupMembers.Add(new AssetGroupMember { AssetGroupId = g, AssetId = assetId });
         var leaving = current.Except(wanted).ToList();
         if (leaving.Count > 0) await db.AssetGroupMembers.Where(m => m.AssetId == assetId && leaving.Contains(m.AssetGroupId)).ExecuteDeleteAsync(ct);

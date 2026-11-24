@@ -181,4 +181,69 @@ public class AssetGroupTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await RunAsync(o.Admin, Book(new Sheet("Asset group members", ["Group code", "Asset number"], ["KITCHEN", na])));
         Assert.Equal(2, (await MemberIdsAsync(o.Admin, g)).Count);
     }
+
+    /// <summary>Review fix: new assets and their memberships in one file (members come after assets).</summary>
+    [SkippableFact]
+    public async Task New_assets_and_their_groups_import_together()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var siteCode = (await Ok(await o.Admin.GetAsync($"/api/sites/{o.Site}"))).GetProperty("code").GetString();
+        await RunAsync(o.Admin, Book(
+            new Sheet("Assets", ["Asset number", "Name", "Site code"], ["NEW-1", "New fridge", siteCode]),
+            new Sheet("Asset groups", ["Code", "Name"], ["KITCHEN", "Kitchen"]),
+            new Sheet("Asset group members", ["Group code", "Asset number"], ["KITCHEN", "NEW-1"])));
+        var g = Id((await Ok(await o.Admin.GetAsync("/api/asset-groups"))).EnumerateArray().Single());
+        Assert.Single(await MemberIdsAsync(o.Admin, g));
+    }
+
+    /// <summary>Review fix: people limited to some sites give their groups a site and can't delete or change shared ones.</summary>
+    [SkippableFact]
+    public async Task Site_limited_people_keep_to_their_sites_groups()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var shared = await GroupAsync(o.Admin, "CHILLERS");
+        var (limited, _, _) = await UserAsync(fx, o.Admin, "Lead A", ["assets.view", "assets.edit"], siteIds: [o.Site]);
+        const string rule = "People with limited access give their asset groups a site.";
+        var create = await limited.PostAsJsonAsync("/api/asset-groups", new { code = "MINE", name = "Mine", siteId = (Guid?)null, isActive = true });
+        Assert.Equal(HttpStatusCode.BadRequest, create.StatusCode);
+        Assert.Contains(rule, await create.Content.ReadAsStringAsync());
+        var edit = await limited.PutAsJsonAsync($"/api/asset-groups/{shared}", new { code = "CHILLERS", name = "Chillers", siteId = (Guid?)null, isActive = false });
+        Assert.Equal(HttpStatusCode.BadRequest, edit.StatusCode);
+        var delete = await limited.DeleteAsync($"/api/asset-groups/{shared}");
+        Assert.Equal(HttpStatusCode.BadRequest, delete.StatusCode);
+        Assert.Contains("Only people who see every site can delete a shared asset group.", await delete.Content.ReadAsStringAsync());
+        Assert.Equal(HttpStatusCode.Created, (await limited.PostAsJsonAsync("/api/asset-groups", new { code = "MINE", name = "Mine", siteId = o.Site, isActive = true })).StatusCode);
+    }
+
+    /// <summary>Review fix: an asset moved to another site can still be saved with the groups it's already in.</summary>
+    [SkippableFact]
+    public async Task A_moved_asset_saves_with_its_old_groups()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var siteB = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/sites", new { code = "SB", name = "Site B", isActive = true })));
+        var a = await Pm12.AssetAsync(o.Admin, o.Site, "Fridge");
+        var aGroup = await GroupAsync(o.Admin, "AKITCHEN", o.Site);
+        await MembersAsync(o.Admin, aGroup, [a]);
+        await Ok(await SaveAssetAsync(o.Admin, a, new() { ["siteId"] = siteB }));
+        await Ok(await SaveAssetAsync(o.Admin, a, new() { ["name"] = "Fridge moved", ["siteId"] = siteB, ["groupIds"] = new[] { aGroup } }));
+    }
+
+    /// <summary>Review fix: a PM on a group shows on the assets it covers.</summary>
+    [SkippableFact]
+    public async Task Group_pms_show_on_their_assets()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var a = await Pm12.AssetAsync(o.Admin, o.Site, "Fridge");
+        var g = await GroupAsync(o.Admin, "KITCHEN");
+        await MembersAsync(o.Admin, g, [a]);
+        var task = await Pm12.TemplateAsync(o.Admin, "CLEAN");
+        var pm = Id(await Pm12.SaveScheduleAsync(o.Admin, Pm12.Schedule(o.Site, task, Today,
+            extra: new() { ["code"] = "G1", ["multiAssetMode"] = "Round", ["assetGroupId"] = g, ["managesAssetGroup"] = true })));
+        Assert.Contains(pm, (await Ok(await o.Admin.GetAsync($"/api/pm-schedules?assetId={a}&pageSize=50"))).GetProperty("items").EnumerateArray().Select(Id));
+    }
 }
+

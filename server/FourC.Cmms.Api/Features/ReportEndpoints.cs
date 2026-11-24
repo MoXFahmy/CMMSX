@@ -892,10 +892,13 @@ public static class ReportEndpoints
             ("disposed", g.Count(x => x.Status == FourC.Cmms.Core.Assets.AssetStatus.Disposed)), ("total", g.Count()),
             ("purchaseValue", R2(g.Sum(x => x.PurchasePrice ?? 0))), ("currentValue", R2(g.Sum(x => x.CurrentValue ?? 0))))).ToList();
         return new("assets-by-category", "Asset register summary", $"As of {Today:d MMM yyyy}",
-            [new("category", "Category"), new("active", "Active", "number"), new("underRepair", "Under repair", "number"), new("inactive", "Inactive / in storage", "number"),
-             new("disposed", "Disposed", "number"), new("total", "Total", "number"), new("purchaseValue", "Purchase value", "currency"), new("currentValue", "Current value", "currency")],
+            // Statuses as the organization names them (0.21.0).
+            [new("category", "Category"), new("active", Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.Active), "number"),
+             new("underRepair", Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.UnderRepair), "number"),
+             new("inactive", $"{Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.Inactive)} / {Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.InStorage)}", "number"),
+             new("disposed", Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.Disposed), "number"), new("total", "Total", "number"), new("purchaseValue", "Purchase value", "currency"), new("currentValue", "Current value", "currency")],
             rows, new Chart("bar", "category", ["active", "underRepair", "inactive"], true),
-            [new("Assets", xs.Count), new("Under repair", xs.Count(x => x.Status == FourC.Cmms.Core.Assets.AssetStatus.UnderRepair)),
+            [new("Assets", xs.Count), new(Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.UnderRepair), xs.Count(x => x.Status == FourC.Cmms.Core.Assets.AssetStatus.UnderRepair)),
              new("Purchase value", R2(xs.Sum(x => x.PurchasePrice ?? 0)), "currency"), new("Current value", R2(xs.Sum(x => x.CurrentValue ?? 0)), "currency")]);
     }
 

@@ -89,4 +89,17 @@ public class ListLabelTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var (reader, _, _) = await UserAsync(fx, o.Admin, "Reader", ["workorders.view"]);
         Assert.Equal(HttpStatusCode.Forbidden, (await PutListsAsync(reader, new { })).StatusCode);
     }
+
+    /// <summary>Review fix: the asset register summary names statuses as the organization does.</summary>
+    [SkippableFact]
+    public async Task Asset_register_uses_the_organizations_status_names()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        await Ok(await PutListsAsync(o.Admin, new { assetStatus = new { UnderRepair = new { name = "Out of service" } } }));
+        var report = await Ok(await o.Admin.GetAsync("/api/reports/assets-by-category"));
+        Assert.Contains(report.GetProperty("columns").EnumerateArray(), c => c.GetProperty("label").GetString() == "Out of service");
+        Assert.DoesNotContain(report.GetProperty("columns").EnumerateArray(), c => c.GetProperty("label").GetString() == "Under repair");
+    }
 }
+

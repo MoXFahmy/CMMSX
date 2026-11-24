@@ -1133,5 +1133,7 @@
  "The asset group is inactive.": "مجموعة الأصول غير نشطة.",
  "Asset group {0} not found.": "لم يتم العثور على مجموعة الأصول {0}.",
  "The asset isn't at the group's site.": "الأصل ليس في موقع المجموعة.",
- "A name can be at most 200 characters.": "يمكن أن يكون الاسم 200 حرف على الأكثر."
+ "A name can be at most 200 characters.": "يمكن أن يكون الاسم 200 حرف على الأكثر.",
+ "Only people who see every site can delete a shared asset group.": "لا يحذف مجموعة الأصول المشتركة إلا من يرى كل المواقع.",
+ "People with limited access give their asset groups a site.": "من لديهم وصول محدود يحددون موقعًا لمجموعات أصولهم."
 }
