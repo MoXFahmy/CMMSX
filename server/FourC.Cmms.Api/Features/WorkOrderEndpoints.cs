@@ -625,12 +625,12 @@ public static class WorkOrderEndpoints
             .When(input.Status == WorkOrderStatus.OnHold && note is null && rules.Contains(CommentActions.Hold), "note", "Say why the work is on hold.")
             .When(reopening && note is null && rules.Contains(CommentActions.Reopen), "note", "Say why the work is reopened.")
             .When(input.Status == WorkOrderStatus.Cancelled && note is null && rules.Contains(CommentActions.Cancel), "note", "Say why the work is cancelled.");
-        string? cancelReason = null;
+        LocalWords? cancelReason = null; // both languages, for each e-mail's reader (0.28.0)
         if (input.Status == WorkOrderStatus.Cancelled)
         {
             if (input.CancelReasonId is { } reasonId)
             {
-                cancelReason = await db.CancelReasons.Where(x => x.Id == reasonId).Select(x => x.Name).FirstOrDefaultAsync(ct);
+                cancelReason = await db.CancelReasons.Where(x => x.Id == reasonId).Select(x => new LocalWords(x.Name, x.NameAr ?? x.Name)).FirstOrDefaultAsync(ct);
                 if (cancelReason is null) v.Add("cancelReasonId", "Unknown cancel reason.");
             }
             else if (await db.CancelReasons.AnyAsync(x => x.IsActive, ct)) v.Add("cancelReasonId", "Choose why it is cancelled.");

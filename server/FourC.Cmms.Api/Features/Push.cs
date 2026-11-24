@@ -122,7 +122,7 @@ public sealed class PushOutbox(IConfiguration config, AccessService access)
         if (!Configured || employeeIds.Count == 0) return;
         var users = await db.Employees.AsNoTracking().Where(e => employeeIds.Contains(e.Id) && e.UserId != null).Select(e => e.UserId!.Value).ToListAsync(ct);
         var path = w.LocationId is { } lid ? await db.Locations.AllSites().Where(l => l.Id == lid).Select(l => l.Path).FirstOrDefaultAsync(ct) : null;
-        await QueueAsync(db, ctx, users, w.SiteId, path, () => (Translator.T($"New job: {w.Number}"), w.Title), $"/tech/jobs/{w.Id}", "WorkOrder", w.Id, ct);
+        await QueueAsync(db, ctx, users, w.SiteId, path, () => (Translator.T($"New job: {w.Number}"), Bilingual.Pick(w.Title, w.TitleAr)), $"/tech/jobs/{w.Id}", "WorkOrder", w.Id, ct);
     }
 
     /// <summary>A request approved: its requester hears when they raised it with their login.</summary>
