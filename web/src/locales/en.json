@@ -1394,7 +1394,7 @@
     "fullApp": "Full app",
     "noCopy": "Open the app once with a connection while signed in, so your jobs are kept on this phone.",
     "locked": "This phone hasn't reached the server for 30 days. Sign in again to see your jobs.",
-    "revoked": "This device was signed out. Sign in to continue.",
+    "revoked": "This phone was signed out, by an administrator or because you signed in on another device. Sign in to continue.",
     "signedOutBody": "Your sign-in has ended. Sign in again to send your changes.",
     "queueKept_one": "{{count}} change is kept on this phone and will be sent when you sign in.",
     "queueKept_other": "{{count}} changes are kept on this phone and will be sent when you sign in.",
@@ -1532,7 +1532,8 @@
     "fillWithAi": "Fill with AI",
     "aiNeedsConnection": "Fill with AI needs a connection. Your notes stay here; you can complete without it.",
     "logHoursForMe": "Log {{hours}} h for me",
-    "aiNoAnswer": "The AI assistant didn't answer. Try again in a moment."
+    "aiNoAnswer": "The AI assistant didn't answer. Try again in a moment.",
+    "passwordExpired": "Your password has expired. Choose a new one when you sign in."
   },
   "labels": {
     "title": "QR labels",

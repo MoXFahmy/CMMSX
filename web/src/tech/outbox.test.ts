@@ -101,6 +101,16 @@ describe('drain', () => {
     expect(store.items.has('b')).toBe(true);
   });
 
+  it('a 401 keeps the outbox: an expired password stops sending and every change waits (0.25.0)', async () => {
+    const store = memoryStore([change('a', 1), change('b', 2), change('c', 3)]);
+    const { sent, send } = answers({ a: { kind: 'signedOut', revoked: false, passwordExpired: true } });
+    const r = await drain(store, 'u1', send, () => 0);
+    expect(r).toMatchObject({ stoppedBy: 'signedOut', failed: 0, sent: 0 });
+    expect(sent).toEqual(['a']);
+    expect([...store.items.keys()].sort()).toEqual(['a', 'b', 'c']);
+    for (const c of store.items.values()) expect(c.state).not.toBe('failed');
+  });
+
   it('sends the photo with its change and forgets it once sent', async () => {
     const photo = new Blob(['jpeg']);
     const store = memoryStore([change('p', 1, 'u1', { type: 'photo.add', fileKey: 'f1' })], { f1: photo });

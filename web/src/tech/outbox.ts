@@ -42,7 +42,7 @@ export type SendResult =
   | { kind: 'rejected'; message: string; code?: string }
   /** timedOut: a file upload got no answer in time (there is some signal, too slow for the file). */
   | { kind: 'retry'; serverError?: boolean; timedOut?: boolean }
-  | { kind: 'signedOut'; revoked: boolean }
+  | { kind: 'signedOut'; revoked: boolean; passwordExpired?: boolean }
   /** The change was made by someone other than who is signed in now: keep it for its owner. */
   | { kind: 'otherUser' };
 

@@ -18,6 +18,11 @@ export function signInStep(status: number, body: unknown): SignInStep {
 /** Set when a signed-in request was refused because the password expired; the sign-in page then says why. */
 export const PASSWORD_EXPIRED_FLAG = 'cmx.passwordExpired';
 
+/** Remembers, for the sign-in page, that the password expired (the phone view and the web both go there to renew it). */
+export function markPasswordExpired() {
+  try { sessionStorage.setItem(PASSWORD_EXPIRED_FLAG, '1'); } catch { /* storage off: the server still asks at sign-in */ }
+}
+
 export const DEFAULT_SECURITY: SecuritySettings = {
   passwordMinLength: 8, passwordExpiryDays: 0, passwordHistory: 0, oneSessionPerUser: false, activityRetentionMonths: null,
 };
