@@ -12,6 +12,6 @@ export type ListColumn<T> = DataTableColumn<T> & { export?: false | ExportSpec[]
 /** A filter shown as a chip: the address keys it uses (two for a date range), its label and how its value reads. */
 export type FilterDef = { keys: string[]; label: string; format?: (values: string[]) => string };
 
-export type SavedView = { id: string; name: string; query: string; hiddenColumns: string[]; isDefault: boolean };
+export type SavedView = { id: string; name: string; query: string; hiddenColumns: string[]; isDefault: boolean; pinnedToHome?: boolean };
 
 export type BulkResult = { updated: number; skipped: { id: string; number: string; reason: string }[] };

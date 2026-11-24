@@ -37,6 +37,10 @@ public class Role : Entity, ITenantOwned
     /// <summary>System roles (Administrator) cannot be deleted or stripped of permissions.</summary>
     public bool IsSystem { get; set; }
     public List<string> Permissions { get; set; } = [];
+    /// <summary>The role's home page cards in order (0.22.0); null = not set up, so the role adds no cards.</summary>
+    public List<HomeCard>? HomeLayout { get; set; }
+    /// <summary>Menu items (keys from <see cref="MenuModules"/>) this role hides. Tidying only: permissions decide access.</summary>
+    public List<string> HiddenModules { get; set; } = [];
 }
 
 public class UserRole

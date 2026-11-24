@@ -17,8 +17,9 @@ import {
 import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { handleFormError, notifySuccess } from './utils';
+import { menuModule } from './menuModules';
 
-type Item = { label: string; to: string; icon: typeof IconBox; perm?: string; anyPerm?: string[]; soon?: boolean };
+type Item = { label: string; to: string; icon: typeof IconBox; perm?: string; anyPerm?: string[]; soon?: boolean; module?: string; show?: boolean };
 
 export function AppLayout() {
   const { t } = useTranslation();
@@ -33,33 +34,36 @@ export function AppLayout() {
   const qc = useQueryClient();
   const { colorScheme, toggleColorScheme } = useMantineColorScheme();
 
+  const roleHome = (me?.home?.cards.length ?? 0) > 0;
+  const hidden = me?.home?.hiddenModules ?? [];
   const sections: { title?: string; items: Item[] }[] = [
-    { items: [{ label: t('nav.dashboard'), to: '/', icon: IconLayoutDashboard, perm: P.dashboardView }] },
+    // Home for people whose roles have a home page (0.22.0), today's Dashboard for the rest.
+    { items: [{ label: roleHome ? t('nav.home') : t('nav.dashboard'), to: '/', icon: IconLayoutDashboard, show: roleHome || can(P.dashboardView) }] },
     { title: t('nav.operations'), items: [
-      { label: terms.locations, to: '/locations', icon: IconMapPin, perm: P.locationsView },
-      { label: terms.assets, to: '/assets', icon: IconBox, perm: P.assetsView },
+      { label: terms.locations, to: '/locations', icon: IconMapPin, ...menuModule('locations') },
+      { label: terms.assets, to: '/assets', icon: IconBox, ...menuModule('assets') },
     ] },
     { title: t('nav.maintenance'), items: [
-      { label: t('nav.workRequests'), to: '/work-requests', icon: IconClipboardText, perm: P.requestsCreate },
-      { label: t('nav.workOrders'), to: '/work-orders', icon: IconTool, perm: P.woView },
-      { label: t('nav.workGroups'), to: '/work-groups', icon: IconStack2, perm: P.woView },
-      { label: t('nav.planning'), to: '/planning', icon: IconCalendarWeek, perm: P.woView },
-      { label: t('nav.availability'), to: '/planning/availability', icon: IconBeach, perm: P.woView },
-      { label: t('nav.timesheet'), to: '/planning/timesheet', icon: IconClockHour4, perm: P.woView },
-      { label: t('nav.preventive'), to: '/pm', icon: IconCalendarRepeat, perm: P.pmView },
-      { label: t('nav.contracts'), to: '/contracts', icon: IconFileCertificate, perm: P.contractsView },
+      { label: t('nav.workRequests'), to: '/work-requests', icon: IconClipboardText, ...menuModule('work-requests') },
+      { label: t('nav.workOrders'), to: '/work-orders', icon: IconTool, ...menuModule('work-orders') },
+      { label: t('nav.workGroups'), to: '/work-groups', icon: IconStack2, ...menuModule('work-groups') },
+      { label: t('nav.planning'), to: '/planning', icon: IconCalendarWeek, ...menuModule('planning') },
+      { label: t('nav.availability'), to: '/planning/availability', icon: IconBeach, ...menuModule('availability') },
+      { label: t('nav.timesheet'), to: '/planning/timesheet', icon: IconClockHour4, ...menuModule('timesheet') },
+      { label: t('nav.preventive'), to: '/pm', icon: IconCalendarRepeat, ...menuModule('pm') },
+      { label: t('nav.contracts'), to: '/contracts', icon: IconFileCertificate, ...menuModule('contracts') },
     ] },
     { title: t('nav.materials'), items: [
-      { label: t('nav.inventory'), to: '/inventory', icon: IconPackage, perm: P.inventoryView },
-      { label: t('nav.purchasing'), to: '/purchasing', icon: IconShoppingCart, anyPerm: [P.purchasingView, P.purchasingRequest, P.purchasingApproveRequests] },
-      { label: t('nav.myApprovals'), to: '/approvals', icon: IconSignature, anyPerm: [P.purchasingApprove, P.purchasingApproveRequests] },
+      { label: t('nav.inventory'), to: '/inventory', icon: IconPackage, ...menuModule('inventory') },
+      { label: t('nav.purchasing'), to: '/purchasing', icon: IconShoppingCart, ...menuModule('purchasing') },
+      { label: t('nav.myApprovals'), to: '/approvals', icon: IconSignature, ...menuModule('approvals') },
     ] },
     { title: t('nav.insights'), items: [
-      { label: t('nav.reports'), to: '/reports', icon: IconChartBar, perm: P.reportsView },
-      { label: t('nav.budgets'), to: '/reports/budgets', icon: IconCoin, perm: P.reportsView },
+      { label: t('nav.reports'), to: '/reports', icon: IconChartBar, ...menuModule('reports') },
+      { label: t('nav.budgets'), to: '/reports/budgets', icon: IconCoin, ...menuModule('budgets') },
     ] },
     { title: t('nav.administration'), items: [
-      { label: t('nav.people'), to: '/people', icon: IconUsers, perm: P.peopleView },
+      { label: t('nav.people'), to: '/people', icon: IconUsers, ...menuModule('people') },
       { label: t('nav.settings'), to: '/settings', icon: IconSettings },
     ] },
   ];
@@ -130,7 +134,9 @@ export function AppLayout() {
       <AppShell.Navbar p="xs">
         <ScrollArea>
           {sections.map((s, i) => {
-            const items = s.items.filter((it) => (!it.perm || can(it.perm)) && (!it.anyPerm || it.anyPerm.some((x) => can(x))));
+            // A role may hide items from the menu: tidying only, the pages still check permissions.
+            const items = s.items.filter((it) => (it.show ?? true) && (!it.perm || can(it.perm)) && (!it.anyPerm || it.anyPerm.some((x) => can(x)))
+              && !(it.module && hidden.includes(it.module)));
             if (!items.length) return null;
             return (
               <div key={i}>

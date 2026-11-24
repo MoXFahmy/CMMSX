@@ -1135,5 +1135,15 @@
  "The asset isn't at the group's site.": "الأصل ليس في موقع المجموعة.",
  "A name can be at most 200 characters.": "يمكن أن يكون الاسم 200 حرف على الأكثر.",
  "Only people who see every site can delete a shared asset group.": "لا يحذف مجموعة الأصول المشتركة إلا من يرى كل المواقع.",
- "People with limited access give their asset groups a site.": "من لديهم وصول محدود يحددون موقعًا لمجموعات أصولهم."
+ "People with limited access give their asset groups a site.": "من لديهم وصول محدود يحددون موقعًا لمجموعات أصولهم.",
+ "A home page can have at most {0} cards.": "يمكن أن تحتوي الصفحة الرئيسية على {0} بطاقة كحد أقصى.",
+ "Choose a card from the list.": "اختر بطاقة من القائمة.",
+ "Each card can be on a home page once.": "يمكن أن تظهر كل بطاقة مرة واحدة فقط في الصفحة الرئيسية.",
+ "Only the shortcuts card has tiles.": "بطاقة الاختصارات وحدها تحتوي على مربعات.",
+ "A shortcuts card can have at most {0} tiles.": "يمكن أن تحتوي بطاقة الاختصارات على {0} مربعًا كحد أقصى.",
+ "Give every tile a label.": "أعطِ كل مربع اسمًا.",
+ "Keep tile labels to {0} characters.": "اجعل أسماء المربعات في حدود {0} حرفًا.",
+ "A tile link must be a CMX address starting with /.": "يجب أن يكون رابط المربع عنوانًا داخل CMX يبدأ بـ /.",
+ "Choose menu items from the list.": "اختر عناصر القائمة من القائمة.",
+ "You can pin up to {0} views to your home page. Unpin one first.": "يمكنك تثبيت {0} عرضًا كحد أقصى في صفحتك الرئيسية. ألغِ تثبيت أحدها أولًا."
 }

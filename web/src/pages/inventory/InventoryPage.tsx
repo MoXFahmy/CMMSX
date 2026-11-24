@@ -24,6 +24,7 @@ import { TxTypeBadge } from '@/components/InventoryBadges';
 import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtPrice, fmtQty, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { BulkBar, FilterChips, ListTools, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
+import { apiQuery } from '@/components/list/apiQueries';
 
 const TABS = ['parts', 'stores', 'transactions', 'shortages', 'counts', 'stock-take', 'groups'] as const;
 
@@ -76,8 +77,7 @@ function PartsTab() {
   const qc = useQueryClient();
   const lp = useListParams<PartListItem>({ sort: 'partNumber', dir: 'asc' });
   const { p, set } = lp;
-  const q = { search: p('search'), groupId: p('groupId'), storeId: p('storeId'), belowReorder: p('low'), critical: p('critical'), activeOnly: p('inactive') ? '' : 'true' };
-  const listQuery = { ...q, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
+  const listQuery = apiQuery('parts', lp.params, can);
   const { data, isFetching } = useQuery({
     queryKey: ['parts', listQuery, lp.page, lp.pageSize], placeholderData: (prev) => prev,
     queryFn: () => get<Paged<PartListItem>>('/parts', { ...listQuery, page: lp.page, pageSize: lp.pageSize }),

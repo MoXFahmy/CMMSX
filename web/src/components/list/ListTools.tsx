@@ -1,9 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActionIcon, Button, Checkbox, Group, Menu, Modal, Stack, Text, TextInput, Tooltip } from '@mantine/core';
+import { ActionIcon, Button, Checkbox, Group, Menu, Modal, Select, Stack, Text, TextInput, Tooltip } from '@mantine/core';
+import { useLocation } from 'react-router';
+import { P, useAuth } from '@/auth/AuthContext';
 import { getSite } from '@/components/siteSwitch';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { IconBookmark, IconCheck, IconColumns3, IconDeviceFloppy, IconDownload, IconPencil, IconStar, IconStarOff, IconTrash } from '@tabler/icons-react';
+import { IconBookmark, IconCheck, IconColumns3, IconDeviceFloppy, IconDownload, IconPencil, IconPinned, IconPinnedOff, IconRestore, IconStar, IconStarOff, IconTrash, IconUsersGroup } from '@tabler/icons-react';
 import { del, get, post, put, toQuery } from '@/api/client';
 import { confirmDelete } from '@/components/confirm';
 import { notifyError, notifySuccess } from '@/components/utils';
@@ -53,6 +55,9 @@ export function ListTools<T>({ list, lp, cols, exportPath, exportQuery, total }:
   const [dialog, setDialog] = useState<{ mode: 'new' | 'rename'; view?: SavedView } | null>(null);
   const [name, setName] = useState('');
   const [makeDefault, setMakeDefault] = useState(false);
+  const { can } = useAuth();
+  const location = useLocation();
+  const [roleDialog, setRoleDialog] = useState(false);
 
   const active = (views ?? []).find((v) => normalizeQuery(v.query) === lp.query && sameSet(v.hiddenColumns, cols.tokens));
   /** Applies a view; `keep` names address keys to carry over (a request opened from an e-mail link, the page). */
@@ -63,8 +68,9 @@ export function ListTools<T>({ list, lp, cols, exportPath, exportQuery, total }:
     cols.setTokens(v.hiddenColumns);
   };
 
-  // The default view, once, when the list opens with an empty address (a link or bookmark with filters wins).
-  const openedEmpty = useRef(lp.isEmpty);
+  // The default view, once, when the list opens with an empty address (a link or bookmark with filters wins, and so does a
+  // home page counter, whose view may have an empty address of its own).
+  const openedEmpty = useRef(lp.isEmpty && !(location.state as { noDefaultView?: boolean } | null)?.noDefaultView);
   const appliedDefault = useRef(false);
   useEffect(() => {
     if (appliedDefault.current || !views) return;
@@ -83,6 +89,11 @@ export function ListTools<T>({ list, lp, cols, exportPath, exportQuery, total }:
   const update = useMutation({
     mutationFn: (v: SavedView) => put(`/views/${v.id}`, body(v)),
     onSuccess: () => { notifySuccess(t('common.saved')); setDialog(null); void refresh(); }, onError: notifyError,
+  });
+  const pin = useMutation({
+    mutationFn: (v: SavedView) => put(`/views/${v.id}/pin`, { pinned: !v.pinnedToHome }),
+    onSuccess: (_r, v) => { notifySuccess(t(v.pinnedToHome ? 'list.unpinned' : 'list.pinned')); void refresh(); void qc.invalidateQueries({ queryKey: ['views', 'home'] }); },
+    onError: notifyError,
   });
   const remove = (v: SavedView) => confirmDelete(v.name, async () => { await del(`/views/${v.id}`); notifySuccess(t('common.deleted')); await refresh(); });
   const openDialog = (mode: 'new' | 'rename', view?: SavedView) => { setName(view?.name ?? ''); setMakeDefault(view?.isDefault ?? false); setDialog({ mode, view }); };
@@ -115,6 +126,9 @@ export function ListTools<T>({ list, lp, cols, exportPath, exportQuery, total }:
                 onClick={() => update.mutate({ ...active, isDefault: !active.isDefault })}>
                 {active.isDefault ? t('list.removeDefault') : t('list.setDefault')}
               </Menu.Item>
+              <Menu.Item leftSection={active.pinnedToHome ? <IconPinnedOff size={14} /> : <IconPinned size={14} />} onClick={() => pin.mutate(active)}>
+                {active.pinnedToHome ? t('list.unpinFromHome') : t('list.pinToHome')}
+              </Menu.Item>
               <Menu.Item color="red" leftSection={<IconTrash size={14} />} onClick={() => remove(active)}>{t('list.deleteView')}</Menu.Item>
             </>
           )}
@@ -142,6 +156,9 @@ export function ListTools<T>({ list, lp, cols, exportPath, exportQuery, total }:
                 styles={{ input: { cursor: 'pointer' } }} />
             </Menu.Item>
           ))}
+          <Menu.Divider />
+          <Menu.Item leftSection={<IconRestore size={14} />} onClick={() => void cols.reset()}>{t('list.resetColumns')}</Menu.Item>
+          {can(P.usersManage) && <Menu.Item leftSection={<IconUsersGroup size={14} />} onClick={() => setRoleDialog(true)}>{t('list.columnsForRole')}</Menu.Item>}
         </Menu.Dropdown>
       </Menu>
 
@@ -155,6 +172,8 @@ export function ListTools<T>({ list, lp, cols, exportPath, exportQuery, total }:
           <Menu.Item component="a" href={exportUrl(exportPath, exportQuery, cols.columns, 'csv')} download>{t('list.exportCsv')}</Menu.Item>
         </Menu.Dropdown>
       </Menu>
+
+      {roleDialog && <RoleColumnsModal list={list} tokens={cols.tokens} onClose={() => setRoleDialog(false)} />}
 
       <Modal opened={dialog !== null} onClose={() => setDialog(null)} title={dialog?.mode === 'rename' ? t('list.renameView') : t('list.saveView')} size="sm">
         <form onSubmit={(e) => { e.preventDefault(); submit(); }}>
@@ -170,5 +189,40 @@ export function ListTools<T>({ list, lp, cols, exportPath, exportQuery, total }:
         </form>
       </Modal>
     </Group>
+  );
+}
+
+/** "Use these columns for a role…": the list's current columns become a role's default here (0.22.0). */
+function RoleColumnsModal({ list, tokens, onClose }: { list: ListKey; tokens: string[]; onClose: () => void }) {
+  const { t } = useTranslation();
+  const qc = useQueryClient();
+  const [roleId, setRoleId] = useState<string | null>(null);
+  const [resetMembers, setResetMembers] = useState(false);
+  const { data: roles } = useQuery({ queryKey: ['roles'], queryFn: () => get<{ id: string; name: string }[]>('/roles') });
+  const { data: current } = useQuery({
+    queryKey: ['role-columns', roleId, list], queryFn: () => get<{ hiddenColumns: string[] | null; membersWithOwn: number }>(`/roles/${roleId}/columns/${list}`), enabled: !!roleId,
+  });
+  const save = useMutation({
+    mutationFn: () => put<{ resetCount: number }>(`/roles/${roleId}/columns/${list}`, { hiddenColumns: tokens, resetMembers: resetMembers && (current?.membersWithOwn ?? 0) > 0 }),
+    onSuccess: async (r) => {
+      notifySuccess(r.resetCount > 0 ? t('list.roleColumnsSavedReset', { count: r.resetCount }) : t('list.roleColumnsSaved'));
+      await Promise.all([qc.invalidateQueries({ queryKey: ['roles'] }), qc.invalidateQueries({ queryKey: ['list-settings'] }), qc.invalidateQueries({ queryKey: ['role-columns'] })]);
+      onClose();
+    },
+    onError: notifyError,
+  });
+  const n = current?.membersWithOwn ?? 0;
+  return (
+    <Modal opened onClose={onClose} title={t('list.columnsForRole')} size="sm">
+      <Stack>
+        <Text fz="sm" c="dimmed">{t('list.columnsForRoleHint')}</Text>
+        <Select label={t('list.role')} data={(roles ?? []).map((r) => ({ value: r.id, label: r.name }))} value={roleId} onChange={(v) => { setRoleId(v); setResetMembers(false); }} searchable required />
+        {roleId && n > 0 && <Checkbox label={t('list.resetMembers', { count: n })} checked={resetMembers} onChange={(e) => setResetMembers(e.currentTarget.checked)} />}
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button onClick={() => save.mutate()} loading={save.isPending} disabled={!roleId}>{t('common.save')}</Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }

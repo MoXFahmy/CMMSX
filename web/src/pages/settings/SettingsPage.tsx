@@ -1,7 +1,7 @@
 import { AiSettings } from './AiSettings';
 import { AiUsageSettings } from './AiUsageSettings';
 import { useEffect, useState } from 'react';
-import { ActionIcon, Badge, Button, Card, Checkbox, ColorInput, FileButton, Group, Modal, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Table, Tabs, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { ActionIcon, Badge, Button, Card, Checkbox, ColorInput, FileButton, Group, Modal, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Tabs, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
 import { useForm, type UseFormReturnType } from '@mantine/form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
@@ -15,7 +15,7 @@ import { TargetsEditor, timeZones } from './TargetsEditor';
 import { WorkingHoursEditor, organizationHours } from '@/components/WorkingHoursEditor';
 import { LANGUAGES } from '@/language';
 import { api, del, get, getAllSites, post, put } from '@/api/client';
-import { DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type FollowUpKind, type Hierarchy, type PermissionInfo, type PmTaskListItem, type Role, type TenantSettings, type User } from '@/api/types';
+import { DAY_NAMES, FIELD_TYPES, type Category, type CustomField, type FollowUpKind, type Hierarchy, type PmTaskListItem, type Role, type TenantSettings, type User } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { NotificationSettings } from './NotificationSettings';
 import { ImportSettings } from './ImportSettings';
@@ -27,6 +27,7 @@ import { ContractorCategoriesSettings } from './ContractorCategoriesSettings';
 import { ContractSettings } from './ContractSettings';
 import { CostCentresSettings } from './CostCentresSettings';
 import { ListsSettings } from './ListsSettings';
+import { RoleSettings } from './RoleSettings';
 import { BrandsSettings } from './BrandsSettings';
 import { UnitsSettings } from './UnitsSettings';
 import { AssetGroupsSettings } from './AssetGroupsSettings';
@@ -428,62 +429,6 @@ function UserSettings() {
         </Stack></form>
       </Modal>
       <DevicesModal opened={!!devicesUser} onClose={() => setDevicesUser(null)} user={devicesUser ?? undefined} />
-    </Card>
-  );
-}
-
-function RoleSettings() {
-  const { t } = useTranslation();
-  const qc = useQueryClient();
-  const { data, isFetching } = useQuery({ queryKey: ['roles'], queryFn: () => get<Role[]>('/roles') });
-  const { data: perms } = useQuery({ queryKey: ['permissions'], queryFn: () => get<PermissionInfo[]>('/roles/permissions') });
-  const [opened, m] = useDisclosure();
-  const [editing, setEditing] = useState<Role | null>(null);
-  const form = useForm({ initialValues: { name: '', description: '', permissions: [] as string[] } });
-  const open = (r: Role | null) => {
-    setEditing(r);
-    form.setValues(r ? { name: r.name, description: r.description ?? '', permissions: r.permissions } : { name: '', description: '', permissions: [] });
-    form.clearErrors(); m.open();
-  };
-  const submit = form.onSubmit(async (v) => {
-    try { if (editing) await put(`/roles/${editing.id}`, v); else await post('/roles', v); notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['roles'] }); m.close(); }
-    catch (e) { handleFormError(form, e); }
-  });
-  const groups = [...new Set((perms ?? []).map((p) => p.group))];
-  const togglePerm = (code: string) => form.setFieldValue('permissions', form.values.permissions.includes(code) ? form.values.permissions.filter((x) => x !== code) : [...form.values.permissions, code]);
-  return (
-    <Card p={0}>
-      <Group justify="space-between" p="md"><Title order={5}>{t('settings.roles')}</Title><Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => open(null)}>{t('settings.newRole')}</Button></Group>
-      <DataTable minHeight={150} fetching={isFetching} records={data ?? []} columns={[
-        { accessor: 'name', title: t('common.name'), render: (r) => <Group gap={6}><Text fz="sm" fw={500}>{r.name}</Text>{r.isSystem && <Badge size="xs" variant="outline">{t('settings.systemRole')}</Badge>}</Group> },
-        { accessor: 'description', title: t('common.description') },
-        { accessor: 'permissions', title: t('settings.permissions'), render: (r) => `${r.permissions.length} / ${perms?.length ?? '…'}` },
-        { accessor: 'userCount', title: t('settings.users_count'), textAlign: 'right' },
-        { accessor: 'actions', title: '', width: 90, render: (r) => (
-          <Group gap={4} justify="flex-end" wrap="nowrap">
-            <ActionIcon variant="subtle" onClick={() => open(r)} aria-label={t('common.edit')}><IconEdit size={16} /></ActionIcon>
-            {!r.isSystem && <ActionIcon variant="subtle" color="red" aria-label={t('common.delete')} onClick={() => confirmDelete(r.name, async () => { try { await del(`/roles/${r.id}`); await qc.invalidateQueries({ queryKey: ['roles'] }); } catch (e) { notifyError(e); } })}><IconTrash size={16} /></ActionIcon>}
-          </Group>) },
-      ]} />
-      <Modal opened={opened} onClose={m.close} title={editing ? t('settings.editRole') : t('settings.newRole')} size="lg">
-        <form onSubmit={submit}><Stack>
-          <TextInput label={t('common.name')} required disabled={editing?.isSystem} {...form.getInputProps('name')} />
-          <Textarea label={t('common.description')} autosize {...form.getInputProps('description')} />
-          <Table withTableBorder>
-            <Table.Tbody>
-              {groups.map((g) => (
-                <Table.Tr key={g}>
-                  <Table.Td w={140} fw={600} fz="sm" style={{ verticalAlign: 'top' }}>{g}</Table.Td>
-                  <Table.Td><Stack gap={6}>{(perms ?? []).filter((p) => p.group === g).map((p) => (
-                    <Checkbox key={p.code} label={p.name} checked={editing?.isSystem || form.values.permissions.includes(p.code)} disabled={editing?.isSystem} onChange={() => togglePerm(p.code)} />
-                  ))}</Stack></Table.Td>
-                </Table.Tr>
-              ))}
-            </Table.Tbody>
-          </Table>
-          <Group justify="flex-end"><Button variant="default" onClick={m.close}>{t('common.cancel')}</Button><Button type="submit" loading={form.submitting}>{t('common.save')}</Button></Group>
-        </Stack></form>
-      </Modal>
     </Card>
   );
 }

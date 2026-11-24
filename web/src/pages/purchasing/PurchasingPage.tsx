@@ -6,22 +6,18 @@ import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
 import { IconFilterOff, IconPlus, IconSearch, IconShoppingCartPlus } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
-import { PO_STATUSES, type Paged, type PoListItem, type ProposalItem, type PurchaseOrderStatus, type SupplierLookup } from '@/api/types';
+import { PO_STATUSES, type Paged, type PoListItem, type ProposalItem, type SupplierLookup } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { useHierarchy } from '@/components/LocationPicker';
 import { PoStatusBadge } from '@/components/InventoryBadges';
 import { fmtDate, fmtPrice, fmtQty, notifyError, notifySuccess } from '@/components/utils';
 import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
+import { apiQuery, PO_VIEWS } from '@/components/list/apiQueries';
 import { RequestsTab } from './RequestsTab';
 import { CompaniesTab } from './CompaniesTab';
 import { draftFromShortages, proposalMode } from './purchaseRequests';
 import { packsFor } from './packs';
-
-const VIEWS: { key: string; statuses: PurchaseOrderStatus[] | null }[] = [
-  { key: 'open', statuses: ['Draft', 'Submitted', 'Approved', 'PartiallyReceived'] }, { key: 'Draft', statuses: ['Draft'] }, { key: 'Submitted', statuses: ['Submitted'] },
-  { key: 'receiving', statuses: ['Approved', 'PartiallyReceived'] }, { key: 'done', statuses: ['Received', 'Closed'] }, { key: 'Cancelled', statuses: ['Cancelled'] }, { key: 'all', statuses: null },
-];
 
 export function PurchasingPage() {
   const { t } = useTranslation();
@@ -57,13 +53,11 @@ export function PurchasingPage() {
 function OrdersTab() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { terms } = useAuth();
+  const { terms, can } = useAuth();
   const lp = useListParams<PoListItem>({ sort: 'orderDate', dir: 'desc' });
   const { p, set } = lp;
   const view = p('view') || 'open';
-  const statuses = VIEWS.find((v) => v.key === view)?.statuses ?? null;
-  const q = { search: p('search'), supplierId: p('supplierId'), siteId: p('siteId'), overdue: p('overdue'), orderTypeId: p('orderTypeId') };
-  const listQuery = { ...q, status: statuses ?? undefined, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
+  const listQuery = apiQuery('purchase-orders', lp.params, can);
   const { data, isFetching } = useQuery({
     queryKey: ['purchase-orders', listQuery, lp.page, lp.pageSize], placeholderData: (prev) => prev,
     queryFn: () => get<Paged<PoListItem>>('/purchase-orders', { ...listQuery, page: lp.page, pageSize: lp.pageSize }),
@@ -115,7 +109,7 @@ function OrdersTab() {
         <FilterChips defs={chips} p={p} set={set} />
       </Card>
       <Tabs value={view} onChange={(v) => set({ view: v === 'open' ? null : v })} mb="sm" variant="pills" radius="xl">
-        <Tabs.List>{VIEWS.map((v) => <Tabs.Tab key={v.key} value={v.key}>{t(`po.views.${v.key}`)}</Tabs.Tab>)}</Tabs.List>
+        <Tabs.List>{PO_VIEWS.map((v) => <Tabs.Tab key={v.key} value={v.key}>{t(`po.views.${v.key}`)}</Tabs.Tab>)}</Tabs.List>
       </Tabs>
       <Card p={0}>
         <DataTable<PoListItem>

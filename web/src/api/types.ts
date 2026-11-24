@@ -1,3 +1,4 @@
+import type { HomeCard } from '@/pages/home/cards';
 import type { SlaState } from '@/components/sla';
 import type { WorkingDay } from '@/components/workingHours';
 
@@ -73,6 +74,8 @@ export type Me = {
   employeeId?: string | null;
   /** The sites this person may see (for the switch), whether they are limited, and the site this request was narrowed to (0.9.0). */
   access?: { limited: boolean; branches: boolean; sites: { id: string; code: string; name: string; isActive: boolean }[]; siteId?: string | null };
+  /** The home page cards of all the person's roles and the menu items they hide (0.22.0). */
+  home?: { cards: HomeCard[]; hiddenModules: string[] };
 };
 
 export type Site = {
@@ -152,7 +155,11 @@ export type User = {
 export type Team = {
   id: string; code: string; name: string; siteId?: string | null; siteName?: string | null; color?: string | null; memberIds: string[]; isActive: boolean; rowVersion: string;
 };
-export type Role = { id: string; name: string; description?: string; isSystem: boolean; permissions: string[]; userCount: number };
+export type Role = {
+  id: string; name: string; description?: string; isSystem: boolean; permissions: string[]; userCount: number;
+  /** Its home page cards, its hidden menu items and the lists it has default columns on (0.22.0). */
+  home?: HomeCard[] | null; hiddenModules?: string[]; defaultColumns?: string[];
+};
 export type PermissionInfo = { code: string; group: string; name: string };
 export type Dashboard = {
   work: WorkDashboard;

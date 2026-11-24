@@ -29,7 +29,8 @@
     "contracts": "Contracts",
     "availability": "Availability",
     "timesheet": "Timesheet",
-    "budgets": "Budgets"
+    "budgets": "Budgets",
+    "home": "Home"
   },
   "unit": {
     "overtime": "overtime",
@@ -611,7 +612,8 @@
     "dueAtHint": "Leave empty to use the priority's target",
     "completedSince": "Completed since",
     "cancelReason": "Cancel reason",
-    "completedUntil": "Completed until"
+    "completedUntil": "Completed until",
+    "unassigned": "Unassigned"
   },
   "wr": {
     "title": "Work requests",
@@ -1357,7 +1359,20 @@
     "resume": "Resume",
     "markActive": "Mark active",
     "markInactive": "Mark inactive",
-    "statusConfirm": "This marks {{count}} work orders {{status}}. Reopening them later needs the close permission."
+    "statusConfirm": "This marks {{count}} work orders {{status}}. Reopening them later needs the close permission.",
+    "pinToHome": "Show on home page",
+    "unpinFromHome": "Remove from home page",
+    "pinned": "Shown on your home page.",
+    "unpinned": "Removed from your home page.",
+    "resetColumns": "Reset columns",
+    "columnsForRole": "Use these columns for a role…",
+    "columnsForRoleHint": "People with this role see these columns on this list until they pick their own.",
+    "role": "Role",
+    "roleColumnsSaved": "Saved as the role's default columns.",
+    "roleColumnsSavedReset_one": "Saved as the role's default columns. {{count}} person's columns were reset.",
+    "roleColumnsSavedReset_other": "Saved as the role's default columns. {{count}} people's columns were reset.",
+    "resetMembers_one": "Also reset the columns of the {{count}} person with this role who changed theirs.",
+    "resetMembers_other": "Also reset the columns of the {{count}} people with this role who changed theirs."
   },
   "tech": {
     "title": "Technician view",
@@ -2730,5 +2745,136 @@
     "pmHint": "The PM follows the group: an asset added later is included from the next visit.",
     "coversToday_one": "Covers {{count}} asset today",
     "coversToday_other": "Covers {{count}} assets today"
+  },
+  "home": {
+    "nothingYet": "Your home page has nothing to show yet. Ask your administrator to set one up for your role.",
+    "viewAll": "View all",
+    "due": "due {{date}}",
+    "available_one": "{{count}} {{unit}} left",
+    "available_other": "{{count}} {{unit}} left",
+    "purchaseRequest": "Request",
+    "purchaseOrder": "Order",
+    "quickRequestText": "Something broken or not working? Tell the maintenance team.",
+    "reportProblem": "Report a problem",
+    "reportHere": "Report a problem here",
+    "newWorkOrderHere": "New work order here",
+    "newAssetHere": "New asset here",
+    "open": "Open",
+    "pickPlace": "Pick a site or location to see what you can do there.",
+    "cards": {
+      "work-summary": "Work counters",
+      "work-by-site": "Work by site",
+      "urgent-work": "Urgent work",
+      "asset-summary": "Asset counters",
+      "assets-by-status": "Assets by status",
+      "assets-by-category": "Assets by category",
+      "assets-by-site": "Assets by site",
+      "warranty-soon": "Warranties ending soon",
+      "recent-assets": "Recently added assets",
+      "my-work": "My work",
+      "unassigned-work": "Unassigned work",
+      "late-work": "Late work",
+      "assets-down": "Assets down now",
+      "low-stock": "Parts below reorder level",
+      "my-approvals": "Waiting for my approval",
+      "quick-request": "Report a problem",
+      "location-tree": "Locations",
+      "shortcuts": "Shortcut tiles"
+    },
+    "empty": {
+      "my-work": "Nothing assigned to you right now.",
+      "unassigned-work": "Everything open has someone on it.",
+      "late-work": "Nothing late.",
+      "assets-down": "No assets are down.",
+      "low-stock": "No parts are below their reorder level.",
+      "my-approvals": "Nothing is waiting for you."
+    },
+    "myCounters": "My counters",
+    "pinHint": "Pin a saved view to see its count here.",
+    "noAccess": "No access",
+    "tileMenu": "Counter options",
+    "moveEarlier": "Move earlier",
+    "moveLater": "Move later",
+    "removeFromHome": "Remove from home",
+    "lists": {
+      "work-orders": "Work orders",
+      "work-requests": "Work requests",
+      "pm-schedules": "PM schedules",
+      "parts": "Parts",
+      "purchase-orders": "Purchase orders",
+      "assets": "Assets"
+    },
+    "cardError": "Couldn't load this card. Try again later."
+  },
+  "roles": {
+    "tabs": {
+      "home": "Home page",
+      "menu": "Menu",
+      "columns": "Columns"
+    },
+    "homeBadge": "Home",
+    "duplicate": "Duplicate",
+    "duplicated": "Created {{name}}.",
+    "groups": {
+      "dashboard": "Dashboard pieces",
+      "work": "Work",
+      "assets": "Assets and stock",
+      "tools": "Tools"
+    },
+    "home": {
+      "addCard": "Add card",
+      "startClassic": "Start from today's dashboard",
+      "classicNote": "Cards follow the home page grid, so a page made from today's dashboard looks close to it, not identical.",
+      "none": "No home page: people with this role see the standard dashboard.",
+      "missing": "People with only this role won't see this card: it needs {{perm}}.",
+      "or": " or ",
+      "up": "Move up",
+      "down": "Move down",
+      "severalRoles": "People with several roles see the cards of all their roles, in role-name order, without repeats.",
+      "fixTiles": "Give every tile a label and a CMX address starting with /."
+    },
+    "tile": {
+      "label": "Label",
+      "labelAr": "Arabic label",
+      "page": "Page",
+      "address": "Address",
+      "badLink": "Use a CMX address starting with /.",
+      "colour": "Colour",
+      "add": "Add tile"
+    },
+    "links": {
+      "newRequest": "New request",
+      "newWorkOrder": "New work order",
+      "newAsset": "New asset"
+    },
+    "menu": {
+      "note": "Hiding a menu item only tidies the menu. People can still open the page from links if their permissions allow it. To stop access, change the role's permissions.",
+      "severalRoles": "A menu item is hidden for a person when all of their roles that can open it hide it."
+    },
+    "columns": {
+      "none": "No default columns for this role.",
+      "clear": "Clear",
+      "where": "Set a role's default columns from a list's column menu."
+    },
+    "cardHints": {
+      "work-summary": "Open, late, due soon, not started, completed and waiting requests.",
+      "work-by-site": "Open and late work at each site.",
+      "urgent-work": "The most urgent open work orders.",
+      "asset-summary": "Assets, assets down, critical, under repair and value.",
+      "assets-by-status": "A chart of assets by status.",
+      "assets-by-category": "A chart of assets by category.",
+      "assets-by-site": "How many assets each site has.",
+      "warranty-soon": "Warranties ending in the next months.",
+      "recent-assets": "Assets added lately.",
+      "my-work": "Open work assigned to the person, earliest due first.",
+      "unassigned-work": "Open work with nobody assigned, for whoever hands out work.",
+      "late-work": "Work past its due time.",
+      "assets-down": "Assets stopped right now.",
+      "low-stock": "Parts at or below their reorder level.",
+      "my-approvals": "Purchase requests and orders waiting for the person's approval.",
+      "quick-request": "A button to report a problem.",
+      "location-tree": "The sites and locations, with buttons to report, create work or add assets there.",
+      "shortcuts": "Coloured tiles that open CMX pages."
+    }
   }
 }

@@ -3,7 +3,7 @@ import { Navigate, Route, Routes, useLocation, useSearchParams } from 'react-rou
 import { useAuth } from './auth/AuthContext';
 import { AppLayout } from './components/AppLayout';
 import { LoginPage, RegisterPage } from './pages/AuthPages';
-import { DashboardPage } from './pages/DashboardPage';
+import { HomePage } from './pages/home/HomePage';
 import { LocationsPage } from './pages/locations/LocationsPage';
 import { AssetsPage } from './pages/assets/AssetsPage';
 import { AssetDetailPage } from './pages/assets/AssetDetailPage';
@@ -66,7 +66,7 @@ export function App() {
       <Route path="labels" element={<LabelsPage />} />
       <Route path="q/:type/:id" element={<QrRedirect />} />
       <Route element={<AppLayout />}>
-        <Route index element={<DashboardPage />} />
+        <Route index element={<HomePage />} />
         <Route path="locations" element={<LocationsPage />} />
         <Route path="assets" element={<AssetsPage />} />
         <Route path="assets/new" element={<AssetFormPage />} />

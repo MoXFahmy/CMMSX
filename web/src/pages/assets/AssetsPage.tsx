@@ -7,6 +7,7 @@ import { DataTable } from 'mantine-datatable';
 import { IconFilterOff, IconPlus, IconSearch, IconEdit, IconQrcode } from '@tabler/icons-react';
 import { openLabels } from '@/pages/labels/LabelsPage';
 import { BulkBar } from '@/components/list';
+import { apiQuery } from '@/components/list/apiQueries';
 import { get, post } from '@/api/client';
 import { type AssetStatus, type Criticality, type AssetListItem, type Category, type CustomField, type Paged } from '@/api/types';
 import { P, useAuth } from '@/auth/AuthContext';
@@ -28,11 +29,7 @@ export function AssetsPage() {
   const qc = useQueryClient();
   const lp = useListParams<AssetListItem>({ sort: 'assetNumber', dir: 'asc' });
   const { p, set, page, pageSize, sort } = lp;
-  const filters = {
-    search: p('search'), siteId: p('siteId'), locationId: p('locationId'), categoryId: p('categoryId'), status: p('status'), criticality: p('criticality'),
-    topLevelOnly: p('topLevelOnly'), downNow: p('downNow'), sort: sort.columnAccessor as string, dir: sort.direction,
-    brandId: p('brandId'), modelId: p('modelId'), assetGroupId: p('assetGroupId'),
-  };
+  const filters = apiQuery('assets', lp.params, can);
   const { data, isFetching } = useQuery({
     queryKey: ['assets', filters, page, pageSize],
     queryFn: () => get<Paged<AssetListItem>>('/assets', { ...filters, page, pageSize }),

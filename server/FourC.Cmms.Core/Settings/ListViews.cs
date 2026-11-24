@@ -28,6 +28,10 @@ public class SavedView : Entity, ITenantOwned
     public List<string> HiddenColumns { get; set; } = [];
     /// <summary>Applied when the person opens the list with nothing in its address. At most one per person and list.</summary>
     public bool IsDefault { get; set; }
+    /// <summary>Shown as a counter tile on the person's home page (0.22.0).</summary>
+    public bool PinnedToHome { get; set; }
+    /// <summary>The tile's place among the person's pinned views.</summary>
+    public int HomeOrder { get; set; }
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset UpdatedAt { get; set; }
 }
@@ -37,6 +41,15 @@ public class UserListSetting : ITenantOwned
 {
     public Guid TenantId { get; set; }
     public Guid UserId { get; set; }
+    public required string List { get; set; }
+    public List<string> HiddenColumns { get; set; } = [];
+}
+
+/// <summary>A role's default columns on a list (0.22.0): used by its people who haven't picked their own. Same tokens as <see cref="UserListSetting"/>.</summary>
+public class RoleListSetting : ITenantOwned
+{
+    public Guid TenantId { get; set; }
+    public Guid RoleId { get; set; }
     public required string List { get; set; }
     public List<string> HiddenColumns { get; set; } = [];
 }

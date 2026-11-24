@@ -21,6 +21,7 @@ import { CodeSelect } from '@/components/CodeSelect';
 import { CostCentrePicker } from '@/components/CostCentrePicker';
 import { FeedbackPanel, RequestComments } from './RequestLoop';
 import { P, useAuth } from '@/auth/AuthContext';
+import { apiQuery, WR_TABS, wrDefaultTab } from '@/components/list/apiQueries';
 import { PageHeader } from '@/components/PageHeader';
 import { LocationPicker, useHierarchy } from '@/components/LocationPicker';
 import { AssetPicker } from '@/components/AssetPicker';
@@ -32,20 +33,16 @@ import { dateTimeFormat, fmtDate, fmtDateTime, handleFormError, notifyError, not
 import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
 import { listDefault, listItems } from '@/components/listLabels';
 
-const TABS: { key: string; status?: WorkRequestStatus; late?: boolean }[] = [{ key: 'New', status: 'New' }, { key: 'late', late: true }, { key: 'Approved', status: 'Approved' }, { key: 'Closed', status: 'Closed' }, { key: 'Rejected', status: 'Rejected' }, { key: 'Cancelled', status: 'Cancelled' }, { key: 'all' }];
-
 export function WorkRequestsPage() {
   const { t } = useTranslation();
   const { can, terms } = useAuth();
   const lp = useListParams<WorkRequestListItem>({ sort: 'createdAt', dir: 'desc' });
   const { p, set } = lp;
   const [newOpen, newM] = useDisclosure(p('new') === '1');
-  const tab = p('tab') || (can(P.requestsManage) ? 'New' : 'all');
+  const tab = p('tab') || wrDefaultTab(can);
   const openId = p('open') || null;
-  const status = TABS.find((x) => x.key === tab)?.status;
   const { data: h } = useHierarchy();
-  const late = TABS.find((x) => x.key === tab)?.late ?? false;
-  const listQuery = { search: p('search'), siteId: p('siteId'), status, late: late ? 'true' : '', sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
+  const listQuery = apiQuery('work-requests', lp.params, can);
   const { data, isFetching } = useQuery({
     queryKey: ['work-requests', listQuery, lp.page, lp.pageSize], placeholderData: (prev) => prev,
     queryFn: () => get<Paged<WorkRequestListItem>>('/work-requests', { ...listQuery, page: lp.page, pageSize: lp.pageSize }),
@@ -102,7 +99,7 @@ export function WorkRequestsPage() {
         <FilterChips defs={chips} p={p} set={set} />
       </Card>
       <Tabs value={tab} onChange={(v) => set({ tab: v })} mb="sm">
-        <Tabs.List>{TABS.map((x) => <Tabs.Tab key={x.key} value={x.key} rightSection={x.late ? undefined : <Badge size="xs" variant="default" circle>{count(x.status)}</Badge>}>
+        <Tabs.List>{WR_TABS.map((x) => <Tabs.Tab key={x.key} value={x.key} rightSection={x.late ? undefined : <Badge size="xs" variant="default" circle>{count(x.status)}</Badge>}>
           {x.late ? <Text span c="red" fz="sm">{t('sla.lateFilter')}</Text> : x.status ? t(`wrStatus.${x.status}`) : t('wo.all')}</Tabs.Tab>)}</Tabs.List>
       </Tabs>
       <Card p={0}>
@@ -119,7 +116,8 @@ export function WorkRequestsPage() {
   );
 }
 
-export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean; onClose: () => void; assetId?: string }) {
+/** The new-request form. `place` starts it at a site or location (the home page's location card, 0.22.0). */
+export function RequestFormModal({ opened, onClose, assetId, place }: { opened: boolean; onClose: () => void; assetId?: string; place?: { siteId: string; locationId?: string | null } }) {
   const { t } = useTranslation();
   const { me } = useAuth();
   const qc = useQueryClient();
@@ -138,9 +136,10 @@ export function RequestFormModal({ opened, onClose, assetId }: { opened: boolean
   };
   useEffect(() => {
     if (!opened) return;
-    form.setValues(asset ? { ...blank, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id } : blank);
+    form.setValues(asset ? { ...blank, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id }
+      : place ? { ...blank, siteId: place.siteId, locationId: place.locationId ?? null } : blank);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [opened, asset]);
+  }, [opened, asset, place?.siteId, place?.locationId]);
   const submit = form.onSubmit(async (v) => {
     try {
       const r = await post<{ id: string; number: string }>('/work-requests', { ...v, requiredBy: toIsoDate(v.requiredBy), assetIsDown: !!v.assetId && v.assetIsDown });
