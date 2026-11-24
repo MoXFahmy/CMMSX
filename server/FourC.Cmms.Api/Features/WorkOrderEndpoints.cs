@@ -819,9 +819,9 @@ public static class WorkOrderEndpoints
         if (moved > 0)
         {
             // The guarded update skips the save pipeline: the status change is logged by hand (0.25.0).
+            // Saved with the caller's own change (the labour line or the step), not before it.
             FourC.Cmms.Core.Auditing.AuditLog.Event(db, "WorkOrder", workOrderId, "Updated",
                 new Dictionary<string, object?> { ["Status"] = new { from = nameof(WorkOrderStatus.Open), to = nameof(WorkOrderStatus.InProgress) }, ["Reason"] = new { to = reason } });
-            await db.SaveChangesAsync(ct);
         }
         // A copy of the work order this request already loaded is now out of date (status, row version): refresh it.
         if (db.ChangeTracker.Entries<WorkOrder>().FirstOrDefault(e => e.Entity.Id == workOrderId) is { } loaded) await loaded.ReloadAsync(ct);

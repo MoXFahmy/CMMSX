@@ -336,16 +336,32 @@ public static class AttachmentEndpoints
 
 public static class AuditEndpoints
 {
+    /// <summary>History that needs more than seeing the record: a person's sign-ins and details, roles, and the organization's settings.</summary>
+    private static readonly Dictionary<string, string> Restricted = new()
+    {
+        ["AppUser"] = Permissions.UsersManage, ["Role"] = Permissions.UsersManage, ["Tenant"] = Permissions.SettingsManage,
+    };
+
     public static void MapAuditEndpoints(this RouteGroupBuilder api)
     {
-        api.MapGet("/audit", async (string entityType, Guid entityId, CmmsDbContext db, CancellationToken ct) =>
-            !await SiteAccess.VisibleAsync(db, entityType, entityId, ct) ? Results.NotFound()
-            // The record's own changes and its child rows' (0.25.0: labour lines, comments, files…), with where each came from.
-            : Results.Ok(await db.AuditEntries.AsNoTracking()
-                .Where(a => (a.EntityType == entityType && a.EntityId == entityId && a.ParentType == null) || (a.ParentType == entityType && a.ParentId == entityId))
-                .OrderByDescending(a => a.Timestamp).Take(200)
-                .Select(a => new { a.Id, a.Action, a.Changes, a.UserName, a.Timestamp, a.EntityType, a.EntityId, a.Source, a.ChangeId }).ToListAsync(ct)))
-            .WithTags("Audit").RequireAuthorization();
+        api.MapGet("/audit", async (string entityType, Guid entityId, HttpContext http, PermissionService perms, CmmsDbContext db, CancellationToken ct) =>
+        {
+            // Users' sign-ins and profile changes, roles and organization settings (0.25.0) only for those who manage them.
+            if (Restricted.TryGetValue(entityType, out var needs))
+            {
+                var userId = Guid.Parse(http.User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)!.Value);
+                if (!(await perms.GetAsync(userId)).Contains(needs)) return Results.Forbid();
+            }
+            if (!await SiteAccess.VisibleAsync(db, entityType, entityId, ct)) return Results.NotFound();
+            // The record's own changes and its child rows' (0.25.0: labour lines, comments, files…), with where each came from. The
+            // record's own are taken apart, so a long checklist doesn't push its creation out of the tab.
+            var own = await db.AuditEntries.AsNoTracking().Where(a => a.EntityType == entityType && a.EntityId == entityId && a.ParentType == null)
+                .OrderByDescending(a => a.Timestamp).Take(200).ToListAsync(ct);
+            var lines = await db.AuditEntries.AsNoTracking().Where(a => a.ParentType == entityType && a.ParentId == entityId)
+                .OrderByDescending(a => a.Timestamp).Take(300).ToListAsync(ct);
+            return Results.Ok(own.Concat(lines).OrderByDescending(a => a.Timestamp)
+                .Select(a => new { a.Id, a.Action, a.Changes, a.UserName, a.Timestamp, a.EntityType, a.EntityId, a.Source, a.ChangeId }));
+        }).WithTags("Audit").RequireAuthorization();
     }
 }
 

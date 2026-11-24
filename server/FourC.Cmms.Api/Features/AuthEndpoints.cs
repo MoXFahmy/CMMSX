@@ -66,10 +66,12 @@ public static class AuthEndpoints
             var tenantActive = user is not null && await db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.IsActive);
             if (user is null || !user.IsActive || !tenantActive)
                 return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
+            var wasLocked = await users.IsLockedOutAsync(user);
             var result = await signIn.CheckPasswordSignInAsync(user, req.Password ?? "", lockoutOnFailure: true);
-            if (!result.Succeeded)
+            // Failed sign-ins of a known person reach the activity log (0.25.0), with the device and never the password. A locked
+            // account's further tries aren't written: only the try that locked it, so no one can flood the log with an address.
+            if (!result.Succeeded && !wasLocked)
             {
-                // Failed sign-ins of a known person reach the activity log (0.25.0), with the device and never the password.
                 AuditLog.Event(db, "AppUser", user.Id, result.IsLockedOut ? "LockedOut" : "SignInFailed", Device(http), user.TenantId, user.Id, user.FullName);
                 await db.SaveChangesAsync(ct);
             }
@@ -103,6 +105,9 @@ public static class AuthEndpoints
             await PasswordRules.RecordAsync(db, user, ct);
             AuditLog.Event(db, "AppUser", user.Id, "PasswordRenewed", tenantId: user.TenantId, userId: user.Id, userName: user.FullName);
             await db.SaveChangesAsync(ct);
+            // A new password signs every other device out (their sign-ins ended with the old one); one session per person then
+            // doesn't ask about this very browser's expired session.
+            await Sessions.RevokeAsync(db, cache, db.UserSessions.IgnoreQueryFilters().Where(s => s.UserId == user.Id), ct);
             return await CompleteSignInAsync(http, db, users, signIn, cache, user, req.RememberMe, req.Technician, req.EndOtherSessions, ct);
         }).AllowAnonymous();
 

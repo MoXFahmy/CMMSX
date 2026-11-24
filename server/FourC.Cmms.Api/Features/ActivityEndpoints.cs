@@ -1,3 +1,5 @@
+using System.Linq.Expressions;
+using System.Reflection;
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Auditing;
 using FourC.Cmms.Core.Common;
@@ -53,10 +55,6 @@ public static class ActivityEndpoints
         });
     }
 
-    /// <summary>Record types whose entries a site-limited person sees only when they can see the record (its own site filter decides).</summary>
-    private static readonly string[] SiteRecords =
-        ["Site", "Location", "Asset", "WorkRequest", "WorkOrder", "PmSchedule", "Store", "PurchaseOrder", "PurchaseRequest", "Contract", "Meter", "DowntimeEvent"];
-
     internal static async Task<PagedResult<ActivityRow>> ListAsync(CmmsDbContext db, ActivityFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 200)
     {
         var q = db.AuditEntries.AsNoTracking();
@@ -74,24 +72,8 @@ public static class ActivityEndpoints
             q = q.Where(a => a.EntityType.Contains(s) || (a.UserName != null && a.UserName.Contains(s)) || (a.Changes != null && a.Changes.Contains(s))
                              || ids.Contains(a.EntityId) || (a.ParentId != null && ids.Contains(a.ParentId.Value)));
         }
-        if (db.CurrentSiteIds is not null)
-        {
-            // Entries of a site's records only when the person can see the record; organization-wide entries (settings, users, parts…) stay.
-            q = q.Where(a =>
-                (a.ParentType ?? a.EntityType) == "Site" ? db.Sites.Any(x => x.Id == (a.ParentId ?? a.EntityId))
-                : (a.ParentType ?? a.EntityType) == "Location" ? db.Locations.Any(x => x.Id == (a.ParentId ?? a.EntityId))
-                : (a.ParentType ?? a.EntityType) == "Asset" ? db.Assets.Any(x => x.Id == (a.ParentId ?? a.EntityId))
-                : (a.ParentType ?? a.EntityType) == "WorkRequest" ? db.WorkRequests.Any(x => x.Id == (a.ParentId ?? a.EntityId))
-                : (a.ParentType ?? a.EntityType) == "WorkOrder" ? db.WorkOrders.Any(x => x.Id == (a.ParentId ?? a.EntityId))
-                : (a.ParentType ?? a.EntityType) == "PmSchedule" ? db.PmSchedules.Any(x => x.Id == (a.ParentId ?? a.EntityId))
-                : (a.ParentType ?? a.EntityType) == "Store" ? db.Stores.Any(x => x.Id == (a.ParentId ?? a.EntityId))
-                : (a.ParentType ?? a.EntityType) == "PurchaseOrder" ? db.PurchaseOrders.Any(x => x.Id == (a.ParentId ?? a.EntityId))
-                : (a.ParentType ?? a.EntityType) == "PurchaseRequest" ? db.PurchaseRequests.Any(x => x.Id == (a.ParentId ?? a.EntityId))
-                : (a.ParentType ?? a.EntityType) == "Contract" ? db.Contracts.Any(x => x.Id == (a.ParentId ?? a.EntityId))
-                : (a.ParentType ?? a.EntityType) == "Meter" ? db.Meters.Any(x => x.Id == (a.ParentId ?? a.EntityId))
-                : (a.ParentType ?? a.EntityType) == "DowntimeEvent" ? db.DowntimeEvents.Any(x => x.Id == (a.ParentId ?? a.EntityId))
-                : !SiteRecords.Contains(a.ParentType ?? a.EntityType));
-        }
+        // Entries of a site's records only when the person can see the record; organization-wide entries (settings, users, parts…) stay.
+        if (db.CurrentSiteIds is not null) q = q.Where(ActivitySites.Visible(db));
         var paged = await q.OrderByDescending(a => a.Timestamp).ThenByDescending(a => a.Id).ToPagedAsync(page, pageSize, ct, maxPageSize);
         var labels = await ActivityLabels.ResolveAsync(db, paged.Items.Select(a => (a.ParentType ?? a.EntityType, a.ParentId ?? a.EntityId)), ct);
         return new PagedResult<ActivityRow>(paged.Items.Select(a =>
@@ -158,5 +140,62 @@ public static class ActivityLabels
             foreach (var x in await db.Roles.IgnoreQueryFilters().Where(x => ro.Contains(x.Id)).Select(x => new { x.Id, x.Name }).ToListAsync(ct)) labels[("Role", x.Id)] = x.Name;
         if (byType.ContainsKey("Tenant")) foreach (var id in byType["Tenant"]) labels[("Tenant", id)] = Translator.T("Organization settings");
         return labels;
+    }
+}
+
+/// <summary>
+/// Which entries of the activity log a site-limited person sees (0.25.0): a line's entry when they can see its record (a work
+/// order's labour → the work order), a record's own entry when they can see the record, and organization-wide entries (parts,
+/// users, settings…). Each record's own site filter decides. A test fails when a site-limited type is in neither list.
+/// </summary>
+public static class ActivitySites
+{
+    /// <summary>Site-limited records whose lines' entries follow them.</summary>
+    public static readonly HashSet<string> Parents =
+        ["Site", "Location", "Asset", "WorkRequest", "WorkOrder", "WorkOrderGroup", "PmSchedule", "Store", "PurchaseOrder", "PurchaseRequest", "Contract",
+         "StockCount", "AssetGroup", "Meter", "DowntimeEvent"];
+
+    /// <summary>Site-limited rows checked by themselves: records of their own, and lines whose record is organization-wide (a part's stock level in one store).</summary>
+    public static readonly HashSet<string> Own =
+        [.. Parents, "Team", "PrintLayout", "CostCentre", "StockLevel", "MeasurementReading", "MeasurementPointAsset", "AssetChecklist"];
+
+    public static bool Checks(string type, string? parentType) => (parentType is not null && Parents.Contains(parentType)) || Own.Contains(type);
+
+    /// <summary>a => (its record is site-limited and visible) or (it isn't a site-limited line and its own row is visible or organization-wide).</summary>
+    public static Expression<Func<AuditEntry, bool>> Visible(CmmsDbContext db)
+    {
+        var types = db.Model.GetEntityTypes().Select(t => t.ClrType).Where(t => typeof(Entity).IsAssignableFrom(t))
+            .GroupBy(t => t.Name).ToDictionary(g => g.Key, g => g.First());
+        var a = Expression.Parameter(typeof(AuditEntry), "a");
+        Expression? byParent = null, byOwn = null;
+        foreach (var name in Parents.Where(types.ContainsKey))
+            byParent = Or(byParent, Body(Make(nameof(ByParent), types[name], db, name), a));
+        foreach (var name in Own.Where(types.ContainsKey))
+            byOwn = Or(byOwn, Body(Make(nameof(ByOwn), types[name], db, name), a));
+        var parents = Parents.ToList();
+        var own = Own.ToList();
+        Expression<Func<AuditEntry, bool>> notALine = x => x.ParentType == null || !parents.Contains(x.ParentType);
+        Expression<Func<AuditEntry, bool>> notOwn = x => !own.Contains(x.EntityType);
+        var rest = Expression.AndAlso(Body(notALine, a), Expression.OrElse(byOwn ?? Expression.Constant(false), Body(notOwn, a)));
+        return Expression.Lambda<Func<AuditEntry, bool>>(byParent is null ? rest : Expression.OrElse(byParent, rest), a);
+    }
+
+    private static Expression<Func<AuditEntry, bool>> ByParent<T>(CmmsDbContext db, string name) where T : Entity =>
+        a => a.ParentType == name && db.Set<T>().Any(x => x.Id == a.ParentId);
+
+    private static Expression<Func<AuditEntry, bool>> ByOwn<T>(CmmsDbContext db, string name) where T : Entity =>
+        a => a.EntityType == name && db.Set<T>().Any(x => x.Id == a.EntityId);
+
+    private static Expression<Func<AuditEntry, bool>> Make(string method, Type type, CmmsDbContext db, string name) =>
+        (Expression<Func<AuditEntry, bool>>)typeof(ActivitySites).GetMethod(method, BindingFlags.NonPublic | BindingFlags.Static)!.MakeGenericMethod(type).Invoke(null, [db, name])!;
+
+    private static Expression Or(Expression? left, Expression right) => left is null ? right : Expression.OrElse(left, right);
+
+    /// <summary>The lambda's body with its parameter replaced by <paramref name="a"/>.</summary>
+    private static Expression Body(Expression<Func<AuditEntry, bool>> lambda, ParameterExpression a) => new Swap(lambda.Parameters[0], a).Visit(lambda.Body);
+
+    private sealed class Swap(ParameterExpression from, ParameterExpression to) : ExpressionVisitor
+    {
+        protected override Expression VisitParameter(ParameterExpression node) => node == from ? to : base.VisitParameter(node);
     }
 }

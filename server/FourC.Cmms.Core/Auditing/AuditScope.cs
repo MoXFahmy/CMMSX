@@ -77,6 +77,9 @@ public static class AuditScope
     };
 
     /// <summary>Whether changes to <paramref name="type"/> are recorded.</summary>
+    /// <summary>The record type a child row belongs to ("WorkOrder" for a labour line); null for a record of its own.</summary>
+    public static string? ParentTypeOf(Type type) => Children.TryGetValue(type, out var p) ? p?.ParentType : null;
+
     public static bool IsRecorded(Type type) => !Excluded.Contains(type) && (typeof(TenantEntity).IsAssignableFrom(type) || Children.ContainsKey(type));
 
     /// <summary>The record a child row belongs to, or null for a record of its own.</summary>

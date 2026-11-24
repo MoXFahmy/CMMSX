@@ -278,6 +278,7 @@ public static class AdminEndpoints
             var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
             if (input.Settings.AiEnabled && !t.Settings.AiEnabled && !ai.Configured) v.Add("settings.aiEnabled", "AI isn't set up on this server.");
             if (!v.IsValid) return v.Problem();
+            var nameBefore = t.Name;
             t.Name = input.Name.Trim();
             // The logo (0.14.0) changes only through its own upload, whatever a page sends.
             input.Settings.LogoVersion = t.Settings.LogoVersion;
@@ -286,8 +287,9 @@ public static class AdminEndpoints
             input.Settings.ListLabels = t.Settings.ListLabels ?? [];
             // The security rules (0.25.0) change only through Settings › Security, whatever this page sends.
             input.Settings.Security = t.Settings.Security ?? new();
-            if (SettingsDiff.Changes(t.Settings, input.Settings) is { Count: > 0 } changed)
-                FourC.Cmms.Core.Auditing.AuditLog.Event(db, "Tenant", t.Id, "SettingsChanged", changed);
+            var changed = SettingsDiff.Changes(t.Settings, input.Settings);
+            if (nameBefore != t.Name) changed["name"] = new { from = nameBefore, to = t.Name };
+            if (changed.Count > 0) FourC.Cmms.Core.Auditing.AuditLog.Event(db, "Tenant", t.Id, "SettingsChanged", changed);
             t.Settings = input.Settings;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { t.Name, t.Settings });
@@ -301,6 +303,9 @@ public static class AdminEndpoints
             var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
             var copy = System.Text.Json.JsonSerializer.Deserialize<TenantSettings>(System.Text.Json.JsonSerializer.Serialize(t.Settings))!;
             copy.ListLabels = labels;
+            // The lists' wording in the activity log (0.25.0), like the other settings.
+            if (SettingsDiff.Changes(t.Settings, copy, keep: "listLabels") is { Count: > 0 } wording)
+                FourC.Cmms.Core.Auditing.AuditLog.Event(db, "Tenant", t.Id, "SettingsChanged", wording);
             t.Settings = copy;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { ListLabels = labels });
@@ -318,13 +323,18 @@ public static class AdminEndpoints
             await using (var m = new MemoryStream(bytes)) await storage.SaveAsync(Logos.Key(db.CurrentTenantId), m, ct);
             var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
             t.Settings = Logos.With(t.Settings, DateTimeOffset.UtcNow.ToUnixTimeMilliseconds(), type);
+            FourC.Cmms.Core.Auditing.AuditLog.Event(db, "Tenant", t.Id, "SettingsChanged", new Dictionary<string, object?> { ["settings.logo"] = new { to = "New logo" } });
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { t.Settings.LogoVersion });
         }).RequirePermission(Permissions.SettingsManage).DisableAntiforgery();
         settings.MapDelete("/logo", async (CmmsDbContext db, IFileStorage storage, CancellationToken ct) =>
         {
             var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
-            if (t.Settings.LogoVersion is not null) await storage.DeleteAsync(Logos.Key(db.CurrentTenantId), ct);
+            if (t.Settings.LogoVersion is not null)
+            {
+                await storage.DeleteAsync(Logos.Key(db.CurrentTenantId), ct);
+                FourC.Cmms.Core.Auditing.AuditLog.Event(db, "Tenant", t.Id, "SettingsChanged", new Dictionary<string, object?> { ["settings.logo"] = new { from = "Logo", to = (string?)null } });
+            }
             t.Settings = Logos.With(t.Settings, null, null);
             await db.SaveChangesAsync(ct);
             return Results.NoContent();

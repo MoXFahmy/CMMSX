@@ -26,7 +26,7 @@ sites and the organization-wide changes (settings, users, parts…), but not the
 - **Passwords expire after**: 0 (never, the default) or 30 to 730 days. An expired password must be renewed at sign-in ("Your
   password has expired. Choose a new one."). Expiry also reaches devices already signed in: their next request is refused, the web
   goes to the sign-in page with that notice and back to the page afterwards, and the phone shows the same while keeping its waiting
-  changes, sending them once the person is back.
+  changes, sending them once the person is back. Choosing a new password signs the person out on their other devices.
 - **Recent passwords that can't be reused**: 0 to 24. The current password can never be chosen again, even at 0 ("You used this
   password recently. Choose another one.").
 
@@ -80,8 +80,10 @@ What happens:
 
 - **Every change**: records and their lines (a work order's labour, parts, costs, checklist steps and comments; purchase order
   lines, approval steps and signatures; contract periods and amendments; stock levels and count lines; files), users and roles,
-  organization settings (each changed setting with its old and new value), and security settings.
-- **Security events**: signed in, sign-in failed (for a known user, never with the password typed), locked out, signed out, device
+  organization settings (each changed setting with its old and new value, the organization's name, the lists' wording and the logo),
+  and security settings.
+- **Security events**: signed in, sign-in failed (for a known user, never with the password typed), locked out (once, not for each
+  try while locked), signed out, device
   signed out (and by whom), password changed, password renewed, other sessions ended by one session per person, anonymised.
 - **Not in the log**: the stock ledger, unit movements, meter readings, device sessions, password history, e-mails sent and other
   system rows; they have their own screens.
@@ -95,11 +97,12 @@ What happens:
 - **Filters**: dates, person, source, record type, action and a search (record number or name, person, changed values). Export to
   Excel or CSV.
 - **History tab**: each record's History tab shows the same entries, its lines' entries included, with the source when it wasn't
-  the web.
+  the web. The history of a person's sign-in, of roles and of the organization's settings needs *Manage users* or *Manage
+  settings*.
 
 **Keeping changes**: **Settings › Security › Activity log › Keep changes for** 12 to 120 months, or empty to keep everything (the
-default). Each night, older changes are deleted; they also leave each record's History tab. Newer changes are never touched, and
-other organizations' settings don't affect yours.
+default). Older changes are deleted in the background (checked about every hour, a little at a time); they also leave each
+record's History tab. Newer changes are never touched, and other organizations' settings don't affect yours.
 
 The settings pages show who last changed a security setting and when.
 

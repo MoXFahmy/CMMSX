@@ -394,12 +394,13 @@ public sealed class PmSchedulerService(IServiceScopeFactory scopes, IConfigurati
 {
     protected override async Task ExecuteAsync(CancellationToken stop)
     {
-        if (!config.GetValue("Pm:AutoGenerate", true)) return;
+        // With automatic PM generation switched off on this server, the activity log's retention still runs (0.25.0).
+        var generate = config.GetValue("Pm:AutoGenerate", true);
         try { await Task.Delay(TimeSpan.FromSeconds(config.GetValue("Pm:SchedulerStartDelaySeconds", 60)), stop); } catch (OperationCanceledException) { return; }
         var interval = TimeSpan.FromMinutes(Math.Max(1, config.GetValue("Pm:SchedulerIntervalMinutes", 60)));
         while (!stop.IsCancellationRequested)
         {
-            try { await RunOnceAsync(stop); }
+            try { if (generate) await RunOnceAsync(stop); else await TrimActivityAsync(stop); }
             catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "PM scheduler run failed"); }
             try { await Task.Delay(interval, stop); } catch (OperationCanceledException) { return; }
         }
@@ -416,7 +417,6 @@ public sealed class PmSchedulerService(IServiceScopeFactory scopes, IConfigurati
             // Due dates written without a due time since the last run (an older server during a deploy, an import) get theirs.
             await FourC.Cmms.Core.Services.DueBackfill.RunAsync(root, ct);
             await Housekeeping.TrimAsync(root, DateTimeOffset.UtcNow, ct);
-            await Housekeeping.TrimActivityAsync(root, DateTimeOffset.UtcNow, ct);
         }
         foreach (var tenantId in tenantIds)
         {
@@ -425,6 +425,20 @@ public sealed class PmSchedulerService(IServiceScopeFactory scopes, IConfigurati
                 scope.ServiceProvider.GetService<EmailOutbox>())).Sum(r => r.Made);
             if (created > 0) log.LogInformation("PM scheduler created {Count} work orders for tenant {Tenant}", created, tenantId);
         }
+        await TrimActivityAsync(ct);
+    }
+
+    /// <summary>The activity log's retention (0.25.0), after the PM run and on its own: a failure here never stops PM generation.</summary>
+    public async Task TrimActivityAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var scope = scopes.CreateScope();
+            await using var root = new CmmsDbContext(scope.ServiceProvider.GetRequiredService<DbContextOptions<CmmsDbContext>>(), new FixedTenantContext(null));
+            var deleted = await Housekeeping.TrimActivityAsync(root, DateTimeOffset.UtcNow, ct);
+            if (deleted > 0) log.LogInformation("Activity log retention removed {Count} older entries", deleted);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Activity log retention failed"); }
     }
 }
 

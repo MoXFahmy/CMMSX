@@ -24,7 +24,7 @@ public static class Housekeeping
     /// Deletes activity log entries older than each organization's chosen retention (0.25.0); organizations that keep
     /// everything (no retention set) are left alone.
     /// </summary>
-    public static async Task<int> TrimActivityAsync(CmmsDbContext db, DateTimeOffset now, CancellationToken ct = default)
+    public static async Task<int> TrimActivityAsync(CmmsDbContext db, DateTimeOffset now, CancellationToken ct = default, int batchSize = 2000)
     {
         var keeps = (await db.Tenants.IgnoreQueryFilters().AsNoTracking().ToListAsync(ct))
             .Where(t => t.Settings.Security?.ActivityRetentionMonths is > 0)
@@ -33,7 +33,14 @@ public static class Housekeeping
         foreach (var (tenantId, months) in keeps)
         {
             var before = now.AddMonths(-months);
-            deleted += await db.AuditEntries.IgnoreQueryFilters().Where(a => a.TenantId == tenantId && a.Timestamp < before).ExecuteDeleteAsync(ct);
+            // In small batches, so a first run over years of changes never locks the table every save writes to.
+            while (true)
+            {
+                var n = await db.Database.ExecuteSqlInterpolatedAsync(
+                    $"DELETE TOP ({batchSize}) FROM [AuditEntries] WHERE [TenantId] = {tenantId} AND [Timestamp] < {before}", ct);
+                deleted += n;
+                if (n < batchSize) break;
+            }
         }
         return deleted;
     }

@@ -10,16 +10,16 @@ public static class SettingsDiff
 {
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web) { Converters = { new JsonStringEnumConverter() } };
 
-    /// <summary>Keys kept as they are by the general settings page; they change (and are logged) through their own pages.</summary>
+    /// <summary>Keys kept as they are by the general settings page; they change (and are logged) through their own pages (security, lists, logo).</summary>
     private static readonly HashSet<string> Skipped = ["security", "listLabels", "logoVersion", "logoContentType"];
 
     /// <summary>{ "settings.timeZone": { from, to }, … } for every changed key, compared as JSON.</summary>
-    public static Dictionary<string, object?> Changes(TenantSettings before, TenantSettings after)
+    public static Dictionary<string, object?> Changes(TenantSettings before, TenantSettings after, string? keep = null)
     {
         var a = JsonSerializer.SerializeToNode(before, Json)!.AsObject();
         var b = JsonSerializer.SerializeToNode(after, Json)!.AsObject();
         var changes = new Dictionary<string, object?>();
-        foreach (var key in a.Select(p => p.Key).Union(b.Select(p => p.Key)).Where(k => !Skipped.Contains(k)).Order(StringComparer.Ordinal))
+        foreach (var key in a.Select(p => p.Key).Union(b.Select(p => p.Key)).Where(k => keep is null ? !Skipped.Contains(k) : k == keep).Order(StringComparer.Ordinal))
         {
             var from = a[key];
             var to = b[key];

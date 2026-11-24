@@ -43,17 +43,19 @@ public static class AnonymiseEndpoints
     {
         var g = api.MapGroup("/anonymise").WithTags("Users").RequirePermission(Permissions.UsersManage);
 
-        g.MapGet("/preview", async (Guid? employeeId, Guid? userId, CmmsDbContext db, CancellationToken ct) =>
+        g.MapGet("/preview", async (Guid? employeeId, Guid? userId, HttpContext http, CmmsDbContext db, CancellationToken ct) =>
         {
             if (await FindAsync(db, employeeId, userId, ct) is not { } p) return Results.NotFound();
+            await InsideAsync(http, db, p, ct);
             var same = await SameNameAsync(db, p, ct);
             var records = Blocked(p) is null ? await RunAsync(db, p, same.Count > 0, apply: false, ct) : 0;
             return Results.Ok(new { p.Placeholder, p.ConfirmWith, records, sameNameAs = same, blocked = Blocked(p) is { } b ? Translator.T(b) : null });
         });
 
-        g.MapPost("/", async (AnonymiseInput input, CmmsDbContext db, IMemoryCache cache, CancellationToken ct) =>
+        g.MapPost("/", async (AnonymiseInput input, HttpContext http, CmmsDbContext db, IMemoryCache cache, CancellationToken ct) =>
         {
             if (await FindAsync(db, input.EmployeeId, input.UserId, ct) is not { } p) return Results.NotFound();
+            await InsideAsync(http, db, p, ct);
             if (Blocked(p) is { } blocked) return new Validator().When(true, "confirm", blocked).Problem();
             var typed = input.Confirm?.Trim() ?? "";
             if (!typed.Equals(p.ConfirmWith, StringComparison.OrdinalIgnoreCase) && !typed.Equals(p.Placeholder, StringComparison.OrdinalIgnoreCase))
@@ -71,6 +73,13 @@ public static class AnonymiseEndpoints
             });
             return Results.Ok(new { p.Placeholder });
         });
+    }
+
+    /// <summary>Like every other change to a person's sign-in: only someone whose access covers theirs (a site-limited manager can't).</summary>
+    private static async Task InsideAsync(HttpContext http, CmmsDbContext db, Person p, CancellationToken ct)
+    {
+        if (p.User is not null && await UserAccessRules.OutsideAsync(db, Access.Of(http) ?? UserAccess.Everything, p.User, ct) is { } outside)
+            throw new DomainException(outside);
     }
 
     private static async Task<Person?> FindAsync(CmmsDbContext db, Guid? employeeId, Guid? userId, CancellationToken ct)
