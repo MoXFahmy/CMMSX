@@ -21,6 +21,7 @@ import { CalendarsTab } from './CalendarsTab';
 import { MeasurementPointsTab } from './MeasurementPointsTab';
 import { fmtDate, fmtDateTime, fmtMoney, fmtNumber, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { BulkBar, FilterChips, ListTools, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
+import { apiQuery } from '@/components/list/apiQueries';
 
 const TABS = ['schedules', 'tasks', 'calendars', 'points', 'generate', 'forecast', 'meters'] as const;
 
@@ -56,7 +57,7 @@ function SchedulesTab() {
   const lp = useListParams<PmScheduleListItem>({ sort: 'nextDueDate', dir: 'asc' });
   const { p, set } = lp;
   const { data: h } = useHierarchy();
-  const listQuery = { search: p('search'), siteId: p('siteId'), activeOnly: p('showInactive') !== 'true', sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
+  const listQuery = apiQuery('pm-schedules', lp.params, can);
   const { data, isFetching } = useQuery({
     queryKey: ['pm-schedules', listQuery, lp.page, lp.pageSize], placeholderData: (prev) => prev,
     queryFn: () => get<Paged<PmScheduleListItem>>('/pm-schedules', { ...listQuery, page: lp.page, pageSize: lp.pageSize }),

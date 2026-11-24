@@ -611,7 +611,8 @@
     "dueAtHint": "اتركه فارغًا لاستخدام هدف الأولوية",
     "completedSince": "مكتمل منذ",
     "cancelReason": "سبب الإلغاء",
-    "completedUntil": "اكتمل حتى"
+    "completedUntil": "اكتمل حتى",
+    "unassigned": "غير مُسند"
   },
   "wr": {
     "title": "طلبات العمل",

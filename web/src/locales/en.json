@@ -611,7 +611,8 @@
     "dueAtHint": "Leave empty to use the priority's target",
     "completedSince": "Completed since",
     "cancelReason": "Cancel reason",
-    "completedUntil": "Completed until"
+    "completedUntil": "Completed until",
+    "unassigned": "Unassigned"
   },
   "wr": {
     "title": "Work requests",

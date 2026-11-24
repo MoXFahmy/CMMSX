@@ -21,6 +21,7 @@ import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, notifyError } from '@/components/utils';
 import { StoppedBadge } from '@/components/AccessWindowsEditor';
 import { ChangeCostCentreModal } from './ChangeCostCentre';
+import { apiQuery, WO_TABS } from '@/components/list/apiQueries';
 import { BulkBar, FilterChips, ListTools, listText, rangeText, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 import { listItems } from '@/components/listLabels';
 import { groupData, useAssetGroups } from '@/components/ReferencePickers';
@@ -29,11 +30,6 @@ import { groupData, useAssetGroups } from '@/components/ReferencePickers';
 const EXTRA_FILTERS = ['locationId', 'assetId', 'assetGroupId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source', 'completedFrom', 'cancelReasonId', 'onlyWhenStopped', 'groupId',
   'completedTo', 'symptomId', 'causeId', 'remedyId', 'inFailureTree'] as const;
 const isoDay = (d: string | Date | null) => (d ? dayjs(d).format('YYYY-MM-DD') : null);
-
-const TABS: { key: string; statuses: WorkOrderStatus[] | null }[] = [
-  { key: 'active', statuses: ['Open', 'InProgress', 'OnHold'] }, { key: 'Open', statuses: ['Open'] }, { key: 'InProgress', statuses: ['InProgress'] },
-  { key: 'OnHold', statuses: ['OnHold'] }, { key: 'Completed', statuses: ['Completed'] }, { key: 'Closed', statuses: ['Closed'] }, { key: 'all', statuses: null },
-];
 
 /** Statuses a bulk change offers; closing, cancelling (and reopening those) need the close permission, as one at a time. */
 const BULK_STATUSES: WorkOrderStatus[] = ['InProgress', 'OnHold', 'Completed', 'Open', 'Closed', 'Cancelled'];
@@ -49,17 +45,9 @@ export function WorkOrdersPage() {
   const { p, set } = lp;
   const tab = p('tab') || 'active';
   const view = p('view') || 'everyone';
-  const statuses = TABS.find((x) => x.key === tab)?.statuses ?? null;
-  const base = {
-    search: p('search'), siteId: p('siteId'), priority: p('priority'), type: p('type'), tradeId: p('tradeId'), assetId: p('assetId'), assetGroupId: p('assetGroupId'),
-    mine: view === 'mine' ? 'true' : '', overdue: view === 'overdue' ? 'true' : '',
-    dueSoon: view === 'dueSoon' ? 'true' : '', responseLate: view === 'responseLate' ? 'true' : '',
-    locationId: p('locationId'), assigneeId: p('assigneeId'), teamId: p('teamId'), createdFrom: p('createdFrom'), createdTo: p('createdTo'),
-    dueFrom: p('dueFrom'), dueTo: p('dueTo'), source: p('source'), completedFrom: p('completedFrom'),
-    cancelReasonId: p('cancelReasonId'), onlyWhenStopped: p('onlyWhenStopped'), groupId: p('groupId'),
-    completedTo: p('completedTo'), symptomId: p('symptomId'), causeId: p('causeId'), remedyId: p('remedyId'), inFailureTree: p('inFailureTree'),
-  };
-  const listQuery = { ...base, status: statuses ?? undefined, sort: String(lp.sort.columnAccessor), dir: lp.sort.direction };
+  const listQuery = apiQuery('work-orders', lp.params, can);
+  /** The filters without tab and sort: the counts on the tabs. */
+  const base = Object.fromEntries(Object.entries(listQuery).filter(([k]) => !['status', 'sort', 'dir'].includes(k)));
   const { data, isFetching } = useQuery({
     queryKey: ['work-orders', listQuery, lp.page, lp.pageSize],
     queryFn: () => get<Paged<WorkOrderListItem>>('/work-orders', { ...listQuery, page: lp.page, pageSize: lp.pageSize }),
@@ -187,7 +175,7 @@ export function WorkOrdersPage() {
       <Card p="sm" mb="md">
         <Group gap="xs" align="center" wrap="wrap">
           <SegmentedControl value={view} onChange={(v) => set({ view: v === 'everyone' ? null : v })} data={[
-            { value: 'everyone', label: t('wo.all') }, { value: 'mine', label: t('wo.mine') },
+            { value: 'everyone', label: t('wo.all') }, { value: 'mine', label: t('wo.mine') }, { value: 'unassigned', label: t('wo.unassigned') },
             { value: 'overdue', label: `${t('sla.lateFilter')}${summary?.overdue ? ` (${summary.overdue})` : ''}` },
             { value: 'dueSoon', label: t('sla.dueSoonFilter') }, { value: 'responseLate', label: t('sla.notStartedFilter') },
           ]} />
@@ -238,7 +226,7 @@ export function WorkOrdersPage() {
       </Card>
       <Tabs value={tab} onChange={(v) => set({ tab: v === 'active' ? null : v })} mb="sm">
         <Tabs.List>
-          {TABS.map((x) => (
+          {WO_TABS.map((x) => (
             <Tabs.Tab key={x.key} value={x.key} rightSection={<Badge size="xs" variant="default" circle={count(x.statuses) < 10}>{count(x.statuses)}</Badge>}>
               {x.key === 'active' ? t('wo.active') : x.key === 'all' ? t('wo.all') : t(`woStatus.${x.key}`)}
             </Tabs.Tab>
