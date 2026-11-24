@@ -9,7 +9,7 @@ import { DataTable } from 'mantine-datatable';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { get } from '@/api/client';
-import type { ActivityRow, User } from '@/api/types';
+import type { ActivityRow } from '@/api/types';
 import { exportUrl } from '@/components/list/ListTools';
 import type { ListColumn } from '@/components/list/types';
 import { fmtDateTime } from '@/components/utils';
@@ -36,7 +36,8 @@ export function ActivityLog() {
   const query = {
     from: range[0], to: range[1], userId, source, entityType, action, changeId, search: debounced.trim() || undefined,
   };
-  const { data: users } = useQuery({ queryKey: ['users'], queryFn: () => get<User[]>('/users') });
+  // The organization's people and service accounts, without needing Manage users (0.26.1).
+  const { data: users } = useQuery({ queryKey: ['activity-people'], queryFn: () => get<{ id: string; fullName: string }[]>('/activity/people') });
   const { data, isFetching } = useQuery({
     queryKey: ['activity', query, page],
     queryFn: () => get<{ items: ActivityRow[]; total: number }>('/activity', { ...query, page, pageSize: PAGE_SIZE }),

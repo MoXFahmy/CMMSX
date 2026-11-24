@@ -90,7 +90,8 @@ public static class AnonymiseEndpoints
         if (employeeId is { } eid && (e = await db.Employees.FirstOrDefaultAsync(x => x.Id == eid, ct)) is null) return null;
         // A sign-in that belongs to an employee is anonymised as that employee.
         if (e is null && userId is { } linked) e = await db.Employees.FirstOrDefaultAsync(x => x.UserId == linked, ct);
-        var uid = e?.UserId ?? userId;
+        // A named employee brings only their own linked sign-in; a sign-in sent with them is ignored (0.26.1).
+        var uid = employeeId is not null ? e!.UserId : e?.UserId ?? userId;
         var u = uid is { } id ? await db.Users.FirstOrDefaultAsync(x => x.Id == id && x.TenantId == tenantId, ct) : null;
         if (e is null && u is null) return null;
         var arabic = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == tenantId, ct)).Settings.DefaultLanguage == Languages.Arabic;
@@ -157,8 +158,21 @@ public static class AnonymiseEndpoints
             total += apply ? await requests.ExecuteUpdateAsync(s => s.SetProperty(r => r.RequesterEmail, (string?)null).SetProperty(r => r.RequesterPhone, (string?)null), ct)
                 : await requests.CountAsync(ct);
         }
+        // The e-mail log: rows sent to their address, or to their name when no one else shares it (0.26.1). Subjects and bodies stay.
+        total += await MailAsync(db, p, clash, apply, ct);
         total += await LogAsync(db, p, clash, linked, apply, ct);
         return total;
+    }
+
+    private static async Task<int> MailAsync(CmmsDbContext db, Person p, bool clash, bool apply, CancellationToken ct)
+    {
+        var emails = p.Emails;
+        var names = clash ? [] : p.Names;
+        if (emails.Count == 0 && names.Count == 0) return 0;
+        var address = p.User is not null ? p.NewEmail : $"anonymised-{p.Employee!.Id}@invalid";
+        var rows = db.OutboundEmails.IgnoreQueryFilters().Where(m => m.TenantId == p.TenantId
+            && (emails.Contains(m.ToAddress.Trim()) || (m.ToName != null && names.Contains(m.ToName.Trim()))));
+        return apply ? await rows.ExecuteUpdateAsync(s => s.SetProperty(m => m.ToAddress, address).SetProperty(m => m.ToName, p.Placeholder), ct) : await rows.CountAsync(ct);
     }
 
     /// <summary>One name column: rows carrying the person's (user) id, then, unless text is off, rows with no id whose text is their name.</summary>
