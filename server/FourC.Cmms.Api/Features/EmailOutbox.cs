@@ -1,6 +1,7 @@
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
+using FourC.Cmms.Core.Settings;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Notifications;
 using FourC.Cmms.Core.Purchasing;
@@ -377,9 +378,71 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
                 $"{l.Quantity:0.###} {l.UnitOfMeasure}".Trim(), Money(l.NetUnitPrice), Money(l.LineTotal)))],
             [(Translator.T("Subtotal"), Money(PurchaseOrderMath.Subtotal(po))), (Translator.T($"Tax ({po.TaxPercent:0.##}%)"), Money(PurchaseOrderMath.Tax(po))),
              (Translator.T("Shipping"), Money(po.ShippingCost)), (Translator.T("Total"), Money(PurchaseOrderMath.Total(po)))]);
+        // The order's print layout shapes the e-mail too (0.23.0); with none, the e-mail stays as it always was.
+        var layouts = await db.PrintLayouts.AsNoTracking().Where(l => l.Paper == PrintPapers.PurchaseOrder).ToListAsync(ct);
+        var layout = PrintLayoutRules.Pick(layouts, po.SiteId, po.OrderTypeId?.ToString(), PrintPapers.PurchaseOrder);
+        Func<PoEmailLayout>? laidOut = null;
+        if (layout.Id != Guid.Empty)
+        {
+            var partIds = po.Lines.Where(l => l.PartId is not null).Select(l => l.PartId!.Value).Distinct().ToList();
+            var partNumbers = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).ToDictionaryAsync(p => p.Id, p => p.PartNumber, ct);
+            var orderType = po.OrderTypeId is { } ot ? await db.OrderTypes.AsNoTracking().Where(t => t.Id == ot).Select(t => t.Name).FirstOrDefaultAsync(ct) : null;
+            laidOut = () => PoEmail(po, supplier, layout, partNumbers, orderType, Money);
+        }
         await QueueAsync(db, ctx, EmailEvents.PoSent, [new EmailRecipient(supplier.Email, supplier.ContactName ?? supplier.Name, null)],
-            org => EmailTemplates.PurchaseOrder(org, Doc()), "PurchaseOrder", po.Id, ct, ignoreToggles: true, siteId: po.SiteId, siteLevel: true);
+            org => EmailTemplates.PurchaseOrder(org, Doc(), laidOut?.Invoke()), "PurchaseOrder", po.Id, ct, ignoreToggles: true, siteId: po.SiteId, siteLevel: true);
         return null;
+    }
+
+    /// <summary>The order as its layout shows it, in the e-mail's language (built per recipient, inside the language scope).</summary>
+    private static PoEmailLayout PoEmail(PurchaseOrder po, Supplier supplier, PrintLayout layout, IReadOnlyDictionary<Guid, string> partNumbers, string? orderType,
+        Func<decimal, string> money)
+    {
+        const string paper = PrintPapers.PurchaseOrder;
+        var ar = Translator.CurrentLanguage == "ar";
+        // The e-mail's language when filled in, otherwise the other one: a text typed in one language still reaches the supplier.
+        string? Text(string? en, string? arText) => ar ? (string.IsNullOrWhiteSpace(arText) ? en : arText) : (string.IsNullOrWhiteSpace(en) ? arText : en);
+        PrintBlock? Block(string key) => layout.Blocks.FirstOrDefault(b => b.Key == key && b.Shown);
+        bool Has(string key, string field) => PrintPapers.FixedFields(paper).Contains($"{key}.{field}") || (Block(key)?.Fields.Contains(field) ?? false);
+
+        var facts = new List<(string, string?)>();
+        if (Has("header", "orderDate")) facts.Add(("Order date", Translator.Date(po.OrderDate)));
+        if (Has("header", "expectedDate")) facts.Add(("Deliver by", po.ExpectedDate is { } ed ? Translator.Date(ed) : null));
+        if (Has("header", "deliveryAddress")) facts.Add(("Deliver to", po.DeliverTo));
+        if (Has("details", "paymentTerms")) facts.Add(("Payment terms", po.PaymentTerms));
+        if (Has("details", "quoteRef")) facts.Add(("Your quote", po.SupplierQuoteRef));
+        if (Has("details", "shippingMethod")) facts.Add(("Shipping method", po.ShippingMethod));
+        if (Has("details", "requestedBy")) facts.Add(("Contact", po.RequestedBy));
+        if (Has("details", "currency")) facts.Add(("Currency", po.Currency));
+        if (Has("details", "orderType")) facts.Add(("Order type", orderType));
+
+        var supplierLines = new List<string>();
+        if (Block("supplier") is not null)
+        {
+            if (Has("supplier", "name")) supplierLines.Add(supplier.Name);
+            if (Has("supplier", "contact") && supplier.ContactName is { Length: > 0 } contact) supplierLines.Add(contact);
+            if (Has("supplier", "address"))
+                supplierLines.AddRange(new[] { supplier.Address, string.Join(", ", new[] { supplier.City, supplier.Country }.Where(x => !string.IsNullOrWhiteSpace(x))) }
+                    .Where(x => !string.IsNullOrWhiteSpace(x))!);
+            if (Has("supplier", "email") && supplier.Email is { Length: > 0 } email) supplierLines.Add(email);
+            if (Has("supplier", "phone") && supplier.Phone is { Length: > 0 } phone) supplierLines.Add(phone);
+            if (Has("supplier", "taxNumber") && supplier.TaxNumber is { Length: > 0 } tax) supplierLines.Add($"{Translator.T("Tax number")}: {tax}");
+        }
+
+        var columns = PrintPapers.Blocks(paper).Single(b => b.Key == "lines").Fields.Where(f => Has("lines", f)).ToList();
+        var discountShown = columns.Contains("discount");
+        var lines = po.Lines.OrderBy(l => l.LineNumber).Select(l => new PoEmailLine(l.LineNumber, l.PartId is { } pid ? partNumbers.GetValueOrDefault(pid) : null,
+            l.Description, l.SupplierPartNumber, $"{l.Quantity:0.###}", l.UnitOfMeasure ?? "", money(discountShown ? l.UnitPrice : l.NetUnitPrice),
+            l.DiscountPercent > 0 ? $"{l.DiscountPercent:0.##}%" : "", money(l.LineTotal))).ToList();
+
+        var totals = new List<(string, string)>();
+        if (Has("totals", "subtotal")) totals.Add((Translator.T("Subtotal"), money(PurchaseOrderMath.Subtotal(po))));
+        if (Has("totals", "tax")) totals.Add((Translator.T($"Tax ({po.TaxPercent:0.##}%)"), money(PurchaseOrderMath.Tax(po))));
+        if (Has("totals", "shipping")) totals.Add((Translator.T("Shipping"), money(po.ShippingCost)));
+        if (Has("totals", "total")) totals.Add((Translator.T("Total"), money(PurchaseOrderMath.Total(po))));
+
+        return new PoEmailLayout(facts, supplierLines, columns, lines, totals, Block("notes") is not null ? po.Notes : null,
+            Text(layout.HeaderText, layout.HeaderTextAr), Text(layout.FooterText, layout.FooterTextAr), Block("terms") is not null ? Text(layout.Terms, layout.TermsAr) : null);
     }
 
     /// <summary>"Send me a test e-mail": works before the organization switches e-mail on, to check the setup.</summary>

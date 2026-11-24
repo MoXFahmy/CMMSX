@@ -15,6 +15,7 @@ import { WorkOrderDetailPage } from './pages/work/WorkOrderDetailPage';
 import { WorkOrderFormPage } from './pages/work/WorkOrderFormPage';
 import { WorkGroupDetailPage, WorkGroupsPage } from './pages/work/WorkGroupPages';
 import { WorkRequestsPage } from './pages/work/WorkRequestsPage';
+import { RequestPrintPage } from './pages/work/RequestPrintPage';
 import { PeoplePage } from './pages/people/PeoplePage';
 import { PmPage } from './pages/pm/PmPage';
 import { PmScheduleFormPage } from './pages/pm/PmScheduleFormPage';
@@ -62,6 +63,7 @@ export function App() {
   return (
     <Routes>
       <Route path="purchasing/orders/:id/print" element={<PoPrintPage />} />
+      <Route path="work-requests/:id/print" element={<RequestPrintPage />} />
       <Route path="work-orders/:id/print" element={<WorkOrderPrintPage />} />
       <Route path="labels" element={<LabelsPage />} />
       <Route path="q/:type/:id" element={<QrRedirect />} />

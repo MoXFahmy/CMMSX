@@ -44,6 +44,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<SavedView> SavedViews => Set<SavedView>();
     public DbSet<UserListSetting> UserListSettings => Set<UserListSetting>();
     public DbSet<RoleListSetting> RoleListSettings => Set<RoleListSetting>();
+    public DbSet<PrintLayout> PrintLayouts => Set<PrintLayout>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<Site> Sites => Set<Site>();
@@ -447,6 +448,19 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<WorkOrder>().HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
         b.Entity<PmSchedule>().HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
         b.Entity<StockTransaction>().HasOne<Costs.CostCentre>().WithMany().HasForeignKey(x => x.CostCentreId).OnDelete(DeleteBehavior.NoAction);
+        b.Entity<PrintLayout>(e =>
+        {
+            ConfigureTenantEntity(e);
+            e.Property(x => x.Paper).HasMaxLength(20); e.Property(x => x.Name).HasMaxLength(60); e.Property(x => x.KindKey).HasMaxLength(60);
+            e.Property(x => x.PaperSize).HasMaxLength(10); e.Property(x => x.LabelSize).HasMaxLength(20);
+            e.Property(x => x.HeaderText).HasMaxLength(500); e.Property(x => x.HeaderTextAr).HasMaxLength(500);
+            e.Property(x => x.FooterText).HasMaxLength(500); e.Property(x => x.FooterTextAr).HasMaxLength(500);
+            e.Property(x => x.Terms).HasMaxLength(4000); e.Property(x => x.TermsAr).HasMaxLength(4000);
+            e.Property(x => x.Blocks).HasConversion(JsonConverter<List<PrintBlock>>()).HasDefaultValueSql("'[]'").Metadata.SetValueComparer(JsonComparer<List<PrintBlock>>());
+            e.Property(x => x.LabelFields).HasDefaultValueSql("'[]'");
+            e.HasOne<Site>().WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
+            e.HasIndex(x => new { x.TenantId, x.Paper, x.Name }).IsUnique().HasFilter("[IsDeleted] = 0");
+        });
         b.Entity<Team>(e =>
         {
             ConfigureTenantEntity(e);
@@ -1137,6 +1151,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<WorkOrderGroup>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
         b.Entity<PurchaseOrder>().HasQueryFilter(SiteFilter, e => CurrentSiteIds!.Contains(e.SiteId));
         b.Entity<Team>().HasQueryFilter(SiteFilter, e => e.SiteId == null || CurrentSiteIds!.Contains(e.SiteId.Value));
+        b.Entity<PrintLayout>().HasQueryFilter(SiteFilter, e => e.SiteId == null || CurrentSiteIds!.Contains(e.SiteId.Value));
         b.Entity<Costs.CostCentre>().HasQueryFilter(SiteFilter, e => e.SiteId == null || CurrentSiteIds!.Contains(e.SiteId.Value));
         b.Entity<AssetGroup>().HasQueryFilter(SiteFilter, e => e.SiteId == null || CurrentSiteIds!.Contains(e.SiteId.Value));
 

@@ -1,189 +1,46 @@
-import { Fragment, useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { imagesSettled } from './printWait';
-import { Button, Center, Group, Loader, SimpleGrid, Stack, Table, Text, Title } from '@mantine/core';
+import { Button, Center, Group, Loader } from '@mantine/core';
 import { useQuery } from '@tanstack/react-query';
 import { useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconPrinter } from '@tabler/icons-react';
 import { get } from '@/api/client';
-import type { WorkOrderDetail } from '@/api/types';
+import type { AssetDetail, CustomField, WorkOrderDetail } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
-import { printedStep } from '@/components/measure';
-import { OrgLogo } from '@/components/PrintHeader';
-import { fmtDate, fmtDateTime, fmtQty } from '@/components/utils';
+import { JobCardBody } from '@/print/JobCardBody';
+import { shows } from '@/print/layouts';
+import { PageSize } from '@/print/PrintTexts';
+import { LayoutChooser, readyToPrint, usePrintLayout } from '@/print/usePrintLayout';
 
-/** Blank rows for the technician to fill in by hand. */
-const BLANK_ROWS = 4;
-
-const line = { borderBottom: '1px solid #000', minHeight: 26 } as const;
-
-/** A paper job card for a work order: what to do, where, the checklist to tick, and room to record labour, parts and sign-off. */
+/** A paper job card for a work order, in the layout that applies to it (0.23.0; today's card when none is set up). */
 export function WorkOrderPrintPage() {
-  const { t } = useTranslation();
+  const { t, i18n } = useTranslation();
   const { id = '' } = useParams();
   const { me, terms } = useAuth();
   const { data: w } = useQuery({ queryKey: ['work-order', id], queryFn: () => get<WorkOrderDetail>(`/work-orders/${id}`) });
+  const { layout, matched, layouts, ready, choose } = usePrintLayout('job-card', id);
+  const wantsFields = !!layout && shows(layout, 'asset-fields') && !!w?.asset;
+  const { data: asset } = useQuery({ queryKey: ['asset', w?.asset?.id], queryFn: () => get<AssetDetail>(`/assets/${w!.asset!.id}`), enabled: wantsFields });
+  const { data: defs } = useQuery({ queryKey: ['custom-fields', 'Asset'], queryFn: () => get<CustomField[]>('/custom-fields', { entityType: 'Asset' }), enabled: wantsFields });
+  const printed = useRef(false);
+  const canPrint = readyToPrint({ record: !!w, layoutReady: ready, wantsFields, fieldsLoaded: !!asset && !!defs });
   useEffect(() => {
-    if (!w) return;
+    if (!w || !canPrint || printed.current) return;
+    printed.current = true;
     document.title = w.number;
     // Signature images must be loaded before the print dialog takes its snapshot (but a stalled one mustn't hold it up).
     const h = setTimeout(() => { void imagesSettled(Array.from(document.images), 5000).then(() => window.print()); }, 400);
     return () => clearTimeout(h);
-  }, [w]);
-  if (!w) return <Center h={300}><Loader /></Center>;
-
-  const location = w.locationTrail.map((l) => l.name).join(' › ');
-  const tasks = [...w.tasks].sort((a, b) => a.sequence - b.sequence);
-  // PM rounds list their assets in order, then any step not tied to one of them (as on the work order page); other work orders have one group.
-  const groups = w.assets.length > 0
-    ? [...w.assets.map((a) => ({ key: a.id, title: `${a.assetNumber} · ${a.name}` as string | null, tasks: tasks.filter((x) => x.assetId === a.id) })),
-      { key: 'other', title: null as string | null, tasks: tasks.filter((x) => !w.assets.some((a) => a.id === x.assetId)) }].filter((g) => g.title || g.tasks.length > 0)
-    : [{ key: 'all', title: null as string | null, tasks }];
-  // Net quantity per part, as on the work order's parts tab (returns subtract).
-  const parts = Object.values(w.parts.reduce<Record<string, { id: string; label: string; unit: string; qty: number }>>((a, p) => {
-    const x = (a[p.partId] ??= { id: p.partId, label: `${p.partNumber} · ${p.partName}`, unit: p.unitOfMeasure, qty: 0 });
-    x.qty += p.quantity; return a;
-  }, {})).filter((x) => x.qty !== 0);
-  const field = (label: string, value?: string | null) => (
-    <div><Text fz={10} c="dimmed" tt="uppercase" fw={600}>{label}</Text><Text fz="sm">{value || '—'}</Text></div>
-  );
-  const blanks = (cols: number) => Array.from({ length: BLANK_ROWS }, (_, i) => (
-    <Table.Tr key={`blank-${i}`}>{Array.from({ length: cols }, (__, c) => <Table.Td key={c} h={30} />)}</Table.Tr>
-  ));
-
+  }, [w, canPrint]);
+  if (!w || !layout) return <Center h={300}><Loader /></Center>;
+  const logoUrl = me?.tenant.settings.logoVersion ? `/api/settings/logo?v=${me.tenant.settings.logoVersion}` : null;
+  const assetFields = (defs ?? []).map((d) => ({ key: d.key, label: d.label, value: asset?.customFields?.[d.key] ?? null }));
   return (
     <div className="print-doc">
-      <Group justify="space-between" align="flex-start" mb="lg">
-        <Group gap="md" wrap="nowrap" align="flex-start"><OrgLogo height={56} /><Stack gap={2}><Title order={2}>{me?.tenant.name}</Title><Text c="dimmed">{w.site.name}</Text></Stack></Group>
-        <Stack gap={2} align="flex-end">
-          <Title order={3}>{t('jobCard.title')}</Title><Text fw={700} fz="lg">{w.number}</Text>
-          <Text fz="xs" c="dimmed">{t('jobCard.printed', { date: fmtDate(new Date().toISOString()) })}</Text>
-        </Stack>
-      </Group>
-
-      <Title order={4} mb="sm">{w.title}</Title>
-      <SimpleGrid cols={4} spacing="sm" mb="md">
-        {field(t('common.status'), t(`woStatus.${w.status}`))}
-        {field(t('priority.label'), t(`priority.${w.priority}`))}
-        {field(t('workType.label'), t(`workType.${w.type}`))}
-        {field(t('wo.trade'), w.tradeName)}
-        {field(terms.site, w.site.name)}
-        {field(terms.location, location)}
-        {field(terms.asset, w.asset ? `${w.asset.assetNumber} · ${w.asset.name}` : w.assets.length ? t('jobCard.assetCount', { count: w.assets.length }) : null)}
-        {field(t('jobCard.serial'), w.asset?.serialNumber)}
-        {field(t('wo.plannedStart'), w.plannedStart ? fmtDate(w.plannedStart) : null)}
-        {field(t('wo.due'), w.dueAt ? fmtDateTime(w.dueAt) : w.dueDate ? fmtDate(w.dueDate) : null)}
-        {field(t('wo.assignees'), w.assignees.map((a) => a.fullName).join(', '))}
-        {field(t('wo.requestedBy'), w.requestedBy ?? w.request?.requesterName)}
-      </SimpleGrid>
-
-      {w.description && <Text fz="sm" mb="md" style={{ whiteSpace: 'pre-wrap' }}>{w.description}</Text>}
-      {(w.asset?.notesToTechnician || w.locationNotesToTechnician) && (
-        <Stack gap={2} mb="md" p="xs" style={{ border: '1px solid #000' }}>
-          <Text fz="xs" fw={700} tt="uppercase">{t('wo.notesForTech')}</Text>
-          {w.asset?.notesToTechnician && <Text fz="sm" style={{ whiteSpace: 'pre-wrap' }}>{w.asset.notesToTechnician}</Text>}
-          {w.locationNotesToTechnician && <Text fz="sm" style={{ whiteSpace: 'pre-wrap' }}>{w.locationNotesToTechnician}</Text>}
-        </Stack>
-      )}
-      {w.asset?.underWarranty && (
-        <Text fz="sm" mb="md" fw={600}>{t('wo.underWarrantyTitle', { type: t(`warrantyType.${w.asset.warrantyType}`) })} — {t('wo.underWarrantyBody', { date: fmtDate(w.asset.warrantyExpiresOn) })}</Text>
-      )}
-
-      <Title order={5} mb={6}>{t('wo.tasks')}</Title>
-      <Table withTableBorder withColumnBorders verticalSpacing={6} mb="md">
-        <Table.Thead><Table.Tr>
-          <Table.Th w={36}>#</Table.Th><Table.Th>{t('jobCard.step')}</Table.Th><Table.Th w={44} ta="center">✓</Table.Th>
-          <Table.Th w={170}>{t('jobCard.result')}</Table.Th><Table.Th w={180}>{t('wo.remarks')}</Table.Th>
-        </Table.Tr></Table.Thead>
-        <Table.Tbody>
-          {groups.map((g) => (
-            <Fragment key={g.key}>
-              {g.title && <Table.Tr><Table.Td colSpan={5} fw={700} bg="var(--mantine-color-gray-1)">{g.title}</Table.Td></Table.Tr>}
-              {g.tasks.map((x, i) => (
-                <Table.Tr key={x.id}>
-                  <Table.Td>{i + 1}</Table.Td><Table.Td>{x.description}</Table.Td>
-                  <Table.Td ta="center" fz="lg">{printedStep(x, t).mark}</Table.Td>
-                  <Table.Td>{printedStep(x, t).result}</Table.Td><Table.Td>{x.remarks ?? ''}</Table.Td>
-                </Table.Tr>
-              ))}
-            </Fragment>
-          ))}
-          {tasks.length === 0 && blanks(5)}
-        </Table.Tbody>
-      </Table>
-
-      {(w.contractors?.length ?? 0) > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          <Title order={5} mb={6}>{t('contractors.title')}</Title>
-          <Table withTableBorder withColumnBorders verticalSpacing={4}>
-            <Table.Thead><Table.Tr><Table.Th>{t('contracts.company')}</Table.Th><Table.Th>{t('companies.category')}</Table.Th><Table.Th>{t('contractors.person')}</Table.Th>
-              <Table.Th ta="right">{t('contractors.planned')}</Table.Th><Table.Th ta="right">{t('contractors.done')}</Table.Th><Table.Th>{t('wo.date')}</Table.Th></Table.Tr></Table.Thead>
-            <Table.Tbody>
-              {w.contractors.map((l) => <Table.Tr key={l.id}><Table.Td>{l.companyName}</Table.Td><Table.Td>{l.categoryName ?? ''}</Table.Td><Table.Td>{l.personName ?? ''}</Table.Td>
-                <Table.Td ta="right">{l.plannedHours ? fmtQty(l.plannedHours) : ''}</Table.Td><Table.Td ta="right">{l.hoursDone ? fmtQty(l.hoursDone) : ''}</Table.Td><Table.Td>{l.doneOn ? fmtDate(l.doneOn) : ''}</Table.Td></Table.Tr>)}
-            </Table.Tbody>
-          </Table>
-        </div>
-      )}
-
-      <SimpleGrid cols={2} spacing="md" mb="md">
-        <div>
-          <Title order={5} mb={6}>{t('wo.labor')}</Title>
-          <Table withTableBorder withColumnBorders verticalSpacing={4}>
-            <Table.Thead><Table.Tr><Table.Th>{t('wo.date')}</Table.Th><Table.Th>{t('wo.who')}</Table.Th><Table.Th ta="right">{t('wo.hours')}</Table.Th><Table.Th ta="right">{t('wo.overtime')}</Table.Th></Table.Tr></Table.Thead>
-            <Table.Tbody>
-              {w.labor.map((l) => <Table.Tr key={l.id}><Table.Td>{fmtDate(l.workDate)}</Table.Td><Table.Td>{l.employeeName}</Table.Td><Table.Td ta="right">{fmtQty(l.hours)}</Table.Td><Table.Td ta="right">{l.overtimeHours ? fmtQty(l.overtimeHours) : ''}</Table.Td></Table.Tr>)}
-              {blanks(4)}
-            </Table.Tbody>
-          </Table>
-        </div>
-        <div>
-          <Title order={5} mb={6}>{t('wo.parts')}</Title>
-          <Table withTableBorder withColumnBorders verticalSpacing={4}>
-            <Table.Thead><Table.Tr><Table.Th>{t('jobCard.part')}</Table.Th><Table.Th ta="right">{t('plan.planned')}</Table.Th><Table.Th ta="right">{t('plan.used')}</Table.Th></Table.Tr></Table.Thead>
-            <Table.Tbody>
-              {/* Planned parts first, with room to write what was used; then parts issued without a plan. */}
-              {w.plannedParts.map((p) => <Table.Tr key={p.id}><Table.Td>{p.partNumber} · {p.partName}</Table.Td><Table.Td ta="right">{fmtQty(p.quantity)} {p.unitOfMeasure}</Table.Td><Table.Td /></Table.Tr>)}
-              {parts.filter((p) => !w.plannedParts.some((x) => x.partId === p.id)).map((p) => (
-                <Table.Tr key={p.id}><Table.Td>{p.label}</Table.Td><Table.Td ta="right">—</Table.Td><Table.Td ta="right">{fmtQty(p.qty)} {p.unit}</Table.Td></Table.Tr>
-              ))}
-              {blanks(3)}
-            </Table.Tbody>
-          </Table>
-        </div>
-      </SimpleGrid>
-
-      <Title order={5} mb={6}>{t('jobCard.completion')}</Title>
-      <Stack gap="sm" mb="md">
-        {[[t('wo.completionNotes'), w.completionNotes], [t('wo.causeNotes'), w.causeNotes], [t('wo.preventionNotes'), w.preventionNotes]].map(([label, value]) => (
-          <div key={label as string}><Text fz="xs" fw={600}>{label}</Text><Text fz="sm" style={line}>{value ?? ''}</Text>{!value && <div style={line} />}</div>
-        ))}
-        <SimpleGrid cols={3}>
-          {([[t('codes.symptom'), w.symptom], [t('codes.cause'), w.failureCode], [t('codes.remedy'), w.remedy]] as const).map(([label, c]) => (
-            <div key={label}><Text fz="xs" fw={600}>{label}</Text><Text fz="sm" style={line}>{c ? `${c.code} · ${c.name}` : ''}</Text></div>
-          ))}
-        </SimpleGrid>
-        <SimpleGrid cols={3}>
-          <div><Text fz="xs" fw={600}>{t('wo.assetWasDown')}</Text><Text fz="sm" style={line}>{w.completedAt ? (w.assetWasDown ? t('common.yes') : t('common.no')) : `${t('common.yes')} / ${t('common.no')}`}</Text></div>
-          <div><Text fz="xs" fw={600}>{t('wo.downtimeHours')}</Text><Text fz="sm" style={line}>{w.downtimeHours != null ? fmtQty(w.downtimeHours) : ''}</Text></div>
-        </SimpleGrid>
-      </Stack>
-
-      {w.signatures.length > 0 && (
-        <Group mt="lg" gap="xl" align="flex-end">
-          {w.signatures.map((s) => (
-            <Stack key={s.id} gap={2}>
-              <img src={`/api/attachments/${s.id}/content`} alt="" style={{ height: 60, maxWidth: 200, objectFit: 'contain' }} />
-              <Text fz="xs">{s.signedBy ?? ''} · {fmtDate(s.createdAt)}</Text>
-            </Stack>
-          ))}
-        </Group>
-      )}
-      <Group mt={48} grow>
-        {[t('jobCard.technician'), t('jobCard.supervisor'), t('jobCard.signDate')].map((label) => (
-          <Stack key={label} gap={2}><div style={{ borderTop: '1px solid #000' }} /><Text fz="xs">{label}</Text></Stack>
-        ))}
-      </Group>
+      <PageSize size={layout.paperSize} />
+      <LayoutChooser layout={layout} matched={matched} layouts={layouts} onChange={choose} />
+      <JobCardBody w={w} layout={layout} orgName={me?.tenant.name ?? ''} terms={terms} logoUrl={logoUrl} language={i18n.language} assetFields={assetFields} />
       <Group justify="center" mt="xl" className="no-print"><Button onClick={() => window.print()} leftSection={<IconPrinter size={16} />}>{t('wo.printJobCard')}</Button></Group>
     </div>
   );

@@ -205,6 +205,7 @@ api.MapTechEndpoints();
 FourC.Cmms.Api.Features.Ai.AiEndpoints.MapAiEndpoints(api);
 api.MapTechActions();
 api.MapLabelEndpoints();
+api.MapPrintLayoutEndpoints();
 
 app.MapFallbackToFile("index.html");
 app.Run();

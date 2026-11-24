@@ -29,6 +29,17 @@ public sealed record PoDocument(string Number, string OrderDate, string? Expecte
 
 public sealed record PoDocumentLine(int Number, string Description, string Quantity, string UnitPrice, string Total);
 
+/// <summary>
+/// A purchase order e-mail shaped by the order's print layout (0.23.0): the facts, supplier lines, line columns and totals the
+/// layout shows, and its texts already chosen for the e-mail's language. Labels are English, translated when rendered.
+/// </summary>
+public sealed record PoEmailLayout(IReadOnlyList<(string Label, string? Value)> Facts, IReadOnlyList<string> SupplierLines, IReadOnlyList<string> Columns,
+    IReadOnlyList<PoEmailLine> Lines, IReadOnlyList<(string Label, string Value)> Totals, string? Notes, string? Header, string? Footer, string? Terms);
+
+/// <summary>A line of a laid-out order e-mail, every column as text (unit price is after discount when the discount column is hidden).</summary>
+public sealed record PoEmailLine(int Number, string? PartNumber, string Description, string? SupplierPartNumber, string Quantity, string Unit,
+    string UnitPrice, string Discount, string Total);
+
 /// <summary>Facts about a work request that e-mails mention.</summary>
 public sealed record RequestFacts(string Number, string Title, LocalWords Priority, string? Place);
 
@@ -134,8 +145,9 @@ public static class EmailTemplates
         [.. WorkOrderLines(w), ("Order", poNumber)], string.Join("\n", lines), link, "Open the work order");
 
     /// <summary>The order itself, for a supplier with no account: every line and the totals in the e-mail, no link.</summary>
-    public static EmailContent PurchaseOrder(string org, PoDocument po)
+    public static EmailContent PurchaseOrder(string org, PoDocument po, PoEmailLayout? layout = null)
     {
+        if (layout is not null) return LaidOutPurchaseOrder(org, po.Number, layout);
         var table = new StringBuilder("<table role=\"presentation\" style=\"width:100%;border-collapse:collapse;margin:8px 0 16px;font-size:14px\">");
         var (start, end) = Translator.CurrentLanguage == "ar" ? ("right", "left") : ("left", "right");
         table.Append($"<tr style=\"background:#e9edf1\"><th align=\"{start}\" style=\"padding:6px\">#</th><th align=\"{start}\" style=\"padding:6px\">{EmailText.Html(Translator.T("Item"))}</th>"
@@ -158,6 +170,65 @@ public static class EmailTemplates
             [("Order date", po.OrderDate), ("Deliver by", po.ExpectedDate), ("Deliver to", po.DeliverTo), ("Payment terms", po.PaymentTerms),
              ("Your quote", po.QuoteRef), ("Contact", po.Contact)],
             "Please confirm the order and delivery date by replying to this e-mail.", null, "", table.ToString(), text.ToString());
+    }
+
+    /// <summary>The column headings of a laid-out order, by column key.</summary>
+    private static readonly Dictionary<string, string> PoColumnTitles = new()
+    {
+        ["lineNumber"] = "#", ["partNumber"] = "Part no.", ["description"] = "Item", ["supplierPartNumber"] = "Your part no.", ["quantity"] = "Qty",
+        ["unit"] = "Unit", ["unitPrice"] = "Unit price", ["discount"] = "Discount", ["lineTotal"] = "Total",
+    };
+
+    private static string Lines(string text) => EmailText.Html(text).Replace("\r\n", "<br>").Replace("\n", "<br>");
+
+    private static EmailContent LaidOutPurchaseOrder(string org, string number, PoEmailLayout l)
+    {
+        var (start, end) = Translator.CurrentLanguage == "ar" ? ("right", "left") : ("left", "right");
+        static bool Numeric(string c) => c is "quantity" or "unitPrice" or "discount" or "lineTotal";
+        string Cell(PoEmailLine x, string c) => c switch
+        {
+            "lineNumber" => x.Number.ToString(), "partNumber" => x.PartNumber ?? "", "description" => x.Description, "supplierPartNumber" => x.SupplierPartNumber ?? "",
+            "quantity" => x.Quantity, "unit" => x.Unit, "unitPrice" => x.UnitPrice, "discount" => x.Discount, _ => x.Total,
+        };
+        var html = new StringBuilder();
+        var text = new StringBuilder();
+        if (l.Header is { Length: > 0 } header) { html.Append($"<p style=\"margin:0 0 16px\">{Lines(header)}</p>"); text.AppendLine(header).AppendLine(); }
+        if (l.SupplierLines.Count > 0)
+        {
+            html.Append($"<p style=\"margin:0 0 16px\"><strong>{EmailText.Html(Translator.T("Supplier"))}</strong><br>{string.Join("<br>", l.SupplierLines.Select(EmailText.Html))}</p>");
+            text.AppendLine(Translator.T("Supplier")).AppendLine(string.Join("\n", l.SupplierLines)).AppendLine();
+        }
+        html.Append("<table role=\"presentation\" style=\"width:100%;border-collapse:collapse;margin:8px 0 16px;font-size:14px\"><tr style=\"background:#e9edf1\">");
+        foreach (var c in l.Columns)
+            html.Append($"<th align=\"{(Numeric(c) ? end : start)}\" style=\"padding:6px\">{EmailText.Html(Translator.T(PoColumnTitles[c]))}</th>");
+        html.Append("</tr>");
+        foreach (var x in l.Lines)
+        {
+            html.Append("<tr>");
+            foreach (var c in l.Columns)
+                html.Append($"<td align=\"{(Numeric(c) ? end : start)}\" style=\"padding:6px;border-top:1px solid #d3dae1\">{EmailText.Html(Cell(x, c))}</td>");
+            html.Append("</tr>");
+            text.AppendLine(string.Join(" · ", l.Columns.Select(c => Cell(x, c)).Where(v => v.Length > 0)));
+        }
+        foreach (var (label, value) in l.Totals)
+        {
+            html.Append($"<tr><td colspan=\"{Math.Max(1, l.Columns.Count - 1)}\" align=\"{end}\" style=\"padding:6px\">{EmailText.Html(label)}</td><td align=\"{end}\" style=\"padding:6px\">{EmailText.Html(value)}</td></tr>");
+            text.AppendLine($"{label}: {value}");
+        }
+        html.Append("</table>");
+        if (l.Notes is { Length: > 0 } notes)
+        {
+            html.Append($"<p style=\"margin:0 0 16px\"><strong>{EmailText.Html(Translator.T("Notes"))}</strong><br>{Lines(notes)}</p>");
+            text.AppendLine().AppendLine($"{Translator.T("Notes")}: {notes}");
+        }
+        if (l.Terms is { Length: > 0 } terms)
+        {
+            html.Append($"<p style=\"margin:0 0 16px\"><strong>{EmailText.Html(Translator.T("Terms"))}</strong><br>{Lines(terms)}</p>");
+            text.AppendLine().AppendLine(Translator.T("Terms")).AppendLine(terms);
+        }
+        if (l.Footer is { Length: > 0 } footer) { html.Append($"<p style=\"margin:16px 0 0;font-size:12px;color:#56636f\">{Lines(footer)}</p>"); text.AppendLine().AppendLine(footer); }
+        return Layout(org, $"Purchase order {number} from {org}", $"Purchase order {number}", l.Facts,
+            "Please confirm the order and delivery date by replying to this e-mail.", null, "", html.ToString(), text.ToString());
     }
 
     private static (string, string?)[] WorkOrderLines(WorkOrderFacts w) =>

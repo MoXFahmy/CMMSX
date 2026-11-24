@@ -111,7 +111,7 @@ public static class WorkRequestEndpoints
                 .Select(f => new { f.Id, f.Accepted, f.Rating, f.Comment, f.ByName, f.AnsweredAt, f.ViaLink }).ToListAsync(ct);
             var extra = r.ExtraRecipientIds.Count == 0 ? [] : await db.Users.AsNoTracking().Where(u => r.ExtraRecipientIds.Contains(u.Id))
                 .OrderBy(u => u.FullName).Select(u => new { u.Id, Name = u.FullName }).ToListAsync(ct);
-            var wo = r.WorkOrderId is { } wid ? await db.WorkOrders.Where(w => w.Id == wid).Select(w => new { w.Id, w.Number, w.Status }).FirstOrDefaultAsync(ct) : null;
+            var wo = r.WorkOrderId is { } wid ? await db.WorkOrders.Where(w => w.Id == wid).Select(w => new { w.Id, w.Number, w.Status, w.DueDate, w.DueAt }).FirstOrDefaultAsync(ct) : null;
             var settings = await SlaQueries.SettingsAsync(db, ct);
             var now = DateTimeOffset.UtcNow;
             var work = r.WorkOrderId is { } wid2 ? await db.WorkOrders.Where(w => w.Id == wid2)

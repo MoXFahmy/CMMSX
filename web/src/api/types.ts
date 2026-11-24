@@ -280,7 +280,7 @@ export type WorkRequestDetail = {
   id: string; number: string; title: string; description?: string; status: WorkRequestStatus; priority: WorkPriority; type: WorkType;
   siteId: string; site: { id: string; name: string }; locationId?: string; locationName?: string; assetId?: string; asset?: { id: string; assetNumber: string; name: string };
   requesterName?: string; requesterEmail?: string; requesterPhone?: string; requiredBy?: string; decisionNote?: string; decidedAt?: string; decidedBy?: string;
-  workOrder?: { id: string; number: string; status: WorkOrderStatus }; createdAt: string; createdBy?: string; canCancel: boolean; downtimeEventId?: string | null;
+  workOrder?: { id: string; number: string; status: WorkOrderStatus; dueDate?: string | null; dueAt?: string | null }; createdAt: string; createdBy?: string; canCancel: boolean; downtimeEventId?: string | null;
   respondBy?: string | null; dueAt?: string | null; dueFromTarget: boolean; sla: SlaView;
   /** 0.10.0 */
   requestTypeId?: string | null; requestType?: { id: string; name: string; defaultTradeId?: string | null } | null; extraRecipients: { id: string; name: string }[];
