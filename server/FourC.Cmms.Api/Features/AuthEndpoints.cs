@@ -96,6 +96,8 @@ public static class AuthEndpoints
             var tenant = await db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == ctx.TenantId);
             if (user is null || tenant is null) return Results.Unauthorized();
             var permissions = await perms.GetAsync(user.Id);
+            // The home page and menu of all the person's roles (0.22.0).
+            var roles = await db.UserRoles.AsNoTracking().Where(r => r.UserId == user.Id).Select(r => r.Role!).ToListAsync();
             return Results.Ok(new
             {
                 user = new
@@ -108,6 +110,7 @@ public static class AuthEndpoints
                 tenant = new { tenant.Id, tenant.Name, tenant.Slug, tenant.Settings },
                 permissions = permissions.Order(),
                 access = await AccessViewAsync(db, http),
+                home = new { cards = RoleHomes.Merge(roles), hiddenModules = RoleHomes.Hidden(roles) },
             });
         }).RequireAuthorization();
 
