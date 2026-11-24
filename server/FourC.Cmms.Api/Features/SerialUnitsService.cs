@@ -29,7 +29,8 @@ public static class SerialUnits
     /// </summary>
     public static async Task CheckNewSerialsAsync(CmmsDbContext db, Part part, IReadOnlyList<string> serials, int expected, CancellationToken ct)
     {
-        if (serials.Count != expected) throw new DomainException($"Enter {expected} serial numbers, one for each piece received.");
+        if (serials.Count != expected)
+            throw new DomainException(serials.Count == 0 || expected == 1 ? StockLedger.SerialRefusal(StockTransactionType.Receipt) : $"Enter {expected} serial numbers, one for each piece received.");
         if (serials.Distinct(StringComparer.OrdinalIgnoreCase).Count() != serials.Count) throw new DomainException("Serial numbers must be different.");
         if (serials.Any(s => s.Length > 200)) throw new DomainException("A serial number can be at most 200 characters.");
         // Units added earlier in the same request (another line of one receipt) aren't saved yet: check them too.
