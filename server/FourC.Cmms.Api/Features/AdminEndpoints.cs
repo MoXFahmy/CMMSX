@@ -6,6 +6,7 @@ using FourC.Cmms.Core.Files;
 using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Locations;
 using FourC.Cmms.Core.Services;
+using FourC.Cmms.Core.Settings;
 using FourC.Cmms.Core.Tenancy;
 using Microsoft.AspNetCore.Identity;
 using FourC.Cmms.Core.Work;
@@ -18,7 +19,8 @@ public static class AdminEndpoints
 {
     public sealed record UserInput(string FullName, string Email, string? JobTitle, string? Phone, bool IsActive, List<Guid> RoleIds, string? Password, decimal? PurchaseApprovalLimit = null,
         List<Guid>? SiteIds = null, List<Guid>? LocationIds = null);
-    public sealed record RoleInput(string Name, string? Description, List<string> Permissions);
+    /// <summary>A role. Home and HiddenModules (0.22.0) are left unchanged when null, so older clients never clear them.</summary>
+    public sealed record RoleInput(string Name, string? Description, List<string> Permissions, List<HomeCardInput>? Home = null, List<string>? HiddenModules = null);
     public sealed record SettingsInput(string Name, TenantSettings Settings);
     public sealed record ListLabelsInput(Dictionary<string, Dictionary<string, ListLabel>>? ListLabels);
     public sealed record PasswordInput(string Password);
@@ -110,13 +112,23 @@ public static class AdminEndpoints
         {
             var counts = await db.UserRoles.Where(r => db.Roles.Any(x => x.Id == r.RoleId)).GroupBy(r => r.RoleId).Select(x => new { x.Key, C = x.Count() }).ToDictionaryAsync(x => x.Key, x => x.C, ct);
             var list = await db.Roles.AsNoTracking().OrderByDescending(r => r.IsSystem).ThenBy(r => r.Name).ToListAsync(ct);
-            return list.Select(r => new { r.Id, r.Name, r.Description, r.IsSystem, r.Permissions, UserCount = counts.GetValueOrDefault(r.Id) });
+            var columns = (await db.RoleListSettings.AsNoTracking().Select(x => new { x.RoleId, x.List }).ToListAsync(ct)).ToLookup(x => x.RoleId, x => x.List);
+            return list.Select(r => new
+            {
+                r.Id, r.Name, r.Description, r.IsSystem, r.Permissions, UserCount = counts.GetValueOrDefault(r.Id),
+                Home = r.HomeLayout, r.HiddenModules, DefaultColumns = columns[r.Id].Order().ToList(),
+            });
         });
+        roles.MapGet("/menu-modules", () => MenuModules.All.Select(m => new { m.Key, m.AnyOf }));
         roles.MapPost("/", async (RoleInput input, CmmsDbContext db, CancellationToken ct) =>
         {
             var v = await ValidateRoleAsync(input, null, db, ct);
             if (!v.IsValid) return v.Problem();
-            var role = new Role { Name = input.Name.Trim(), Description = input.Description.Clean(), Permissions = CleanPermissions(input.Permissions) };
+            var role = new Role
+            {
+                Name = input.Name.Trim(), Description = input.Description.Clean(), Permissions = CleanPermissions(input.Permissions),
+                HomeLayout = RoleHomes.CleanHome(input.Home), HiddenModules = RoleHomes.CleanModules(input.HiddenModules ?? []),
+            };
             db.Roles.Add(role);
             await db.SaveChangesAsync(ct);
             return Results.Created($"/api/roles/{role.Id}", new { role.Id });
@@ -130,9 +142,29 @@ public static class AdminEndpoints
             role.Name = role.IsSystem ? role.Name : input.Name.Trim();
             role.Description = input.Description.Clean();
             role.Permissions = role.IsSystem ? Permissions.All.Select(p => p.Code).ToList() : CleanPermissions(input.Permissions);
+            if (input.Home is not null) role.HomeLayout = RoleHomes.CleanHome(input.Home);
+            if (input.HiddenModules is not null) role.HiddenModules = RoleHomes.CleanModules(input.HiddenModules);
             await db.SaveChangesAsync(ct);
             PermissionService.Invalidate(role.TenantId);
             return Results.Ok(new { role.Id });
+        });
+        // A copy with the same permissions, home, hidden menu items and default columns, and nobody in it (0.22.0).
+        roles.MapPost("/{id:guid}/duplicate", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var role = await db.Roles.AsNoTracking().FirstOrDefaultAsync(r => r.Id == id, ct);
+            if (role is null) return Results.NotFound();
+            var taken = (await db.Roles.Select(r => r.Name).ToListAsync(ct)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            var name = CopyName(role.Name, taken);
+            var copy = new Role
+            {
+                Name = name, Description = role.Description, Permissions = role.IsSystem ? Permissions.All.Select(p => p.Code).ToList() : [.. role.Permissions],
+                HomeLayout = role.HomeLayout, HiddenModules = [.. role.HiddenModules],
+            };
+            db.Roles.Add(copy);
+            foreach (var c in await db.RoleListSettings.AsNoTracking().Where(x => x.RoleId == id).ToListAsync(ct))
+                db.RoleListSettings.Add(new RoleListSetting { RoleId = copy.Id, List = c.List, HiddenColumns = [.. c.HiddenColumns] });
+            await db.SaveChangesAsync(ct);
+            return Results.Created($"/api/roles/{copy.Id}", new { copy.Id, copy.Name });
         });
         roles.MapDelete("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
@@ -261,6 +293,17 @@ public static class AdminEndpoints
 
     private static bool OutOfRange(int? minutes) => minutes is < 1 or > 365 * 24 * 60;
 
+    /// <summary>"Name (copy)", then "(copy 2)", "(copy 3)"…, shortened so it fits a role name's 100 characters.</summary>
+    internal static string CopyName(string name, ISet<string> taken)
+    {
+        for (var n = 1; ; n++)
+        {
+            var suffix = n == 1 ? " (copy)" : $" (copy {n})";
+            var candidate = (name.Length + suffix.Length > 100 ? name[..(100 - suffix.Length)].TrimEnd() : name) + suffix;
+            if (!taken.Contains(candidate)) return candidate;
+        }
+    }
+
     private static List<string> CleanPermissions(List<string>? p) => (p ?? []).Intersect(Permissions.All.Select(x => x.Code)).Distinct().ToList();
 
     /// <summary>
@@ -311,6 +354,8 @@ public static class AdminEndpoints
     private static async Task<Validator> ValidateRoleAsync(RoleInput i, Guid? id, CmmsDbContext db, CancellationToken ct)
     {
         var v = new Validator().Required("name", i.Name, "Name", 100).MaxLength("description", i.Description, "Description", 500);
+        RoleHomes.ValidateHome(v, i.Home);
+        RoleHomes.ValidateModules(v, i.HiddenModules);
         if (!string.IsNullOrWhiteSpace(i.Name) && await db.Roles.AnyAsync(r => r.Name == i.Name.Trim() && r.Id != id, ct)) v.Add("name", "A role with this name exists.");
         return v;
     }

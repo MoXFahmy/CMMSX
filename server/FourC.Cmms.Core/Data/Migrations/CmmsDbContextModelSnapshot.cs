@@ -1686,6 +1686,15 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasMaxLength(500)
                         .HasColumnType("nvarchar(500)");
 
+                    b.PrimitiveCollection<string>("HiddenModules")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValueSql("'[]'");
+
+                    b.Property<string>("HomeLayout")
+                        .HasColumnType("nvarchar(max)");
+
                     b.Property<bool>("IsSystem")
                         .HasColumnType("bit");
 
@@ -5113,6 +5122,31 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.ToTable("NumberSequences");
                 });
 
+            modelBuilder.Entity("FourC.Cmms.Core.Settings.RoleListSetting", b =>
+                {
+                    b.Property<Guid>("RoleId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.Property<string>("List")
+                        .HasMaxLength(40)
+                        .HasColumnType("nvarchar(40)");
+
+                    b.PrimitiveCollection<string>("HiddenColumns")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("nvarchar(max)")
+                        .HasDefaultValueSql("'[]'");
+
+                    b.Property<Guid>("TenantId")
+                        .HasColumnType("uniqueidentifier");
+
+                    b.HasKey("RoleId", "List");
+
+                    b.HasIndex("TenantId");
+
+                    b.ToTable("RoleListSettings");
+                });
+
             modelBuilder.Entity("FourC.Cmms.Core.Settings.SavedView", b =>
                 {
                     b.Property<Guid>("Id")
@@ -5128,6 +5162,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .HasColumnType("nvarchar(max)")
                         .HasDefaultValueSql("'[]'");
 
+                    b.Property<int>("HomeOrder")
+                        .HasColumnType("int");
+
                     b.Property<bool>("IsDefault")
                         .HasColumnType("bit");
 
@@ -5140,6 +5177,9 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired()
                         .HasMaxLength(60)
                         .HasColumnType("nvarchar(60)");
+
+                    b.Property<bool>("PinnedToHome")
+                        .HasColumnType("bit");
 
                     b.Property<string>("Query")
                         .IsRequired()
@@ -5158,6 +5198,8 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.HasKey("Id");
 
                     b.HasIndex("TenantId");
+
+                    b.HasIndex("UserId", "PinnedToHome");
 
                     b.HasIndex("UserId", "List", "Name")
                         .IsUnique();
@@ -7551,6 +7593,15 @@ namespace FourC.Cmms.Core.Data.Migrations
                     b.Navigation("Part");
 
                     b.Navigation("Supplier");
+                });
+
+            modelBuilder.Entity("FourC.Cmms.Core.Settings.RoleListSetting", b =>
+                {
+                    b.HasOne("FourC.Cmms.Core.Identity.Role", null)
+                        .WithMany()
+                        .HasForeignKey("RoleId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
                 });
 
             modelBuilder.Entity("FourC.Cmms.Core.Work.RequestFeedback", b =>

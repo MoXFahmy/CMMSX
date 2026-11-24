@@ -43,6 +43,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
     public DbSet<OutboundEmail> OutboundEmails => Set<OutboundEmail>();
     public DbSet<SavedView> SavedViews => Set<SavedView>();
     public DbSet<UserListSetting> UserListSettings => Set<UserListSetting>();
+    public DbSet<RoleListSetting> RoleListSettings => Set<RoleListSetting>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<UserRole> UserRoles => Set<UserRole>();
     public DbSet<Site> Sites => Set<Site>();
@@ -176,6 +177,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Query).HasMaxLength(2000);
             e.Property(x => x.HiddenColumns).HasDefaultValueSql("'[]'");
             e.HasIndex(x => new { x.UserId, x.List, x.Name }).IsUnique();
+            e.HasIndex(x => new { x.UserId, x.PinnedToHome });
             e.HasIndex(x => x.TenantId);
         });
 
@@ -185,6 +187,15 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.List).HasMaxLength(40);
             e.Property(x => x.HiddenColumns).HasDefaultValueSql("'[]'");
             e.HasIndex(x => x.TenantId);
+        });
+
+        b.Entity<RoleListSetting>(e =>
+        {
+            e.HasKey(x => new { x.RoleId, x.List });
+            e.Property(x => x.List).HasMaxLength(40);
+            e.Property(x => x.HiddenColumns).HasDefaultValueSql("'[]'");
+            e.HasIndex(x => x.TenantId);
+            e.HasOne<Role>().WithMany().HasForeignKey(x => x.RoleId).OnDelete(DeleteBehavior.Cascade);
         });
 
         b.Entity<OutboundEmail>(e =>
@@ -206,6 +217,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Name).HasMaxLength(100);
             e.Property(x => x.Description).HasMaxLength(500);
             e.HasIndex(x => new { x.TenantId, x.Name }).IsUnique();
+            e.Property(x => x.HomeLayout).HasConversion(NullableJsonConverter<List<HomeCard>>()).Metadata.SetValueComparer(NullableJsonComparer<List<HomeCard>>());
+            e.Property(x => x.HiddenModules).HasDefaultValueSql("'[]'");
         });
         b.Entity<UserRole>(e =>
         {
