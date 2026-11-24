@@ -46,7 +46,7 @@ export function AssetsPage() {
   // If filtering by location only, infer the site so the location dropdown has options.
   const siteForLocations = p('siteId') || h?.locations.find((l) => l.id === p('locationId'))?.siteId || null;
   const locOpts = useMemo(() => locationOptions(h?.locations ?? [], siteForLocations), [h, siteForLocations]);
-  const activeFilters = ['siteId', 'locationId', 'categoryId', 'status', 'criticality', 'topLevelOnly', 'downNow', 'search', 'brandId', 'modelId', 'assetGroupId'].filter((k) => p(k)).length;
+  const activeFilters = ['siteId', 'locationId', 'categoryId', 'status', 'criticality', 'topLevelOnly', 'downNow', 'search', 'brandId', 'modelId', 'assetGroupId', 'spareUnits'].filter((k) => p(k)).length;
   // Brands, models and asset groups (0.21.0).
   const { data: brands } = useBrands();
   const { data: groups } = useAssetGroups();
@@ -106,6 +106,7 @@ export function AssetsPage() {
     { keys: ['criticality'], label: t('criticality.label'), format: listText((v) => t(`criticality.${v}`)) },
     { keys: ['topLevelOnly'], label: t('assets.topLevelOnly'), format: () => t('common.yes') },
     { keys: ['downNow'], label: t('downtime.downNow'), format: () => t('common.yes') },
+    { keys: ['spareUnits'], label: t('units.showSpares'), format: () => t('common.yes') },
     { keys: ['brandId'], label: t('brands.brand'), format: ([v]) => brands?.find((b) => b.id === v)?.name ?? '…' },
     { keys: ['modelId'], label: t('brands.model'), format: ([v]) => brands?.flatMap((b) => b.models).find((x) => x.id === v)?.name ?? '…' },
     { keys: ['assetGroupId'], label: t('assetGroups.one'), format: ([v]) => groups?.find((g) => g.id === v)?.name ?? '…' },
@@ -138,6 +139,7 @@ export function AssetsPage() {
             w={{ base: '100%', xs: 190 }} onChange={(v) => set({ assetGroupId: v })} />
           <Switch label={t('assets.topLevelOnly')} checked={p('topLevelOnly') === 'true'} onChange={(e) => set({ topLevelOnly: e.currentTarget.checked ? 'true' : null })} mb={8} />
           <Switch label={t('downtime.downNow')} color="red" checked={p('downNow') === 'true'} onChange={(e) => set({ downNow: e.currentTarget.checked ? 'true' : null })} mb={8} />
+          <Switch label={t('units.showSpares')} checked={p('spareUnits') === 'true'} onChange={(e) => set({ spareUnits: e.currentTarget.checked ? 'true' : null })} mb={8} />
           <Group gap={6} ml="auto">
             {activeFilters > 0 && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')} onClick={() => lp.replaceAll('')}><IconFilterOff size={16} /></ActionIcon></Tooltip>}
             <ListTools list="assets" lp={lp} cols={cols} exportPath="/assets/export" exportQuery={filters} total={data?.total} />

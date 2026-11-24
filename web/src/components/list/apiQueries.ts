@@ -104,7 +104,7 @@ export function apiQuery(list: ListKey, params: URLSearchParams, can: Can): ApiQ
     case 'assets':
       return clean({
         search: p('search'), siteId: p('siteId'), locationId: p('locationId'), categoryId: p('categoryId'), status: p('status'), criticality: p('criticality'),
-        topLevelOnly: p('topLevelOnly'), downNow: p('downNow'), brandId: p('brandId'), modelId: p('modelId'), assetGroupId: p('assetGroupId'), ...sorted,
+        topLevelOnly: p('topLevelOnly'), downNow: p('downNow'), brandId: p('brandId'), modelId: p('modelId'), assetGroupId: p('assetGroupId'), spareUnits: p('spareUnits'), ...sorted,
       });
   }
 }

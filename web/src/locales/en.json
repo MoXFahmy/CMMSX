@@ -1133,7 +1133,9 @@
     "approvals_one": "{{count}} item waiting for your approval",
     "approvals_other": "{{count}} items waiting for your approval",
     "contracts_one": "{{count}} contract needs attention",
-    "contracts_other": "{{count}} contracts need attention"
+    "contracts_other": "{{count}} contracts need attention",
+    "unitsEnding_one": "{{count}} unit reaches its end of life within 30 days",
+    "unitsEnding_other": "{{count}} units reach their end of life within 30 days"
   },
   "jobCard": {
     "title": "Job card",
@@ -2780,7 +2782,45 @@
       "Store": "Back to a store",
       "Repair": "To repair",
       "Scrap": "Scrap"
-    }
+    },
+    "fit": "Fit a unit",
+    "fitted": "Unit fitted.",
+    "unit": "Unit",
+    "fitTo": "Fit to",
+    "countHours": "Count its running hours",
+    "hoursFrom": "Running hours from",
+    "noHoursMeter": "This asset has no meter in hours: the unit's hours won't be counted.",
+    "noneInStore": "No units in store at this site.",
+    "noneFitted": "No units fitted.",
+    "since": "Since",
+    "sinceDate": "since {{date}}",
+    "unitCard": "Unit",
+    "history": "History",
+    "fittedUnits": "Fitted units",
+    "before": "Before",
+    "makeUnit": "Make this asset a unit",
+    "makeUnitHint": "Links this asset (serial {{serial}}) to a serial-tracked part as a fitted unit. No stock moves.",
+    "moves": {
+      "Received": "Received",
+      "Registered": "Registered",
+      "Fitted": "Fitted",
+      "Removed": "Removed",
+      "SentForRepair": "Sent for repair",
+      "BackFromRepair": "Back from repair",
+      "Scrapped": "Scrapped",
+      "Transferred": "Transferred"
+    },
+    "showSpares": "Show spare units",
+    "allUnits": "Serial units",
+    "searchHint": "Serial, asset or part number",
+    "endingSoon": "Ending life within 30 days",
+    "addRepairLine": "Add repair line",
+    "repairOf": "Repair · {{serial}}",
+    "repairLineText": "Repair of {{part}} {{serial}}",
+    "repairLineHint": "A unit under repair goes to the supplier; receiving the line brings it back to a store with the line's cost.",
+    "noneAtRepair": "No units under repair",
+    "backInto": "Back into…",
+    "placeLocked": "A unit's status, store and place change through fit, remove and the unit actions."
   },
   "assetGroups": {
     "title": "Asset groups",

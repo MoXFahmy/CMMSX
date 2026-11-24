@@ -39,6 +39,8 @@ describe('apiQuery', () => {
   it('assets', () => {
     expect(apiQuery('assets', q(''), all)).toEqual({ sort: 'assetNumber', dir: 'asc' });
     expect(apiQuery('assets', q('downNow=true&criticality=Critical&sort=name&dir=desc'), all)).toEqual({ downNow: 'true', criticality: 'Critical', sort: 'name', dir: 'desc' });
+    // 0.24.0: units in stores stay off the list unless asked for.
+    expect(apiQuery('assets', q('spareUnits=true'), all)).toEqual({ spareUnits: 'true', sort: 'assetNumber', dir: 'asc' });
   });
 
   it("apiQuery ignores keys the list doesn't know", () => {

@@ -8,7 +8,7 @@ import { Link, useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { DataTable } from 'mantine-datatable';
 import dayjs from 'dayjs';
-import { IconArrowsTransferUp, IconBox, IconCopy, IconDots, IconEdit, IconInfoCircle, IconPlus, IconShieldCheck, IconShieldX, IconTrash, IconTool, IconClipboardText } from '@tabler/icons-react';
+import { IconArrowsTransferUp, IconBarcode, IconBox, IconCopy, IconDots, IconEdit, IconInfoCircle, IconPlus, IconShieldCheck, IconShieldX, IconTrash, IconTool, IconClipboardText } from '@tabler/icons-react';
 import type { Paged, WorkOrderListItem } from '@/api/types';
 import { PriorityBadge, WoStatusBadge } from '@/components/WorkBadges';
 import { RequestFormModal } from '@/pages/work/WorkRequestsPage';
@@ -28,6 +28,8 @@ import { AssetDowntimeTab } from './AssetDowntime';
 import { AssetPartsTab } from './AssetParts';
 import { ChecklistsCard } from './AssetChecklists';
 import { AssetMeasurements } from './AssetMeasurements';
+import { FittedUnitsCard, MakeUnitModal, UnitCard } from './AssetUnits';
+import { UnitStateBadge } from '@/pages/inventory/PartUnits';
 import { AssetCosts } from './AssetCosts';
 import { AssetContracts } from './AssetContracts';
 
@@ -49,6 +51,7 @@ export function AssetDetailPage() {
   const [tab, setTab] = useState<string | null>('overview');
   const [transferOpen, transfer] = useDisclosure();
   const [requestOpen, request] = useDisclosure();
+  const [makingUnit, setMakingUnit] = useState(false);
   const { data: a, isLoading, error } = useQuery({ queryKey: ['asset', id], queryFn: () => get<AssetDetail>(`/assets/${id}`) });
   const { data: fields } = useQuery({ queryKey: ['custom-fields', 'Asset'], queryFn: () => get<CustomField[]>('/custom-fields', { entityType: 'Asset' }) });
   const { data: children } = useQuery({ queryKey: ['asset', id, 'children'], queryFn: () => get<AssetListItem[]>(`/assets/${id}/children`), enabled: tab === 'components' });
@@ -69,6 +72,9 @@ export function AssetDetailPage() {
     try { await del(`/assets/${a.id}`); notifySuccess(t('common.deleted')); await qc.invalidateQueries({ queryKey: ['assets'] }); navigate('/assets'); } catch (e) { notifyError(e); }
   });
   const today = dayjs().format('YYYY-MM-DD');
+  // A unit (0.24.0): its status and place change through the unit actions, and it is scrapped rather than deleted.
+  const isUnit = !!a.partId;
+  const canMakeUnit = can(P.assetsEdit) && !isUnit && !!a.parentAssetId && !!a.serialNumber && a.status !== 'Disposed';
   const covered = a.warrantyType !== 'None' && a.warrantyExpiresOn && a.warrantyExpiresOn >= today;
   const ageYears = a.commissionedOn ? dayjs().diff(dayjs(a.commissionedOn), 'year', true) : null;
   const applicableFields = (fields ?? []).filter((f) => f.categoryIds.length === 0 || (a.categoryId && f.categoryIds.includes(a.categoryId)) || a.customFields?.[f.key]);
@@ -78,22 +84,23 @@ export function AssetDetailPage() {
     <>
       <PageHeader
         crumbs={[{ label: terms.assets, to: '/assets' }, ...(a.parentAsset ? [{ label: a.parentAsset.assetNumber, to: `/assets/${a.parentAsset.id}` }] : []), { label: a.assetNumber }]}
-        title={<>{a.name}</>} badge={<Group gap={6}><StatusBadge status={a.status} /><CriticalityBadge value={a.criticality} /><StoppedBadge show={a.onlyWhenStopped} />
+        title={<>{a.name}</>} badge={<Group gap={6}><StatusBadge status={a.status} />{a.unitState && <UnitStateBadge state={a.unitState} />}<CriticalityBadge value={a.criticality} /><StoppedBadge show={a.onlyWhenStopped} />
           {a.downSince && <Badge color="red" variant="filled" style={{ cursor: 'pointer' }} onClick={() => setTab('downtime')}>{t('downtime.down')}</Badge>}</Group>}
         subtitle={<>{a.assetNumber}{a.category && <> · {a.category.name}</>}{a.legacyRef && <> · <Badge size="xs" variant="outline" color="gray">4CSQL</Badge></>}</>}
         actions={<>
           {can(P.assetsEdit) && <Button leftSection={<IconEdit size={16} />} component={Link} to={`/assets/${a.id}/edit`}>{t('common.edit')}</Button>}
           {can(P.woCreate) && <Button variant="default" leftSection={<IconTool size={16} />} component={Link} to={`/work-orders/new?assetId=${a.id}`}>{t('wo.createFromAsset')}</Button>}
           {!can(P.woCreate) && can(P.requestsCreate) && <Button variant="default" leftSection={<IconClipboardText size={16} />} onClick={request.open}>{t('assets.requestWork')}</Button>}
-          {can(P.assetsTransfer) && <Button variant="default" leftSection={<IconArrowsTransferUp size={16} />} onClick={transfer.open}>{t('assets.transfer')}</Button>}
-          {(can(P.assetsCreate) || can(P.assetsDelete)) && (
+          {can(P.assetsTransfer) && !isUnit && <Button variant="default" leftSection={<IconArrowsTransferUp size={16} />} onClick={transfer.open}>{t('assets.transfer')}</Button>}
+          {(can(P.assetsCreate) || can(P.assetsDelete) || canMakeUnit) && (
             <Menu position="bottom-end">
               <Menu.Target><ActionIcon variant="default" size="lg" aria-label={t('common.actions')}><IconDots size={16} /></ActionIcon></Menu.Target>
               <Menu.Dropdown>
                 {can(P.requestsCreate) && can(P.woCreate) && <Menu.Item leftSection={<IconClipboardText size={16} />} onClick={request.open}>{t('assets.requestWork')}</Menu.Item>}
                 {can(P.assetsCreate) && <Menu.Item leftSection={<IconCopy size={16} />} onClick={duplicate}>{t('assets.duplicate')}</Menu.Item>}
                 {can(P.assetsCreate) && <Menu.Item leftSection={<IconPlus size={16} />} component={Link} to={`/assets/new?parentId=${a.id}`}>{t('assets.addComponent')}</Menu.Item>}
-                {can(P.assetsDelete) && <><Menu.Divider /><Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={remove}>{t('common.delete')}</Menu.Item></>}
+                {canMakeUnit && <Menu.Item leftSection={<IconBarcode size={16} />} onClick={() => setMakingUnit(true)}>{t('units.makeUnit')}</Menu.Item>}
+                {can(P.assetsDelete) && !isUnit && <><Menu.Divider /><Menu.Item color="red" leftSection={<IconTrash size={16} />} onClick={remove}>{t('common.delete')}</Menu.Item></>}
               </Menu.Dropdown>
             </Menu>
           )}
@@ -135,6 +142,8 @@ export function AssetDetailPage() {
                   </SimpleGrid>
                   {a.description && <Box mt="md"><Field label={t('common.description')}>{a.description}</Field></Box>}
                 </Card>
+                {isUnit && <UnitCard a={a} />}
+                <FittedUnitsCard assetId={a.id} />
                 {(a.notesToTechnician || a.notes) && (
                   <Card>
                     {a.notesToTechnician && <Alert variant="light" color="yellow" icon={<IconInfoCircle size={18} />} title={t('assets.notesToTechnician')} mb={a.notes ? 'md' : 0}>{a.notesToTechnician}</Alert>}
@@ -256,6 +265,7 @@ export function AssetDetailPage() {
       </Tabs>
       <TransferModal opened={transferOpen} onClose={transfer.close} asset={a} />
       <RequestFormModal opened={requestOpen} onClose={request.close} assetId={a.id} />
+      {makingUnit && <MakeUnitModal a={a} onClose={() => setMakingUnit(false)} />}
     </>
   );
 }

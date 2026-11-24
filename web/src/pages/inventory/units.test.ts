@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UNIT_STATE_COLOR, parseSerials, serialProblem } from './units';
+import { UNIT_STATE_COLOR, defaultHoursMeter, parseSerials, serialProblem } from './units';
 
 describe('serial numbers', () => {
   it('parseSerials trims and drops blank lines', () => {
@@ -15,5 +15,11 @@ describe('serial numbers', () => {
   });
   it('has a colour for every state', () => {
     expect(Object.keys(UNIT_STATE_COLOR).sort()).toEqual(['AtRepair', 'Fitted', 'InStore', 'Scrapped']);
+  });
+  it('defaultHoursMeter picks the first active hours meter', () => {
+    const meters = [{ id: 'km', unit: 'km', isActive: true }, { id: 'old', unit: 'Hours', isActive: false }, { id: 'run', unit: 'h', isActive: true }, { id: 'ar', unit: 'ساعة', isActive: true }];
+    expect(defaultHoursMeter(meters)).toBe('run');
+    expect(defaultHoursMeter([{ id: 'ar', unit: ' ساعات ', isActive: true }])).toBe('ar');
+    expect(defaultHoursMeter([{ id: 'km', unit: 'km', isActive: true }])).toBeNull();
   });
 });

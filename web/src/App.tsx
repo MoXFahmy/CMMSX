@@ -22,6 +22,7 @@ import { PmScheduleFormPage } from './pages/pm/PmScheduleFormPage';
 import { TemplatePage } from './pages/pm/TemplatePage';
 import { InventoryPage } from './pages/inventory/InventoryPage';
 import { PartDetailPage } from './pages/inventory/PartDetailPage';
+import { UnitsPage } from './pages/inventory/UnitsPage';
 import { PartFormPage } from './pages/inventory/PartFormPage';
 import { PurchasingPage } from './pages/purchasing/PurchasingPage';
 import { PoFormPage } from './pages/purchasing/PoFormPage';
@@ -91,6 +92,7 @@ export function App() {
         <Route path="pm/templates/:id" element={<TemplatePage />} />
         <Route path="pm/:tab" element={<PmPage />} />
         <Route path="inventory" element={<InventoryPage />} />
+        <Route path="inventory/units" element={<UnitsPage />} />
         <Route path="inventory/parts/new" element={<PartFormPage />} />
         <Route path="inventory/parts/:id" element={<PartDetailPage />} />
         <Route path="inventory/parts/:id/edit" element={<PartFormPage />} />

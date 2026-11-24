@@ -121,6 +121,7 @@ export function PoDetailPage() {
                           <Table.Td c="dimmed">{l.lineNumber}</Table.Td>
                           <Table.Td>{l.partId ? <Anchor component={Link} to={`/inventory/parts/${l.partId}`} fz="sm" fw={600}>{l.partNumber}</Anchor> : null}
                             <Text fz="sm">{l.description}</Text>{l.accountCode && <Text fz="xs" c="dimmed">{t('po.accountCode')}: {l.accountCode}</Text>}
+                            {l.unitId && <Anchor component={Link} to={`/assets/${l.unitId}`} fz="xs">{t('units.repairOf', { serial: l.unitSerial ?? '' })} · {l.unitAssetNumber}</Anchor>}
                             {l.request && <Anchor component={Link} to={`/purchasing/requests/${l.request.id}`} fz="xs">{l.request.number}</Anchor>}</Table.Td>
                           <Table.Td><Stack gap={0}>{l.storeCode && <Text fz="sm">{t('po.intoStore')} {l.storeCode}</Text>}
                             {l.workOrderId && <Anchor component={Link} to={`/work-orders/${l.workOrderId}`} fz="sm">{l.workOrderNumber}</Anchor>}
@@ -253,8 +254,9 @@ function ReceiveModal({ o, onClose, onDone }: { o: PoDetail; onClose: () => void
                   <Table.Td ta="right">{fmtQty(l.outstanding)} {l.unitOfMeasure}
                     {(l.packSize ?? 1) !== 1 && <Text fz="xs" c="dimmed">{t('catalogue.receivesPieces', { pieces: fmtQty(piecesOf(rows[l.id].qty === '' ? 0 : rows[l.id].qty as number, l.packSize)), unit: l.partUnit ?? '' })}</Text>}</Table.Td>
                   <Table.Td><NumberInput size="xs" min={0} max={l.outstanding} decimalScale={3} value={rows[l.id].qty} onChange={(v) => set(l.id, { qty: v === '' ? '' : Number(v) })} aria-label={`${t('po.receiveNow')} ${l.lineNumber}`} /></Table.Td>
-                  <Table.Td>{l.partId
-                    ? <Select size="xs" data={(stores ?? []).map((s) => ({ value: s.id, label: s.code }))} value={rows[l.id].storeId} onChange={(v) => set(l.id, { storeId: v })} aria-label={t('inv.store')} />
+                  <Table.Td>{l.partId || l.unitId
+                    ? <Select size="xs" data={(stores ?? []).map((s) => ({ value: s.id, label: s.code }))} value={rows[l.id].storeId} onChange={(v) => set(l.id, { storeId: v })} aria-label={t('inv.store')}
+                        placeholder={l.unitId ? t('units.backInto') : undefined} />
                     : <Text fz="sm" c="dimmed">{l.workOrderNumber ? t('po.chargeTo', { number: l.workOrderNumber }) : t('po.expense')}</Text>}
                     {l.partId && l.workOrderNumber && <Text fz="xs" c="dimmed">{t('po.thenIssue', { number: l.workOrderNumber })}</Text>}</Table.Td>
                   <Table.Td>{l.isShelfItem ? <Group gap={4} wrap="nowrap">

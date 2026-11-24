@@ -1,13 +1,13 @@
-import { useEffect, useRef } from 'react';
-import { ActionIcon, Button, Card, Center, Grid, Group, Loader, NumberInput, Select, SimpleGrid, Stack, Table, Text, TextInput, Textarea, Title } from '@mantine/core';
+import { useEffect, useRef, useState } from 'react';
+import { ActionIcon, Badge, Button, Card, Center, Grid, Group, Loader, Modal, NumberInput, Select, SimpleGrid, Stack, Table, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { DateInput } from '@mantine/dates';
 import { useForm } from '@mantine/form';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { IconPlus, IconTrash } from '@tabler/icons-react';
+import { IconPlus, IconTool, IconTrash } from '@tabler/icons-react';
 import { get, post, put } from '@/api/client';
-import type { FilledLine, PartDetail, PoDetail, SupplierLookup, WorkOrderDetail } from '@/api/types';
+import type { FilledLine, PartDetail, PoDetail, SupplierLookup, UnitRow, WorkOrderDetail } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
 import { PageHeader } from '@/components/PageHeader';
 import { useHierarchy } from '@/components/LocationPicker';
@@ -22,6 +22,8 @@ type Line = {
   unitPrice: number | ''; discountPercent: number | ''; storeId: string | null; workOrderId: string | null; workOrder?: { id: string; number: string } | null; accountCode: string;
   /** 0.18.0: pieces per ordered unit, the supplier's part number, the part's own unit, its lead time and whether the price came from the catalogue. */
   packSize: number; supplierPartNumber: string; partUnit: string; leadTimeDays: number | null; notCatalogue: boolean;
+  /** 0.24.0: a repair line sends this unit (under repair) to the supplier; it has no part and is for one unit. */
+  unitId?: string | null; unitLabel?: string | null;
 };
 type Values = {
   siteId: string | null; supplierId: string | null; orderDate: Date | string | null; expectedDate: Date | string | null; requestedBy: string; currency: string; exchangeRate: number | '';
@@ -47,6 +49,7 @@ export function PoFormPage() {
   const { data: h } = useHierarchy();
   const { data: stores } = useStores();
   const { data: orderTypes } = useQuery({ queryKey: ['order-types'], queryFn: () => get<{ id: string; code: string; name: string; isActive: boolean }[]>('/order-types') });
+  const [repairPick, setRepairPick] = useState(false); // 0.24.0: choosing a unit under repair for a repair line
   const form = useForm<Values>({
     initialValues: { siteId: null, supplierId: null, orderDate: new Date(), expectedDate: null, requestedBy: me?.user.fullName ?? '', currency: base, exchangeRate: 1, paymentTerms: '', shippingMethod: '',
       deliverTo: '', supplierQuoteRef: '', taxPercent: me?.tenant.settings.defaultTaxPercent ?? 0, shippingCost: 0, notes: '', lines: [blankLine()], orderTypeId: null },
@@ -60,7 +63,8 @@ export function PoFormPage() {
       notes: po.notes ?? '', orderTypeId: po.orderTypeId ?? null, lines: po.lines.map((l) => ({ id: l.id, partId: l.partId ?? null, part: l.partId ? { id: l.partId, partNumber: l.partNumber ?? '', name: l.description } : null, description: l.description,
         unitOfMeasure: l.unitOfMeasure ?? '', quantity: l.quantity, unitPrice: l.unitPrice, discountPercent: l.discountPercent, storeId: l.storeId ?? null, workOrderId: l.workOrderId ?? null,
         workOrder: l.workOrderId ? { id: l.workOrderId, number: l.workOrderNumber ?? '' } : null, accountCode: l.accountCode ?? '',
-        packSize: l.packSize ?? 1, supplierPartNumber: l.supplierPartNumber ?? '', partUnit: l.partUnit ?? l.unitOfMeasure ?? '', leadTimeDays: null, notCatalogue: false })),
+        packSize: l.packSize ?? 1, supplierPartNumber: l.supplierPartNumber ?? '', partUnit: l.partUnit ?? l.unitOfMeasure ?? '', leadTimeDays: null, notCatalogue: false,
+        unitId: l.unitId ?? null, unitLabel: l.unitSerial ?? null })),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [po]);
@@ -144,7 +148,8 @@ export function PoFormPage() {
     const body = {
       ...x, orderDate: toIsoDate(x.orderDate), expectedDate: toIsoDate(x.expectedDate), exchangeRate: x.exchangeRate === '' ? 1 : x.exchangeRate, taxPercent: n(x.taxPercent), shippingCost: n(x.shippingCost),
       rowVersion: po?.rowVersion,
-      lines: x.lines.filter((l) => l.partId || l.description.trim()).map((l) => ({ id: l.id ?? null, partId: l.partId, description: l.description, unitOfMeasure: l.unitOfMeasure, quantity: n(l.quantity),
+      lines: x.lines.filter((l) => l.partId || l.unitId || l.description.trim()).map((l) => ({ id: l.id ?? null, partId: l.unitId ? null : l.partId, description: l.description, unitOfMeasure: l.unitOfMeasure, quantity: l.unitId ? 1 : n(l.quantity),
+        unitId: l.unitId ?? undefined,
         unitPrice: n(l.unitPrice), discountPercent: n(l.discountPercent), storeId: l.partId ? l.storeId : null, workOrderId: l.workOrderId, accountCode: l.accountCode,
         packSize: l.partId ? l.packSize || 1 : 1, supplierPartNumber: l.supplierPartNumber || null })),
       orderTypeId: x.orderTypeId,
@@ -196,7 +201,10 @@ export function PoFormPage() {
       </Grid>
       <Card p={0} mt="md">
         <Group justify="space-between" p="md"><Title order={5}>{t('po.lines')}</Title>
-          <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={() => form.insertListItem('lines', blankLine())}>{t('po.addLine')}</Button></Group>
+          <Group gap="xs">
+            <Button size="xs" variant="default" leftSection={<IconTool size={14} />} onClick={() => setRepairPick(true)}>{t('units.addRepairLine')}</Button>
+            <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={() => form.insertListItem('lines', blankLine())}>{t('po.addLine')}</Button>
+          </Group></Group>
         <Table.ScrollContainer minWidth={1180}>
           <Table verticalSpacing={6}>
             <Table.Thead><Table.Tr>
@@ -207,20 +215,21 @@ export function PoFormPage() {
               {v.lines.map((l, i) => (
                 <Table.Tr key={l.id ?? `new-${i}`} style={{ verticalAlign: 'top' }}>
                   <Table.Td pt={12}><Text fz="sm" c="dimmed">{i + 1}</Text></Table.Td>
-                  <Table.Td><PartPicker placeholder={t('po.nonStock')} value={l.partId} initial={l.part} withStock={false} onChange={(pid, p) => {
+                  <Table.Td>{l.unitId ? <Badge variant="light" color="orange" leftSection={<IconTool size={12} />}>{t('units.repairOf', { serial: l.unitLabel ?? '' })}</Badge>
+                  : <PartPicker placeholder={t('po.nonStock')} value={l.partId} initial={l.part} withStock={false} onChange={(pid, p) => {
                     form.setFieldValue(`lines.${i}.partId`, pid); form.setFieldValue(`lines.${i}.part`, p ? { id: p.id, partNumber: p.partNumber, name: p.name } : null);
                     if (p) { form.setFieldValue(`lines.${i}.description`, p.name); form.setFieldValue(`lines.${i}.unitOfMeasure`, p.unitOfMeasure); form.setFieldValue(`lines.${i}.unitPrice`, p.lastPurchasePrice ?? p.averageCost);
                       form.setFieldValue(`lines.${i}.partUnit`, p.unitOfMeasure); form.setFieldValue(`lines.${i}.packSize`, 1); form.setFieldValue(`lines.${i}.supplierPartNumber`, '');
                       if (!form.getValues().lines[i].storeId && siteStores.length) form.setFieldValue(`lines.${i}.storeId`, siteStores[0].id);
                       if (!form.getValues().siteId && siteStores.length) form.setFieldValue('siteId', siteStores[0].siteId);
                       void fill(form.getValues().supplierId, i); }
-                  }} />
+                  }} />}
                   {l.partId && <Select mt={4} size="xs" placeholder={t('inv.store')} aria-label={t('inv.store')} data={siteStores.map((s) => ({ value: s.id, label: `${t('po.intoStore')} ${s.code}` }))} {...form.getInputProps(`lines.${i}.storeId`)} error={form.errors[`lines[${i}].storeId`]} />}
                   </Table.Td>
                   <Table.Td><TextInput aria-label={t('common.description')} {...form.getInputProps(`lines.${i}.description`)} error={form.errors[`lines[${i}].description`]} />
                     {l.supplierPartNumber && <Text fz="xs" c="dimmed" mt={2}>{t('catalogue.theirNumber', { number: l.supplierPartNumber })}</Text>}
                     <TextInput mt={4} size="xs" placeholder={t('po.accountCode')} aria-label={t('po.accountCode')} {...form.getInputProps(`lines.${i}.accountCode`)} /></Table.Td>
-                  <Table.Td><NumberInput min={0} decimalScale={3} aria-label={t('inv.quantity')} {...form.getInputProps(`lines.${i}.quantity`)} error={form.errors[`lines[${i}].quantity`]} /></Table.Td>
+                  <Table.Td><NumberInput min={0} decimalScale={3} aria-label={t('inv.quantity')} disabled={!!l.unitId} {...form.getInputProps(`lines.${i}.quantity`)} error={form.errors[`lines[${i}].quantity`]} /></Table.Td>
                   <Table.Td><TextInput aria-label={t('inv.unit')} {...form.getInputProps(`lines.${i}.unitOfMeasure`)} />
                     {l.packSize !== 1 && <Text fz="xs" c="dimmed" mt={2}>= {fmtQty(piecesOf(n(l.quantity), l.packSize))} {l.partUnit}</Text>}</Table.Td>
                   <Table.Td><NumberInput min={0} decimalScale={4} thousandSeparator aria-label={t('po.unitPrice')} {...form.getInputProps(`lines.${i}.unitPrice`)} error={form.errors[`lines[${i}].unitPrice`]} />
@@ -254,6 +263,35 @@ export function PoFormPage() {
         <Textarea mt="sm" label={t('po.notesToSupplier')} autosize minRows={2} {...form.getInputProps('notes')} />
       </Card>
       <Group justify="flex-end" mt="lg">{buttons}</Group>
+      {repairPick && <RepairPickModal taken={v.lines.map((l) => l.unitId).filter((x): x is string => !!x)} onClose={() => setRepairPick(false)} onPick={(u) => {
+        const line: Line = { ...blankLine(), unitId: u.id, unitLabel: u.serialNumber ?? u.assetNumber, quantity: 1,
+          description: t('units.repairLineText', { part: u.partName ?? '', serial: u.serialNumber ?? '' }) };
+        const lines = form.getValues().lines;
+        if (lines.length === 1 && !lines[0].partId && !lines[0].unitId && !lines[0].description.trim()) form.setFieldValue('lines', [line]);
+        else form.insertListItem('lines', line);
+        setRepairPick(false);
+      }} />}
     </form>
+  );
+}
+
+/** Units under repair not yet on this order (0.24.0); one becomes a repair line. */
+function RepairPickModal({ taken, onPick, onClose }: { taken: string[]; onPick: (u: UnitRow) => void; onClose: () => void }) {
+  const { t } = useTranslation();
+  const { data: units } = useQuery({ queryKey: ['serial-units', 'at-repair'], queryFn: () => get<UnitRow[]>('/serial-units', { state: 'AtRepair' }) });
+  const [id, setId] = useState<string | null>(null);
+  const open = (units ?? []).filter((u) => !taken.includes(u.id));
+  return (
+    <Modal opened onClose={onClose} title={t('units.addRepairLine')}>
+      <Stack>
+        <Text fz="sm" c="dimmed">{t('units.repairLineHint')}</Text>
+        <Select label={t('units.unit')} searchable value={id} onChange={setId} nothingFoundMessage={t('units.noneAtRepair')}
+          data={open.map((u) => ({ value: u.id, label: `${u.serialNumber} · ${u.partNumber ?? ''} ${u.partName ?? ''}`.trim() }))} />
+        <Group justify="flex-end">
+          <Button variant="default" onClick={onClose}>{t('common.cancel')}</Button>
+          <Button disabled={!id} onClick={() => { const u = open.find((x) => x.id === id); if (u) onPick(u); }}>{t('po.addLine')}</Button>
+        </Group>
+      </Stack>
+    </Modal>
   );
 }

@@ -18,3 +18,10 @@ export function serialProblem(serials: string[], needed: number): 'count' | 'dup
   if (serials.length !== needed) return 'count';
   return null;
 }
+
+const HOURS_UNITS = new Set(['h', 'hr', 'hrs', 'hour', 'hours', 'ساعة', 'ساعات']);
+
+/** The meter a fitted unit's running hours follow by default: the asset's first active meter in hours (as the server picks it). */
+export function defaultHoursMeter(meters: { id: string; unit: string; isActive: boolean }[]): string | null {
+  return meters.find((m) => m.isActive && HOURS_UNITS.has(m.unit.trim().toLowerCase()))?.id ?? null;
+}

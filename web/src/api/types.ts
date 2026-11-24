@@ -125,6 +125,9 @@ export type AssetDetail = {
   childCount: number; primaryImageId?: string; createdAt: string; createdBy?: string; updatedAt?: string; updatedBy?: string;
   legacyRef?: string; rowVersion: string;
   runsHoursPerDay: number; runsOn: DayName[]; downSince?: string | null;
+  /** 0.24.0: a unit of a serial-tracked part — its part, its store when in one, its end of life and where it is. */
+  partId?: string | null; partNumber?: string | null; partName?: string | null; storeId?: string | null; storeName?: string | null; endOfLifeOn?: string | null;
+  unitState?: UnitState | null;
 };
 export type DowntimeSource = 'Request' | 'WorkOrder' | 'Manual';
 /** A stop of an asset: no end while it is still down. */
