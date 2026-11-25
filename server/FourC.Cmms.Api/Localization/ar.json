@@ -1280,5 +1280,11 @@
  "Description (Arabic)": "الوصف (عربي)",
  "Notes to technician (Arabic)": "ملاحظات للفني (عربي)",
  "Choose a list to translate.": "اختر قائمة لترجمتها.",
- "Choose a text to save.": "اختر نصًا لحفظه."
+ "Choose a text to save.": "اختر نصًا لحفظه.",
+ "Confirm your e-mail address to start using CMX.": "أكّد عنوان بريدك الإلكتروني لتبدأ استخدام CMX.",
+ "This link has expired or was already used.": "انتهت صلاحية هذا الرابط أو سبق استخدامه.",
+ "Confirm your e-mail address for CMX": "أكّد عنوان بريدك الإلكتروني في CMX",
+ "Confirm your e-mail address": "أكّد عنوان بريدك الإلكتروني",
+ "Select the button to confirm your e-mail address and start using CMX. The link works for 48 hours and once only. If you didn't sign up, you can ignore this e-mail.": "اضغط على الزر لتأكيد عنوان بريدك الإلكتروني وابدأ استخدام CMX. الرابط صالح لمدة 48 ساعة ويُستخدم مرة واحدة فقط. إذا لم تسجّل أنت، يمكنك تجاهل هذه الرسالة.",
+ "Confirm e-mail address": "تأكيد عنوان البريد الإلكتروني"
 }

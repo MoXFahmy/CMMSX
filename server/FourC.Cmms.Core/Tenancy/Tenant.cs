@@ -11,6 +11,11 @@ public class Tenant : Entity
     public bool IsActive { get; set; } = true;
     public DateTimeOffset CreatedAt { get; set; } = DateTimeOffset.UtcNow;
     public TenantSettings Settings { get; set; } = new();
+    /// <summary>0.29.0: set when the organization signed itself up and its owner has not yet used the e-mailed link; null for every other organization.</summary>
+    public DateTimeOffset? SignUpPendingSince { get; set; }
+    /// <summary>SHA-256 (hex) of the link's token; the token itself is only ever in the e-mail.</summary>
+    public string? SignUpTokenHash { get; set; }
+    public DateTimeOffset? SignUpTokenExpires { get; set; }
 }
 
 /// <summary>Per-tenant configuration stored as JSON. Replaces the legacy keyvalue / relable / tblFeatures tables.</summary>

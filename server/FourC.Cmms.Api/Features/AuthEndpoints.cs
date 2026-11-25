@@ -23,6 +23,34 @@ public static class AuthEndpoints
     /// <summary>Signing in with a new password after the old one expired or no longer meets the rules (0.25.0).</summary>
     public sealed record RenewPasswordRequest(string Email, string Password, string NewPassword, bool RememberMe, bool Technician = false, bool EndOtherSessions = false);
     public sealed record LanguageInput(string? Language);
+    public sealed record ConfirmEmailRequest(string? Token);
+    public sealed record ResendConfirmationRequest(string? Email);
+
+    private const string BadLink = "This link has expired or was already used.";
+
+    /// <summary>
+    /// Sign-up e-mail check (0.29.0): the owner of a self-signed-up organization can't sign in until the e-mailed link is used. Only
+    /// the organization created by sign-up waits (its tenant row says so): existing, admin-added and imported people are never asked.
+    /// </summary>
+    private static async Task<IResult?> PendingGateAsync(CmmsDbContext db, AppUser user, IConfiguration config, EmailOutbox mail, CancellationToken ct) =>
+        SignUpConfirmation.Required(config, mail) && await db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.SignUpPendingSince != null, ct)
+            ? Results.Problem(title: Translator.T("Confirm your e-mail address to start using CMX."), statusCode: 403, extensions: new Dictionary<string, object?> { ["code"] = "email-unconfirmed" })
+            : null;
+
+    /// <summary>A fresh link (the old one stops working) for a still-pending organization's owner; false when the address isn't one.</summary>
+    private static async Task<bool> SendNewLinkAsync(AppUser? owner, DbContextOptions<CmmsDbContext> options, EmailOutbox mail, CancellationToken ct)
+    {
+        if (owner is null) return false;
+        await using var db = new CmmsDbContext(options, new FixedTenantContext(owner.TenantId, source: "Web"));
+        var tenant = await db.Tenants.FirstOrDefaultAsync(t => t.Id == owner.TenantId && t.SignUpPendingSince != null, ct);
+        if (tenant is null) return false;
+        var token = SignUpConfirmation.NewToken();
+        tenant.SignUpTokenHash = SignUpConfirmation.Hash(token);
+        tenant.SignUpTokenExpires = DateTimeOffset.UtcNow + SignUpConfirmation.LinkLife;
+        await mail.SignUpConfirmationAsync(db, tenant, owner, token, ct);
+        await db.SaveChangesAsync(ct);
+        return true;
+    }
 
     /// <summary>Self-service sign-up of new organizations; switch off with Auth:AllowRegistration=false.</summary>
     private static bool AllowRegistration(IConfiguration config) => config.GetValue("Auth:AllowRegistration", true);
@@ -52,7 +80,7 @@ public static class AuthEndpoints
         g.MapGet("/options", (IConfiguration config) => Results.Ok(new { allowRegistration = AllowRegistration(config) })).AllowAnonymous();
 
         g.MapPost("/register", async (RegisterRequest req, UserManager<AppUser> users, SignInManager<AppUser> signIn,
-            DbContextOptions<CmmsDbContext> options, IPasswordHasher<AppUser> hasher, IConfiguration config, CancellationToken ct) =>
+            DbContextOptions<CmmsDbContext> options, IPasswordHasher<AppUser> hasher, IConfiguration config, EmailOutbox mail, CancellationToken ct) =>
         {
             if (!AllowRegistration(config))
                 return Results.Problem(title: Translator.T("New organizations can't be created here. Ask your administrator for an invitation."), statusCode: 403);
@@ -61,7 +89,11 @@ public static class AuthEndpoints
                 .Required("fullName", req.FullName, "Your name", 200)
                 .Required("email", req.Email, "Email", 256);
             if (!string.IsNullOrWhiteSpace(req.Email) && !req.Email.Contains('@')) v.Add("email", "Enter a valid email address.");
-            if (!string.IsNullOrWhiteSpace(req.Email) && await users.FindByEmailAsync(req.Email.Trim()) is not null) v.Add("email", "An account with this email already exists.");
+            var confirm = SignUpConfirmation.Required(config, mail);
+            var existing = string.IsNullOrWhiteSpace(req.Email) ? null : await users.FindByEmailAsync(req.Email.Trim());
+            // Signing up again with an address still waiting for its link sends a new link (and changes nothing else).
+            if (existing is not null && confirm && v.IsValid && await SendNewLinkAsync(existing, options, mail, ct)) return Results.Ok(new { ok = true, confirm = true });
+            if (existing is not null) v.Add("email", "An account with this email already exists.");
             foreach (var validator in users.PasswordValidators)
             {
                 var r = await validator.ValidateAsync(users, null!, req.Password ?? "");
@@ -71,14 +103,25 @@ public static class AuthEndpoints
 
             var tenantId = Guid.CreateVersion7();
             await using var db = new CmmsDbContext(options, new FixedTenantContext(tenantId, source: "Web"));
-            var (_, admin) = await TenantProvisioning.CreateAsync(db, hasher, tenantId, req.OrganizationName, req.FullName, req.Email, req.Password!, language: Translator.CurrentLanguage, ct: ct);
+            var (tenant, admin) = await TenantProvisioning.CreateAsync(db, hasher, tenantId, req.OrganizationName, req.FullName, req.Email, req.Password!, language: Translator.CurrentLanguage, ct: ct);
+            if (confirm)
+            {
+                // The owner waits for the e-mailed link (0.29.0); nothing is signed in until it is used.
+                var token = SignUpConfirmation.NewToken();
+                tenant.SignUpPendingSince = DateTimeOffset.UtcNow;
+                tenant.SignUpTokenHash = SignUpConfirmation.Hash(token);
+                tenant.SignUpTokenExpires = DateTimeOffset.UtcNow + SignUpConfirmation.LinkLife;
+                await mail.SignUpConfirmationAsync(db, tenant, admin, token, ct);
+                await db.SaveChangesAsync(ct);
+                return Results.Ok(new { ok = true, confirm = true });
+            }
             var user = await users.FindByIdAsync(admin.Id.ToString());
             await signIn.SignInAsync(user!, isPersistent: true);
             return Results.Ok(new { ok = true });
         }).AllowAnonymous().RequireRateLimiting(AbuseLimits.SignUp); // per visitor address (0.29.0)
 
         g.MapPost("/login", async (LoginRequest req, HttpContext http, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext db,
-            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, SignInGuard guard, IConfiguration config, CancellationToken ct) =>
+            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, SignInGuard guard, IConfiguration config, EmailOutbox mail, CancellationToken ct) =>
         {
             var address = VisitorAddress.Of(http, config); // kept in memory only (0.29.0)
             if (guard.IsBlocked(address, out var retryAfter)) return AbuseLimits.Refuse(http, retryAfter);
@@ -92,6 +135,7 @@ public static class AuthEndpoints
             var result = await CheckPasswordAsync(http, users, signIn, db, user, req.Password, guard, address, ct);
             if (result.IsLockedOut) return Results.Problem(title: Translator.T("Too many failed attempts. Try again in a few minutes."), statusCode: 429);
             if (!result.Succeeded) return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
+            if (await PendingGateAsync(db, user, config, mail, ct) is { } waiting) return waiting; // right password, address not yet confirmed (not a failure)
             // The organization's password rules (0.25.0): an expired password, or one shorter than today's minimum, is renewed first.
             var rules = await PasswordRules.SettingsAsync(db, user.TenantId, ct);
             if (PasswordRules.IsExpired(user, rules, DateTimeOffset.UtcNow)) return RenewFirst("password-expired", PasswordRules.Expired);
@@ -99,9 +143,41 @@ public static class AuthEndpoints
             return await CompleteSignInAsync(http, db, users, signIn, cache, user, req.RememberMe, req.Technician, req.EndOtherSessions, ct);
         }).AllowAnonymous();
 
+        // The e-mailed link (0.29.0): confirms the owner's address once, then signs them in as sign-up did before.
+        g.MapPost("/confirm-email", async (ConfirmEmailRequest req, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext lookup,
+            DbContextOptions<CmmsDbContext> options, CancellationToken ct) =>
+        {
+            var bad = () => Results.Problem(title: Translator.T(BadLink), statusCode: 400);
+            if (string.IsNullOrWhiteSpace(req.Token) || req.Token.Length > 200) return bad();
+            var hash = SignUpConfirmation.Hash(req.Token.Trim());
+            var now = DateTimeOffset.UtcNow;
+            var tenantId = await lookup.Tenants.AsNoTracking().Where(t => t.SignUpTokenHash == hash && t.SignUpPendingSince != null && t.SignUpTokenExpires > now)
+                .Select(t => (Guid?)t.Id).FirstOrDefaultAsync(ct);
+            if (tenantId is not { } id) return bad();
+            await using var db = new CmmsDbContext(options, new FixedTenantContext(id, source: "Web"));
+            var tenant = await db.Tenants.FirstOrDefaultAsync(t => t.Id == id && t.SignUpTokenHash == hash && t.SignUpPendingSince != null, ct);
+            if (tenant is null) return bad();
+            tenant.SignUpPendingSince = null; tenant.SignUpTokenHash = null; tenant.SignUpTokenExpires = null;
+            await db.SaveChangesAsync(ct);
+            var ownerId = await db.Users.Where(u => !u.IsServiceAccount).OrderBy(u => u.Id).Select(u => u.Id).FirstOrDefaultAsync(ct);
+            var owner = await users.FindByIdAsync(ownerId.ToString());
+            if (owner is null) return bad();
+            await signIn.SignInAsync(owner, isPersistent: true);
+            return Results.Ok(new { ok = true });
+        }).AllowAnonymous().RequireRateLimiting(AbuseLimits.Confirm);
+
+        // Always "ok": it never says whether an address has an account. Only a still-pending owner gets a (fresh) link.
+        g.MapPost("/resend-confirmation", async (ResendConfirmationRequest req, UserManager<AppUser> users, DbContextOptions<CmmsDbContext> options,
+            IConfiguration config, EmailOutbox mail, CancellationToken ct) =>
+        {
+            if (SignUpConfirmation.Required(config, mail) && !string.IsNullOrWhiteSpace(req.Email) && req.Email.Length <= 256)
+                await SendNewLinkAsync(await users.FindByEmailAsync(req.Email.Trim()), options, mail, ct);
+            return Results.Ok(new { ok = true });
+        }).AllowAnonymous().RequireRateLimiting(AbuseLimits.Resend);
+
         // A new password in place of an expired one, or one that no longer meets the rules; then signed in as usual (0.25.0).
         g.MapPost("/renew-password", async (RenewPasswordRequest req, HttpContext http, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext db,
-            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, SignInGuard guard, IConfiguration config, CancellationToken ct) =>
+            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, SignInGuard guard, IConfiguration config, EmailOutbox mail, CancellationToken ct) =>
         {
             var address = VisitorAddress.Of(http, config); // kept in memory only (0.29.0)
             if (guard.IsBlocked(address, out var retryAfter)) return AbuseLimits.Refuse(http, retryAfter);
@@ -115,6 +191,7 @@ public static class AuthEndpoints
             var result = await CheckPasswordAsync(http, users, signIn, db, user, req.Password, guard, address, ct); // logged like signing in (0.26.1)
             if (result.IsLockedOut) return Results.Problem(title: Translator.T("Too many failed attempts. Try again in a few minutes."), statusCode: 429);
             if (!result.Succeeded) return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
+            if (await PendingGateAsync(db, user, config, mail, ct) is { } waiting) return waiting;
             var v = new Validator();
             foreach (var pv in users.PasswordValidators)
                 foreach (var e in (await pv.ValidateAsync(users, user, req.NewPassword ?? "")).Errors) v.Add("newPassword", e.Description);

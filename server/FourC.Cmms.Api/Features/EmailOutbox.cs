@@ -474,12 +474,13 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     /// the site's sender name is used.</param>
     internal async Task QueueAsync(CmmsDbContext db, ITenantContext ctx, string eventKey, IEnumerable<EmailRecipient> to, Func<string, EmailContent> build,
         string? entityType, Guid? entityId, CancellationToken ct, bool ignoreToggles = false, bool ignoreEnabled = false, bool keepActor = false,
-        Guid? siteId = null, Guid? locationId = null, bool siteLevel = false)
+        Guid? siteId = null, Guid? locationId = null, bool siteLevel = false, bool system = false)
     {
         if (!Available) return;
         var tenantId = db.CurrentTenantId ?? ctx.TenantId;
         var tenant = await db.Tenants.AsNoTracking().FirstOrDefaultAsync(t => t.Id == tenantId, ct);
-        if (tenant is null || !AllowedFor(tenant) || (!tenant.Settings.EmailEnabled && !ignoreEnabled)) return;
+        // A system e-mail (0.29.0: the sign-up link) is the platform's own: neither the operator's allow-list nor the organization's switch applies.
+        if (tenant is null || (!system && (!AllowedFor(tenant) || (!tenant.Settings.EmailEnabled && !ignoreEnabled)))) return;
         if (!ignoreToggles && (tenant.Settings.DisabledEmails ?? []).Contains(eventKey)) return;
 
         var actorEmail = ctx.UserId is { } uid ? await db.Users.Where(u => u.Id == uid).Select(u => u.Email).FirstOrDefaultAsync(ct) : null;
@@ -580,6 +581,12 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
             org => EmailTemplates.ImportFinished(org, job.FileName, job.Save, error is null, lines, Link($"/settings/import?job={job.Id}")), "ImportJob", job.Id, ct,
             ignoreToggles: true, keepActor: true);
     }
+
+    /// <summary>The link a new organization's owner uses to confirm their address (0.29.0), in the owner's language; queued on <paramref name="db"/> (the caller saves).</summary>
+    public async Task SignUpConfirmationAsync(CmmsDbContext db, FourC.Cmms.Core.Tenancy.Tenant tenant, AppUser owner, string token, CancellationToken ct) =>
+        await QueueAsync(db, new FixedTenantContext(tenant.Id, source: "Web"), "signup.confirm", [new EmailRecipient(owner.Email, owner.FullName, owner.Id)],
+            org => EmailTemplates.ConfirmSignUp(org, Link($"/confirm-email?token={token}") ?? $"/confirm-email?token={token}"), "Tenant", tenant.Id, ct,
+            ignoreToggles: true, ignoreEnabled: true, keepActor: true, system: true);
 
     internal static async Task<List<EmailRecipient>> UsersAsync(CmmsDbContext db, IReadOnlyCollection<Guid> ids, CancellationToken ct) =>
         await db.Users.AsNoTracking().People().Where(u => ids.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId)

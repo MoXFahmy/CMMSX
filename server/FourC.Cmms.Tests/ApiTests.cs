@@ -33,6 +33,8 @@ public class ApiFixture : IAsyncLifetime
         {
             b.UseSetting("Import:PollMilliseconds", "200"); // background imports (0.26.0) are picked up at once in tests
             b.UseSetting("Abuse:Enabled", "false"); // per-address limits (0.29.0) are off in every test but AbuseLimitTests (set before Configure, so it can turn them on)
+            b.UseSetting("Auth:RequireEmailConfirmation", "false"); // sign-up waits for an e-mail link (0.29.0) only in SignUpConfirmationTests
+            b.UseSetting("Email:AllowedOrganizations", "*"); // sign-up is open in tests; the operator allows every organization (set before Configure, so a fixture can narrow it)
             Configure(b);
             b.UseSetting("ConnectionStrings:Cmms", cs);
             b.UseSetting("Storage:Path", Path.Combine(Path.GetTempPath(), _db));
@@ -40,7 +42,6 @@ public class ApiFixture : IAsyncLifetime
             b.UseSetting("Email:Provider", "Smtp");
             b.UseSetting("Email:From", "noreply@cmms.test");
             b.UseSetting("Email:AutoSend", "false");
-            b.UseSetting("Email:AllowedOrganizations", "*"); // sign-up is open in tests; the operator allows every organization
             b.UseSetting("App:PublicUrl", "https://cmms.test");
             b.UseSetting("Email:OverdueAutoRun", "false"); // tests run the overdue pass themselves
             b.UseSetting("Contracts:AutoRun", "false"); // and the contract renewal and alert pass

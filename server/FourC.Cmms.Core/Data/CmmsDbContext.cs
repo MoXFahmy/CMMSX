@@ -158,6 +158,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.Property(x => x.Name).HasMaxLength(200);
             e.Property(x => x.Slug).HasMaxLength(100);
             e.HasIndex(x => x.Slug).IsUnique();
+            e.Property(x => x.SignUpTokenHash).HasMaxLength(64);
             e.Property(x => x.Settings).HasConversion(JsonConverter<TenantSettings>()).Metadata.SetValueComparer(JsonComparer<TenantSettings>());
         });
 

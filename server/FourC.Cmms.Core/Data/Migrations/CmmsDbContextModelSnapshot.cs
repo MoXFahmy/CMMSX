@@ -5701,6 +5701,16 @@ namespace FourC.Cmms.Core.Data.Migrations
                         .IsRequired()
                         .HasColumnType("nvarchar(max)");
 
+                    b.Property<DateTimeOffset?>("SignUpPendingSince")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<DateTimeOffset?>("SignUpTokenExpires")
+                        .HasColumnType("datetimeoffset");
+
+                    b.Property<string>("SignUpTokenHash")
+                        .HasMaxLength(64)
+                        .HasColumnType("nvarchar(64)");
+
                     b.Property<string>("Slug")
                         .IsRequired()
                         .HasMaxLength(100)

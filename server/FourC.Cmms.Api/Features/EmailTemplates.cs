@@ -51,6 +51,13 @@ public sealed record RequestFacts(string Number, string Title, LocalWords Priori
 /// </summary>
 public static class EmailTemplates
 {
+    /// <summary>The link that confirms a new organization's owner's e-mail address (0.29.0).</summary>
+    public static EmailContent ConfirmSignUp(string org, string link) => Layout(org,
+        "Confirm your e-mail address for CMX", "Confirm your e-mail address",
+        [("Organization", org)],
+        "Select the button to confirm your e-mail address and start using CMX. The link works for 48 hours and once only. If you didn't sign up, you can ignore this e-mail.",
+        link, "Confirm e-mail address");
+
     /// <summary>A background check or import finished (0.26.0).</summary>
     public static EmailContent ImportFinished(string org, string fileName, bool import, bool ok, IReadOnlyList<(string Label, string? Value)> lines, string? link) => Layout(org,
         ok ? (import ? $"Import finished: {fileName}" : $"Check finished: {fileName}") : (import ? $"Import failed: {fileName}" : $"Check failed: {fileName}"),
