@@ -177,10 +177,13 @@ public static class AnonymiseEndpoints
             && (emails.Contains(m.ToAddress.Trim()) || (m.ToName != null && names.Contains(m.ToName.Trim()))));
         // Those not sent yet aren't sent to the placeholder address: they end as failed.
         var reason = Translator.T(AnonymisedMail);
-        return apply ? await rows.ExecuteUpdateAsync(s => s.SetProperty(m => m.ToAddress, address).SetProperty(m => m.ToName, p.Placeholder)
+        var changed = apply ? await rows.ExecuteUpdateAsync(s => s.SetProperty(m => m.ToAddress, address).SetProperty(m => m.ToName, p.Placeholder)
                 .SetProperty(m => m.Status, m => m.Status == EmailStatus.Pending ? EmailStatus.Failed : m.Status)
                 .SetProperty(m => m.LastError, m => m.Status == EmailStatus.Pending ? reason : m.LastError), ct)
             : await rows.CountAsync(ct);
+        // Mail they set going carries their address as its Reply-To (0.26.1): it leaves the rows still in the log. Mail queued afterwards has none.
+        var replies = db.OutboundEmails.IgnoreQueryFilters().Where(m => m.TenantId == p.TenantId && m.ReplyTo != null && emails.Contains(m.ReplyTo.Trim()));
+        return changed + (apply ? await replies.ExecuteUpdateAsync(s => s.SetProperty(m => m.ReplyTo, (string?)null), ct) : await replies.CountAsync(ct));
     }
 
     /// <summary>One name column: rows carrying the person's (user) id, then, unless text is off, rows with no id whose text is their name.</summary>

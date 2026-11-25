@@ -93,6 +93,26 @@ public class AnonymiseTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Anonymising_clears_reply_to_on_queued_mail()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx);
+        var karim = await UserAsync(fx, org.Admin, "Administrator", name: "Karim Saad");
+        var employee = await PersonAsync(org.Admin, "E-012", "Karim Saad", karim.Id);
+        // Karim raises a request: the mail the office gets still carries his address as its Reply-To while it waits in the queue.
+        await Ok(await karim.Client.PostAsJsonAsync("/api/work-requests", new { title = "Light flickers", siteId = org.Site, locationId = org.Location, priority = "Low", type = "Corrective" }));
+        var queued = await DbAsync(fx, db => db.OutboundEmails.IgnoreQueryFilters().AsNoTracking().Where(e => e.TenantId == org.Tenant && e.ReplyTo == karim.Email).CountAsync());
+        Assert.True(queued > 0, "the setup should have queued mail with Karim as the Reply-To");
+
+        await Deactivate(employee, karim.Id);
+        await Ok(await Anonymise(org.Admin, new { employeeId = employee, confirm = "E-012" }));
+
+        Assert.Equal(0, await DbAsync(fx, db => db.OutboundEmails.IgnoreQueryFilters().AsNoTracking().Where(e => e.TenantId == org.Tenant && e.ReplyTo != null && e.ReplyTo.Contains(karim.Email)).CountAsync()));
+        // Mail triggered afterwards carries none, and the rows still exist (only the address left them).
+        Assert.Equal(queued, await DbAsync(fx, db => db.OutboundEmails.IgnoreQueryFilters().AsNoTracking().Where(e => e.TenantId == org.Tenant && e.EventKey == "request.submitted").CountAsync()));
+    }
+
+    [SkippableFact]
     public async Task Refused_for_active_people_and_unconfirmed()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

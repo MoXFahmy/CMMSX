@@ -1778,7 +1778,11 @@
     "userBranchesHint": "Only these places and everything under them. Leave empty for whole sites.",
     "placesCount_one": "{{count}} place",
     "placesCount_other": "{{count}} places",
-    "deletedPlace": "(deleted place)"
+    "deletedPlace": "(deleted place)",
+    "deletedPlaceTitle": "Remove the last deleted place?",
+    "deletedPlaceNow": "Every place this person was limited to has been deleted, so they can't see anything now.",
+    "deletedPlaceAfterSites": "After saving they will see all of: {{sites}}.",
+    "deletedPlaceAfterAll": "After saving they will see every site and place, because no site is stored for them."
   },
   "teams": {
     "tab": "Teams",
@@ -1828,6 +1832,7 @@
   },
   "requestTypes": {
     "title": "Request types",
+    "cannotView": "{{name}} (can't view requests)",
     "new": "New request type",
     "hint": "Each type can set a default trade and priority, tell extra people about new requests, and approve them automatically.",
     "defaultTrade": "Default trade",

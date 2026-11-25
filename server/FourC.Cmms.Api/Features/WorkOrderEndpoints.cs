@@ -209,7 +209,8 @@ public static class WorkOrderEndpoints
             // The work template it was made from (0.12.0): its documents are shown, not copied, so they follow changes.
             var template = w.PmTaskId is { } tplId ? await db.PmTasks.AsNoTracking().Where(t => t.Id == tplId)
                 .Select(t => new { t.Id, t.Code, Name = Bilingual.Arabic && t.NameAr != null ? t.NameAr : t.Name, t.ExpectedStopHours }).FirstOrDefaultAsync(ct) : null;
-            var templateDocuments = template is null ? [] : await db.Attachments.AsNoTracking().Where(a => a.EntityType == "PmTask" && a.EntityId == template.Id)
+            // ...only for people who may view PMs, as the templates' own files are (the same gate as their download).
+            var templateDocuments = template is null || !mine.Contains(Permissions.PmView) ? [] : await db.Attachments.AsNoTracking().Where(a => a.EntityType == "PmTask" && a.EntityId == template.Id)
                 .OrderBy(a => a.FileName).Select(a => new { a.Id, a.FileName, a.ContentType, a.Size }).ToListAsync(ct);
             // Its group (0.12.0): the group's comments are shown here, not copied.
             var group = w.GroupId is { } gid ? await db.WorkOrderGroups.AsNoTracking().Where(g => g.Id == gid).Select(g => new { g.Id, g.Number, g.Title }).FirstOrDefaultAsync(ct) : null;

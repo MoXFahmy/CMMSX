@@ -157,6 +157,24 @@ public class RequestFeedbackTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Answer_page_does_not_return_the_requester_name()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx);
+        var caller = Addr("caller");
+        var id = await RequestAsync(org.Admin, org, new { requesterName = "Guest Person", requesterEmail = caller });
+        await ApproveAndCompleteAsync(org.Admin, id);
+        var token = await TokenAsync(fx, caller);
+
+        var page = await Ok(await fx.Client().GetAsync($"/api/public/feedback/{token}"));
+        // The page shows the title, place and outcome only: nothing that names the person who asked.
+        Assert.False(page.TryGetProperty("requesterName", out _));
+        Assert.DoesNotContain("Guest Person", page.GetRawText());
+        Assert.DoesNotContain(caller, page.GetRawText());
+        Assert.Equal("Light flickers", page.GetProperty("title").GetString());
+    }
+
+    [SkippableFact]
     public async Task The_link_is_single_use_and_voided_by_a_reopen()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

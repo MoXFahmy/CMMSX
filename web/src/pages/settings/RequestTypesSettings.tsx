@@ -24,7 +24,9 @@ export function RequestTypesSettings({ editable }: { editable: boolean }) {
   const [editing, setEditing] = useState<RequestType | null>(null);
   const { data, isFetching } = useQuery({ queryKey: ['request-types'], queryFn: () => get<RequestType[]>('/request-types') });
   const { data: trades } = useQuery({ queryKey: ['trades'], queryFn: () => get<Lookup[]>('/trades') });
-  const { data: people } = useQuery({ queryKey: ['users-lookup'], queryFn: () => get<{ id: string; fullName: string }[]>('/users/lookup'), enabled: opened, retry: false });
+  const { data: people } = useQuery({ queryKey: ['users-lookup', 'request-viewers'], queryFn: () => get<{ id: string; fullName: string }[]>('/users/lookup', { requestViewers: 'true' }), enabled: opened, retry: false });
+  // Already-chosen people who can't view requests stay in the list (so they can be taken off), marked; nobody new is offered.
+  const { data: everyone } = useQuery({ queryKey: ['users-lookup'], queryFn: () => get<{ id: string; fullName: string }[]>('/users/lookup'), enabled: opened, retry: false });
   const { data: teams } = useTeams();
   const form = useForm({ initialValues: blank });
   const open = (x: RequestType | null) => {
@@ -81,7 +83,9 @@ export function RequestTypesSettings({ editable }: { editable: boolean }) {
             <Select label={t('requestTypes.defaultPriority')} clearable data={listItems('priority', t, form.values.defaultPriority)} {...form.getInputProps('defaultPriority')} />
           </Group>
           <MultiSelect label={t('requestTypes.recipients')} description={t('requestTypes.recipientsHint')} searchable clearable
-            data={(people ?? []).map((u) => ({ value: u.id, label: u.fullName }))} {...form.getInputProps('recipientIds')} />
+            data={[...(people ?? []).map((u) => ({ value: u.id, label: u.fullName })),
+              ...(everyone ?? []).filter((u) => form.values.recipientIds.includes(u.id) && !(people ?? []).some((p) => p.id === u.id))
+                .map((u) => ({ value: u.id, label: t('requestTypes.cannotView', { name: u.fullName }) }))]} {...form.getInputProps('recipientIds')} />
           <Switch label={t('requestTypes.autoApprove')} description={t('requestTypes.autoApproveHint')} {...form.getInputProps('autoApprove', { type: 'checkbox' })} />
           {form.values.autoApprove && (
             <Select label={t('requestTypes.team')} description={t('requestTypes.teamHint')} clearable data={teamOptions(teams, form.values.teamId)} {...form.getInputProps('teamId')} />

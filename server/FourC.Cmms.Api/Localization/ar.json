@@ -1286,5 +1286,7 @@
  "Confirm your e-mail address for CMX": "أكّد عنوان بريدك الإلكتروني في CMX",
  "Confirm your e-mail address": "أكّد عنوان بريدك الإلكتروني",
  "Select the button to confirm your e-mail address and start using CMX. The link works for 48 hours and once only. If you didn't sign up, you can ignore this e-mail.": "اضغط على الزر لتأكيد عنوان بريدك الإلكتروني وابدأ استخدام CMX. الرابط صالح لمدة 48 ساعة ويُستخدم مرة واحدة فقط. إذا لم تسجّل أنت، يمكنك تجاهل هذه الرسالة.",
- "Confirm e-mail address": "تأكيد عنوان البريد الإلكتروني"
+ "Confirm e-mail address": "تأكيد عنوان البريد الإلكتروني",
+ "{0} can't see this PM's place, so they would not get its e-mail. Choose someone who can.": "{0} لا يرى مكان هذه الصيانة الدورية، لذا لن تصله رسائلها. اختر شخصًا يراه.",
+ "This contract also covers assets at other sites that you can't see, so it can't be limited to one site.": "يشمل هذا العقد أيضًا أصولًا في مواقع أخرى لا يمكنك رؤيتها، لذا لا يمكن حصره في موقع واحد."
 }

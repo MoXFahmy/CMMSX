@@ -5,9 +5,11 @@ import { ActivityLog } from './ActivityLog';
 import { StorageSettings } from './StorageSettings';
 import { ApiKeysSettings } from './ApiKeysSettings';
 import { ServiceAccountModal } from './ServiceAccountModal';
+import { AccessAfterSave, removesLastDeletedPlace } from './userAccess';
 import { useEffect, useState } from 'react';
 import { ActionIcon, Badge, Button, Card, Checkbox, ColorInput, FileButton, Group, Modal, MultiSelect, NumberInput, PasswordInput, Select, SimpleGrid, Stack, Switch, Tabs, TagsInput, Text, TextInput, Textarea, Title } from '@mantine/core';
 import { useDisclosure } from '@mantine/hooks';
+import { modals } from '@mantine/modals';
 import { useForm, type UseFormReturnType } from '@mantine/form';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useNavigate, useParams } from 'react-router';
@@ -396,10 +398,23 @@ function UserSettings() {
       purchaseApprovalLimit: u.purchaseApprovalLimit ?? '', siteIds: u.siteIds ?? [], locationIds: u.locationIds ?? [] } : blank);
     form.clearErrors(); m.open();
   };
-  const submit = form.onSubmit(async (v) => {
+  const save = async (v: typeof blank) => {
     const body = { ...v, purchaseApprovalLimit: v.purchaseApprovalLimit === '' ? null : v.purchaseApprovalLimit };
     try { if (editing) await put(`/users/${editing.id}`, { ...body, password: null }); else await post('/users', body); notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['users'] }); m.close(); }
     catch (e) { handleFormError(form, e); }
+  };
+  const submit = form.onSubmit(async (v) => {
+    // Taking the last "(deleted place)" off turns "sees nothing" into the stored sites (0.9.1): say so before saving.
+    if (editing && h && removesLastDeletedPlace(editing.locationIds ?? [], v.locationIds, new Set(h.locations.map((l) => l.id)))) {
+      modals.openConfirmModal({
+        title: t('access.deletedPlaceTitle'),
+        children: <AccessAfterSave sites={v.siteIds.map((id) => siteName(id) ?? id)} />,
+        labels: { confirm: t('common.confirm'), cancel: t('common.cancel') },
+        onConfirm: () => void save(v),
+      });
+      return;
+    }
+    await save(v);
   });
   const submitPw = pwForm.onSubmit(async (v) => {
     try { await post(`/users/${pwUser!.id}/password`, v); notifySuccess(t('settings.passwordReset')); setPwUser(null); pwForm.reset(); } catch (e) { handleFormError(pwForm, e); }

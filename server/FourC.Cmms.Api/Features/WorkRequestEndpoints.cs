@@ -139,7 +139,9 @@ public static class WorkRequestEndpoints
         g.MapGet("/people", async (Guid siteId, CmmsDbContext db, AccessService access, CancellationToken ct) =>
         {
             if (!await db.Sites.AnyAsync(s => s.Id == siteId, ct)) return Results.Ok(Array.Empty<object>());
-            var users = await db.Users.AsNoTracking().People().Where(u => u.IsActive && u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
+            // Only people who can view requests (0.10.0): someone who couldn't open the request has no use for being "kept informed".
+            var viewers = await EmailOutbox.RequestViewerIdsAsync(db, ct);
+            var users = await db.Users.AsNoTracking().People().Where(u => u.IsActive && u.TenantId == db.CurrentTenantId && viewers.Contains(u.Id)).OrderBy(u => u.FullName)
                 .Select(u => new { u.Id, Name = u.FullName }).Take(1000).ToListAsync(ct);
             var seen = new List<object>();
             foreach (var u in users)

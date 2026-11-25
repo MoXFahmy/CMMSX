@@ -7,7 +7,7 @@ import { fmtDateTime } from '@/components/utils';
 import { AnswerForm } from './RequestLoop';
 
 type Page = {
-  organization: string; language: 'en' | 'ar'; number: string; title: string; requesterName?: string | null; place?: string | null;
+  organization: string; language: 'en' | 'ar'; number: string; title: string; place?: string | null;
   workOrderNumber?: string | null; completedAt?: string | null; completionNotes?: string | null; refuseNeedsComment: boolean;
 };
 

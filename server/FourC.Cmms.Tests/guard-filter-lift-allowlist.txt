@@ -1,0 +1,28 @@
+# Statements that lift the site filter (AllSites() / IgnoreQueryFilters) and name a site-visibility helper or a second db set in the same query.
+# GuardFilterLiftTests reads this file. One entry per statement: "path-from-server/File.cs:line  why the lift is deliberate".
+# The line is approximate (the test allows 25 lines of drift). An entry that matches no statement fails the build, so remove entries when code is fixed or deleted.
+# Add an entry only when nothing in the same query is meant to stay limited to the person's sites; otherwise split the query in two (see ContractEndpoints.ValidateAsync, 0.26.1-3).
+
+# --- Imports: a person with limited access still must not clash with codes and numbers in sites they can't see -------------------------
+FourC.Cmms.Api/Features/Import/ImportRun.cs:408  Only for a limited person: collects asset numbers past their limits so a new row can't reuse one; the numbers go to a "taken" set, never to the person.
+FourC.Cmms.Api/Features/Import/SheetImporters.cs:195  The CurrentSiteIds test only decides whether the person is limited; the lifted query lists site codes they can't see so a clash is reported without naming them.
+FourC.Cmms.Api/Features/Import/SheetImporters.cs:235  The CurrentBranchPaths test only decides whether the person is limited; the lifted query lists location codes they can't see so a clash is reported without naming them.
+FourC.Cmms.Api/Features/Import/SheetImporters.cs:503  The CurrentSiteIds test only decides whether the person is limited; the lifted query lists store codes they can't see so a clash is reported without naming them.
+FourC.Cmms.Api/Features/Import/SheetImporters.cs:550  The CurrentSiteIds test only decides whether the person is limited; the lifted query lists asset numbers they can't see so a clash is reported without naming them.
+FourC.Cmms.Api/Features/Import/SheetImporters.cs:1384  The CurrentSiteIds test only decides whether the person is limited; the lifted query lists PM codes they can't see so a clash is reported without naming them.
+
+# --- "Is this still used anywhere?" checks: they must see every site, so the lift on both sets is the point -------------------------------
+FourC.Cmms.Api/Features/AssetGroupEndpoints.cs:116  Refusing a group's site when ANY member (also at sites the editor can't see) is elsewhere: both the members and the assets are meant to be seen in full.
+FourC.Cmms.Api/Features/InventoryEndpoints.cs:279  "Is the part planned on a work order": the nested WorkOrders.Any must also see hidden sites (it only drops deleted work orders), so one lift for the whole query is intended.
+
+# --- Reads that run for the system or on behalf of the whole round / report, not for the limited person's view ---------------------------
+FourC.Cmms.Api/Features/PmGenerator.cs:307  The PM generator works on a round's every asset, also in branches the editor can't see (stated in the method's comment); nothing here is shown to the person.
+FourC.Cmms.Api/Features/BudgetReport.cs:66  Committed order lines are counted for the cost centre across all sites; those without a cost centre go through SeenAsync, which tests visibility in its own query.
+FourC.Cmms.Api/Infrastructure/Infrastructure.cs:108  Role permissions of a person, read for the sign-in itself: Roles and UserRoles carry no site filter, only the organization one, which the explicit TenantId test restates.
+
+# --- Serial units: the lift is on the units themselves; Parts and UnitMovements have no site filter, so naming them in the same query lifts nothing else -------
+FourC.Cmms.Api/Features/PurchasingEndpoints.cs:544  Units named by id on an order line, read for their serial number; the nested Parts set has no site filter, so the lift reaches nothing it shouldn't.
+FourC.Cmms.Api/Features/SerialUnitEndpoints.cs:154  Units fitted to the job's assets, listed with their part and last fitting; the lift is on the units, and the nested Parts and UnitMovements sets have no site filter.
+FourC.Cmms.Api/Features/SerialUnitEndpoints.cs:330  Units now fitted to the asset being read; the lift is on the units, and the nested Parts and UnitMovements sets have no site filter.
+FourC.Cmms.Api/Features/SerialUnitEndpoints.cs:340  Units named by id from a record the person already reached; the lift is on the units, and the nested Parts set has no site filter.
+FourC.Cmms.Api/Features/TechEndpoints.cs:85  Units fitted to the phone job's assets; the lift is on the units, and the nested Parts and UnitMovements sets have no site filter.

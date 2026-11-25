@@ -140,7 +140,7 @@ public static class RequestFeedbackService
             var asset = r.AssetId is { } a ? await scoped.Assets.AsNoTracking().Where(x => x.Id == a).Select(x => x.AssetNumber + " · " + x.Name).FirstOrDefaultAsync(ct) : null;
             return Results.Ok(new
             {
-                Organization = tenant.Name, Language = tenant.Settings.DefaultLanguage, r.Number, r.Title, r.RequesterName,
+                Organization = tenant.Name, Language = tenant.Settings.DefaultLanguage, r.Number, r.Title,
                 Place = string.Join(" › ", new[] { site, location, asset }.Where(x => !string.IsNullOrWhiteSpace(x))),
                 WorkOrderNumber = w?.Number, w?.CompletedAt, w?.CompletionNotes,
                 RefuseNeedsComment = (tenant.Settings.CommentRequiredFor ?? []).Contains(CommentActions.Refuse),

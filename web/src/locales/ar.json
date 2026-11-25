@@ -1842,7 +1842,11 @@
     "placesCount_few": "{{count}} أماكن",
     "placesCount_many": "{{count}} مكانًا",
     "placesCount_other": "{{count}} مكان",
-    "deletedPlace": "(مكان محذوف)"
+    "deletedPlace": "(مكان محذوف)",
+    "deletedPlaceTitle": "إزالة آخر مكان محذوف؟",
+    "deletedPlaceNow": "حُذفت كل الأماكن التي كان هذا الشخص محصورًا فيها، لذا لا يرى شيئًا الآن.",
+    "deletedPlaceAfterSites": "بعد الحفظ سيرى كل ما يلي: {{sites}}.",
+    "deletedPlaceAfterAll": "بعد الحفظ سيرى كل المواقع والأماكن، لأنه لا يوجد موقع محفوظ له."
   },
   "teams": {
     "tab": "الفرق",
@@ -1892,6 +1896,7 @@
   },
   "requestTypes": {
     "title": "أنواع الطلبات",
+    "cannotView": "{{name}} (لا يستطيع عرض الطلبات)",
     "new": "نوع طلب جديد",
     "hint": "يمكن لكل نوع تحديد حرفة وأولوية افتراضيتين، وإبلاغ أشخاص إضافيين بالطلبات الجديدة، واعتمادها تلقائيًا.",
     "defaultTrade": "الحرفة الافتراضية",

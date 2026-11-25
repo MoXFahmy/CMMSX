@@ -121,6 +121,58 @@ public class ContractTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(new HashSet<Guid> { w.A1, w.B1 }, all);
     }
 
+    private const string HiddenCover = "This contract also covers assets at other sites that you can't see, so it can't be limited to one site.";
+
+    [SkippableFact]
+    public async Task Limited_editor_cannot_narrow_an_org_contract_covering_hidden_assets()
+    {
+        Skip.IfNot(fx.Enabled);
+        var w = await WorldAsync(fx);
+        var orgWide = await ContractAsync(w.O.Admin, Body(w.C, Today, Today.AddDays(300), assets: [w.A1, w.B1], title: "Org wide"));
+        var hiddenNumber = (await Ok(await w.O.Admin.GetAsync($"/api/assets/{w.B1}"))).GetProperty("assetNumber").GetString()!;
+        var (user, _, _) = await UserAsync(fx, w.O.Admin, "Site A", [Permissions.ContractsView, Permissions.ContractsManage, Permissions.AssetsView], siteIds: [w.O.Site]);
+        var mine = await GetAsync(user, orgWide);
+
+        // Giving the contract site A would leave it covering the asset at B that this person can't see: refused, and the hidden asset's number stays hidden.
+        var refused = await Problem(await user.PutAsJsonAsync($"/api/contracts/{orgWide}", WithVersion(Body(w.C, Today, Today.AddDays(300), site: w.O.Site, assets: [w.A1], title: "Org wide"), mine)));
+        Assert.Contains(HiddenCover, refused);
+        Assert.DoesNotContain(hiddenNumber, refused);
+        Assert.Equal(JsonValueKind.Null, (await GetAsync(w.O.Admin, orgWide)).GetProperty("siteId").ValueKind);
+
+        // Someone who sees both sites may do it by naming what they want covered.
+        var current = await GetAsync(w.O.Admin, orgWide);
+        Assert.Contains("is at another site than the contract.", await Problem(await w.O.Admin.PutAsJsonAsync($"/api/contracts/{orgWide}",
+            WithVersion(Body(w.C, Today, Today.AddDays(300), site: w.O.Site, assets: [w.A1, w.B1], title: "Org wide"), current))));
+        await Ok(await w.O.Admin.PutAsJsonAsync($"/api/contracts/{orgWide}", WithVersion(Body(w.C, Today, Today.AddDays(300), site: w.O.Site, assets: [w.A1], title: "Org wide"), current)));
+    }
+
+    [SkippableFact]
+    public async Task Branch_limited_editor_is_refused_only_for_hidden_assets_at_other_sites()
+    {
+        Skip.IfNot(fx.Enabled);
+        var w = await WorldAsync(fx);
+        var admin = w.O.Admin;
+        async Task<Guid> Loc(string code) => Id(await Ok(await admin.PostAsJsonAsync("/api/locations", new { siteId = w.O.Site, code, name = code, type = "Building", criticality = "Medium", isActive = true })));
+        var mine = await Loc("B1");
+        var theirs = await Loc("B2");
+        async Task<Guid> Asset(string name, Guid site, Guid? location) =>
+            Id(await Ok(await admin.PostAsJsonAsync("/api/assets", new { name, siteId = site, locationId = location, status = "Active", criticality = "Medium", warrantyType = "None" })));
+        var seen = await Asset("Seen", w.O.Site, mine);
+        var sameSiteHidden = await Asset("Same site, other branch", w.O.Site, theirs);
+        var role = Id(await Ok(await admin.PostAsJsonAsync("/api/roles", new { name = "Branch editor", description = "", permissions = new[] { Permissions.ContractsView, Permissions.ContractsManage, Permissions.AssetsView, Permissions.LocationsView } })));
+        var email = $"{Guid.NewGuid():N}@test.local";
+        await Ok(await admin.PostAsJsonAsync("/api/users", new { fullName = "Branch", email, isActive = true, roleIds = new[] { role }, password = "Passw0rd!u", locationIds = new[] { mine } }));
+        var editor = fx.Client();
+        await Ok(await editor.PostAsJsonAsync("/api/auth/login", new { email, password = "Passw0rd!u", rememberMe = false }));
+
+        // A hidden asset at the same site is no reason to refuse; one at another site is.
+        var same = await ContractAsync(admin, Body(w.C, Today, Today.AddDays(300), assets: [seen, sameSiteHidden], title: "Same site"));
+        await Ok(await editor.PutAsJsonAsync($"/api/contracts/{same}", WithVersion(Body(w.C, Today, Today.AddDays(300), site: w.O.Site, assets: [seen], title: "Same site"), await GetAsync(editor, same))));
+        var far = await ContractAsync(admin, Body(w.C, Today, Today.AddDays(300), assets: [seen, w.B1], title: "Far"));
+        Assert.Contains(HiddenCover, await Problem(await editor.PutAsJsonAsync($"/api/contracts/{far}",
+            WithVersion(Body(w.C, Today, Today.AddDays(300), site: w.O.Site, assets: [seen], title: "Far"), await GetAsync(editor, far)))));
+    }
+
     [SkippableFact]
     public async Task Amendment_changes_the_current_value_and_termination_needs_a_reason()
     {

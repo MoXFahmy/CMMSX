@@ -316,11 +316,21 @@ public static class ContractEndpoints
         if (named.Count != ids.Count) v.Add("assets", "Unknown asset.");
         if (i.SiteId is { } contractSite)
         {
-            var kept = existing is null ? [] : await (from ca in db.ContractAssets.AsNoTracking() join a in db.Assets.AllSites().AsNoTracking() on ca.AssetId equals a.Id
-                                                      where ca.ContractId == existing.Id && !ids.Contains(a.Id) && !db.Assets.Any(x => x.Id == a.Id)
-                                                      select new { a.Id, a.AssetNumber, a.SiteId }).ToListAsync(ct);
-            foreach (var a in named.Concat(kept).Where(a => a.SiteId != contractSite))
+            foreach (var a in named.Where(a => a.SiteId != contractSite))
                 v.Add("assets", $"Asset {a.AssetNumber} is at another site than the contract.");
+            if (existing is not null)
+            {
+                // Assets already on the contract that this person can't see stay on it, so they count too. Two separate queries: an AllSites() in the
+                // same query as the visibility test would lift the limits from both, and nothing would ever count as hidden (0.26.1).
+                var onIt = await db.ContractAssets.AsNoTracking().Where(ca => ca.ContractId == existing.Id && !ids.Contains(ca.AssetId)).Select(ca => ca.AssetId).ToListAsync(ct);
+                if (onIt.Count > 0)
+                {
+                    var seen = await db.Assets.AsNoTracking().Where(a => onIt.Contains(a.Id)).Select(a => a.Id).ToListAsync(ct);
+                    var hidden = onIt.Except(seen).ToList();
+                    if (hidden.Count > 0 && await db.Assets.AllSites().AnyAsync(a => hidden.Contains(a.Id) && a.SiteId != contractSite, ct))
+                        v.Add("assets", "This contract also covers assets at other sites that you can't see, so it can't be limited to one site."); // no numbers: they are not theirs to see
+                }
+            }
         }
         return v;
     }

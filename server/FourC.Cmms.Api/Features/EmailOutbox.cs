@@ -92,9 +92,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         var to = Union(await GroupsAsync(db, EmailEvents.RequestSubmitted, null, r, null, ct));
         if (to.Count == 0) return;
         var facts = await FactsAsync(db, r, ct);
-        await QueueAsync(db, ctx, EmailEvents.RequestSubmitted, to,
-            org => EmailTemplates.RequestSubmitted(org, facts, r.RequesterName, Link($"/work-requests?open={r.Id}")), "WorkRequest", r.Id, ct,
-            siteId: r.SiteId, locationId: r.LocationId);
+        await QueueRequestMailAsync(db, ctx, EmailEvents.RequestSubmitted, to, r, (org, link) => EmailTemplates.RequestSubmitted(org, facts, r.RequesterName, link), ct);
     }
 
     /// <summary>Approved or rejected (by the request's status): the grid's recipients hear (by default the requester).</summary>
@@ -108,11 +106,9 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         var to = Union(await GroupsAsync(db, key, w, r, null, ct));
         if (to.Count == 0) return;
         var facts = await FactsAsync(db, r, ct);
-        var link = Link($"/work-requests?open={r.Id}");
-        await QueueAsync(db, ctx, key, to, org => key == EmailEvents.RequestApproved
-                ? EmailTemplates.RequestApproved(org, facts, workOrderNumber ?? "", link)
-                : EmailTemplates.RequestRejected(org, facts, r.DecisionNote ?? "", link),
-            "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
+        await QueueRequestMailAsync(db, ctx, key, to, r, (org, link) => key == EmailEvents.RequestApproved
+            ? EmailTemplates.RequestApproved(org, facts, workOrderNumber ?? "", link)
+            : EmailTemplates.RequestRejected(org, facts, r.DecisionNote ?? "", link), ct);
     }
 
     /// <summary>Past its due time and still not done: the grid's recipients hear (by default the people on it and whoever created it).</summary>
@@ -169,9 +165,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         if (c.ByRequester)
         {
             var office = (groups.GetValueOrDefault(EmailRecipientKinds.RequestRecipients) ?? []).ToList();
-            if (office.Count > 0)
-                await QueueAsync(db, ctx, EmailEvents.RequestComment, office, org => Build(org, Link($"/work-requests?open={r.Id}")), "WorkRequest", r.Id, ct,
-                    siteId: r.SiteId, locationId: r.LocationId);
+            if (office.Count > 0) await QueueRequestMailAsync(db, ctx, EmailEvents.RequestComment, office, r, Build, ct);
             var workers = (groups.GetValueOrDefault(EmailRecipientKinds.Technicians) ?? []).Concat(groups.GetValueOrDefault(EmailRecipientKinds.Contractors) ?? []).ToList();
             if (workers.Count > 0 && w is not null)
                 await QueueAsync(db, ctx, EmailEvents.RequestComment, workers, org => Build(org, Link($"/work-orders/{w.Id}")), "WorkRequest", r.Id, ct,
@@ -289,8 +283,12 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     public async Task PoApprovalWaitingAsync(CmmsDbContext db, ITenantContext ctx, PurchaseOrder po, IReadOnlyCollection<Guid> userIds, string levelName, CancellationToken ct)
     {
         if (!Available || userIds.Count == 0) return;
+        // Only those who can sign now: holding "Approve purchases" today (a level may still name someone who lost it); the site is checked when queuing.
+        var allowed = (await UserIdsWithPermissionAsync(db, Permissions.PurchasingApprove, ct)).ToHashSet();
+        var signers = userIds.Where(allowed.Contains).ToList();
+        if (signers.Count == 0) return;
         var facts = await FactsAsync(db, po, ct);
-        await QueueAsync(db, ctx, EmailEvents.PoApprovalWaiting, await UsersAsync(db, userIds, ct),
+        await QueueAsync(db, ctx, EmailEvents.PoApprovalWaiting, await UsersAsync(db, signers, ct),
             o => EmailTemplates.PoApprovalWaiting(o, facts, levelName, Link($"/purchasing/orders/{po.Id}")), "PurchaseOrder", po.Id, ct, siteId: po.SiteId, siteLevel: true);
     }
 
@@ -596,11 +594,36 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     internal static async Task<List<EmailRecipient>> UsersWithPermissionAsync(CmmsDbContext db, string permission, CancellationToken ct) =>
         await UsersAsync(db, await UserIdsWithPermissionAsync(db, permission, ct), ct);
 
-    private static async Task<List<Guid>> UserIdsWithPermissionAsync(CmmsDbContext db, string permission, CancellationToken ct)
+    internal static Task<List<Guid>> UserIdsWithPermissionAsync(CmmsDbContext db, string permission, CancellationToken ct) => UserIdsWithAnyPermissionAsync(db, [permission], ct);
+
+    /// <summary>The ids of people holding at least one of <paramref name="permissions"/> through any of their roles (active or not).</summary>
+    internal static async Task<List<Guid>> UserIdsWithAnyPermissionAsync(CmmsDbContext db, string[] permissions, CancellationToken ct)
     {
         var roleIds = (await db.Roles.AsNoTracking().Select(r => new { r.Id, r.Permissions }).ToListAsync(ct))
-            .Where(r => r.Permissions.Contains(permission)).Select(r => r.Id).ToList();
+            .Where(r => permissions.Any(p => r.Permissions.Contains(p))).Select(r => r.Id).ToList();
         return await db.UserRoles.Where(ur => roleIds.Contains(ur.RoleId)).Select(ur => ur.UserId).Distinct().ToListAsync(ct);
+    }
+
+    /// <summary>Who may see every request: <c>requests.view</c> or <c>requests.manage</c> (the rule the request list itself uses).</summary>
+    internal static Task<List<Guid>> RequestViewerIdsAsync(CmmsDbContext db, CancellationToken ct) =>
+        UserIdsWithAnyPermissionAsync(db, [Permissions.RequestsView, Permissions.RequestsManage], ct);
+
+    /// <summary>
+    /// A request's e-mail, with the link to open it only for people who can: those who may view requests and the person who raised
+    /// it. Anyone else on the list (a type's or request's own recipients) hears the same news without the link (0.10.0).
+    /// </summary>
+    private async Task QueueRequestMailAsync(CmmsDbContext db, ITenantContext ctx, string eventKey, IReadOnlyCollection<EmailRecipient> to, WorkRequest r,
+        Func<string, string?, EmailContent> build, CancellationToken ct)
+    {
+        var link = Link($"/work-requests?open={r.Id}");
+        var viewers = (await RequestViewerIdsAsync(db, ct)).ToHashSet();
+        bool CanOpen(EmailRecipient p) => p.UserId is { } u && (viewers.Contains(u) || u == r.CreatedById);
+        var with = to.Where(CanOpen).ToList();
+        var without = to.Where(p => !CanOpen(p)).ToList();
+        if (with.Count > 0)
+            await QueueAsync(db, ctx, eventKey, with, org => build(org, link), "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
+        if (without.Count > 0)
+            await QueueAsync(db, ctx, eventKey, without, org => build(org, null), "WorkRequest", r.Id, ct, siteId: r.SiteId, locationId: r.LocationId);
     }
 
     private static async Task<PrFacts> FactsAsync(CmmsDbContext db, PurchaseRequest r, CancellationToken ct)

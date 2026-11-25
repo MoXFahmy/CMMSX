@@ -99,6 +99,67 @@ public class RequestTypeTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Recipient_pickers_offer_only_people_who_can_view_requests()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var viewer = await UserAsync(fx, org.Admin, "Viewer", name: "Can view");
+        var tech = await UserAsync(fx, org.Admin, "Technician", name: "Technician");
+        var asker = await UserAsync(fx, org.Admin, "Requester", name: "Asker");
+        var blind = await UserAsync(fx, org.Admin, "Requester", name: "Cannot view");
+        // People limited to part of the site: the one who may view requests is offered, the other is not.
+        var wing = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/locations", new { siteId = org.Site, code = "L2", name = "Wing", type = "Building", criticality = "Medium", isActive = true })));
+        var roles = await Ok(await org.Admin.GetAsync("/api/roles"));
+        Guid Role(string name) => roles.EnumerateArray().First(r => r.GetProperty("name").GetString() == name).GetProperty("id").GetGuid();
+        async Task<Guid> BranchAsync(string role, string name) =>
+            Id(await Ok(await org.Admin.PostAsJsonAsync("/api/users", new { fullName = name, email = Addr("b"), isActive = true, roleIds = new[] { Role(role) }, password = Password, locationIds = new[] { wing } })));
+        var branchViewer = await BranchAsync("Viewer", "Wing viewer");
+        var branchBlind = await BranchAsync("Requester", "Wing blind");
+
+        // The request form's "keep informed" list.
+        var form = (await Ok(await asker.Client.GetAsync($"/api/work-requests/people?siteId={org.Site}"))).EnumerateArray().Select(Id).ToList();
+        Assert.Contains(viewer.Id, form);
+        Assert.Contains(tech.Id, form);
+        Assert.Contains(branchViewer, form);
+        Assert.DoesNotContain(blind.Id, form);
+        Assert.DoesNotContain(asker.Id, form);
+        Assert.DoesNotContain(branchBlind, form);
+
+        // Settings > Request types: the same rule on the people list.
+        var typeList = (await Ok(await org.Admin.GetAsync("/api/users/lookup?requestViewers=true"))).EnumerateArray().Select(Id).ToList();
+        Assert.Contains(viewer.Id, typeList);
+        Assert.Contains(branchViewer, typeList);
+        Assert.Contains(org.AdminId, typeList);
+        Assert.DoesNotContain(blind.Id, typeList);
+        Assert.DoesNotContain(branchBlind, typeList);
+        // Other users of the plain list (sites, teams) still see everyone.
+        Assert.Contains(blind.Id, (await Ok(await org.Admin.GetAsync("/api/users/lookup"))).EnumerateArray().Select(Id));
+    }
+
+    [SkippableFact]
+    public async Task Listed_recipient_without_view_gets_the_mail_without_a_link()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx);
+        var blind = await UserAsync(fx, org.Admin, "Requester", name: "Cannot view");
+        var viewer = await UserAsync(fx, org.Admin, "Viewer", name: "Can view");
+        var type = await TypeAsync(org.Admin, "AC", new { recipientIds = new[] { blind.Id, viewer.Id } });
+        var requester = await UserAsync(fx, org.Admin, "Requester");
+        var id = await RequestAsync(requester.Client, org, new { requestTypeId = type });
+
+        var seen = (await RowsAsync(fx, blind.Email)).Single(r => r.EventKey == EmailEvents.RequestSubmitted);
+        Assert.Contains("No cooling", seen.TextBody); // they still hear about it
+        Assert.DoesNotContain("/work-requests", seen.TextBody);
+        Assert.DoesNotContain("/work-requests", seen.HtmlBody);
+        var link = (await RowsAsync(fx, viewer.Email)).Single(r => r.EventKey == EmailEvents.RequestSubmitted);
+        Assert.Contains($"/work-requests?open={id}", link.TextBody);
+
+        // The requester's own link in the "approved" mail is unchanged: it is their request.
+        await Ok(await org.Admin.PostAsJsonAsync($"/api/work-requests/{id}/approve", new { }));
+        Assert.Contains($"/work-requests?open={id}", (await RowsAsync(fx, requester.Email)).Single(r => r.EventKey == EmailEvents.RequestApproved).TextBody);
+    }
+
+    [SkippableFact]
     public async Task Auto_approve_creates_the_work_order()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

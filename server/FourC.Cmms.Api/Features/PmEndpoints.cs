@@ -237,9 +237,9 @@ public static class PmEndpoints
             return Results.Ok(new { Schedule = PmCalendar.Describe(s, Translator.CurrentLanguage), Upcoming = dates, DueDates = dates.Select(d => PmCalendar.DueDate(s, d)) });
         }).RequirePermission(Permissions.PmView);
 
-        g.MapPost("/", async (ScheduleInput input, CmmsDbContext db, CancellationToken ct) =>
+        g.MapPost("/", async (ScheduleInput input, CmmsDbContext db, AccessService access, CancellationToken ct) =>
         {
-            var v = await ValidateScheduleAsync(input, null, db, ct);
+            var v = await ValidateScheduleAsync(input, null, db, access, ct);
             if (input.ManagesContract == true && input.ContractId is { } contract && await ContractEndpoints.ChoiceProblemAsync(db, contract, input.SiteId, ct) is { } problem)
                 v.Add("contractId", problem);
             if (!v.IsValid) return v.Problem();
@@ -257,7 +257,7 @@ public static class PmEndpoints
             return Results.Created($"/api/pm-schedules/{s.Id}", new { s.Id, s.Code, Warnings = await WarningsAsync(db, s, ct) });
         }).RequirePermission(Permissions.PmManage);
 
-        g.MapPut("/{id:guid}", async (Guid id, ScheduleInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        g.MapPut("/{id:guid}", async (Guid id, ScheduleInput input, CmmsDbContext db, ITenantContext ctx, AccessService access, CancellationToken ct) =>
         {
             var s = await db.PmSchedules.Include(x => x.ExtraTasks).Include(x => x.Assets).Include(x => x.Calendars).Include(x => x.ExtraMeters).AsSplitQuery()
                 .FirstOrDefaultAsync(x => x.Id == id, ct);
@@ -286,7 +286,7 @@ public static class PmEndpoints
                 input = input with { TeamId = await db.Teams.AllSites().AnyAsync(t => t.Id == keep && (t.SiteId == null || t.SiteId == input.SiteId), ct) ? keep : null };
             // Pages from before asset groups (0.21.0) don't send the group: an edit from them keeps it.
             if (input.ManagesAssetGroup != true && input.AssetGroupId is null && s.AssetGroupId is { } keepGroup) input = input with { AssetGroupId = keepGroup };
-            var v = await ValidateScheduleAsync(input, id, db, ct, hidden);
+            var v = await ValidateScheduleAsync(input, id, db, access, ct, hidden);
             if (coversHidden is not null) v.Add("assetIds", coversHidden);
             if (input.ManagesContract == true && input.ContractId is { } contract && contract != s.ContractId
                 && await ContractEndpoints.ChoiceProblemAsync(db, contract, input.SiteId, ct) is { } problem) v.Add("contractId", problem);
@@ -771,7 +771,7 @@ public static class PmEndpoints
 
     /// <param name="keptHidden">Assets already on the round that the editor can't see (another branch): checked past the site limits.
     /// Every other asset must be one the editor sees.</param>
-    private static async Task<Validator> ValidateScheduleAsync(ScheduleInput i, Guid? id, CmmsDbContext db, CancellationToken ct, IReadOnlyCollection<Guid>? keptHidden = null)
+    private static async Task<Validator> ValidateScheduleAsync(ScheduleInput i, Guid? id, CmmsDbContext db, AccessService access, CancellationToken ct, IReadOnlyCollection<Guid>? keptHidden = null)
     {
         var v = PmScheduleRules(i, id);
         if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.PmSchedules, x => x.Code == i.Code.Trim() && x.Id != id,
@@ -822,8 +822,36 @@ public static class PmEndpoints
         if (meterIds.Count > 0 && await db.Meters.CountAsync(m => meterIds.Contains(m.Id), ct) != meterIds.Count) v.Add("extraMeters", "Unknown meter.");
         if ((i.NonWorkingDaysOverride ?? []).Distinct().Count() >= 7) v.Add("nonWorkingDaysOverride", "Leave at least one working day.");
         if ((i.RecipientIds ?? []).Distinct().Count() > 20) v.Add("recipientIds", "At most 20 recipients.");
-        else await CheckRecipientsAsync(db, v, i.RecipientIds, ct);
+        else
+        {
+            await CheckRecipientsAsync(db, v, i.RecipientIds, ct);
+            await CheckRecipientAccessAsync(db, access, v, i, ct);
+        }
         return v;
+    }
+
+    /// <summary>
+    /// A recipient who can't see the PM's place would never get its e-mail (the e-mail only goes to people who see the record), so saving
+    /// them is refused, naming them (0.12.0). The same rule as sending: the site and, for people limited to branches, a location under theirs.
+    /// A PM on an asset group has no places to check until it runs, so only the site counts there.
+    /// </summary>
+    private static async Task CheckRecipientAccessAsync(CmmsDbContext db, AccessService access, Validator v, ScheduleInput i, CancellationToken ct)
+    {
+        var who = (i.RecipientIds ?? []).Distinct().ToList();
+        if (who.Count == 0) return;
+        var people = await db.Users.People().Where(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName).Select(u => new { u.Id, u.FullName }).ToListAsync(ct);
+        var assetIds = (i.AssetIds ?? []).Concat(i.AssetId is { } one ? [one] : []).Distinct().ToList();
+        var locationIds = i.LocationId is { } own ? new List<Guid> { own } : [];
+        if (assetIds.Count > 0)
+            locationIds.AddRange(await db.Assets.AllSites().Where(a => assetIds.Contains(a.Id) && a.LocationId != null).Select(a => a.LocationId!.Value).ToListAsync(ct));
+        var paths = locationIds.Count == 0 ? [] : await db.Locations.AllSites().Where(l => locationIds.Contains(l.Id)).Select(l => l.Path).ToListAsync(ct);
+        foreach (var person in people)
+        {
+            var theirs = await access.GetAsync(person.Id, ct);
+            var sees = i.AssetGroupId is not null ? Access.CoversSite(theirs, i.SiteId)
+                : paths.Count == 0 ? Access.Covers(theirs, i.SiteId, null) : paths.Any(p => Access.Covers(theirs, i.SiteId, p));
+            if (!sees) v.Add("recipientIds", $"{person.FullName} can't see this PM's place, so they would not get its e-mail. Choose someone who can.");
+        }
     }
 
     /// <summary>

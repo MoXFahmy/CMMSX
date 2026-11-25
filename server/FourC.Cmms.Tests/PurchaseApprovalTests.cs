@@ -195,6 +195,27 @@ public class PurchaseApprovalTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Signature_mail_skips_approvers_without_the_permission_or_the_site()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx, email: true);
+        var other = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/sites", new { code = "S2", name = "Alex Plant", isActive = true })));
+        var good = await SignerAsync(o);
+        var lost = await SignerAsync(o);
+        var away = await SignerAsync(o, sites: [other]);
+        await Ok(await o.Admin.PostAsJsonAsync("/api/approval-levels", new { name = "L1", minAmount = 0, rule = "Any", approverIds = new[] { good.Id, lost.Id, away.Id } }));
+        // "lost" is moved to a role without "Approve purchases" after being named on the level.
+        var role = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/roles", new { name = "Viewer only", description = "", permissions = new[] { "purchasing.view" } })));
+        await Ok(await o.Admin.PutAsJsonAsync($"/api/users/{lost.Id}", new { fullName = "Maintenance Manager", email = lost.Email, isActive = true, roleIds = new[] { role }, siteIds = Array.Empty<Guid>() }));
+        var po = await OrderAsync(o.Admin, o, 1000);
+        await Ok(await o.Admin.PostAsync($"/api/purchase-orders/{po}/submit", null));
+        var to = await Loop.DbAsync(fx, db => db.OutboundEmails.IgnoreQueryFilters().Where(e => e.EntityId == po && e.EventKey == "po.approvalWaiting").Select(e => e.ToAddress).ToListAsync());
+        Assert.Contains(good.Email, to);
+        Assert.DoesNotContain(lost.Email, to);
+        Assert.DoesNotContain(away.Email, to);
+    }
+
+    [SkippableFact]
     public async Task Two_signatures_at_once_on_an_any_step_count_once()
     {
         Skip.IfNot(fx.Enabled);

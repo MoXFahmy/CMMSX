@@ -28,11 +28,18 @@ public static class AdminEndpoints
 
     public static void MapAdminEndpoints(this RouteGroupBuilder api)
     {
-        // Active people to pick (a site's request recipients) without the right to manage users.
-        api.MapGet("/users/lookup", async (CmmsDbContext db, CancellationToken ct) =>
-            await db.Users.AsNoTracking().People().Where(u => u.TenantId == db.CurrentTenantId && u.IsActive).OrderBy(u => u.FullName)
-                .Select(u => new { u.Id, u.FullName, u.Email }).ToListAsync(ct))
-            .WithTags("Users").RequirePermission(Permissions.LocationsManage);
+        // Active people to pick (a site's request recipients) without the right to manage users. With requestViewers=true only people who can
+        // view requests (0.10.0): the pickers for who is told about requests offer nobody who couldn't open them.
+        api.MapGet("/users/lookup", async (bool? requestViewers, CmmsDbContext db, CancellationToken ct) =>
+        {
+            var people = db.Users.AsNoTracking().People().Where(u => u.TenantId == db.CurrentTenantId && u.IsActive);
+            if (requestViewers == true)
+            {
+                var viewers = await EmailOutbox.RequestViewerIdsAsync(db, ct);
+                people = people.Where(u => viewers.Contains(u.Id));
+            }
+            return await people.OrderBy(u => u.FullName).Select(u => new { u.Id, u.FullName, u.Email }).ToListAsync(ct);
+        }).WithTags("Users").RequirePermission(Permissions.LocationsManage);
 
         var users = api.MapGroup("/users").WithTags("Users").RequirePermission(Permissions.UsersManage);
 

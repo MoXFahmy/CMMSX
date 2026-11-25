@@ -66,6 +66,32 @@ public class TemplateTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Template_documents_need_pm_view()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var template = await TemplateAsync(org.Admin, "SEC", ["Read the manual"]);
+        await UploadAsync(org.Admin, "PmTask", template, "manual.pdf");
+        var wo = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/work-orders", new
+        {
+            title = "Pump", siteId = org.Site, locationId = org.Location, priority = "Medium", type = "Corrective", templateId = template,
+        })));
+        var document = (await Ok(await org.Admin.GetAsync($"/api/attachments?entityType=PmTask&entityId={template}"))).EnumerateArray().Single().GetProperty("id").GetGuid();
+
+        // Someone who may see work but not PMs sees the work order, not the template's documents; the files themselves are refused.
+        var plain = await PurchaseRequestTests.UserAsync(fx, org.Admin, "Work only", permissions: ["workorders.view", "locations.view", "assets.view"]);
+        var seen = await WoAsync(plain.Client, wo);
+        Assert.Empty(seen.GetProperty("template").GetProperty("documents").EnumerateArray());
+        Assert.DoesNotContain("manual.pdf", seen.GetRawText());
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, (await plain.Client.GetAsync($"/api/attachments?entityType=PmTask&entityId={template}")).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.Forbidden, (await plain.Client.GetAsync($"/api/attachments/{document}/content")).StatusCode);
+
+        // With "View PM" they come back (Technician has it).
+        var tech = await UserAsync(fx, org.Admin, "Technician");
+        Assert.Equal("manual.pdf", (await WoAsync(tech.Client, wo)).GetProperty("template").GetProperty("documents").EnumerateArray().Single().GetProperty("fileName").GetString());
+    }
+
+    [SkippableFact]
     public async Task Phone_job_lists_the_template_documents()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
