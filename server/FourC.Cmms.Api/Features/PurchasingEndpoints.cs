@@ -104,6 +104,9 @@ public static class PurchasingEndpoints
     {
         var o = await LoadAsync(db, id, tk);
         Require(o, Receivable);
+        // The lines carry no row version, so the order's does the job: two receipts of one order at once both read the same outstanding quantity, and
+        // the second one's save finds the order changed ("changed by someone else") instead of receiving past the line (0.11.0-3, 0.29.1).
+        db.Entry(o).Property(x => x.UpdatedAt).IsModified = true;
         var count = 0;
         var forWork = new List<(Guid WorkOrderId, string Line)>();
         foreach (var r in i.Lines.Where(x => x.Quantity != 0))
@@ -195,7 +198,8 @@ public static class PurchasingEndpoints
             {
                 x.Id, x.Code, x.Name, x.Currency, x.PaymentTerms,
                 Contacts = x.Contacts.OrderBy(c => c.Sort).Select(c => new { c.Id, c.Name, c.Role }).ToList(),
-                Rates = x.CategoryRates.Select(r => new { CategoryId = r.ContractorCategoryId, r.Rate }).ToList(),
+                // Rates are kept while a company is not a contractor, but not shown (0.29.1).
+                Rates = x.CategoryRates.Where(r => x.IsContractor).Select(r => new { CategoryId = r.ContractorCategoryId, r.Rate }).ToList(),
             }).ToListAsync(ct);
             return Results.Ok(details ? rows : rows.Select(x => x with { Contacts = [], Rates = [] }).ToList());
         }).RequireAuthorization();
@@ -206,7 +210,7 @@ public static class PurchasingEndpoints
                 x.IsSupplier, x.IsContractor, x.IsManufacturer, x.Notes, x.IsActive, x.CreatedAt, x.UpdatedAt,
                 Contacts = x.Contacts.OrderBy(c => c.Sort).Select(c => new { c.Id, c.Name, c.Role, c.Phone, c.Email }).ToList(),
                 Addresses = x.Addresses.OrderBy(a => a.Sort).Select(a => new { a.Id, a.Label, a.Address, a.City, a.Country }).ToList(),
-                Rates = x.CategoryRates.Select(r => new
+                Rates = x.CategoryRates.Where(r => x.IsContractor).Select(r => new
                 {
                     CategoryId = r.ContractorCategoryId, r.Rate,
                     CategoryName = db.ContractorCategories.Where(c => c.Id == r.ContractorCategoryId).Select(c => c.Name).FirstOrDefault(),
@@ -218,7 +222,9 @@ public static class PurchasingEndpoints
             var v = await ValidateSupplierAsync(i, null, db, ct);
             if (!v.IsValid) return v.Problem();
             var x = CreateSupplier(db, i);
-            await db.SaveChangesAsync(ct);
+            // Two people adding one code at the same moment: the second is told, not shown a server error (0.18.0-13).
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateException e) when (Unique.Violated(e)) { return Results.Problem(title: Translator.T("Another supplier uses this code."), statusCode: 409); }
             return Results.Created($"/api/suppliers/{x.Id}", new { x.Id });
         }).RequirePermission(Permissions.SuppliersManage);
         s.MapPut("/{id:guid}", async (Guid id, SupplierInput i, CmmsDbContext db, CancellationToken ct) =>
@@ -227,10 +233,12 @@ public static class PurchasingEndpoints
             if (x is null) return Results.NotFound();
             var v = await ValidateSupplierAsync(i, id, db, ct);
             if (!v.IsValid) return v.Problem();
+            if (await CompanyContacts.RefusalAsync(db, x, i.Contacts, ct) is { } named) throw new DomainException(named);
             var known = x.Contacts.Select(c => c.Id).Concat(x.Addresses.Select(a => a.Id)).Concat(x.CategoryRates.Select(r => r.Id)).ToHashSet();
             UpdateSupplier(x, i);
             MarkNewChildren(db, x, known);
-            await db.SaveChangesAsync(ct);
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateException e) when (Unique.Violated(e)) { return Results.Problem(title: Translator.T("Another supplier uses this code."), statusCode: 409); }
             return Results.Ok(new { x.Id });
         }).RequirePermission(Permissions.SuppliersManage);
         s.MapDelete("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
@@ -329,10 +337,22 @@ public static class PurchasingEndpoints
 
         g.MapPost("/", async (PoInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
-            var v = await ValidatePoAsync(i, db, ct, null);
+            var claims = new List<PurchaseRequest>();
+            var v = await ValidatePoAsync(i, db, ct, null, null, claims);
             if (!v.IsValid) return v.Problem();
-            var o = await CreateDraftAsync(db, ctx, i, ct);
-            return Results.Created($"/api/purchase-orders/{o.Id}", new { o.Id, o.Number });
+            // Linked request lines: the order and the request that follows it are saved together, the request under the version read above (0.16.0-5).
+            RequestLinks.Claim(db, claims);
+            try
+            {
+                var o = await Atomic.RunAsync(db, async tk =>
+                {
+                    var made = await CreateDraftAsync(db, ctx, i, tk);
+                    if (claims.Count > 0) { await PurchaseRequestSync.SyncAsync(db, claims.Select(r => r.Id).ToList(), tk); await db.SaveChangesAsync(tk); }
+                    return made;
+                }, ct);
+                return Results.Created($"/api/purchase-orders/{o.Id}", new { o.Id, o.Number });
+            }
+            catch (DbUpdateConcurrencyException e) when (RequestLinks.IsLost(e)) { return RequestLinks.LostResult(); }
         }).RequirePermission(Permissions.PurchasingCreate);
 
         g.MapPut("/{id:guid}", async (Guid id, PoInput i, CmmsDbContext db, CancellationToken ct) =>
@@ -340,17 +360,24 @@ public static class PurchasingEndpoints
             var o = await db.PurchaseOrders.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (o is null) return Results.NotFound();
             if (o.Status != PurchaseOrderStatus.Draft) throw new DomainException("Only draft purchase orders can be edited. Return it to draft first.");
-            var v = await ValidatePoAsync(i, db, ct, o.SupplierId, o.Id);
+            var claims = new List<PurchaseRequest>();
+            var v = await ValidatePoAsync(i, db, ct, o.SupplierId, o.Id, claims);
             if (!v.IsValid) return v.Problem();
             if (i.RowVersion is not null) db.Entry(o).Property(x => x.RowVersion).OriginalValue = i.RowVersion.ToVersion();
             var before = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
             await ApplyPoAsync(db, o, i, ct);
+            RequestLinks.Claim(db, claims);
             // The order and the requests that follow it are saved together (0.29.1).
-            await Atomic.RunAsync(db, async tk =>
+            try
             {
-                await db.SaveChangesAsync(tk);
-                if (before.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, before, tk); await db.SaveChangesAsync(tk); }
-            }, ct);
+                await Atomic.RunAsync(db, async tk =>
+                {
+                    await db.SaveChangesAsync(tk);
+                    if (before.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, before, tk); await db.SaveChangesAsync(tk); }
+                    if (claims.Count > 0) { await PurchaseRequestSync.SyncAsync(db, claims.Select(r => r.Id).ToList(), tk); await db.SaveChangesAsync(tk); }
+                }, ct);
+            }
+            catch (DbUpdateConcurrencyException e) when (RequestLinks.IsLost(e)) { return RequestLinks.LostResult(); }
             return Results.Ok(new { o.Id });
         }).RequirePermission(Permissions.PurchasingCreate);
 
@@ -582,7 +609,7 @@ public static class PurchasingEndpoints
         }
     }
 
-    private static async Task<Validator> ValidatePoAsync(PoInput i, CmmsDbContext db, CancellationToken ct, Guid? currentSupplierId, Guid? orderId = null)
+    private static async Task<Validator> ValidatePoAsync(PoInput i, CmmsDbContext db, CancellationToken ct, Guid? currentSupplierId, Guid? orderId = null, List<PurchaseRequest>? claims = null)
     {
         var v = new Validator().MaxLength("supplierQuoteRef", i.SupplierQuoteRef, "Quote ref.", 100).MaxLength("notes", i.Notes, "Notes", 4000)
             .When(i.ShippingCost < 0, "shippingCost", "Shipping cannot be negative.").When(i.TaxPercent is < 0 or > 100, "taxPercent", "Tax must be between 0 and 100%.")
@@ -621,6 +648,8 @@ public static class PurchasingEndpoints
         var woIds = lines.Where(l => l.WorkOrderId is not null).Select(l => l.WorkOrderId!.Value).Distinct().ToList();
         if (woIds.Count > 0 && await db.WorkOrders.CountAsync(w => woIds.Contains(w.Id) && w.Status != WorkOrderStatus.Closed && w.Status != WorkOrderStatus.Cancelled, ct) != woIds.Count)
             v.Add("lines", "A work order on this order is unknown or closed.");
+        // Links to purchase-request lines (0.16.0-4): visible, approved, and not already on another live order.
+        await RequestLinks.ValidateAsync(db, v, lines, orderId, claims ?? [], ct);
         return v;
     }
 
@@ -697,7 +726,9 @@ public static class PurchasingEndpoints
     internal static void ApplySupplier(Supplier x, SupplierInput i)
     {
         x.ContactName = i.ContactName.Clean(); x.Email = i.Email.Clean(); x.Phone = i.Phone.Clean(); x.Address = i.Address.Clean(); x.City = i.City.Clean(); x.Country = i.Country.Clean();
-        x.TaxNumber = i.TaxNumber.Clean(); x.PaymentTerms = i.PaymentTerms.Clean(); x.Currency = i.Currency.Clean()?.ToUpperInvariant(); x.IsContractor = i.IsContractor;
+        x.TaxNumber = i.TaxNumber.Clean(); x.PaymentTerms = i.PaymentTerms.Clean(); x.Currency = i.Currency.Clean()?.ToUpperInvariant();
+        var wasContractor = x.IsContractor;
+        x.IsContractor = i.IsContractor;
         x.Notes = i.Notes.Clean(); x.IsActive = i.IsActive;
         if (i.IsSupplier is { } supplier) x.IsSupplier = supplier;
         if (i.IsManufacturer is { } maker) x.IsManufacturer = maker;
@@ -723,7 +754,9 @@ public static class PurchasingEndpoints
                 a.Label = n.Label.Clean(); a.Address = n.Address.Trim(); a.City = n.City.Clean(); a.Country = n.Country.Clean(); a.Sort = k;
             }
         }
-        if (i.Rates is { } rates)
+        // Rates are kept while the company is not a contractor (hidden), and come back when it is ticked again; a form that could not see them
+        // sends none, which must not wipe what is kept (0.17.0-2, 0.29.1). Only a company that was and is a contractor can clear its rates.
+        if (i.Rates is { } rates && i.IsContractor && (wasContractor || rates.Count > 0))
         {
             x.CategoryRates.RemoveAll(r => !rates.Any(n => n.CategoryId == r.ContractorCategoryId));
             foreach (var n in rates)

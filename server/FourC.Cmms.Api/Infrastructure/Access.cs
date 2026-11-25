@@ -126,6 +126,10 @@ public static class Unique
     public static async Task<string?> ClashAsync<T>(IQueryable<T> set, System.Linq.Expressions.Expression<Func<T, bool>> match, string visible, string hidden,
         CancellationToken ct) where T : class =>
         await set.AnyAsync(match, ct) ? visible : await set.AllSites().AnyAsync(match, ct) ? hidden : null;
+
+    /// <summary>A save that lost a race on a unique index (SQL Server 2601 / 2627): two people added the same thing at the same moment (0.18.0-13).</summary>
+    public static bool Violated(DbUpdateException ex) =>
+        ex.InnerException is Microsoft.Data.SqlClient.SqlException { Number: 2601 or 2627 };
 }
 
 public static class UserAccessRules

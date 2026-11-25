@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { draftFromShortages, draftsFromShortages, orderRows, isLate, orderableLines, previewGroups, proposalMode, requestStatusColor, type PurchaseRequestDetail } from './purchaseRequests';
+import { draftFromShortages, draftsFromShortages, orderRows, proposalTotals, isLate, orderableLines, previewGroups, proposalMode, requestStatusColor, type PurchaseRequestDetail } from './purchaseRequests';
 
 const detail = (status: PurchaseRequestDetail['status'], ordered: boolean[]): PurchaseRequestDetail => ({
   id: 'r1', number: 'PR-00001', status, siteId: 's1', lines: ordered.map((o, i) => ({
@@ -78,5 +78,18 @@ describe('ordering approved request lines', () => {
   it('starts without a price so the catalogue, else the estimate, prices the order', () => {
     const rows = orderRows([{ id: 'l1', siteId: 's', description: 'Bearing', quantity: 20, estimatedUnitPrice: 0.5, part: { id: 'p', partNumber: 'BRG-1', name: 'Bearing', preferredSupplierId: 'skf' } }]);
     expect(rows).toEqual([{ lineId: 'l1', on: true, supplierId: 'skf', quantity: 20, unitPrice: '', estimate: 0.5 }]);
+  });
+});
+
+describe('re-order proposal totals (0.29.1)', () => {
+  it('shows one total per currency, never a mixed sum', () => {
+    const totals = proposalTotals([
+      { amount: 100, currency: 'USD' }, { amount: 50, currency: 'EUR' }, { amount: 25.5, currency: 'USD' }, { amount: 0.1, currency: 'EUR' }, { amount: 0.2, currency: 'EUR' },
+    ]);
+    expect(totals).toEqual([{ currency: 'USD', amount: 125.5 }, { currency: 'EUR', amount: 50.3 }]);
+  });
+  it('is empty with nothing selected and lists a currency once', () => {
+    expect(proposalTotals([])).toEqual([]);
+    expect(proposalTotals([{ amount: 3, currency: 'EGP' }, { amount: 4, currency: 'EGP' }])).toEqual([{ currency: 'EGP', amount: 7 }]);
   });
 });

@@ -1295,5 +1295,11 @@
  "Photo for a step that was removed": "صورة لخطوة تمت إزالتها",
  "Photo for a step that was removed: {0}": "صورة لخطوة تمت إزالتها: {0}",
  "This work order is completed, so ticking \"The asset is down\" starts no stop. Report a stop in the asset's Downtime tab instead.": "أُنجز أمر العمل هذا، لذا لا يبدأ تحديد «الأصل متوقف» أي توقف. سجّل التوقف من تبويب التوقفات في الأصل بدلًا من ذلك.",
- "This PM follows an asset group. Add the asset to the group instead of naming it on the PM.": "هذه الصيانة الوقائية تتبع مجموعة أصول. أضف الأصل إلى المجموعة بدلًا من ذكره في الصيانة الوقائية."
+ "This PM follows an asset group. Add the asset to the group instead of naming it on the PM.": "هذه الصيانة الوقائية تتبع مجموعة أصول. أضف الأصل إلى المجموعة بدلًا من ذكره في الصيانة الوقائية.",
+ "This request line was just ordered by someone else.": "طلبه شخص آخر للتو في أمر شراء.",
+ "List each request line once.": "اذكر كل بند طلب مرة واحدة.",
+ "{0} line {1} is already on an order you can't see.": "البند {1} من {0} موجود بالفعل في أمر لا يمكنك رؤيته.",
+ "Can't remove {0}: named on open work orders {1}. Pick someone else on those lines first.": "لا يمكن إزالة {0}: مذكور في أوامر عمل مفتوحة {1}. اختر شخصًا آخر في هذه السطور أولًا.",
+ "Can't remove {0}: named on open work orders {1} and {2} more you can't see. Pick someone else on those lines first.": "لا يمكن إزالة {0}: مذكور في أوامر عمل مفتوحة {1} و{2} أخرى لا يمكنك رؤيتها. اختر شخصًا آخر في هذه السطور أولًا.",
+ "Can't remove {0}: named on open work orders, {1} of them you can't see. Pick someone else on those lines first.": "لا يمكن إزالة {0}: مذكور في أوامر عمل مفتوحة، {1} منها لا يمكنك رؤيتها. اختر شخصًا آخر في هذه السطور أولًا."
 }

@@ -1,9 +1,21 @@
 import { Accordion, Alert, Badge, Button, Card, Group, Stack, Text, ThemeIcon, Title } from '@mantine/core';
+import { modals } from '@mantine/modals';
 import { useTranslation } from 'react-i18next';
 import { IconCheck, IconClock, IconPlayerStop, IconRefresh, IconX } from '@tabler/icons-react';
 import { useAuth } from '@/auth/AuthContext';
+import i18n from '@/i18n';
 import { fmtDateTime, fmtPrice } from '@/components/utils';
 import { stepState, whoIsNext, type ApprovalPanel as Panel, type ApprovalStep } from './approvals';
+
+/** Restarting drops the round's signatures and e-mails the first level again, so it asks first (0.29.1). */
+export function askRestartApproval(onConfirm: () => void) {
+  modals.openConfirmModal({
+    title: i18n.t('approvals.restartTitle'),
+    children: <Text size="sm">{i18n.t('approvals.restartBody')}</Text>,
+    labels: { confirm: i18n.t('approvals.restart'), cancel: i18n.t('common.cancel') },
+    onConfirm: () => onConfirm(),
+  });
+}
 
 function Step({ s }: { s: ApprovalStep }) {
   const { t } = useTranslation();
@@ -42,12 +54,12 @@ export function ApprovalPanel({ approval, canRestart, onRestart }: { approval: P
       {approval.nobodyCanSign && (
         <Alert color="orange" mb="sm" title={t('approvals.stuckTitle')}>
           <Text fz="sm">{t('approvals.stuckBody')}</Text>
-          {canRestart && <Button mt="xs" size="xs" leftSection={<IconRefresh size={14} />} onClick={onRestart}>{t('approvals.restart')}</Button>}
+          {canRestart && <Button mt="xs" size="xs" leftSection={<IconRefresh size={14} />} onClick={() => askRestartApproval(onRestart)}>{t('approvals.restart')}</Button>}
         </Alert>
       )}
       <Stack gap="sm">{approval.steps.map((s) => <Step key={s.step} s={s} />)}</Stack>
       {!approval.nobodyCanSign && canRestart && approval.waiting && (
-        <Button mt="sm" size="xs" variant="subtle" leftSection={<IconRefresh size={14} />} onClick={onRestart}>{t('approvals.restart')}</Button>
+        <Button mt="sm" size="xs" variant="subtle" leftSection={<IconRefresh size={14} />} onClick={() => askRestartApproval(onRestart)}>{t('approvals.restart')}</Button>
       )}
       {approval.earlierRounds.length > 0 && (
         <Accordion variant="contained" mt="md">

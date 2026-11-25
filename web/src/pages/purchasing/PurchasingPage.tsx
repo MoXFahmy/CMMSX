@@ -16,7 +16,7 @@ import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, 
 import { apiQuery, PO_VIEWS } from '@/components/list/apiQueries';
 import { RequestsTab } from './RequestsTab';
 import { CompaniesTab } from './CompaniesTab';
-import { draftFromShortages, proposalMode } from './purchaseRequests';
+import { draftFromShortages, proposalMode, proposalTotals } from './purchaseRequests';
 import { packsFor } from './packs';
 
 export function PurchasingPage() {
@@ -151,7 +151,9 @@ function ProposalTab() {
     const c = option(r);
     return c && c.packPrice != null ? packsFor(qty(r), c.packSize, c.minPacks) * c.packPrice * (1 - c.discountPercent / 100) : qty(r) * r.unitPrice;
   };
-  const total = selected.reduce((a, r) => a + value(r), 0);
+  const currencyOf = (r: ProposalItem) => option(r)?.packPrice != null ? option(r)!.currency : currency;
+  // One total per currency: there is no exchange rate to add them with (0.29.1).
+  const totals = proposalTotals(selected.map((r) => ({ amount: value(r), currency: currencyOf(r) })));
   const groups = new Set(selected.map((r) => `${sup(r)}|${r.siteId}`)).size;
   // People who may ask but not order (0.16.0): the chosen lines become draft purchase requests, one per site.
   const requestIt = async () => {
@@ -187,10 +189,13 @@ function ProposalTab() {
           <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={siteId} onChange={setSiteId} clearable w={220} />
           <Text fz="sm" c="dimmed" style={{ flex: '1 1 300px' }}>{t(mode === 'request' ? 'po.proposalHintRequest' : 'po.proposalHint')}</Text>
           {mode === 'order' && <Button leftSection={<IconShoppingCartPlus size={16} />} disabled={!selected.length || missingSupplier.length > 0} loading={busy} onClick={create}>
-            {selected.length ? t('po.createOrders', { count: groups, total: fmtPrice(total, currency) }) : t('po.selectLines')}</Button>}
+            {selected.length ? t('po.createOrders', { count: groups }) : t('po.selectLines')}</Button>}
           {mode === 'request' && <Button leftSection={<IconShoppingCartPlus size={16} />} disabled={!selected.length} loading={busy} onClick={requestIt}>
             {t('pr.requestSelected', { count: selected.length })}</Button>}
         </Group>
+        {selected.length > 0 && <Stack gap={0} mt="xs" aria-label={t('po.proposalTotals')}>
+          {totals.map((x) => <Text key={x.currency} fz="sm" fw={600}>{t('po.proposalTotal', { currency: x.currency, amount: fmtPrice(x.amount, x.currency) })}</Text>)}
+        </Stack>}
         {mode === 'order' && missingSupplier.length > 0 && <Alert color="orange" mt="sm" p="xs">{t('po.chooseSupplierFor', { parts: missingSupplier.map((r) => r.partNumber).join(', ') })}</Alert>}
       </Card>
       <Card p={0}>
@@ -218,7 +223,7 @@ function ProposalTab() {
                 ...(suppliers ?? []).filter((s) => !(r.catalogue ?? []).some((c) => c.supplierId === s.id)).map((s) => ({ value: s.id, label: s.name }))]}
               aria-label={`${t('po.supplier')} ${r.partNumber}`} placeholder={t('po.chooseSupplier')} onClick={(e) => e.stopPropagation()}
               onChange={(v) => setEdits((x) => ({ ...x, [key(r)]: { ...x[key(r)], supplierId: v } }))} /> },
-            { accessor: 'value', title: t('po.estValue'), textAlign: 'right', noWrap: true, render: (r) => fmtPrice(value(r), option(r)?.packPrice != null ? option(r)!.currency : currency) },
+            { accessor: 'value', title: t('po.estValue'), textAlign: 'right', noWrap: true, render: (r) => fmtPrice(value(r), currencyOf(r)) },
           ]}
         />
       </Card>

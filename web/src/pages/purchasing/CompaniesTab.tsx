@@ -57,6 +57,7 @@ export function CompaniesTab() {
   };
   const submit = form.onSubmit(async (v) => {
     try {
+      // Unticked, the form hides the rates and sends none; the server keeps what it holds and brings it back when the box is ticked again (0.29.1).
       const body = { ...v, rates: v.isContractor ? v.rates.filter((r) => r.categoryId) : [] };
       if (editingId) await put(`/suppliers/${editingId}`, body); else await post('/suppliers', body);
       notifySuccess(t('common.saved')); await qc.invalidateQueries({ queryKey: ['suppliers'] }); m.close();

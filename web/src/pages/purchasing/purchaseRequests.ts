@@ -94,3 +94,16 @@ export type OrderRow = { lineId: string; on: boolean; supplierId: string | null;
  */
 export const orderRows = (lines: OrderableLine[]): OrderRow[] =>
   lines.map((l) => ({ lineId: l.id, on: true, supplierId: l.part?.preferredSupplierId ?? null, quantity: l.quantity, unitPrice: '', estimate: l.estimatedUnitPrice ?? null }));
+
+/** One total of the ticked proposal lines in a currency. */
+export type ProposalTotal = { currency: string; amount: number };
+
+/**
+ * The ticked re-order lines added up per currency, in the order the currencies first appear (0.18.0-1, 0.29.1). CMX has no exchange-rate table, so prices
+ * in different currencies are never added together.
+ */
+export function proposalTotals(values: { amount: number; currency: string }[]): ProposalTotal[] {
+  const sums = new Map<string, number>();
+  for (const v of values) sums.set(v.currency, (sums.get(v.currency) ?? 0) + v.amount);
+  return [...sums.entries()].map(([currency, amount]) => ({ currency, amount: Math.round(amount * 100) / 100 }));
+}

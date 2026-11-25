@@ -278,44 +278,51 @@ public static class PurchaseRequestEndpoints
             var supplierIds = resolved.Select(x => x.SupplierId).Distinct().ToList();
             var suppliers = await db.Suppliers.AsNoTracking().Where(s => supplierIds.Contains(s.Id) && s.IsActive).ToDictionaryAsync(s => s.Id, ct);
             if (suppliers.Count != supplierIds.Count) throw new DomainException("Choose an active supplier.");
-            var created = await db.InTransactionAsync(async tk =>
+            // The buyer also writes to each request under the version read above: two buyers ordering one line at the same moment, the second finds it
+            // changed (0.16.0-5, 0.29.1). Cancelled orders keep their links, so a unique index could not do this.
+            RequestLinks.Claim(db, requests.Values);
+            try
             {
-                var list = new List<object>();
-                var ordersOf = new Dictionary<Guid, List<string>>();
-                foreach (var grp in resolved.GroupBy(x => (x.SupplierId, x.Request.SiteId)))
+                var created = await db.InTransactionAsync(async tk =>
                 {
-                    var sup = suppliers[grp.Key.SupplierId];
-                    var numbers = grp.Select(x => x.Request.Number).Distinct().OrderBy(n => n).ToList();
-                    var who = string.Join(", ", grp.Select(x => x.Request.RequestedByName).OfType<string>().Distinct());
-                    // Requested quantities are pieces: a part line becomes the supplier's whole packs at the catalogue price (0.18.0); free text as before.
-                    var currency = sup.Currency.Clean()?.ToUpperInvariant() ?? await CatalogueEndpoints.BaseCurrencyAsync(db, tk);
-                    var lines = new List<(PurchasingEndpoints.LineInput Line, int? Lead)>();
-                    foreach (var x in grp.OrderBy(x => x.Request.Number).ThenBy(x => x.Line.LineNumber))
+                    var list = new List<object>();
+                    var ordersOf = new Dictionary<Guid, List<string>>();
+                    foreach (var grp in resolved.GroupBy(x => (x.SupplierId, x.Request.SiteId)))
                     {
-                        if (x.Line.Part is { } part)
+                        var sup = suppliers[grp.Key.SupplierId];
+                        var numbers = grp.Select(x => x.Request.Number).Distinct().OrderBy(n => n).ToList();
+                        var who = string.Join(", ", grp.Select(x => x.Request.RequestedByName).OfType<string>().Distinct());
+                        // Requested quantities are pieces: a part line becomes the supplier's whole packs at the catalogue price (0.18.0); free text as before.
+                        var currency = sup.Currency.Clean()?.ToUpperInvariant() ?? await CatalogueEndpoints.BaseCurrencyAsync(db, tk);
+                        var lines = new List<(PurchasingEndpoints.LineInput Line, int? Lead)>();
+                        foreach (var x in grp.OrderBy(x => x.Request.Number).ThenBy(x => x.Line.LineNumber))
                         {
-                            var f = await CatalogueEndpoints.FillAsync(db, part, sup.Id, currency, x.Quantity, x.Typed, tk, x.Line.EstimatedUnitPrice);
-                            lines.Add((new PurchasingEndpoints.LineInput(null, x.Line.PartId, x.Line.Description, f.UnitOfMeasure, f.Quantity, f.UnitPrice, f.DiscountPercent,
-                                x.Line.StoreId, x.Line.WorkOrderId, null, x.Line.Id, f.PackSize, f.SupplierPartNumber), f.LeadTimeDays));
+                            if (x.Line.Part is { } part)
+                            {
+                                var f = await CatalogueEndpoints.FillAsync(db, part, sup.Id, currency, x.Quantity, x.Typed, tk, x.Line.EstimatedUnitPrice);
+                                lines.Add((new PurchasingEndpoints.LineInput(null, x.Line.PartId, x.Line.Description, f.UnitOfMeasure, f.Quantity, f.UnitPrice, f.DiscountPercent,
+                                    x.Line.StoreId, x.Line.WorkOrderId, null, x.Line.Id, f.PackSize, f.SupplierPartNumber), f.LeadTimeDays));
+                            }
+                            else lines.Add((new PurchasingEndpoints.LineInput(null, x.Line.PartId, x.Line.Description, x.Line.UnitOfMeasure, x.Quantity, x.Price, 0,
+                                x.Line.StoreId, x.Line.WorkOrderId, null, x.Line.Id), null));
                         }
-                        else lines.Add((new PurchasingEndpoints.LineInput(null, x.Line.PartId, x.Line.Description, x.Line.UnitOfMeasure, x.Quantity, x.Price, 0,
-                            x.Line.StoreId, x.Line.WorkOrderId, null, x.Line.Id), null));
+                        var input = new PurchasingEndpoints.PoInput(grp.Key.SiteId, sup.Id, Today, CatalogueEndpoints.ExpectedFrom(Today, lines.Select(l => l.Lead)),
+                            who.Length > 0 ? who[..Math.Min(who.Length, 200)] : null, currency, null,
+                            sup.PaymentTerms, null, null, null, null, 0, $"From {string.Join(", ", numbers)}", lines.Select(l => l.Line).ToList(),
+                            // Parts orders when any part is on it, else services.
+                            await PurchasingEndpoints.DefaultTypeAsync(db, grp.Any(x => x.Line.PartId is not null) ? "PARTS" : "SERVICES", tk));
+                        var o = await PurchasingEndpoints.CreateDraftAsync(db, ctx, input, tk);
+                        foreach (var x in grp) (ordersOf.TryGetValue(x.Request.Id, out var l) ? l : ordersOf[x.Request.Id] = []).Add(o.Number);
+                        list.Add(new { o.Id, o.Number, Supplier = sup.Name, Lines = o.Lines.Count });
                     }
-                    var input = new PurchasingEndpoints.PoInput(grp.Key.SiteId, sup.Id, Today, CatalogueEndpoints.ExpectedFrom(Today, lines.Select(l => l.Lead)),
-                        who.Length > 0 ? who[..Math.Min(who.Length, 200)] : null, currency, null,
-                        sup.PaymentTerms, null, null, null, null, 0, $"From {string.Join(", ", numbers)}", lines.Select(l => l.Line).ToList(),
-                        // Parts orders when any part is on it, else services.
-                        await PurchasingEndpoints.DefaultTypeAsync(db, grp.Any(x => x.Line.PartId is not null) ? "PARTS" : "SERVICES", tk));
-                    var o = await PurchasingEndpoints.CreateDraftAsync(db, ctx, input, tk);
-                    foreach (var x in grp) (ordersOf.TryGetValue(x.Request.Id, out var l) ? l : ordersOf[x.Request.Id] = []).Add(o.Number);
-                    list.Add(new { o.Id, o.Number, Supplier = sup.Name, Lines = o.Lines.Count });
-                }
-                await PurchaseRequestSync.SyncAsync(db, requestIds, tk);
-                foreach (var (rid, orders) in ordersOf) await mail.PrOrderedAsync(db, ctx, requests[rid], orders.Distinct().ToList(), tk);
-                await db.SaveChangesAsync(tk);
-                return list;
-            }, ct);
-            return Results.Ok(created);
+                    await PurchaseRequestSync.SyncAsync(db, requestIds, tk);
+                    foreach (var (rid, orders) in ordersOf) await mail.PrOrderedAsync(db, ctx, requests[rid], orders.Distinct().ToList(), tk);
+                    await db.SaveChangesAsync(tk);
+                    return list;
+                }, ct);
+                return Results.Ok(created);
+            }
+            catch (DbUpdateConcurrencyException e) when (RequestLinks.IsLost(e)) { return RequestLinks.LostResult(); }
         }).RequirePermission(Permissions.PurchasingCreate);
 
         // The buyer decides the rest won't be ordered.

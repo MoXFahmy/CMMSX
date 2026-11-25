@@ -64,7 +64,9 @@ public static class CatalogueEndpoints
             await ApplyAsync(db, part, row, i, ct);
             db.SupplierParts.Add(row);
             Prefer(part, row, i.IsPreferred);
-            await db.SaveChangesAsync(ct);
+            // Two people adding one supplier at the same moment: the second is told it is there, not given the generic duplicate text (0.18.0-13).
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateException e) when (Unique.Violated(e)) { return Results.Problem(title: Translator.T("This supplier is already in the part's catalogue."), statusCode: 409); }
             return Results.Created($"/api/parts/{partId}/suppliers/{row.Id}", new { row.Id });
         }).RequireAuthorization();
 
@@ -78,7 +80,8 @@ public static class CatalogueEndpoints
             if (!v.IsValid) return v.Problem();
             await ApplyAsync(db, part, row, i, ct);
             Prefer(part, row, i.IsPreferred);
-            await db.SaveChangesAsync(ct);
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateException e) when (Unique.Violated(e)) { return Results.Problem(title: Translator.T("This supplier is already in the part's catalogue."), statusCode: 409); }
             return Results.Ok(new { row.Id });
         }).RequireAuthorization();
 
