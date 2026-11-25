@@ -88,6 +88,37 @@ Parameters:
     Description: >-
       New organizations confirm their owner's e-mail address before use. Turn on only once Amazon SES has production
       access (in the SES sandbox the confirmation e-mail only reaches verified addresses).
+  DrVaultArn:
+    Type: String
+    AllowedPattern: "^arn:aws[a-z-]*:backup:[a-z0-9-]+:[0-9]{12}:backup-vault:.+$"
+    Description: Locked AWS Backup vault in Ireland that receives the snapshot copies (output DrVaultArn of the cmms-dr stack).
+  DrKeyArn:
+    Type: String
+    AllowedPattern: "^arn:aws[a-z-]*:kms:eu-west-1:[0-9]{12}:key/.+$"
+    Description: KMS key in Ireland that encrypts the database's replicated automated backups (output DrKeyArn of cmms-dr).
+  FilesCopyBucketArn:
+    Type: String
+    AllowedPattern: "^arn:aws[a-z-]*:s3:::.+$"
+    Description: Object Lock bucket in Ireland that receives the attachments (output FilesCopyBucketArn of cmms-dr).
+  BackupsCopyBucketArn:
+    Type: String
+    AllowedPattern: "^arn:aws[a-z-]*:s3:::.+$"
+    Description: Object Lock bucket in Ireland that receives the weekly database exports (output BackupsCopyBucketArn of cmms-dr).
+  DbMajorEngineVersion:
+    Type: String
+    AllowedPattern: "^[0-9]{2}\\.00$"
+    Default: "16.00"
+    Description: >-
+      Major version of the database engine (RDS console, Configuration, Engine version: the first two parts, e.g. 16.00
+      for SQL Server 2022). The native-backup option group must match it.
+  IrelandDatabaseCopy:
+    Type: String
+    AllowedValues: [replication, hourly-snapshots]
+    Default: replication
+    Description: >-
+      How the database reaches Ireland between the daily snapshots. replication = RDS cross-Region automated backups (point in
+      time restore in Ireland, about 15 minutes of changes at risk); hourly-snapshots = the fallback if RDS refuses it: an
+      hourly AWS Backup snapshot copied to the Ireland vault and kept 7 days there (1-2 hours at risk).
 
 Conditions:
   HasDomain: !And [!Not [!Equals [!Ref Domain, ""]], !Not [!Equals [!Ref DomainCertificateArn, ""]]]
@@ -95,6 +126,8 @@ Conditions:
   HasMailFrom: !Not [!Equals [!Ref MailFromAddress, ""]]
   HasPush: !Not [!Equals [!Ref PushSecretArn, ""]]
   HasAi: !Not [!Equals [!Ref AnthropicSecretArn, ""]]
+  CopyByReplication: !Equals [!Ref IrelandDatabaseCopy, replication]
+  CopyByHourlySnapshots: !Equals [!Ref IrelandDatabaseCopy, hourly-snapshots]
 
 Resources:
   # ---------------------------------------------------------------- Network
@@ -219,6 +252,13 @@ Resources:
           SourceSecurityGroupId: !Ref AppSecurityGroup
           Description: App
 
+  # The monthly restore test's temporary database (0.29.0): nothing may connect to it. It only has to come up.
+  RestoreTestSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: Monthly restore test database - no inbound
+      VpcId: !Ref Vpc
+
   # ---------------------------------------------------------------- Database (RDS for SQL Server)
   # Removed with the stack; a restored database snapshot can be given a new password in the RDS console.
   DatabaseSecret:
@@ -239,6 +279,51 @@ Resources:
       DBSubnetGroupDescription: !Sub "${AWS::StackName} database subnets"
       SubnetIds: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
 
+  # RDS writes the weekly native export (msdb.dbo.rds_backup_database, started by the app) into the backups bucket as this
+  # role, which can reach that bucket only.
+  NativeBackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /cmms/
+      PermissionsBoundary: !Ref BoundaryPolicyArn
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: rds.amazonaws.com }
+            Action: sts:AssumeRole
+            Condition:
+              StringEquals: { "aws:SourceAccount": !Ref AWS::AccountId }
+      Policies:
+        - PolicyName: backups-bucket
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [s3:ListBucket, s3:GetBucketLocation]
+                Resource: !GetAtt BackupsBucket.Arn
+              # Read too, so a native restore from the same bucket works with the same role.
+              - Effect: Allow
+                Action: [s3:GetObjectAttributes, s3:GetObject, s3:PutObject, s3:ListMultipartUploadParts, s3:AbortMultipartUpload]
+                Resource: !Sub "${BackupsBucket.Arn}/*"
+
+  # Native backup and restore. Adding the option or attaching the group needs no restart.
+  OptionGroup:
+    Type: AWS::RDS::OptionGroup
+    Properties:
+      EngineName: sqlserver-ex
+      MajorEngineVersion: !Ref DbMajorEngineVersion
+      OptionGroupDescription: !Sub "${AWS::StackName} native backup to S3"
+      OptionConfigurations:
+        - OptionName: SQLSERVER_BACKUP_RESTORE
+          OptionSettings:
+            - Name: IAM_ROLE_ARN
+              Value: !GetAtt NativeBackupRole.Arn
+
+  # Backups (0.29.0): point in time restore for 35 days in London and, by default, a continuous copy in Ireland (RDS
+  # cross-Region automated backups, encrypted with the Ireland key, kept 7 days). None of these settings replaces or
+  # restarts the instance (RDS: no downtime for a retention change between non-zero values, an option group change, or
+  # backup replication).
   Database:
     Type: AWS::RDS::DBInstance
     DeletionPolicy: Snapshot
@@ -256,9 +341,13 @@ Resources:
       VPCSecurityGroups: [!Ref DatabaseSecurityGroup]
       PubliclyAccessible: false
       MultiAZ: false
-      BackupRetentionPeriod: 7
+      BackupRetentionPeriod: 35
       CopyTagsToSnapshot: true
       AutoMinorVersionUpgrade: true
+      OptionGroupName: !Ref OptionGroup
+      AutomaticBackupReplicationRegion: !If [CopyByReplication, eu-west-1, !Ref AWS::NoValue]
+      AutomaticBackupReplicationKmsKeyId: !If [CopyByReplication, !Ref DrKeyArn, !Ref AWS::NoValue]
+      AutomaticBackupReplicationRetentionPeriod: !If [CopyByReplication, 7, !Ref AWS::NoValue]
 
   # ---------------------------------------------------------------- Attachments (S3)
   FilesBucket:
@@ -276,14 +365,26 @@ Resources:
         RestrictPublicBuckets: true
       OwnershipControls:
         Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
-      # Deleted or replaced files stay recoverable for 14 days.
+      # Deleted or replaced files stay recoverable for 90 days.
       VersioningConfiguration: { Status: Enabled }
       LifecycleConfiguration:
         Rules:
           - Id: expire-old-versions
             Status: Enabled
-            NoncurrentVersionExpiration: { NoncurrentDays: 14 }
+            NoncurrentVersionExpiration: { NoncurrentDays: 90 }
             AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }
+      # Every new file and version is copied to the Object Lock bucket in Ireland (cmms-dr). Deletions are not: a delete
+      # marker stays here, so a file deleted in London (by mistake or by an attacker) is still current in Ireland. Files
+      # uploaded before replication was set up need one S3 Batch Replication job (see docs/SECURITY_AND_BACKUPS.md).
+      ReplicationConfiguration:
+        Role: !GetAtt ReplicationRole.Arn
+        Rules:
+          - Id: to-ireland
+            Status: Enabled
+            Priority: 1
+            Filter: { Prefix: "" }
+            DeleteMarkerReplication: { Status: Disabled }
+            Destination: { Bucket: !Ref FilesCopyBucketArn }
 
   FilesBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -298,6 +399,223 @@ Resources:
             Action: "s3:*"
             Resource: [!GetAtt FilesBucket.Arn, !Sub "${FilesBucket.Arn}/*"]
             Condition: { Bool: { "aws:SecureTransport": "false" } }
+
+  # ---------------------------------------------------------------- Backups (0.29.0)
+  # The weekly native export (.bak, restorable on any SQL Server): written by RDS as NativeBackupRole, kept 90 days, and
+  # copied to the Object Lock bucket in Ireland (deletions not copied, like the files). Kept when the stack is deleted.
+  BackupsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "cmms-backups-${AWS::AccountId}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      VersioningConfiguration: { Status: Enabled }
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-after-90-days
+            Status: Enabled
+            ExpirationInDays: 90
+            NoncurrentVersionExpiration: { NoncurrentDays: 7 }
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }
+      ReplicationConfiguration:
+        Role: !GetAtt ReplicationRole.Arn
+        Rules:
+          - Id: to-ireland
+            Status: Enabled
+            Priority: 1
+            Filter: { Prefix: "" }
+            DeleteMarkerReplication: { Status: Disabled }
+            Destination: { Bucket: !Ref BackupsCopyBucketArn }
+
+  BackupsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref BackupsBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: HttpsOnly
+            Effect: Deny
+            Principal: "*"
+            Action: "s3:*"
+            Resource: [!GetAtt BackupsBucket.Arn, !Sub "${BackupsBucket.Arn}/*"]
+            Condition: { Bool: { "aws:SecureTransport": "false" } }
+
+  # S3 copies new objects of both buckets to Ireland as this role. Into Object Lock buckets it also reads each object's
+  # retention and legal hold; the replicas then take the Ireland bucket's default retention.
+  ReplicationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /cmms/
+      PermissionsBoundary: !Ref BoundaryPolicyArn
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: s3.amazonaws.com }
+            Action: sts:AssumeRole
+
+  # A policy of its own: the buckets name the role in their replication settings, so the role can't name the buckets.
+  ReplicationPolicy:
+    Type: AWS::IAM::RolePolicy
+    Properties:
+      RoleName: !Ref ReplicationRole
+      PolicyName: replicate-to-ireland
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Action: [s3:GetReplicationConfiguration, s3:ListBucket]
+            Resource: [!GetAtt FilesBucket.Arn, !GetAtt BackupsBucket.Arn]
+          - Effect: Allow
+            Action:
+              - s3:GetObjectVersionForReplication
+              - s3:GetObjectVersionAcl
+              - s3:GetObjectVersionTagging
+              - s3:GetObjectRetention
+              - s3:GetObjectLegalHold
+            Resource: [!Sub "${FilesBucket.Arn}/*", !Sub "${BackupsBucket.Arn}/*"]
+          - Effect: Allow
+            Action: [s3:ReplicateObject, s3:ReplicateDelete, s3:ReplicateTags]
+            Resource: [!Sub "${FilesCopyBucketArn}/*", !Sub "${BackupsCopyBucketArn}/*"]
+
+  # AWS Backup takes the snapshots, copies them to Ireland and runs the monthly restore test as this role.
+  BackupRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /cmms/
+      PermissionsBoundary: !Ref BoundaryPolicyArn
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: backup.amazonaws.com }
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForBackup"
+        - !Sub "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSBackupServiceRolePolicyForRestores"
+      Policies:
+        # The restored test database takes the snapshot's option group, which names NativeBackupRole.
+        - PolicyName: restore-with-native-backup-option
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: iam:PassRole
+                Resource: !GetAtt NativeBackupRole.Arn
+                Condition:
+                  StringEquals: { iam:PassedToService: rds.amazonaws.com }
+
+  # London vault: nobody but the account's root user may delete a recovery point (the snapshots still expire on their
+  # lifecycle; AWS Backup does that itself). Kept when the stack is deleted, since it holds the snapshots.
+  BackupVault:
+    Type: AWS::Backup::BackupVault
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BackupVaultName: !Sub "${AWS::StackName}-vault"
+      AccessPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: OnlyRootDeletesRecoveryPoints
+            Effect: Deny
+            Principal: "*"
+            Action: backup:DeleteRecoveryPoint
+            Resource: "*"
+            Condition:
+              ArnNotEquals:
+                aws:PrincipalArn: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+
+  # Daily (35 days) and monthly (12 months) snapshots, each copied to the locked Ireland vault with the same retention. No
+  # continuous backup here: RDS keeps its own point in time restore (BackupRetentionPeriod), which AWS Backup would take over.
+  # The start window lets a job wait out the RDS backup window if they meet.
+  BackupPlan:
+    Type: AWS::Backup::BackupPlan
+    Properties:
+      BackupPlan:
+        BackupPlanName: !Sub "${AWS::StackName}-database"
+        BackupPlanRule:
+          - RuleName: daily
+            TargetBackupVault: !Ref BackupVault
+            ScheduleExpression: cron(0 1 * * ? *)
+            StartWindowMinutes: 480
+            CompletionWindowMinutes: 1440
+            Lifecycle: { DeleteAfterDays: 35 }
+            CopyActions:
+              - DestinationBackupVaultArn: !Ref DrVaultArn
+                Lifecycle: { DeleteAfterDays: 35 }
+          - RuleName: monthly
+            TargetBackupVault: !Ref BackupVault
+            ScheduleExpression: cron(0 1 1 * ? *)
+            StartWindowMinutes: 480
+            CompletionWindowMinutes: 1440
+            Lifecycle: { DeleteAfterDays: 365 }
+            CopyActions:
+              - DestinationBackupVaultArn: !Ref DrVaultArn
+                Lifecycle: { DeleteAfterDays: 365 }
+          # Fallback only (IrelandDatabaseCopy=hourly-snapshots): 7 days in Ireland, the locked vault's minimum.
+          - !If
+            - CopyByHourlySnapshots
+            - RuleName: hourly
+              TargetBackupVault: !Ref BackupVault
+              ScheduleExpression: cron(0 * * * ? *)
+              StartWindowMinutes: 60
+              CompletionWindowMinutes: 180
+              Lifecycle: { DeleteAfterDays: 2 }
+              CopyActions:
+                - DestinationBackupVaultArn: !Ref DrVaultArn
+                  Lifecycle: { DeleteAfterDays: 7 }
+            - !Ref AWS::NoValue
+
+  BackupSelection:
+    Type: AWS::Backup::BackupSelection
+    Properties:
+      BackupPlanId: !Ref BackupPlan
+      BackupSelection:
+        SelectionName: database
+        IamRoleArn: !GetAtt BackupRole.Arn
+        Resources:
+          - !Sub "arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:db:${Database}"
+
+  # Once a month (the 2nd, 04:00 UTC) AWS Backup restores the latest London snapshot into a temporary db.t3.micro in the
+  # private subnets, behind a security group with no inbound rules, and deletes it after 4 hours. "Checked" means the
+  # restore job completed and the instance came up; the result goes to the alert topic (see RestoreTestResults).
+  RestoreTestingPlan:
+    Type: AWS::Backup::RestoreTestingPlan
+    Properties:
+      RestoreTestingPlanName: cmms_monthly_restore_test
+      ScheduleExpression: cron(0 4 2 * ? *)
+      StartWindowHours: 8
+      RecoveryPointSelection:
+        Algorithm: LATEST_WITHIN_WINDOW
+        IncludeVaults: [!GetAtt BackupVault.BackupVaultArn]
+        RecoveryPointTypes: [SNAPSHOT]
+        SelectionWindowDays: 7
+
+  RestoreTestingSelection:
+    Type: AWS::Backup::RestoreTestingSelection
+    Properties:
+      RestoreTestingPlanName: !Ref RestoreTestingPlan
+      RestoreTestingSelectionName: cmms_database
+      ProtectedResourceType: RDS
+      ProtectedResourceArns:
+        - !Sub "arn:${AWS::Partition}:rds:${AWS::Region}:${AWS::AccountId}:db:${Database}"
+      IamRoleArn: !GetAtt BackupRole.Arn
+      ValidationWindowHours: 4
+      RestoreMetadataOverrides:
+        dbInstanceClass: db.t3.micro
+        dbSubnetGroupName: !Ref DatabaseSubnetGroup
+        vpcSecurityGroupIds: !Sub '["${RestoreTestSecurityGroup.GroupId}"]'
 
   # ---------------------------------------------------------------- App (ECS Fargate)
   LogGroup:
@@ -413,6 +731,8 @@ Resources:
             - { Name: Storage__Provider, Value: S3 }
             - { Name: Storage__Bucket, Value: !Ref FilesBucket }
             - { Name: Storage__Region, Value: !Ref AWS::Region }
+            # The weekly native export's bucket (0.29.0); the app starts it Sundays from 02:00 UTC.
+            - { Name: Backups__S3Arn, Value: !GetAtt BackupsBucket.Arn }
             - { Name: Auth__AllowRegistration, Value: !Ref AllowRegistration }
             # New organizations confirm their e-mail before use (0.29.0); needs SES production access.
             - { Name: Auth__RequireEmailConfirmation, Value: !Ref RequireEmailConfirmation }
@@ -533,8 +853,11 @@ Resources:
         HTTPPort: 80
         OriginProtocolPolicy: http-only
 
+  # After the database: its changes (option group, backup copies) finish before CloudFront switches origin, so a failure
+  # there rolls back before the cutover starts.
   Distribution:
     Type: AWS::CloudFront::Distribution
+    DependsOn: Database
     Properties:
       DistributionConfig:
         Enabled: true
@@ -586,6 +909,12 @@ Outputs:
     Value: !Ref LogGroup
   FilesBucketName:
     Value: !Ref FilesBucket
+  BackupsBucketName:
+    Description: Bucket holding the weekly native database exports (replicated to Ireland)
+    Value: !Ref BackupsBucket
+  BackupVaultName:
+    Description: London AWS Backup vault (daily and monthly snapshots; copies go to the Ireland vault)
+    Value: !Ref BackupVault
   DatabaseEndpoint:
     Value: !GetAtt Database.Endpoint.Address
   DatabaseSecretArn:
