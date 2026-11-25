@@ -158,6 +158,7 @@ app.UseRequestLocalization(o =>
     o.FallBackToParentUICultures = true;
 });
 app.UseExceptionHandler();
+app.UseSecurityHeaders();
 app.UseDefaultFiles();
 app.UseStaticFiles();
 app.UseAuthentication();
