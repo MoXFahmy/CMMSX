@@ -43,6 +43,7 @@ services.AddAuthentication(ApiKeyAuth.Smart)
     .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, ApiKeyHandler>(ApiKeyAuth.Scheme, null);
 services.AddAuthentication().AddIdentityCookies();
 services.AddApiKeyLimits(builder.Configuration);
+services.AddAbuseLimits(builder.Configuration);
 services.ConfigureApplicationCookie(o =>
 {
     o.Cookie.Name = "cmms.auth";

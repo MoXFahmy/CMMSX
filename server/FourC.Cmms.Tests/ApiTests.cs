@@ -32,6 +32,7 @@ public class ApiFixture : IAsyncLifetime
         Factory = new WebApplicationFactory<Program>().WithWebHostBuilder(b =>
         {
             b.UseSetting("Import:PollMilliseconds", "200"); // background imports (0.26.0) are picked up at once in tests
+            b.UseSetting("Abuse:Enabled", "false"); // per-address limits (0.29.0) are off in every test but AbuseLimitTests (set before Configure, so it can turn them on)
             Configure(b);
             b.UseSetting("ConnectionStrings:Cmms", cs);
             b.UseSetting("Storage:Path", Path.Combine(Path.GetTempPath(), _db));

@@ -125,7 +125,7 @@ public static class RequestFeedbackService
         }).WithTags("Work requests").RequireAuthorization();
 
         // Anyone else answers through the single-use link e-mailed to them: no sign-in, and only this one request.
-        var pub = api.MapGroup("/public/feedback").WithTags("Requester answer").AllowAnonymous();
+        var pub = api.MapGroup("/public/feedback").WithTags("Requester answer").AllowAnonymous().RequireRateLimiting(AbuseLimits.Answer); // per visitor address (0.29.0)
 
         pub.MapGet("/{token}", async (string token, CmmsDbContext db, DbContextOptionsFactory factory, CancellationToken ct) =>
         {

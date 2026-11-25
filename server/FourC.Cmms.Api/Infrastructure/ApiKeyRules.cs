@@ -65,7 +65,9 @@ public static class ApiKeyRules
                 var wait = context.Lease.TryGetMetadata(MetadataName.RetryAfter, out var after) ? Math.Max(1, (int)Math.Ceiling(after.TotalSeconds)) : 60;
                 context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
                 context.HttpContext.Response.Headers.RetryAfter = wait.ToString();
-                await context.HttpContext.Response.WriteAsJsonAsync(new { title = Translator.T(string.Format(TooMany, wait)), status = 429 }, ct);
+                // A key's own limit says so in seconds; a visitor address's (0.29.0) in minutes.
+                var title = ApiKeyAuth.IsKey(context.HttpContext.User) ? string.Format(TooMany, wait) : string.Format(AbuseLimits.TooManyFromNetwork, (int)Math.Ceiling(wait / 60.0));
+                await context.HttpContext.Response.WriteAsJsonAsync(new { title = Translator.T(title), status = 429 }, ct);
             };
         });
     }

@@ -1250,6 +1250,7 @@
  "This key is read-only.": "هذا المفتاح للقراءة فقط.",
  "API keys can't do this.": "لا يمكن لمفاتيح الواجهة البرمجية القيام بذلك.",
  "Too many requests with this key. Try again in {0} seconds.": "طلبات كثيرة جدًا بهذا المفتاح. حاول مرة أخرى بعد {0} ثانية.",
+ "Too many attempts from your network. Try again in {0} minutes.": "محاولات كثيرة جدًا من شبكتك. حاول مرة أخرى بعد {0} دقيقة.",
  "Choose a file of up to 25 MB.": "اختر ملفًا حجمه 25 ميجابايت على الأكثر.",
  "{0} has {1} rows; the limit is 20,000 per sheet. Split it into smaller files.": "في {0} عدد {1} صفًا؛ الحد 20,000 لكل ورقة. قسّمه إلى ملفات أصغر.",
  "This import took too long. Split it into smaller files.": "استغرق هذا الاستيراد وقتًا طويلًا. قسّمه إلى ملفات أصغر.",

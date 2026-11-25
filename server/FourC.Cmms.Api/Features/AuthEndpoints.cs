@@ -32,10 +32,11 @@ public static class AuthEndpoints
     /// locked account's further tries aren't written: only the try that locked it, so no one can flood the log with an address.
     /// </summary>
     private static async Task<Microsoft.AspNetCore.Identity.SignInResult> CheckPasswordAsync(HttpContext http, UserManager<AppUser> users, SignInManager<AppUser> signIn,
-        CmmsDbContext db, AppUser user, string? password, CancellationToken ct)
+        CmmsDbContext db, AppUser user, string? password, SignInGuard guard, string address, CancellationToken ct)
     {
         var wasLocked = await users.IsLockedOutAsync(user);
         var result = await signIn.CheckPasswordSignInAsync(user, password ?? "", lockoutOnFailure: true);
+        if (!result.Succeeded) guard.Failed(address); // a locked account counts too
         if (!result.Succeeded && !wasLocked)
         {
             AuditLog.Event(db, "AppUser", user.Id, result.IsLockedOut ? "LockedOut" : "SignInFailed", Device(http), user.TenantId, user.Id, user.FullName);
@@ -74,16 +75,21 @@ public static class AuthEndpoints
             var user = await users.FindByIdAsync(admin.Id.ToString());
             await signIn.SignInAsync(user!, isPersistent: true);
             return Results.Ok(new { ok = true });
-        }).AllowAnonymous();
+        }).AllowAnonymous().RequireRateLimiting(AbuseLimits.SignUp); // per visitor address (0.29.0)
 
         g.MapPost("/login", async (LoginRequest req, HttpContext http, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext db,
-            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, CancellationToken ct) =>
+            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, SignInGuard guard, IConfiguration config, CancellationToken ct) =>
         {
+            var address = VisitorAddress.Of(http, config); // kept in memory only (0.29.0)
+            if (guard.IsBlocked(address, out var retryAfter)) return AbuseLimits.Refuse(http, retryAfter);
             var user = string.IsNullOrWhiteSpace(req.Email) ? null : await users.FindByEmailAsync(req.Email.Trim());
             var tenantActive = user is not null && await db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.IsActive);
             if (user is null || !user.IsActive || user.IsServiceAccount || !tenantActive)
+            {
+                guard.Failed(address); // an unknown address counts like a wrong password
                 return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
-            var result = await CheckPasswordAsync(http, users, signIn, db, user, req.Password, ct);
+            }
+            var result = await CheckPasswordAsync(http, users, signIn, db, user, req.Password, guard, address, ct);
             if (result.IsLockedOut) return Results.Problem(title: Translator.T("Too many failed attempts. Try again in a few minutes."), statusCode: 429);
             if (!result.Succeeded) return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
             // The organization's password rules (0.25.0): an expired password, or one shorter than today's minimum, is renewed first.
@@ -95,13 +101,18 @@ public static class AuthEndpoints
 
         // A new password in place of an expired one, or one that no longer meets the rules; then signed in as usual (0.25.0).
         g.MapPost("/renew-password", async (RenewPasswordRequest req, HttpContext http, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext db,
-            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, CancellationToken ct) =>
+            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, SignInGuard guard, IConfiguration config, CancellationToken ct) =>
         {
+            var address = VisitorAddress.Of(http, config); // kept in memory only (0.29.0)
+            if (guard.IsBlocked(address, out var retryAfter)) return AbuseLimits.Refuse(http, retryAfter);
             var user = string.IsNullOrWhiteSpace(req.Email) ? null : await users.FindByEmailAsync(req.Email.Trim());
             var tenantActive = user is not null && await db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.IsActive, ct);
             if (user is null || !user.IsActive || user.IsServiceAccount || !tenantActive)
+            {
+                guard.Failed(address); // an unknown address counts like a wrong password
                 return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
-            var result = await CheckPasswordAsync(http, users, signIn, db, user, req.Password, ct); // logged like signing in (0.26.1)
+            }
+            var result = await CheckPasswordAsync(http, users, signIn, db, user, req.Password, guard, address, ct); // logged like signing in (0.26.1)
             if (result.IsLockedOut) return Results.Problem(title: Translator.T("Too many failed attempts. Try again in a few minutes."), statusCode: 429);
             if (!result.Succeeded) return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
             var v = new Validator();
