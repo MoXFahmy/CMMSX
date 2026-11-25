@@ -1,0 +1,173 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  CMX - recovery stack in Ireland (eu-west-1): a locked AWS Backup vault and two Object Lock buckets that hold the
+  last-line copies of the database snapshots, the weekly database export and the uploaded files. Deployed as stack
+  cmms-dr by .github/workflows/deploy-aws.yml before the app stack; see docs/DEPLOY_AWS.md. Everything here is kept when
+  the stack is deleted, because these are the copies that must survive a mistake.
+
+Parameters:
+  SourceAccountId:
+    Type: String
+    AllowedPattern: "^[0-9]{12}$"
+    Description: >-
+      AWS account that owns the London app stack and sends copies here (the same account that deploys this stack).
+      Used by the key policy to admit only that account's RDS and AWS Backup.
+
+Resources:
+  # Encrypts the Ireland vault and the Ireland copies of the RDS automated backups. Never disable it and never schedule
+  # its deletion: the recovery copies cannot be read without it.
+  DrKey:
+    Type: AWS::KMS::Key
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      Description: CMX recovery copies in Ireland (AWS Backup vault and RDS cross-Region automated backups)
+      EnableKeyRotation: true
+      KeySpec: SYMMETRIC_DEFAULT
+      KeyUsage: ENCRYPT_DECRYPT
+      KeyPolicy:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: EnableAccountAdministration
+            Effect: Allow
+            Principal:
+              AWS: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:root"
+            Action: "kms:*"
+            Resource: "*"
+          # Documented statement for RDS: lets principals of this account use the key only through RDS in this Region,
+          # which covers replicating automated backups across Regions and restoring from them.
+          - Sid: AllowRdsInThisAccount
+            Effect: Allow
+            Principal:
+              AWS: "*"
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:CreateGrant
+              - kms:ListGrants
+              - kms:DescribeKey
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "kms:CallerAccount": !Ref SourceAccountId
+                "kms:ViaService": !Sub "rds.${AWS::Region}.amazonaws.com"
+          # Documented statement for AWS Backup: vault encryption, copies into the vault and restores from it.
+          - Sid: AllowBackupInThisAccount
+            Effect: Allow
+            Principal:
+              AWS: "*"
+            Action:
+              - kms:Encrypt
+              - kms:Decrypt
+              - kms:ReEncrypt*
+              - kms:GenerateDataKey*
+              - kms:CreateGrant
+              - kms:ListGrants
+              - kms:DescribeKey
+            Resource: "*"
+            Condition:
+              StringEquals:
+                "kms:CallerAccount": !Ref SourceAccountId
+                "kms:ViaService": !Sub "backup.${AWS::Region}.amazonaws.com"
+
+  DrKeyAlias:
+    Type: AWS::KMS::Alias
+    Properties:
+      AliasName: alias/cmms-dr
+      TargetKeyId: !Ref DrKey
+
+  # Governance-mode lock: the deploy pipeline cannot delete or shorten these copies, but a console administrator outside
+  # the pipeline can still lift the lock. The retention values are fixed from the first deploy; do not edit them.
+  DrVault:
+    Type: AWS::Backup::BackupVault
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BackupVaultName: cmms-dr-vault
+      EncryptionKeyArn: !GetAtt DrKey.Arn
+      LockConfiguration:
+        MinRetentionDays: 7
+        MaxRetentionDays: 400
+
+  # No bucket policy on purpose: same-account replication needs none, and the pipeline may not write one.
+  FilesCopyBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "cmms-dr-files-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      ObjectLockEnabled: true
+      ObjectLockConfiguration:
+        ObjectLockEnabled: Enabled
+        Rule:
+          DefaultRetention:
+            Mode: GOVERNANCE
+            Days: 35
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+
+  BackupsCopyBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketName: !Sub "cmms-dr-backups-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      ObjectLockEnabled: true
+      ObjectLockConfiguration:
+        ObjectLockEnabled: Enabled
+        Rule:
+          DefaultRetention:
+            Mode: GOVERNANCE
+            Days: 90
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault:
+              SSEAlgorithm: AES256
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules:
+          - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-after-90-days
+            Status: Enabled
+            Prefix: ""
+            ExpirationInDays: 90
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 1
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
+
+Outputs:
+  DrVaultArn:
+    Description: Ireland backup vault (locked, governance mode). The London backup plan copies into it.
+    Value: !GetAtt DrVault.BackupVaultArn
+  DrKeyArn:
+    Description: Key that encrypts the Ireland vault and the Ireland RDS automated-backup copies.
+    Value: !GetAtt DrKey.Arn
+  FilesCopyBucketArn:
+    Description: Ireland bucket that receives the replicated attachments.
+    Value: !GetAtt FilesCopyBucket.Arn
+  BackupsCopyBucketArn:
+    Description: Ireland bucket that receives the replicated weekly database exports.
+    Value: !GetAtt BackupsCopyBucket.Arn

@@ -1,0 +1,267 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: >-
+  CMX - edge stack in US East (us-east-1): the CloudFront-scoped WAF web ACL, its alarm and e-mail topic, and the
+  GuardDuty detector for us-east-1. CloudFront web ACLs must live in us-east-1. Deployed as stack cmms-edge by
+  .github/workflows/deploy-aws.yml before the app stack; see docs/DEPLOY_AWS.md.
+
+Parameters:
+  WafMode:
+    Type: String
+    AllowedValues: [count, block]
+    Default: count
+    Description: >-
+      count = every rule that would block only counts (watch the sampled requests for a day or two); block = enforce.
+      Switch to block, then re-run the deploy workflow.
+  AlertEmail:
+    Type: String
+    Default: ""
+    Description: Address that receives the WAF alarm. Leave empty for no subscription. The recipient must confirm the subscription e-mail.
+  CreateGuardDutyDetector:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: Create the GuardDuty detector in us-east-1. Set false when the account already has one there (only one is allowed per Region).
+  AuthRateLimit:
+    Type: Number
+    Default: 300
+    MinValue: 10
+    MaxValue: 2000000000
+    Description: Requests per 5 minutes per address to POST /api/auth/* above which requests are blocked.
+  PublicRateLimit:
+    Type: Number
+    Default: 100
+    MinValue: 10
+    MaxValue: 2000000000
+    Description: Requests per 5 minutes per address to /api/public/* above which requests are blocked.
+  AllRateLimit:
+    Type: Number
+    Default: 6000
+    MinValue: 10
+    MaxValue: 2000000000
+    Description: Requests per 5 minutes per address, all paths, above which requests are blocked.
+
+Conditions:
+  CountOnly: !Equals [!Ref WafMode, count]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+  MakeDetector: !Equals [!Ref CreateGuardDutyDetector, "true"]
+
+Resources:
+  # Attached to the CloudFront distribution by the app stack (WebACLId). Sampled requests and CloudWatch metrics only;
+  # no full WAF logging, no Bot Control.
+  WebAcl:
+    Type: AWS::WAFv2::WebACL
+    Properties:
+      Name: cmms-edge-webacl
+      Description: CMX CloudFront protection with managed rule groups and per-address rate limits
+      Scope: CLOUDFRONT
+      DefaultAction:
+        Allow: {}
+      CustomResponseBodies:
+        TooManyRequests:
+          ContentType: TEXT_HTML
+          Content: |
+            <!doctype html><html><head><meta charset="utf-8"><title>429</title></head><body style="font-family:sans-serif;text-align:center;margin-top:15vh"><p>Too many requests from your network. Wait a few minutes and try again.</p><p dir="rtl" lang="ar">طلبات كثيرة جدًا من شبكتك. انتظر بضع دقائق ثم حاول مرة أخرى.</p></body></html>
+      VisibilityConfig:
+        SampledRequestsEnabled: true
+        CloudWatchMetricsEnabled: true
+        MetricName: cmms-edge-webacl
+      Rules:
+        - Name: AWSManagedRulesAmazonIpReputationList
+          Priority: 1
+          OverrideAction: !If [CountOnly, {Count: {}}, {None: {}}]
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesAmazonIpReputationList
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesAmazonIpReputationList
+        - Name: AWSManagedRulesKnownBadInputsRuleSet
+          Priority: 2
+          OverrideAction: !If [CountOnly, {Count: {}}, {None: {}}]
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesKnownBadInputsRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesKnownBadInputsRuleSet
+        - Name: AWSManagedRulesSQLiRuleSet
+          Priority: 3
+          OverrideAction: !If [CountOnly, {Count: {}}, {None: {}}]
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesSQLiRuleSet
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesSQLiRuleSet
+        - Name: AWSManagedRulesCommonRuleSet
+          Priority: 4
+          OverrideAction: !If [CountOnly, {Count: {}}, {None: {}}]
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesCommonRuleSet
+              RuleActionOverrides:
+                - Name: SizeRestrictions_BODY
+                  ActionToUse:
+                    Count: {}
+                - Name: CrossSiteScripting_BODY
+                  ActionToUse:
+                    Count: {}
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesCommonRuleSet
+        - Name: AWSManagedRulesAnonymousIpList
+          Priority: 5
+          OverrideAction:
+            Count: {}
+          Statement:
+            ManagedRuleGroupStatement:
+              VendorName: AWS
+              Name: AWSManagedRulesAnonymousIpList
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: AWSManagedRulesAnonymousIpList
+        - Name: RateAuthWrites
+          Priority: 6
+          Action: !If
+            - CountOnly
+            - Count: {}
+            - Block:
+                CustomResponse:
+                  ResponseCode: 429
+                  CustomResponseBodyKey: TooManyRequests
+          Statement:
+            RateBasedStatement:
+              AggregateKeyType: IP
+              EvaluationWindowSec: 300
+              Limit: !Ref AuthRateLimit
+              ScopeDownStatement:
+                AndStatement:
+                  Statements:
+                    - ByteMatchStatement:
+                        SearchString: POST
+                        FieldToMatch:
+                          Method: {}
+                        TextTransformations:
+                          - Priority: 0
+                            Type: NONE
+                        PositionalConstraint: EXACTLY
+                    - ByteMatchStatement:
+                        SearchString: /api/auth/
+                        FieldToMatch:
+                          UriPath: {}
+                        TextTransformations:
+                          - Priority: 0
+                            Type: NONE
+                        PositionalConstraint: STARTS_WITH
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RateAuthWrites
+        - Name: RatePublicLinks
+          Priority: 7
+          Action: !If
+            - CountOnly
+            - Count: {}
+            - Block:
+                CustomResponse:
+                  ResponseCode: 429
+                  CustomResponseBodyKey: TooManyRequests
+          Statement:
+            RateBasedStatement:
+              AggregateKeyType: IP
+              EvaluationWindowSec: 300
+              Limit: !Ref PublicRateLimit
+              ScopeDownStatement:
+                ByteMatchStatement:
+                  SearchString: /api/public/
+                  FieldToMatch:
+                    UriPath: {}
+                  TextTransformations:
+                    - Priority: 0
+                      Type: NONE
+                  PositionalConstraint: STARTS_WITH
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RatePublicLinks
+        - Name: RateAll
+          Priority: 8
+          Action: !If
+            - CountOnly
+            - Count: {}
+            - Block:
+                CustomResponse:
+                  ResponseCode: 429
+                  CustomResponseBodyKey: TooManyRequests
+          Statement:
+            RateBasedStatement:
+              AggregateKeyType: IP
+              EvaluationWindowSec: 300
+              Limit: !Ref AllRateLimit
+          VisibilityConfig:
+            SampledRequestsEnabled: true
+            CloudWatchMetricsEnabled: true
+            MetricName: RateAll
+
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: cmms-edge-alerts
+      DisplayName: CMX edge alerts
+
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  WafBlocking:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: cmms-waf-blocking
+      AlarmDescription: More than 1,000 requests blocked by the CMX web ACL in 5 minutes (attack, or a rule catching real users).
+      Namespace: AWS/WAFV2
+      MetricName: BlockedRequests
+      Dimensions:
+        - Name: WebACL
+          Value: cmms-edge-webacl
+        - Name: Region
+          Value: Global
+        - Name: Rule
+          Value: ALL
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1000
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopic
+    DependsOn: WebAcl
+
+  # Basic detector: nothing but the WAF runs in this Region.
+  Detector:
+    Type: AWS::GuardDuty::Detector
+    Condition: MakeDetector
+    Properties:
+      Enable: true
+      FindingPublishingFrequency: FIFTEEN_MINUTES
+
+Outputs:
+  WebAclArn:
+    Description: Web ACL for the CloudFront distribution (WebACLId).
+    Value: !GetAtt WebAcl.Arn
+  AlertTopicArn:
+    Description: Topic that receives the WAF alarm.
+    Value: !Ref AlertTopic
