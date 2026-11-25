@@ -18,6 +18,13 @@ namespace FourC.Cmms.Tests;
 /// is explicit and not reported, and two separate queries in one statement (<c>a.AllSites().AnyAsync() || b.AllSites().AnyAsync()</c>) are not nested.</item>
 /// </list>
 /// Rule 2 is what catches the 0.26.1-3 statement: the helper list alone never matched it.
+/// <para><b>What this guard does NOT prove.</b> It is a text heuristic, not a data-flow check. Known blind spots:
+/// (a) it recognises a set only as <c>db.</c>, <c>scoped.</c> or <c>Db.</c> followed by the set's name, so a context held in another variable name
+/// (<c>ctx.Assets</c>, <c>c.Context.Assets</c>) is invisible; (b) it splits on <c>;</c>, so a lambda with a block body is cut into pieces and a lift in
+/// one piece is not joined to a set used in another; (c) a lifted query held in a variable and used in a LATER statement
+/// (<c>var q = db.A.AllSites(); ... q.Where(x => db.B.Any(...))</c>) is never joined; (d) it only looks inside the API and Core projects' source
+/// files, not at generated or runtime-built queries, and not at raw SQL; (e) an entry in the allow-list vouches for the statement as it was when
+/// someone read it. Passing means "no statement of the shapes above is unreviewed", not "no query leaks".</para>
 /// </summary>
 internal static partial class FilterLiftScanner
 {
@@ -271,9 +278,9 @@ public class GuardFilterLiftTests
             }
     }
 
-    private sealed record Entry(string File, int Line, string Reason, int Number);
+    private sealed record Entry(string File, int Line, string Fingerprint, string Reason, int Number);
 
-    /// <summary>A line is <c>relative/path.cs:123  the reason</c>; blank lines and lines starting with # are notes.</summary>
+    /// <summary>A line is <c>relative/path.cs:123 | the statement's first characters | the reason</c>; blank lines and lines starting with # are notes.</summary>
     private static List<Entry> AllowList()
     {
         var path = Path.Combine(Root(), "server", "FourC.Cmms.Tests", "guard-filter-lift-allowlist.txt");
@@ -283,28 +290,55 @@ public class GuardFilterLiftTests
         {
             var text = lines[n].Trim();
             if (text.Length == 0 || text[0] == '#') continue;
-            var m = Regex.Match(text, @"^(?<file>\S+\.cs):(?<line>\d+)\s+(?<reason>\S.*)$");
-            Assert.True(m.Success, $"allow-list line {n + 1} must be 'file.cs:line  reason': {text}");
-            entries.Add(new Entry(m.Groups["file"].Value, int.Parse(m.Groups["line"].Value), m.Groups["reason"].Value, n + 1));
+            var parts = text.Split(" | ", 3, StringSplitOptions.TrimEntries);
+            var head = parts.Length == 3 ? Regex.Match(parts[0], @"^(?<file>\S+\.cs):(?<line>\d+)$") : Match.Empty;
+            Assert.True(head.Success && parts[1].Length > 0 && parts[2].Length > 0, $"allow-list line {n + 1} must be 'file.cs:line | start of the statement | reason': {text}");
+            entries.Add(new Entry(head.Groups["file"].Value, int.Parse(head.Groups["line"].Value), parts[1], parts[2], n + 1));
         }
         return entries;
     }
 
     /// <summary>How far a statement may move before its entry no longer finds it: line numbers drift as the file is edited.</summary>
-    private const int Drift = 25;
+    private const int Drift = 10;
 
-    /// <summary>Pairs each hit with the nearest unused entry for its file within <see cref="Drift"/> lines; what is left over on either side is the result.</summary>
-    private static (List<FilterLiftScanner.Hit> Unlisted, List<Entry> Stale) Match()
+    /// <summary>How many characters of the statement an entry must repeat (whitespace squashed): a different statement at the same place is not the listed one.</summary>
+    internal const int FingerprintLength = 40;
+
+    internal static string Fingerprint(string statement) => statement.Length <= FingerprintLength ? statement : statement[..FingerprintLength];
+
+    private static bool Fits(Entry e, FilterLiftScanner.Hit hit) =>
+        e.File == hit.File && Math.Abs(e.Line - hit.Line) <= Drift && hit.Statement.StartsWith(e.Fingerprint, StringComparison.Ordinal);
+
+    /// <summary>Pairs each hit with the nearest unused entry that fits it (same file, within <see cref="Drift"/> lines, same start of statement); what is left over on either side is the result.</summary>
+    private static (List<FilterLiftScanner.Hit> Unlisted, List<Entry> Stale) Pair(IEnumerable<FilterLiftScanner.Hit> hits, List<Entry> entries)
     {
-        var unused = AllowList();
+        var unused = entries.ToList();
         var unlisted = new List<FilterLiftScanner.Hit>();
-        foreach (var (relative, path) in Sources())
-            foreach (var hit in FilterLiftScanner.Scan(File.ReadAllText(path), relative))
-            {
-                var entry = unused.Where(e => e.File == hit.File && Math.Abs(e.Line - hit.Line) <= Drift).OrderBy(e => Math.Abs(e.Line - hit.Line)).FirstOrDefault();
-                if (entry is null) unlisted.Add(hit); else unused.Remove(entry);
-            }
+        foreach (var hit in hits)
+        {
+            var entry = unused.Where(e => Fits(e, hit)).OrderBy(e => Math.Abs(e.Line - hit.Line)).FirstOrDefault();
+            if (entry is null) unlisted.Add(hit); else unused.Remove(entry);
+        }
         return (unlisted, unused);
+    }
+
+    private static (List<FilterLiftScanner.Hit> Unlisted, List<Entry> Stale) MatchSource() =>
+        Pair(Sources().SelectMany(s => FilterLiftScanner.Scan(File.ReadAllText(s.Path), s.Relative)), AllowList());
+
+    [Fact]
+    public void A_different_statement_at_the_same_place_does_not_take_over_an_entry()
+    {
+        var listed = new FilterLiftScanner.Hit("A.cs", 100, "var n = await db.WorkOrderParts.AllSites().AnyAsync(l => db.WorkOrders.Any(w => w.Id == l.Id));");
+        var entry = new Entry("A.cs", 100, Fingerprint(listed.Statement), "deliberate", 1);
+        // the same statement a few lines down still matches (code above it moved)
+        Assert.Empty(Pair([listed with { Line = 107 }], [entry]).Unlisted);
+        // a new, different lift at the very same line is unlisted, and the old entry is left stale
+        var other = listed with { Statement = "var rows = await db.Assets.AllSites().Where(a => db.Parts.Any(p => p.Id == a.PartId)).ToListAsync(ct);" };
+        var (unlisted, stale) = Pair([other], [entry]);
+        Assert.Single(unlisted);
+        Assert.Single(stale);
+        // too far away is no match either
+        Assert.Single(Pair([listed with { Line = 140 }], [entry]).Unlisted);
     }
 
     [Fact]
@@ -344,7 +378,7 @@ public class GuardFilterLiftTests
     [Fact]
     public void Source_tree_has_no_unlisted_filter_lifts()
     {
-        var (unlisted, _) = Match();
+        var (unlisted, _) = MatchSource();
         Assert.True(unlisted.Count == 0,
             "A query lifts the site filter and also depends on it (or on another set), so the lift reaches that part too. Fix it with two queries, or list it in guard-filter-lift-allowlist.txt with a reason:\n"
             + string.Join("\n", unlisted.Select(h => $"{h.File}:{h.Line}  {h.Statement}")));
@@ -353,7 +387,7 @@ public class GuardFilterLiftTests
     [Fact]
     public void Allow_list_entries_still_exist()
     {
-        var (_, stale) = Match();
+        var (_, stale) = MatchSource();
         Assert.True(stale.Count == 0,
             "These allow-list entries match no statement any more (code moved or was fixed). Remove or update them:\n"
             + string.Join("\n", stale.Select(e => $"line {e.Number}: {e.File}:{e.Line}  {e.Reason}")));

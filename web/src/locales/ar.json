@@ -1843,6 +1843,7 @@
     "placesCount_many": "{{count}} مكانًا",
     "placesCount_other": "{{count}} مكان",
     "deletedPlace": "(مكان محذوف)",
+    "hiddenPlace": "(مكان لا يمكنك رؤيته)",
     "deletedPlaceTitle": "إزالة آخر مكان محذوف؟",
     "deletedPlaceNow": "حُذفت كل الأماكن التي كان هذا الشخص محصورًا فيها، لذا لا يرى شيئًا الآن.",
     "deletedPlaceAfterSites": "بعد الحفظ سيرى كل ما يلي: {{sites}}.",

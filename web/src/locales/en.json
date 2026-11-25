@@ -1779,6 +1779,7 @@
     "placesCount_one": "{{count}} place",
     "placesCount_other": "{{count}} places",
     "deletedPlace": "(deleted place)",
+    "hiddenPlace": "(a place you can't see)",
     "deletedPlaceTitle": "Remove the last deleted place?",
     "deletedPlaceNow": "Every place this person was limited to has been deleted, so they can't see anything now.",
     "deletedPlaceAfterSites": "After saving they will see all of: {{sites}}.",

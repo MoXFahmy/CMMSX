@@ -105,4 +105,26 @@ public class BranchAccessTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Empty(await IdsAsync(c, "/api/locations"));
         Assert.Empty(await IdsAsync(c, "/api/work-orders"));
     }
+
+    [SkippableFact]
+    public async Task Users_list_says_which_given_places_are_deleted_not_merely_hidden()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var t = await TreeAsync("Deleted Places Co");
+        var gone = Id(await Ok(await t.Admin.PostAsJsonAsync("/api/locations", new { siteId = t.Site, code = "G1", name = "Gone", type = "Building", criticality = "Medium", isActive = true })));
+        var (_, other) = await UserAsync(fx, t.Admin, "Maintenance Manager", locationIds: [t.B2, gone]);
+        Assert.Equal(HttpStatusCode.NoContent, (await t.Admin.DeleteAsync($"/api/locations/{gone}")).StatusCode);
+
+        // An editor limited to the first building can't see the second, but the server still knows it exists.
+        var role = Id(await Ok(await t.Admin.PostAsJsonAsync("/api/roles", new { name = "People editor", description = "", permissions = new[] { "users.manage", "locations.view" } })));
+        var email = $"{Guid.NewGuid():N}@test.local";
+        await Ok(await t.Admin.PostAsJsonAsync("/api/users", new { fullName = "Editor", email, isActive = true, roleIds = new[] { role }, password = "Passw0rd!u", locationIds = new[] { t.B1 } }));
+        var editor = fx.Client();
+        await Ok(await editor.PostAsJsonAsync("/api/auth/login", new { email, password = "Passw0rd!u", rememberMe = false }));
+        foreach (var c in new[] { t.Admin, editor })
+        {
+            var row = (await Ok(await c.GetAsync("/api/users"))).EnumerateArray().Single(u => u.GetProperty("id").GetGuid() == other);
+            Assert.Equal([gone], row.GetProperty("deletedLocationIds").EnumerateArray().Select(x => x.GetGuid()).ToList());
+        }
+    }
 }

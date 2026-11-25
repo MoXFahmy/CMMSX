@@ -404,8 +404,9 @@ function UserSettings() {
     catch (e) { handleFormError(form, e); }
   };
   const submit = form.onSubmit(async (v) => {
-    // Taking the last "(deleted place)" off turns "sees nothing" into the stored sites (0.9.1): say so before saving.
-    if (editing && h && removesLastDeletedPlace(editing.locationIds ?? [], v.locationIds, new Set(h.locations.map((l) => l.id)))) {
+    // Taking the last "(deleted place)" off turns "sees nothing" into the stored sites (0.9.1): say so before saving. What is deleted
+    // is the server's word (the editor's tree hides places they can't see), so this doesn't wait for the tree to load.
+    if (editing && removesLastDeletedPlace(editing.locationIds ?? [], v.locationIds, editing.deletedLocationIds ?? [])) {
       modals.openConfirmModal({
         title: t('access.deletedPlaceTitle'),
         children: <AccessAfterSave sites={v.siteIds.map((id) => siteName(id) ?? id)} />,
@@ -475,7 +476,7 @@ function UserSettings() {
             data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} {...form.getInputProps('siteIds')} />
           <MultiSelect label={t('access.userBranches')} description={t('access.userBranchesHint')} searchable clearable
             // A place deleted since it was given still shows, so it can be taken off.
-            data={[...placeOptions, ...form.values.locationIds.filter((id) => h && !placeOptions.some((o) => o.value === id)).map((id) => ({ value: id, label: t('access.deletedPlace') }))]}
+            data={[...placeOptions, ...form.values.locationIds.filter((id) => h && !placeOptions.some((o) => o.value === id)).map((id) => ({ value: id, label: (editing?.deletedLocationIds ?? []).includes(id) ? t('access.deletedPlace') : t('access.hiddenPlace') }))]}
             {...form.getInputProps('locationIds')} />
           {!editing && <PasswordInput label={t('settings.initialPassword')} required {...form.getInputProps('password')} />}
           <Switch label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />

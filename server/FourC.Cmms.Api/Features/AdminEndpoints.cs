@@ -44,12 +44,22 @@ public static class AdminEndpoints
         var users = api.MapGroup("/users").WithTags("Users").RequirePermission(Permissions.UsersManage);
 
         users.MapGet("/", async (CmmsDbContext db, CancellationToken ct) =>
-            await db.Users.AsNoTracking().Where(u => u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
+        {
+            var rows = await db.Users.AsNoTracking().Where(u => u.TenantId == db.CurrentTenantId).OrderBy(u => u.FullName)
                 .Select(u => new
                 {
                     u.Id, u.FullName, u.Email, u.JobTitle, u.Phone, u.IsActive, u.IsServiceAccount, u.AnonymisedAt, u.LastLoginAt, u.CreatedAt, u.PurchaseApprovalLimit, u.SiteIds, u.LocationIds,
                     Roles = db.UserRoles.Where(r => r.UserId == u.Id).Select(r => new { r.RoleId, r.Role!.Name }).ToList(),
-                }).ToListAsync(ct));
+                }).ToListAsync(ct);
+            // Places given to someone that no longer exist (0.9.1): the editor's own view of the tree can't tell "deleted" from "not mine to see", so the server says.
+            var given = rows.SelectMany(r => r.LocationIds).Distinct().ToList();
+            var alive = given.Count == 0 ? [] : (await db.Locations.AllSites().Where(l => given.Contains(l.Id)).Select(l => l.Id).ToListAsync(ct)).ToHashSet();
+            return rows.Select(r => new
+            {
+                r.Id, r.FullName, r.Email, r.JobTitle, r.Phone, r.IsActive, r.IsServiceAccount, r.AnonymisedAt, r.LastLoginAt, r.CreatedAt, r.PurchaseApprovalLimit, r.SiteIds, r.LocationIds,
+                DeletedLocationIds = r.LocationIds.Where(l => !alive.Contains(l)).ToList(), r.Roles,
+            });
+        });
 
         users.MapPost("/", async (UserInput input, CmmsDbContext db, UserManager<AppUser> um, IPasswordHasher<AppUser> hasher, HttpContext http, CancellationToken ct) =>
         {

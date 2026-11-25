@@ -160,7 +160,7 @@ export type User = {
   id: string; fullName: string; email: string; jobTitle?: string; phone?: string; isActive: boolean; lastLoginAt?: string; createdAt: string;
   roles: { roleId: string; name: string }[]; purchaseApprovalLimit?: number | null;
   /** Sites this person may see (empty = every site) and branches of the location tree they are limited to (0.9.0). */
-  siteIds?: string[]; locationIds?: string[];
+  siteIds?: string[]; locationIds?: string[]; /** Places given to the person that no longer exist (the server says; the editor may not see every place). */ deletedLocationIds?: string[];
   /** When this sign-in was anonymised (0.25.0); it stays closed. */
   anonymisedAt?: string | null;
   /** A service account (0.26.0): an account for a system, which API keys act as. */

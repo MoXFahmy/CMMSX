@@ -12,6 +12,7 @@ import { useAuth } from '@/auth/AuthContext';
 import { locationOptions, useHierarchy } from '@/components/LocationPicker';
 import { handleFormError, notifySuccess } from '@/components/utils';
 import { listItems } from '@/components/listLabels';
+import { requestRecipientOptions } from '@/pages/settings/recipientOptions';
 
 export function SiteFormModal({ opened, onClose, site, onSaved }: { opened: boolean; onClose: () => void; site?: Site | null; onSaved?: (id: string) => void }) {
   const { t } = useTranslation();
@@ -28,6 +29,8 @@ export function SiteFormModal({ opened, onClose, site, onSaved }: { opened: bool
   const { data: stores } = useQuery({ queryKey: ['stores'], queryFn: () => get<{ id: string; code: string; name: string; siteId: string; isActive: boolean }[]>('/stores'),
     enabled: opened && !!site, retry: false });
   const { data: people } = useQuery({ queryKey: ['users-lookup'], queryFn: () => get<{ id: string; fullName: string; email: string }[]>('/users/lookup'), enabled: opened, retry: false });
+  // The request recipients are offered only from people who can view requests; those already chosen stay, marked (0.10.0).
+  const { data: viewers } = useQuery({ queryKey: ['users-lookup', 'request-viewers'], queryFn: () => get<{ id: string; fullName: string }[]>('/users/lookup', { requestViewers: 'true' }), enabled: opened, retry: false });
   useEffect(() => {
     if (!opened) return;
     form.setValues(site ? {
@@ -94,7 +97,7 @@ export function SiteFormModal({ opened, onClose, site, onSaved }: { opened: bool
                     data={(stores ?? []).filter((x) => x.siteId === site?.id && (x.isActive || x.id === form.values.settings.defaultStoreId)).map((x) => ({ value: x.id, label: `${x.code} · ${x.name}` }))}
                     {...form.getInputProps('settings.defaultStoreId')} />
                   <MultiSelect label={t('siteSettings.recipients')} description={t('siteSettings.recipientsHint')} searchable clearable
-                    data={(people ?? []).map((u) => ({ value: u.id, label: u.fullName }))} {...form.getInputProps('settings.requestRecipientIds')} />
+                    data={requestRecipientOptions(viewers, people, form.values.settings.requestRecipientIds, (name) => t('requestTypes.cannotView', { name }))} {...form.getInputProps('settings.requestRecipientIds')} />
                   <MultiSelect label={t('siteSettings.prRecipients')} description={t('siteSettings.prRecipientsHint')} searchable clearable
                     data={(people ?? []).map((u) => ({ value: u.id, label: u.fullName }))} {...form.getInputProps('settings.purchaseRequestRecipientIds')} />
                   <TextInput label={t('siteSettings.senderName')} description={t('siteSettings.senderNameHint')} placeholder={me?.tenant.name} maxLength={100}

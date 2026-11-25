@@ -12,6 +12,7 @@ import { confirmDelete } from '@/components/confirm';
 import { teamOptions, useTeams } from '@/components/teams';
 import { handleFormError, notifyError, notifySuccess } from '@/components/utils';
 import { listItems } from '@/components/listLabels';
+import { requestRecipientOptions } from './recipientOptions';
 import { TranslateButton } from '@/components/TranslateButton';
 
 const blank = { code: '', name: '', nameAr: '', isActive: true, defaultTradeId: null as string | null, defaultPriority: null as string | null, recipientIds: [] as string[], autoApprove: false, teamId: null as string | null };
@@ -83,9 +84,7 @@ export function RequestTypesSettings({ editable }: { editable: boolean }) {
             <Select label={t('requestTypes.defaultPriority')} clearable data={listItems('priority', t, form.values.defaultPriority)} {...form.getInputProps('defaultPriority')} />
           </Group>
           <MultiSelect label={t('requestTypes.recipients')} description={t('requestTypes.recipientsHint')} searchable clearable
-            data={[...(people ?? []).map((u) => ({ value: u.id, label: u.fullName })),
-              ...(everyone ?? []).filter((u) => form.values.recipientIds.includes(u.id) && !(people ?? []).some((p) => p.id === u.id))
-                .map((u) => ({ value: u.id, label: t('requestTypes.cannotView', { name: u.fullName }) }))]} {...form.getInputProps('recipientIds')} />
+            data={requestRecipientOptions(people, everyone, form.values.recipientIds, (name) => t('requestTypes.cannotView', { name }))} {...form.getInputProps('recipientIds')} />
           <Switch label={t('requestTypes.autoApprove')} description={t('requestTypes.autoApproveHint')} {...form.getInputProps('autoApprove', { type: 'checkbox' })} />
           {form.values.autoApprove && (
             <Select label={t('requestTypes.team')} description={t('requestTypes.teamHint')} clearable data={teamOptions(teams, form.values.teamId)} {...form.getInputProps('teamId')} />
