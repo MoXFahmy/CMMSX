@@ -55,7 +55,7 @@ public class AiTranslateTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var items = r.GetProperty("items").EnumerateArray().ToList();
         Assert.Equal(2, items.Count);
         Assert.Contains(items, i => i.GetProperty("id").GetGuid() == a && S(i, "text") == "Pump A" && S(i, "draft") == "ع Pump A");
-        Assert.Equal(new[] { a, b }.Order(), SentIds(Assert.Single(fx.Ai.Asks)).Select(Guid.Parse).Order());
+        Assert.Equal(["1", "2"], SentIds(Assert.Single(fx.Ai.Asks))); // short ids, mapped back to a and b
         Assert.Equal(0, r.GetProperty("remaining").GetInt32());
     }
 
@@ -141,9 +141,9 @@ public class AiTranslateTests(ApiFixture fx) : IClassFixture<ApiFixture>
         fx.Ai.Responder = _ => Task.FromResult(FakeAiClient.Answer(new JsonObject
         {
             ["items"] = new JsonArray(
-                new JsonObject { ["id"] = a.ToString(), ["ar"] = "المضخة أ" },
-                new JsonObject { ["id"] = b.ToString(), ["ar"] = new string('م', 301) },
-                new JsonObject { ["id"] = Guid.NewGuid().ToString(), ["ar"] = "غريب" }),
+                new JsonObject { ["id"] = "1", ["ar"] = "المضخة أ" }, // a (the prompt's short ids follow the asset numbers)
+                new JsonObject { ["id"] = "2", ["ar"] = new string('م', 301) },
+                new JsonObject { ["id"] = "99", ["ar"] = "غريب" }),
         }.ToJsonString()));
         var r = await Ok(await DraftAsync(o.Admin, "assets"));
         Assert.Equal(a, r.GetProperty("items").EnumerateArray().Single().GetProperty("id").GetGuid());

@@ -11,7 +11,9 @@ public sealed record PlannedLabour(decimal Hours, decimal Cost);
 
 /// <summary>A planned part line as the work order page shows it.</summary>
 public sealed record PlannedPartView(Guid Id, Guid PartId, string PartNumber, string PartName, string UnitOfMeasure, Guid? StoreId, string? StoreCode,
-    decimal Quantity, decimal Issued, decimal Reserved, decimal Short, decimal UnitCost, decimal PlannedCost, string? Notes);
+    decimal Quantity, decimal Issued, decimal Reserved, decimal Short, decimal UnitCost, decimal PlannedCost, string? Notes,
+    // 0.28.0: PartName is in the reader's language; a purchase request raised from the line takes this main name.
+    string? MainPartName = null);
 
 /// <summary>Queries behind planned parts and reservations, shared by the work order, inventory, purchasing and PM endpoints.</summary>
 public static class Planning
@@ -81,7 +83,7 @@ public static class Planning
     public static async Task<List<PlannedPartView>> LinesAsync(CmmsDbContext db, WorkOrder w, CancellationToken ct)
     {
         var lines = await db.WorkOrderParts.AsNoTracking().Where(p => p.WorkOrderId == w.Id).OrderBy(p => p.Part!.PartNumber)
-            .Select(p => new { p.Id, p.PartId, p.Part!.PartNumber, Name = Bilingual.Arabic && p.Part.NameAr != null ? p.Part.NameAr : p.Part.Name, p.Part.UnitOfMeasure, p.Part.AverageCost, p.StoreId, StoreCode = p.Store != null ? p.Store.Code : null, p.Quantity, p.Notes })
+            .Select(p => new { p.Id, p.PartId, p.Part!.PartNumber, Name = Bilingual.Arabic && p.Part.NameAr != null ? p.Part.NameAr : p.Part.Name, MainName = p.Part.Name, p.Part.UnitOfMeasure, p.Part.AverageCost, p.StoreId, StoreCode = p.Store != null ? p.Store.Code : null, p.Quantity, p.Notes })
             .ToListAsync(ct);
         if (lines.Count == 0) return [];
         var issued = await NetIssuedAsync(db, w.Id, ct);
@@ -100,7 +102,7 @@ public static class Planning
             if (l.StoreId is { } store && reserved > 0 && open is not null)
                 shortQty = Reservations.Shortages(onHand.GetValueOrDefault((l.PartId, store)), open[(l.PartId, store)]).GetValueOrDefault(l.Id);
             result.Add(new PlannedPartView(l.Id, l.PartId, l.PartNumber, l.Name, l.UnitOfMeasure, l.StoreId, l.StoreCode, l.Quantity, net, reserved, shortQty,
-                l.AverageCost, Math.Round(l.Quantity * l.AverageCost, 2), l.Notes));
+                l.AverageCost, Math.Round(l.Quantity * l.AverageCost, 2), l.Notes, l.MainName));
         }
         return result;
     }

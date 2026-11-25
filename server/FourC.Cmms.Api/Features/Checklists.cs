@@ -148,8 +148,9 @@ public static class Checklists
         if (value is { } val && level != MeasureLevel.Normal) lines.Add(Translator.T(string.Format("Value: {0} {1} ({2})", Num(val), unit ?? "", Translator.T(LevelWord(level)))));
         lines.Add(remarks);
         var description = string.Join("\n", lines.Where(x => !string.IsNullOrWhiteSpace(x)));
+        // The main title in the organization's language, whoever answered (0.28.0); the Arabic one is made below.
         string Title(string what) => Translator.T(source is not null && step is not null ? string.Format(FromStep, what, step.Sequence, source.Number)
-            : string.Format(FromReading, what, reading ?? ""));
+            : string.Format(FromReading, what, reading ?? ""), settings.DefaultLanguage);
         if (template is not null)
         {
             var title = Title(template.Title is { Length: > 0 } tt ? tt : template.Name);

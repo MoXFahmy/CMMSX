@@ -14,7 +14,8 @@ public sealed record LocalWords(string En, string Ar)
 }
 
 /// <remarks>0.28.0: the title and the place in both languages too (each recipient reads their own).</remarks>
-public sealed record WorkOrderFacts(string Number, LocalWords Title, LocalWords Priority, DateOnly? DueDate, LocalWords? Place, string? Description, string? CompletionNotes);
+public sealed record WorkOrderFacts(string Number, LocalWords Title, LocalWords Priority, DateOnly? DueDate, LocalWords? Place, string? Description, string? CompletionNotes,
+    LocalWords? Safety = null);
 
 /// <summary>Facts about a purchase order for internal e-mails.</summary>
 public sealed record PoFacts(string Number, string? Supplier, string Total, string? RequestedBy);
@@ -59,7 +60,7 @@ public static class EmailTemplates
     public static EmailContent Assigned(string org, WorkOrderFacts w, string? link, bool pm) => Layout(org,
         pm ? $"PM work {w.Number}: {w.Title}" : $"Work order {w.Number}: {w.Title}",
         pm ? "Preventive maintenance has been assigned to you" : "A work order has been assigned to you",
-        WorkOrderLines(w), w.Description, link, "Open the work order");
+        [.. WorkOrderLines(w), ("Safety notes", w.Safety?.ToString())], w.Description, link, "Open the work order");
 
     public static EmailContent WorkOrderCompleted(string org, WorkOrderFacts w, string? link) => Layout(org,
         $"Completed: {w.Number} {w.Title}", "Work you raised has been completed",

@@ -198,7 +198,7 @@ public static class WorkOrderEndpoints
             var mine = await perms.GetAsync(UserId(http));
             var transitions = WorkOrderWorkflow.NextStatuses(w.Status)
                 .Where(s => mine.Contains(Permissions.WorkOrdersExecute) && (!WorkOrderWorkflow.RequiresClosePermission(w.Status, s) || mine.Contains(Permissions.WorkOrdersClose)));
-            var locationNotes = w.Location?.NotesToTechnician;
+            var locationNotes = Bilingual.PickNote(w.Location?.NotesToTechnician, w.Location?.NotesToTechnicianAr);
             // Signatures captured on completion (technician view), for the work order page and the job card.
             var signatures = await db.Attachments.AsNoTracking().Where(a => a.EntityType == "WorkOrder" && a.EntityId == id && a.IsSignature).OrderBy(a => a.CreatedAt)
                 .Select(a => new { a.Id, a.SignedBy, a.CreatedAt }).ToListAsync(ct);
@@ -899,6 +899,13 @@ public static class WorkOrderEndpoints
             typedSteps ??= input.Tasks is null ? template.Steps.OrderBy(x => x.Sequence).ToList() : StepCopy.Match(input.Tasks.Select(x => x.Clean()).OfType<string>(), template.Steps);
             foreach (var tp in template.Parts)
                 db.WorkOrderParts.Add(new WorkOrderPart { WorkOrderId = w.Id, PartId = tp.PartId, Quantity = tp.Quantity, StoreId = await Planning.DefaultStoreAsync(db, tp.PartId, w.SiteId, ct) });
+        }
+        // A duplicate (0.28.0): the page sends the steps as texts; each one equal to a step of the source keeps that step's Arabic text.
+        if (template is null && typedSteps is null && input.CopyPlanFromId is { } copyFrom && input.Tasks is { Count: > 0 })
+        {
+            var sourceSteps = await db.WorkOrderTasks.AsNoTracking().Where(t => t.WorkOrderId == copyFrom).OrderBy(t => t.Sequence)
+                .Select(t => new PmTaskStep { Description = t.Description, DescriptionAr = t.DescriptionAr }).ToListAsync(ct);
+            typedSteps = StepCopy.Match(input.Tasks.Select(x => x.Clean()).OfType<string>(), sourceSteps);
         }
         configure?.Invoke(w);
         db.WorkOrders.Add(w);

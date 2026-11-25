@@ -107,6 +107,8 @@ export function WorkOrderFormPage() {
         assigneeIds: source.assignees.map((a) => a.employeeId), estimatedHours: source.estimatedHours ?? '',
         tasks: [...source.tasks].sort((a, b) => a.sequence - b.sequence).map((x) => x.description),
         accessWindows: source.accessWindows ?? [], onlyWhenStopped: source.onlyWhenStopped ?? null, symptomId: source.symptomId ?? null, contractId: source.contractId ?? null,
+        // 0.28.0: the Arabic title and the safety notes come along (the steps' Arabic texts are matched on the server).
+        titleAr: source.titleAr ?? '', safetyNotes: source.safetyNotes ?? '', safetyNotesAr: source.safetyNotesAr ?? '',
       });
     } else if (asset) {
       form.setValues({ ...start, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id, priority: asset.criticality === 'Critical' ? 'High' : 'Medium' });

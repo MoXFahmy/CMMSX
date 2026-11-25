@@ -184,10 +184,10 @@ public static partial class TechEndpoints
                 ListLabels = settings.ListLabels,
                 // The measurement points the jobs' steps use (0.13.0): the phone judges a reading as it is typed.
                 Points = await Checklists.PointsAsync(db, tasks.SelectMany(g => g).Select(t => t.MeasurementPointId), ct),
-                FailureCodes = await db.FailureCodes.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
+                FailureCodes = await db.FailureCodes.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, Name = ar && f.NameAr != null ? f.NameAr : f.Name }).ToListAsync(ct),
                 // Symptoms and remedies (0.14.0), and the codes most often recorded together on my sites' work, for ordering offline.
-                Symptoms = await db.Symptoms.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
-                Remedies = await db.Remedies.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
+                Symptoms = await db.Symptoms.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, Name = ar && f.NameAr != null ? f.NameAr : f.Name }).ToListAsync(ct),
+                Remedies = await db.Remedies.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, Name = ar && f.NameAr != null ? f.NameAr : f.Name }).ToListAsync(ct),
                 CodePairs = await Codes.PairsAsync(db, DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-2), ct),
                 CompletionRules = new
                 {

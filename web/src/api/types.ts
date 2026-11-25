@@ -278,6 +278,8 @@ export type WorkOrderDetail = {
 export type PlannedPart = {
   id: string; partId: string; partNumber: string; partName: string; unitOfMeasure: string; storeId?: string | null; storeCode?: string | null;
   quantity: number; issued: number; reserved: number; short: number; unitCost: number; plannedCost: number; notes?: string | null;
+  /** 0.28.0: partName is in the reader's language; purchase requests take this main name. */
+  mainPartName?: string | null;
 };
 /** The 409 answer when a stock move would take stock reserved for other work. */
 export type ReservedConflict = { title: string; reserved: { workOrderId: string; workOrderNumber: string; title?: string; moreShort: number }[] };

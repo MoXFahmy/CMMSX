@@ -435,7 +435,8 @@ public static class InventoryEndpoints
             var info = await db.WorkOrderParts.AsNoTracking().Where(p => lineIds.Contains(p.Id))
                 .Select(p => new { p.Id, p.WorkOrderId, WorkOrderNumber = db.WorkOrders.Where(w => w.Id == p.WorkOrderId).Select(w => w.Number).FirstOrDefault(),
                     DueDate = db.WorkOrders.Where(w => w.Id == p.WorkOrderId).Select(w => w.DueDate).FirstOrDefault(),
-                    p.Part!.PartNumber, PartName = Bilingual.Arabic && p.Part.NameAr != null ? p.Part.NameAr : p.Part.Name, p.Part.UnitOfMeasure, StoreCode = p.Store!.Code })
+                    // Purchasing screen (requests are raised from it): the part's main name (0.28.0).
+                    p.Part!.PartNumber, PartName = p.Part.Name, p.Part.UnitOfMeasure, StoreCode = p.Store!.Code })
                 .ToDictionaryAsync(p => p.Id, ct);
             return Results.Ok(shorts.Where(s => info.ContainsKey(s.LineId)).Select(s => new
             {
@@ -452,7 +453,8 @@ public static class InventoryEndpoints
             if (siteId is not null) q = q.Where(l => l.Store!.SiteId == siteId);
             var rows = await q.Select(l => new
             {
-                l.PartId, l.Part!.PartNumber, PartName = Bilingual.Arabic && l.Part.NameAr != null ? l.Part.NameAr : l.Part.Name, l.Part.UnitOfMeasure, l.Part.IsCritical, l.StoreId, StoreCode = l.Store!.Code, l.Store.SiteId,
+                // The re-order proposal is purchasing: the part's main name (0.28.0).
+                l.PartId, l.Part!.PartNumber, PartName = l.Part.Name, l.Part.UnitOfMeasure, l.Part.IsCritical, l.StoreId, StoreCode = l.Store!.Code, l.Store.SiteId,
                 l.QuantityOnHand, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity, l.Part.PreferredSupplierId, Price = l.Part.LastPurchasePrice ?? l.Part.AverageCost,
                 Reserved = (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0),
                 OnOrder = db.PurchaseOrderLines.Where(x => x.PartId == l.PartId && x.StoreId == l.StoreId && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId &&

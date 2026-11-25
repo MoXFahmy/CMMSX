@@ -172,11 +172,11 @@ public static class ImportWorkbook
             case "PmSteps":
                 // Ordered by task code, with room to finish the task at the 5,000-row boundary (at most 300 steps a task).
                 return (await (from s in db.PmTaskSteps.AsNoTracking() join t in db.PmTasks on s.PmTaskId equals t.Id
-                               orderby t.Code, s.Sequence select new { t.Code, s.Sequence, s.Description, s.Type, s.Unit, s.Decimals, s.MeasurementPointId, s.PhotoRequired,
+                               orderby t.Code, s.Sequence select new { t.Code, s.Sequence, s.Description, s.DescriptionAr, s.Type, s.Unit, s.Decimals, s.MeasurementPointId, s.PhotoRequired,
                                    s.BeforeStart, s.FollowUp, s.FollowUpTemplateId }).Take(take + 300).ToListAsync(ct))
                     .Select(s => new Dictionary<string, object?>
                     {
-                        ["taskCode"] = s.Code, ["step"] = s.Sequence, ["description"] = s.Description, ["type"] = s.Type, ["unit"] = s.Unit, ["decimals"] = s.Decimals,
+                        ["taskCode"] = s.Code, ["step"] = s.Sequence, ["description"] = s.Description, ["descriptionAr"] = s.DescriptionAr, ["type"] = s.Type, ["unit"] = s.Unit, ["decimals"] = s.Decimals,
                         ["measurementPoint"] = s.MeasurementPointId is { } mp ? c.CodeOf.GetValueOrDefault(mp) : null, ["photoRequired"] = s.PhotoRequired,
                         ["beforeStart"] = s.BeforeStart, ["followUp"] = s.FollowUp,
                         ["followUpTemplate"] = s.FollowUpTemplateId is { } ft ? c.CodeOf.GetValueOrDefault(ft) : null,

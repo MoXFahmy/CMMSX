@@ -168,10 +168,12 @@ public static class AiTranslate
             if (items.Count == 0) continue;
             var pairs = await source.PairsAsync(db, ct);
             var context = $"{ContextHeader}\n{Lines(pairs, p => $"{p.Main} ⇒ {p.Ar}")}";
-            var prompt = JsonSerializer.Serialize(items.Select(i => new { id = i.Id, text = i.Text }));
-            var ask = new AiAsk(AiFeature.Translation, Instructions, context, prompt, Schema(), AiEffort.Low, 8000);
+            // Short ids ("1", "2"…) instead of GUIDs: fewer tokens in the answer; mapped back below.
+            var keys = items.Select((i, n) => (Key: (n + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), i.Id)).ToDictionary(x => x.Key, x => x.Id);
+            var prompt = JsonSerializer.Serialize(items.Select((i, n) => new { id = (n + 1).ToString(System.Globalization.CultureInfo.InvariantCulture), text = i.Text }));
+            var ask = new AiAsk(AiFeature.Translation, Instructions, context, prompt, Schema(), AiEffort.Low, 16000);
             var run = await ai.RunAsync(AiFeature.Translation, null, null, ask, ct);
-            var answered = Answers(run.Reply);
+            var answered = Answers(run.Reply).Where(a => keys.ContainsKey(a.Key)).ToDictionary(a => keys[a.Key], a => a.Value);
             var drafts = items.Where(i => answered.TryGetValue(i.Id, out var ar) && ar.Length <= source.Max)
                 .Select(i => new TranslateDraftItem(i.Id, i.Text, answered[i.Id])).ToList();
             return Results.Ok(new TranslateDraft(source.Field, drafts, items.Count - drafts.Count, missing - items.Count));
@@ -179,15 +181,15 @@ public static class AiTranslate
         return Results.Ok(new TranslateDraft(null, [], 0, 0));
     }
 
-    /// <summary>Claude's Arabic text per id: non-blank answers only (a refusal or an unreadable answer gives none).</summary>
-    private static Dictionary<Guid, string> Answers(AiReply reply)
+    /// <summary>Claude's Arabic text per short id: non-blank answers only (a refusal or an unreadable answer gives none).</summary>
+    private static Dictionary<string, string> Answers(AiReply reply)
     {
-        var result = new Dictionary<Guid, string>();
+        var result = new Dictionary<string, string>();
         if (reply.Refused || reply.Json is null) return result;
         try
         {
             foreach (var item in JsonNode.Parse(reply.Json)?["items"]?.AsArray() ?? [])
-                if (Guid.TryParse(item?["id"]?.GetValue<string>(), out var id) && item?["ar"]?.GetValue<string>()?.Trim() is { Length: > 0 } ar) result[id] = ar;
+                if (item?["id"]?.GetValue<string>() is { Length: > 0 } id && item["ar"]?.GetValue<string>()?.Trim() is { Length: > 0 } ar) result[id] = ar;
         }
         catch (Exception e) when (e is JsonException or InvalidOperationException or FormatException) { }
         return result;
