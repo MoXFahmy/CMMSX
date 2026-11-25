@@ -139,7 +139,7 @@ Find the live database and the values a restore needs:
 aws rds describe-db-instances --region <region> \
   --query "DBInstances[?starts_with(DBInstanceIdentifier,'cmms-app')].[DBInstanceIdentifier,DBInstanceStatus,DBInstanceClass]" --output table
 aws rds describe-db-instances --region <region> --db-instance-identifier <identifier> \
-  --query "DBInstances[0].[DBSubnetGroup.DBSubnetGroupName,VpcSecurityGroups[0].VpcSecurityGroupId,OptionMemberships[0].OptionGroupName]" --output text
+  --query "DBInstances[0].[DBSubnetGroup.DBSubnetGroupName,VpcSecurityGroups[0].VpcSecurityGroupId,OptionGroupMemberships[0].OptionGroupName]" --output text
 ```
 
 The three values from the second command are the subnet group, security group and option group that every restore below needs,
@@ -237,7 +237,7 @@ step 6.
    ```bash
    aws rds modify-db-instance --region <region> --db-instance-identifier <identifier> --backup-retention-period 35 --apply-immediately
    aws rds describe-db-instances --region <region> --db-instance-identifier <identifier> \
-     --query "DBInstances[0].[BackupRetentionPeriod,DBInstanceArn,OptionMemberships[0].OptionGroupName,DBSubnetGroup.DBSubnetGroupName]" --output text
+     --query "DBInstances[0].[BackupRetentionPeriod,DBInstanceArn,OptionGroupMemberships[0].OptionGroupName,DBSubnetGroup.DBSubnetGroupName]" --output text
    ```
    The first number should read `35`; the option group must be the stack's (it carries the native backup option). Then, only if
    `CMMS_IRELAND_DB_COPY` is `replication`, start the copy to Ireland again. The key is the `cmms-dr` stack's output `DrKeyArn`:
@@ -327,18 +327,21 @@ pipeline does not have.
    - The new region gets its own weekly-export bucket, `cmms-backups-<account>-<region>`; the London one is kept.
 6. **Bring the data.** Stop the new app (section 4.5, step 1). Restore the Ireland copy as a new instance **inside the new stack's
    network** (section 4.2 for the point in time, or 4.4 for a snapshot), using the subnet group, security group and option group
-   of the empty instance the stack made (the commands in [section 4](#4-restore) show them). Then swap names (4.5, steps 2 and 3
-   only: leave the app stopped, skip the start).
+   of the empty instance the stack made (the commands in [section 4](#4-restore) show them). Then swap names (4.5, step 2
+   only: leave the app stopped; skip the start in step 3).
    **Reset the database password before starting the app.** The new stack made its own random password for the login
    `cmmsadmin` and keeps it in its secret (stack output `DatabaseSecretArn`); the app reads it from there. The restored copy still
    has the **old** stack's password, so the app could not sign in to it, and a deploy would not change that. Set the restored
-   instance's password to the new secret's value (the secret stays the one place the password lives). The commands keep it out
-   of the screen and of the shell history:
+   instance's password to the new secret's value (the secret stays the one place the password lives). The commands write it to
+   a private temporary file, so it never appears on the screen, in the shell history or on a command line, and delete the file
+   straight away. Replace `<identifier>` with the database's name (the one the stack made, which the restored copy now has):
    ```bash
-   PW=$(aws secretsmanager get-secret-value --region <new region> --secret-id <DatabaseSecretArn> --query SecretString --output text \
-     | python3 -c 'import sys,json; print(json.load(sys.stdin)["password"])')
-   aws rds modify-db-instance --region <new region> --db-instance-identifier <identifier> --master-user-password "$PW" --apply-immediately
-   unset PW
+   umask 077
+   F=$(mktemp)
+   aws secretsmanager get-secret-value --region <new region> --secret-id <DatabaseSecretArn> --query SecretString --output text \
+     | python3 -c 'import sys,json; pw=json.load(sys.stdin)["password"]; json.dump({"DBInstanceIdentifier":"<identifier>","MasterUserPassword":pw,"ApplyImmediately":True}, open(sys.argv[1],"w"))' "$F"
+   aws rds modify-db-instance --region <new region> --cli-input-json "file://$F"
+   rm -f "$F"; unset F
    aws rds wait db-instance-available --region <new region> --db-instance-identifier <identifier>
    ```
    This takes a few minutes. Then start the app with a fresh deployment, so its tasks pick the connection up again:
