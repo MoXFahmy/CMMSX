@@ -38,7 +38,9 @@ parked, so this release takes the next number after 0.28.0.
 
 ### Changed
 - **AWS: two new stacks and a one-time setup re-run.** The deploy now also manages `cmms-edge` (N. Virginia: web firewall and its
-  alarm) and `cmms-dr` (Ireland: locked backup vault and copies). **Run `deploy/aws/setup.sh` once more in CloudShell before the
+  alarm). The recovery stack `cmms-dr` (Ireland: locked backup vault, its key and the copy buckets) is created by
+  `deploy/aws/setup.sh`, never by the deploy pipeline, which may only read it; a later change to `infra/aws/dr.yml` takes effect
+  when setup is run again (the deploy warns when they differ). **Run `deploy/aws/setup.sh` once more in CloudShell before the
   first deploy of this release**; until then the deploy stops with "Re-run deploy/aws/setup.sh in CloudShell" and changes
   nothing. Setup now also creates a CloudTrail trail (unless the account already has a multi-region one), a permissions boundary,
   the deploy guard and a bucket for the stacks' templates. New repository variables: `CMMS_ALERT_EMAIL` (required),
@@ -63,7 +65,9 @@ parked, so this release takes the next number after 0.28.0.
 - **No way around the firewall**: the load balancer has no public address.
 - **The deploy pipeline cannot delete backups.** A guard and a permissions boundary stop the deploy role, and every role it
   creates, from deleting recovery points, the Ireland vault or its lock, the Ireland encryption key, locked file copies, or the
-  CloudTrail trail and its logs. The Ireland vault and buckets are locked in governance mode: only a console administrator (the
+  CloudTrail trail and its logs, and from changing anything about the Ireland copies: the vault's access policy and lock, the
+  key's policy, and the buckets' lifecycle, replication, Object Lock, versioning, ACLs, policy or other settings, or the recovery
+  stack itself. Copying into Ireland (S3 replication, AWS Backup copies, the RDS continuous copy) keeps working. The Ireland vault and buckets are locked in governance mode: only a console administrator (the
   root user or an IAM administrator outside the pipeline) can lift the lock.
 - **Detection and alarms**: CloudTrail (every region, log validation, a locked bucket), GuardDuty in London (S3, the app task's
   runtime, malware scan of every upload; alert only) and in N. Virginia, and alarms to `CMMS_ALERT_EMAIL` for site errors, app

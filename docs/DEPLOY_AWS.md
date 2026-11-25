@@ -56,11 +56,11 @@ see the checklist at the end.
    bash setup.sh
    ```
 
-The script ([deploy/aws/setup.sh](../deploy/aws/setup.sh)) creates one CloudFormation stack, `cmms-github`
+The script ([deploy/aws/setup.sh](../deploy/aws/setup.sh)) creates the CloudFormation stack `cmms-github`
 ([deploy/aws/bootstrap.yml](../deploy/aws/bootstrap.yml)), containing:
 - the GitHub sign-in (an OpenID Connect provider, or it reuses yours if the account already has one);
 - a role that GitHub Actions may assume only from this repository's `main` branch. That role can push images and
-  deploy the `cmms-app` stack, nothing else;
+  deploy the `cmms-app` and `cmms-edge` stacks, nothing else (it may read the recovery stack below, never change it);
 - the `cmms` image repository;
 - the role CloudFormation uses to create the app's resources;
 - from 0.29.0: a permissions boundary that every role the app creates must carry, and a guard that stops the deploy pipeline
@@ -68,8 +68,13 @@ The script ([deploy/aws/setup.sh](../deploy/aws/setup.sh)) creates one CloudForm
 - from 0.29.0: a bucket for the stacks' templates, and a CloudTrail trail (`cmms-trail`, every region, into a locked bucket)
   unless the account already has a multi-region trail that is logging, which is then used instead.
 
-The same script can be run again at any time (it is the one-time re-run described under *Security and backups* below). At the
-end it prints two values.
+From 0.29.0 it also creates a second stack, **`cmms-dr`, in Ireland (`eu-west-1`)**, from
+[infra/aws/dr.yml](../infra/aws/dr.yml): the locked backup vault, its encryption key and the two Object Lock buckets that hold
+the copies of the database and the files. Only this script deploys it, as you, the account administrator; the deploy pipeline
+can read it but never change it (that is what keeps the copies safe from a compromised pipeline). The script prints its outputs.
+
+The same script can be run again at any time (it is the one-time re-run described under *Security and backups* below), and
+it is the only way a change to `deploy/aws/bootstrap.yml` or `infra/aws/dr.yml` reaches AWS. At the end it prints two values.
 
 ## 2. Add the two values to GitHub
 
@@ -142,20 +147,24 @@ section is what you do to turn it on.
 | Stack | Region | Holds |
 |---|---|---|
 | `cmms-github` | the app's region | GitHub sign-in, image repository, the CloudFormation role, the permissions boundary and backup guard, the template bucket (`cmms-templates-<account>-<region>`), the CloudTrail trail and its bucket. Created by you with `setup.sh`. |
+| `cmms-dr` (new) | `eu-west-1` (Ireland) | The locked backup vault, its encryption key and the two Object Lock buckets for file and database-export copies. Created and updated by you with `setup.sh`, never by the workflow. |
 | `cmms-edge` (new) | `us-east-1` (N. Virginia) | The web firewall (CloudFront's firewall must live here), its alarm and e-mail topic, the GuardDuty detector for that region |
-| `cmms-dr` (new) | `eu-west-1` (Ireland) | The locked backup vault, its encryption key and the two Object Lock buckets for file and database-export copies |
 | `cmms-app` | the app's region | The app, database, files, backup plan, alarms, GuardDuty, and the new load balancer and CloudFront connection |
 
-The workflow deploys `cmms-dr`, then `cmms-edge`, then `cmms-app`, and passes the ids between them. The app's template is larger
-than CloudFormation takes in one piece, so the workflow uploads it to the template bucket first.
+The workflow reads `cmms-dr`'s outputs, deploys `cmms-edge`, then `cmms-app`, and passes the ids between them. The app's
+template is larger than CloudFormation takes in one piece, so the workflow uploads it to the template bucket first.
+
+**A change to `infra/aws/dr.yml` is never deployed by the workflow: re-run `setup.sh`.** The pipeline is not allowed to change
+anything in the recovery stack (not even a lifecycle rule or a policy), so that a compromised pipeline cannot reach the copies.
+The workflow compares the file with what is deployed and prints a warning when they differ; the deploy itself goes on.
 
 ### Upgrading an existing deployment to 0.29.0 (once)
 
 1. **Pick a quiet hour.** The deploy replaces the public load balancer with an internal one and points CloudFront at it. Expect
    **about 5 to 10 minutes of errors** (503) while the app registers behind the new load balancer. Nothing happens to the database.
 2. **Re-run `setup.sh`** in CloudShell, in the app's region, exactly as in step 1 above. It is safe to run again and changes only
-   what 0.29.0 needs: it lets GitHub deploy the two new stacks, adds the boundary, the guard, the template bucket and the
-   trail, and prints what it added. **Until you do this, the first deploy after merging stops at once with "Re-run
+   what 0.29.0 needs: it creates the recovery stack `cmms-dr` in Ireland (a few minutes), lets GitHub deploy `cmms-edge`, adds
+   the boundary, the guard, the template bucket and the trail, and prints what it added. **Until you do this, the first deploy after merging stops at once with "Re-run
    deploy/aws/setup.sh in CloudShell"; nothing is changed, run it again afterwards.** If setup finds an existing multi-region
    CloudTrail trail that is logging, it uses that one and does not create another.
 3. **Set the repository variables** (Settings, Secrets and variables, Actions, Variables):
@@ -286,8 +295,8 @@ put another proxy in front of the app, let it pass request bodies of 52 MB.
    the S3 buckets with attachments and database exports, the backup vault with its snapshots, and the native-backup option group
    are kept on purpose. Delete them by hand if you don't need them.
 3. CloudFormation (N. Virginia) → delete **`cmms-edge`**. CloudFormation (Ireland) → delete **`cmms-dr`** only if you
-   no longer want the locked copies: it keeps its vault, key and buckets anyway, and the locks mean only a console administrator
-   can remove them (see *Lifting the lock* in [SECURITY_AND_BACKUPS.md](SECURITY_AND_BACKUPS.md#6-lifting-the-lock)).
+   no longer want the locked copies (as the administrator; the pipeline cannot): it keeps its vault, key and buckets anyway, and
+   the locks mean only a console administrator can remove them (see *Lifting the lock* in [SECURITY_AND_BACKUPS.md](SECURITY_AND_BACKUPS.md#6-lifting-the-lock)).
 4. CloudFormation → delete the stack **`cmms-github`**. This removes the image repository and the GitHub roles. The CloudTrail
    bucket `cmms-trail-<account>` stays (it holds the logs); running `setup.sh` again later in the account needs it removed or
    needs a trail created by hand (see *When a deploy fails* in [SECURITY_AND_BACKUPS.md](SECURITY_AND_BACKUPS.md#7-when-a-deploy-fails)).
@@ -301,7 +310,8 @@ put another proxy in front of the app, let it pass request bodies of 52 MB.
 | Deploy: *"Not authorized to perform sts:AssumeRoleWithWebIdentity"* | The workflow ran from a branch other than `main`, or the repository was renamed, or `AWS_REGION` doesn't match the region where you ran the setup. GitHub now puts the owner's and repository's numeric ids in its token (`repo:owner@123/name@456:ref:refs/heads/main`); `setup.sh` looks them up on api.github.com, so a stack created by an older `setup.sh`, or for a private repository it could not look up, accepts only the name-only form. Re-run the current `setup.sh` (with `REPO=owner/name` if renamed). CloudTrail → Event history → `AssumeRoleWithWebIdentity` shows the subject GitHub sent. |
 | Deploy fails with *"The maximum number of VPCs has been reached"* | AWS allows 5 VPCs per region by default. Ask for more in **Service Quotas**, or use another region. |
 | The first deployment failed | The run's *Show why the deployment failed* step lists the reason. Fix it, then run the workflow again; it removes the failed attempt by itself before retrying. |
-| Deploy stops at once with *"Re-run deploy/aws/setup.sh in CloudShell"* | After 0.29.0 the setup has to be run once more (*Upgrading to 0.29.0* above). Run it, then re-run the workflow. |
+| Deploy stops at once with *"Re-run deploy/aws/setup.sh in CloudShell"* | After 0.29.0 the setup has to be run once more (*Upgrading to 0.29.0* above): the workflow needs the recovery stack `cmms-dr` that `setup.sh` creates. Run it, then re-run the workflow. |
+| Deploy warns *"infra/aws/dr.yml differs from the deployed recovery stack"* | The recovery stack is only ever deployed by `setup.sh`. Re-run it in CloudShell to apply the change (the deploy itself went on). |
 | Deploy stops with *"Set the repository variable CMMS_ALERT_EMAIL"* | Add the variable (the address that gets alarms), then re-run. |
 | A stack is *stuck in UPDATE_ROLLBACK_FAILED* | See *When a deploy fails* in [SECURITY_AND_BACKUPS.md](SECURITY_AND_BACKUPS.md#7-when-a-deploy-fails). |
 | *"did not report version … within 15 minutes"* | The app failed to start. Look at the newest stream in the CloudWatch log group `/ecs/cmms-app`; the first lines show why. |

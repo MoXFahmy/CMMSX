@@ -2,8 +2,9 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   CMX - one-time setup that lets GitHub Actions deploy the app into this account and region:
   GitHub OIDC sign-in (no stored keys), the image repository, the role CloudFormation uses for the app stacks
-  (cmms-app here, cmms-edge in us-east-1, cmms-dr in eu-west-1), the guard that keeps backups out of the pipeline's reach,
-  and the permissions boundary every app role carries. Deploy with deploy/aws/setup.sh (see docs/DEPLOY_AWS.md).
+  (cmms-app here, cmms-edge in us-east-1), the guard that keeps backups out of the pipeline's reach, and the permissions
+  boundary every app role carries. Deploy with deploy/aws/setup.sh (see docs/DEPLOY_AWS.md), which also deploys the
+  recovery stack cmms-dr (infra/aws/dr.yml) in eu-west-1; the pipeline only reads that stack.
 
 Parameters:
   GitHubRepo:
@@ -196,11 +197,15 @@ Resources:
       # No EventSelectors: management events (read and write) only, the trail's default.
 
   # The backups must survive a compromised deploy pipeline (GitHub is on the internet). Two places hold the same explicit
-  # denies, so keep their "Keep..." statements in step: backup-guard on CloudFormationExecutionRole (the pipeline itself)
-  # and this boundary (every role the pipeline creates). Destructive actions only: creating the vault with its lock, the
-  # Ireland buckets with Object Lock, replication and the London vault's access policy stays allowed. In Ireland those
-  # settings can't shorten what is already stored (Object Lock retention and a locked vault's recovery points outlive
-  # them). The CloudTrail trail and its bucket are in this stack, so the pipeline may change neither.
+  # denies, so keep their "Keep..." statements in step (scripts/check-boundaries.py fails when they differ): backup-guard
+  # on CloudFormationExecutionRole (the pipeline itself) and this boundary (every role the pipeline creates).
+  # The CloudTrail trail and its bucket are in this stack, and the Ireland vault, its key and the two Ireland buckets are in
+  # the recovery stack cmms-dr (infra/aws/dr.yml, eu-west-1), which setup.sh deploys as the account administrator. The
+  # pipeline creates none of them, so it may change none of them: not even settings that look harmless, because a lifecycle
+  # rule, a vault access policy or a key policy can destroy or lock away the copies once their retention ends. What the
+  # pipeline does need keeps working: S3 replication into the Ireland buckets (s3:Replicate*), AWS Backup copies into the
+  # Ireland vault (backup:CopyIntoBackupVault) and RDS replicating automated backups with the Ireland key (key use and
+  # grants), all for the app's own roles; and creating or changing anything in London or N. Virginia (other ARNs).
   # The vault lock and Object Lock are governance mode: the account's own console administrator (root or an IAM
   # administrator outside the pipeline) can still lift them. Names are fixed by the recovery stack (cmms-dr, eu-west-1).
   #
@@ -229,12 +234,14 @@ Resources:
               - backup:DeleteRecoveryPoint
               - backup:UpdateRecoveryPointLifecycle
             Resource: "*"
+          # The Ireland vault and every setting on it: deleting it, its access policy, lock, notifications or sharing, and
+          # writing any of them (an access policy could refuse the copies or the restores; a new lock, other limits). AWS
+          # Backup's copy jobs into it (backup:CopyIntoBackupVault, as the app's backup role) are not settings: allowed.
           - Sid: KeepTheIrelandVault
             Effect: Deny
             Action:
-              - backup:DeleteBackupVault
-              - backup:DeleteBackupVaultAccessPolicy
-              - backup:DeleteBackupVaultLockConfiguration
+              - backup:DeleteBackupVault* # the vault, AccessPolicy, LockConfiguration, Notifications, SharingPolicy
+              - backup:PutBackupVault* # AccessPolicy, LockConfiguration, Notifications, SharingPolicy
             Resource: !Sub "arn:${AWS::Partition}:backup:eu-west-1:${AWS::AccountId}:backup-vault:cmms-dr-vault"
           # The database's automated backups replicated to Ireland (London's own stay with the app stack's settings).
           # Stopping the replication isn't denied: the copies already made stay for their retention period, and
@@ -244,21 +251,17 @@ Resources:
             Effect: Deny
             Action: rds:DeleteDBInstanceAutomatedBackup
             Resource: !Sub "arn:${AWS::Partition}:rds:eu-west-1:${AWS::AccountId}:auto-backup:*"
-          # The Ireland vault and the replicated backups are encrypted with a key in Ireland; deleting or disabling it would
-          # make every copy unreadable (not even deleting the cmms-dr stack can schedule its deletion).
+          # The Ireland vault and the replicated backups are encrypted with a key in Ireland (cmms-dr's). Deleting or
+          # disabling it, or rewriting its policy (to shut out RDS, AWS Backup or the account itself), would make every copy
+          # unreadable. Nothing the pipeline deploys manages a key in Ireland. Using the key stays allowed: RDS encrypts the
+          # replicated backups with it and creates its grants as the caller (kms:CreateGrant through RDS), AWS Backup the same.
           - Sid: KeepTheIrelandKeys
             Effect: Deny
             Action:
               - kms:ScheduleKeyDeletion
               - kms:DisableKey
+              - kms:PutKeyPolicy
             Resource: !Sub "arn:${AWS::Partition}:kms:eu-west-1:${AWS::AccountId}:key/*"
-          # A key policy that skips KMS's lockout check can shut the account out of its own key.
-          - Sid: KeepTheIrelandKeysManageable
-            Effect: Deny
-            Action: kms:PutKeyPolicy
-            Resource: !Sub "arn:${AWS::Partition}:kms:eu-west-1:${AWS::AccountId}:key/*"
-            Condition:
-              Bool: { "kms:BypassPolicyLockoutSafetyCheck": "true" }
           - Sid: KeepNewKeysManageable
             Effect: Deny
             Action: kms:CreateKey # no resource-level permissions: "*" only
@@ -289,12 +292,24 @@ Resources:
               - s3:CreateAccessPointForObjectLambda
               - s3:CreateMultiRegionAccessPoint
             Resource: "*"
-          # The Ireland copies (cmms-dr-files-<account>, cmms-dr-backups-<account>). Plain DeleteObject only adds a delete
-          # marker on these versioned Object Lock buckets (and the bucket's own create handler uses it), so it stays allowed.
-          - Sid: KeepObjectVersions
+          # The Ireland copies (cmms-dr-files-<account>, cmms-dr-backups-<account>): the pipeline writes, deletes and
+          # reconfigures nothing there. Put* and Delete* cover every bucket setting (lifecycle, replication, Object Lock,
+          # versioning, ownership controls, ACLs, policy, encryption, public access block, CORS, website, notifications,
+          # logging, tags, requester pays, accelerate, analytics, inventory, metrics, intelligent tiering), the bucket
+          # itself, and every object write or delete (a delete marker makes a version noncurrent, and the lifecycle removes
+          # noncurrent versions once their lock ends). Update* covers object encryption and the metadata tables, as does
+          # CreateBucketMetadata*. The buckets never get a bucket policy (same-account replication needs none), so they can't
+          # be opened to another account, whose principals these denies don't reach. S3 replication from London uses its own
+          # actions (s3:ReplicateObject, s3:ReplicateDelete, s3:ReplicateTags, s3:ReplicateObjectAnnotation, as the app's
+          # replication role) and keeps working, as does reading. The "*" in the ARN covers the buckets and their objects.
+          - Sid: KeepTheIrelandBuckets
             Effect: Deny
-            Action: s3:DeleteObjectVersion
-            Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*/*"
+            Action:
+              - s3:Put*
+              - s3:Delete*
+              - s3:Update*
+              - s3:CreateBucketMetadata*
+            Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
           # No access point may exist (KeepAccessPointsOut); in case one does, nothing is written or deleted through it.
           - Sid: KeepObjectsBehindAccessPoints
             Effect: Deny
@@ -303,15 +318,26 @@ Resources:
               - s3:DeleteObject
               - s3:DeleteObjectVersion
             Resource: !Sub "arn:${AWS::Partition}:s3:*:${AWS::AccountId}:accesspoint/*/object/*"
-          # The Ireland buckets never get a bucket policy (same-account replication needs none), so they can't be opened
-          # to another account, whose principals these denies don't reach.
-          - Sid: KeepTheIrelandBucketsClosed
+          # The recovery stack itself: only setup.sh (the account administrator) creates, changes or deletes it, and no
+          # stack refactor moves its resources into a stack the pipeline deploys. Reading it (its outputs) stays allowed.
+          - Sid: KeepTheRecoveryStack
             Effect: Deny
             Action:
-              - s3:DeleteBucket
-              - s3:PutBucketPolicy
-              - s3:DeleteBucketPolicy
-            Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
+              - cloudformation:CreateStack
+              - cloudformation:UpdateStack
+              - cloudformation:DeleteStack
+              - cloudformation:CreateChangeSet
+              - cloudformation:ExecuteChangeSet
+              - cloudformation:CancelUpdateStack
+              - cloudformation:ContinueUpdateRollback
+              - cloudformation:RollbackStack
+              - cloudformation:SetStackPolicy
+              - cloudformation:UpdateTerminationProtection
+              - cloudformation:CreateStackRefactor
+              - cloudformation:ExecuteStackRefactor
+              - cloudformation:TagResource
+              - cloudformation:UntagResource
+            Resource: !Sub "arn:${AWS::Partition}:cloudformation:eu-west-1:${AWS::AccountId}:stack/cmms-dr/*"
           # The trail bucket (cmms-trail-<account>) is set up by this stack and written only by CloudTrail as its service
           # principal, which these denies don't reach. Nothing the pipeline deploys writes to it, so every write is denied:
           # overwriting or deleting a log (an overwritten log becomes a noncurrent version the lifecycle removes a day after
@@ -444,9 +470,8 @@ Resources:
               - Sid: KeepTheIrelandVault
                 Effect: Deny
                 Action:
-                  - backup:DeleteBackupVault
-                  - backup:DeleteBackupVaultAccessPolicy
-                  - backup:DeleteBackupVaultLockConfiguration
+                  - backup:DeleteBackupVault*
+                  - backup:PutBackupVault*
                 Resource: !Sub "arn:${AWS::Partition}:backup:eu-west-1:${AWS::AccountId}:backup-vault:cmms-dr-vault"
               - Sid: KeepTheIrelandDatabaseBackups
                 Effect: Deny
@@ -457,13 +482,8 @@ Resources:
                 Action:
                   - kms:ScheduleKeyDeletion
                   - kms:DisableKey
+                  - kms:PutKeyPolicy
                 Resource: !Sub "arn:${AWS::Partition}:kms:eu-west-1:${AWS::AccountId}:key/*"
-              - Sid: KeepTheIrelandKeysManageable
-                Effect: Deny
-                Action: kms:PutKeyPolicy
-                Resource: !Sub "arn:${AWS::Partition}:kms:eu-west-1:${AWS::AccountId}:key/*"
-                Condition:
-                  Bool: { "kms:BypassPolicyLockoutSafetyCheck": "true" }
               - Sid: KeepNewKeysManageable
                 Effect: Deny
                 Action: kms:CreateKey # no resource-level permissions: "*" only
@@ -490,10 +510,14 @@ Resources:
                   - s3:CreateAccessPointForObjectLambda
                   - s3:CreateMultiRegionAccessPoint
                 Resource: "*"
-              - Sid: KeepObjectVersions
+              - Sid: KeepTheIrelandBuckets
                 Effect: Deny
-                Action: s3:DeleteObjectVersion
-                Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*/*"
+                Action:
+                  - s3:Put*
+                  - s3:Delete*
+                  - s3:Update*
+                  - s3:CreateBucketMetadata*
+                Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
               - Sid: KeepObjectsBehindAccessPoints
                 Effect: Deny
                 Action:
@@ -501,13 +525,24 @@ Resources:
                   - s3:DeleteObject
                   - s3:DeleteObjectVersion
                 Resource: !Sub "arn:${AWS::Partition}:s3:*:${AWS::AccountId}:accesspoint/*/object/*"
-              - Sid: KeepTheIrelandBucketsClosed
+              - Sid: KeepTheRecoveryStack
                 Effect: Deny
                 Action:
-                  - s3:DeleteBucket
-                  - s3:PutBucketPolicy
-                  - s3:DeleteBucketPolicy
-                Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
+                  - cloudformation:CreateStack
+                  - cloudformation:UpdateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:CancelUpdateStack
+                  - cloudformation:ContinueUpdateRollback
+                  - cloudformation:RollbackStack
+                  - cloudformation:SetStackPolicy
+                  - cloudformation:UpdateTerminationProtection
+                  - cloudformation:CreateStackRefactor
+                  - cloudformation:ExecuteStackRefactor
+                  - cloudformation:TagResource
+                  - cloudformation:UntagResource
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:eu-west-1:${AWS::AccountId}:stack/cmms-dr/*"
               - Sid: KeepTheTrailBucket
                 Effect: Deny
                 Action:
@@ -516,8 +551,9 @@ Resources:
                   - s3:Delete*
                 Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*"
 
-  # GitHub Actions (main branch of GitHubRepo only) assumes this role: push images, deploy the app stacks
-  # (the app here, the edge stack in us-east-1 and the recovery stack in eu-west-1, all through CloudFormationExecutionRole).
+  # GitHub Actions (main branch of GitHubRepo only) assumes this role: push images, deploy the app stacks (the app here and
+  # the edge stack in us-east-1, both through CloudFormationExecutionRole), and read the recovery stack's outputs
+  # (cmms-dr, eu-west-1, which only setup.sh deploys).
   GitHubDeployRole:
     Type: AWS::IAM::Role
     Properties:
@@ -585,8 +621,6 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:changeSet/*"
                   - !Sub "arn:${AWS::Partition}:cloudformation:us-east-1:${AWS::AccountId}:stack/cmms-edge/*"
                   - !Sub "arn:${AWS::Partition}:cloudformation:us-east-1:${AWS::AccountId}:changeSet/*"
-                  - !Sub "arn:${AWS::Partition}:cloudformation:eu-west-1:${AWS::AccountId}:stack/cmms-dr/*"
-                  - !Sub "arn:${AWS::Partition}:cloudformation:eu-west-1:${AWS::AccountId}:changeSet/*"
               # aws cloudformation deploy --s3-bucket: HeadObject (skips an unchanged template; GetObject covers it) and
               # PutObject; CloudFormation then reads the template URL as this role. It never lists the bucket.
               - Effect: Allow
@@ -594,9 +628,16 @@ Resources:
                   - s3:GetObject
                   - s3:PutObject
                 Resource: !Sub "${TemplateBucket.Arn}/*"
+              # Read this stack's outputs (BoundaryPolicyArn, TemplateBucketName) and the recovery stack's (vault, key and
+              # bucket ARNs), and compare the recovery stack's template with infra/aws/dr.yml (a change there needs setup.sh).
               - Effect: Allow
-                Action: cloudformation:DescribeStacks # read this stack's outputs (BoundaryPolicyArn, TemplateBucketName)
-                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*"
+                Action: cloudformation:DescribeStacks
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:eu-west-1:${AWS::AccountId}:stack/cmms-dr/*"
+              - Effect: Allow
+                Action: cloudformation:GetTemplate
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:eu-west-1:${AWS::AccountId}:stack/cmms-dr/*"
               - Effect: Allow
                 Action: iam:PassRole
                 Resource: !GetAtt CloudFormationExecutionRole.Arn

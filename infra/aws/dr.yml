@@ -2,15 +2,21 @@ AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   CMX - recovery stack in Ireland (eu-west-1): a locked AWS Backup vault and two Object Lock buckets that hold the
   last-line copies of the database snapshots, the weekly database export and the uploaded files. Deployed as stack
-  cmms-dr by .github/workflows/deploy-aws.yml before the app stack; see docs/DEPLOY_AWS.md. Everything here is kept when
-  the stack is deleted, because these are the copies that must survive a mistake.
+  cmms-dr by deploy/aws/setup.sh, run by the account administrator in CloudShell, never by the deploy pipeline, whose roles
+  may change nothing here (backup-guard in deploy/aws/bootstrap.yml); the pipeline only reads the outputs. Re-run setup.sh
+  after changing this file. See docs/DEPLOY_AWS.md. Everything here is kept when the stack is deleted, because these are
+  the copies that must survive a mistake.
 
 Resources:
+  # Kept when the stack is deleted (RetainExceptOnCreate), except when the very first create fails and rolls back: then
+  # nothing has been copied into them yet, and removing them lets the next setup.sh run create them again under the same
+  # fixed names (Retain would leave them behind and make every retry fail on the taken names).
+  #
   # Encrypts the Ireland vault and the Ireland copies of the RDS automated backups. Never disable it and never schedule
   # its deletion: the recovery copies cannot be read without it.
   DrKey:
     Type: AWS::KMS::Key
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       Description: CMX recovery copies in Ireland (AWS Backup vault and RDS cross-Region automated backups)
@@ -74,7 +80,7 @@ Resources:
   # the pipeline can still lift the lock. The retention values are fixed from the first deploy; do not edit them.
   DrVault:
     Type: AWS::Backup::BackupVault
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BackupVaultName: cmms-dr-vault
@@ -86,7 +92,7 @@ Resources:
   # No bucket policy on purpose: same-account replication needs none, and the pipeline may not write one.
   FilesCopyBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub "cmms-dr-files-${AWS::AccountId}"
@@ -124,7 +130,7 @@ Resources:
 
   BackupsCopyBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub "cmms-dr-backups-${AWS::AccountId}"

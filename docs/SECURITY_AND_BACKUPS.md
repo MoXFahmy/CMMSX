@@ -35,7 +35,7 @@ ACCOUNT=$(aws sts get-caller-identity --query Account --output text)
 | **No addresses stored** | The visitor's address (from CloudFront's `CloudFront-Viewer-Address` header) feeds the limits only, in memory. It is never written to the database, the activity log or the application log. For that reason an alarm e-mail never says which address attacked; the firewall's sampled requests do (see [sign-in attack](#3-alarms-and-e-mails)). |
 | **Browser security headers** | Every response carries a content security policy, HSTS (over HTTPS), frame protection, `nosniff`, a referrer policy and a permissions policy. Downloads of uploaded files keep their stricter policy, so an upload can never run as a page. The policy is in `server/FourC.Cmms.Api/Infrastructure/SecurityHeaders.cs`; each exception is commented there. If a page suddenly looks broken, the browser's console shows which source the policy refused. |
 | **E-mail check on sign-up** | When switched on (`CMMS_REQUIRE_EMAIL_CONFIRMATION`), a new organization's owner cannot sign in until they click the link in the confirmation e-mail (valid 48 hours). The e-mail is sent whatever the e-mail allow-list says, because it goes only to the address that signed up. Organizations never confirmed within **7 days** are deleted with everything in them, once a day; each deletion is logged with the organization's id only. People an administrator adds, imported people, existing organizations and service accounts are never asked. |
-| **Deploy-pipeline guard** | GitHub is on the internet, so the pipeline is treated as untrusted for backups. The role CloudFormation deploys with is explicitly denied: deleting recovery points or shortening their life, deleting the Ireland vault or its lock, deleting the Ireland database backup copies, deleting or disabling the Ireland encryption key, bypassing Object Lock, deleting Ireland file versions, opening the Ireland buckets with a policy, stopping or changing CloudTrail, and writing to the trail bucket. |
+| **Deploy-pipeline guard** | GitHub is on the internet, so the pipeline is treated as untrusted for backups. The role CloudFormation deploys with is explicitly denied: deleting recovery points or shortening their life; deleting the Ireland vault or changing any of its settings (access policy, lock, notifications); deleting the Ireland database backup copies; deleting, disabling or rewriting the policy of the Ireland encryption key; bypassing Object Lock; writing, deleting or reconfiguring anything in the Ireland buckets (objects, versions, lifecycle, replication, Object Lock, versioning, ownership, ACLs, policy, encryption, public access); creating, changing or deleting the recovery stack `cmms-dr`; stopping or changing CloudTrail; and writing to the trail bucket. What the pipeline needs keeps working: copying files and exports into Ireland (S3 replication), copying snapshots into the Ireland vault (AWS Backup) and the database's continuous copy (RDS, with the Ireland key). |
 | **Permissions boundary** | Every role the pipeline creates under the `/cmms/` path must carry the policy `cmms-boundary-<region>` (the pipeline cannot create a role without it). The boundary repeats the same denies, so the pipeline cannot create a role that escapes the guard. A role inside the boundary also cannot change IAM or pass a role outside `/cmms/`. |
 | **CloudTrail** | One multi-region trail, `cmms-trail`, records who did what in the AWS account into the bucket `cmms-trail-<account>` (log validation on; Object Lock governance 90 days; moved to cheaper storage at 90 days; deleted at 365 days). It is created by `setup.sh` in the `cmms-github` stack, outside the pipeline's reach, unless the account already had a multi-region trail. |
 | **GuardDuty** | Detectors in London (with S3 protection, runtime monitoring of the app task, and malware scanning of every new upload in the files bucket) and in N. Virginia (basic). Findings of severity 4 or higher are e-mailed to the alarm address. Malware findings only alert; the app still serves the file. GuardDuty does not cover SQL Server databases. |
@@ -78,16 +78,22 @@ versions only.
 
 ### Locks
 
+The Ireland vault, its key and the two Ireland buckets are in the stack **`cmms-dr`**, which `setup.sh` creates and updates as
+you, the account administrator ([DEPLOY_AWS.md](DEPLOY_AWS.md#1-connect-aws-to-github-once-about-2-minutes)). The deploy pipeline
+can read it but cannot change it, and cannot change any setting on what it holds: so a change to `infra/aws/dr.yml` takes effect
+only when you **re-run `setup.sh`**, never by running the deploy workflow (which warns when the two differ).
+
 - **Ireland vault** (`cmms-dr-vault`): AWS Backup Vault Lock in **governance mode**, retention between 7 and 400 days. The
-  pipeline and anything it creates cannot delete or shorten the copies. A console administrator (the root user, or an IAM
+  pipeline and anything it creates cannot delete or shorten the copies, nor change the vault's lock or access policy. A console administrator (the root user, or an IAM
   administrator outside the pipeline) can still lift the lock ([section 6](#6-lifting-the-lock)). Whether to move to compliance
   mode (nobody can delete, irreversible) is a decision for later, after a quarter of clean rehearsals.
 - **London vault** (`cmms-app-vault`): an access policy lets only the root user delete a recovery point. Snapshots still expire on
   their own schedule.
 - **Ireland buckets**: S3 Object Lock, governance mode, default retention 35 days (files) and 90 days (exports). They have no
-  bucket policy on purpose, and the pipeline may not add one.
+  bucket policy on purpose. The pipeline may not add one, nor change their lifecycle, replication, Object Lock, versioning or
+  any other setting, nor write or delete anything in them (S3 replication from London still copies into them).
 - **Ireland key** (`alias/cmms-dr`): encrypts the Ireland vault and the replicated database backups. Never disable it and never
-  schedule its deletion: the copies cannot be read without it.
+  schedule its deletion: the copies cannot be read without it. The pipeline cannot do either, nor change the key's policy.
 
 ## 3. Alarms and e-mails
 
@@ -313,7 +319,8 @@ pipeline does not have.
    Nothing here depends on London.
 2. **Set up the new region.** In CloudShell **in the new region**: `bash setup.sh` (`REGION=eu-west-1 bash setup.sh` also works).
    It creates the `cmms-github` stack there (role `cmms-github-deploy-<region>`, boundary `cmms-boundary-<region>`, template
-   bucket). Set the GitHub variables `AWS_REGION` and `AWS_DEPLOY_ROLE_ARN` to the new region's values (the script prints them).
+   bucket) and checks the recovery stack `cmms-dr` in Ireland (no change; it prints its outputs). Set the GitHub variables
+   `AWS_REGION` and `AWS_DEPLOY_ROLE_ARN` to the new region's values (the script prints them).
 3. **Choose the trail.** `setup.sh` finds the old region's `cmms-trail` and does not create another (it sets `CreateTrail` to
    `false`). The default decision is to **keep the old region's `cmms-github` stack**: its trail keeps the account's history and
    its locked bucket. If the old region is gone for good and its trail no longer logs, a console administrator creates a
@@ -322,7 +329,7 @@ pipeline does not have.
 4. **Variables for a rebuild into Ireland itself.** RDS cannot copy automated backups into the region they are already in, so set
    `CMMS_IRELAND_DB_COPY` to `hourly-snapshots` for that deploy. (Rebuilding in a third region keeps `replication`.) Check
    `CMMS_DB_MAJOR_ENGINE_VERSION` against the restored engine version.
-5. **Deploy.** Run **Deploy to AWS**. It deploys `cmms-dr` and `cmms-edge` again (no changes) and creates `cmms-app` in the new
+5. **Deploy.** Run **Deploy to AWS**. It reads `cmms-dr`, deploys `cmms-edge` again (no changes) and creates `cmms-app` in the new
    region with an **empty** database. The first run takes 30 to 40 minutes.
    - The new region gets its own weekly-export bucket, `cmms-backups-<account>-<region>`; the London one is kept.
 6. **Bring the data.** Stop the new app (section 4.5, step 1). Restore the Ireland copy as a new instance **inside the new stack's
@@ -368,9 +375,17 @@ should add that ability to it.
 
 - **Ireland vault lock.** AWS Backup (Ireland), *Vaults*, `cmms-dr-vault`, delete the vault lock configuration (or
   `aws backup delete-backup-vault-lock-configuration --region eu-west-1 --backup-vault-name cmms-dr-vault`). Governance mode
-  allows it. Afterwards a recovery point can be deleted from the vault the usual way. Put the lock back by deploying again after
-  fixing the template (a fix to `infra/aws/dr.yml` that changes the lock is itself a deliberate step; the retention is fixed from
-  the first deploy, so do not edit it casually).
+  allows it. Afterwards a recovery point can be deleted from the vault the usual way. **Put the lock back by hand** as soon as
+  you are done; neither the deploy workflow nor re-running `setup.sh` does it, because CloudFormation only applies what changed
+  in the template, and the vault belongs to `setup.sh`'s stack `cmms-dr`, which the pipeline cannot touch. The values are the
+  ones in `infra/aws/dr.yml` (`MinRetentionDays` 7, `MaxRetentionDays` 400):
+  ```bash
+  aws backup put-backup-vault-lock-configuration --region eu-west-1 --backup-vault-name cmms-dr-vault \
+    --min-retention-days 7 --max-retention-days 400
+  aws backup describe-backup-vault --region eu-west-1 --backup-vault-name cmms-dr-vault --query "[Locked,MinRetentionDays,MaxRetentionDays]"
+  ```
+  The second command must print `true`, `7` and `400`. If the lock itself was wrong, fix `infra/aws/dr.yml` and re-run
+  `setup.sh` instead (a deliberate step: the retention is fixed from the first deploy, so do not edit it casually).
 - **A London recovery point.** Only the root user can delete one (the vault's access policy). Sign in as root.
 - **Object Lock on the Ireland buckets** (`cmms-dr-files-<account>`, `cmms-dr-backups-<account>`). Delete a locked version with
   the bypass flag:
@@ -388,19 +403,23 @@ Write down what you lifted and why. Compliance mode, which nobody can lift, is n
 Every stack is deployed through a change set that is printed in the run's log before it is applied, and CloudFormation rolls a
 failed update back by itself. The run's log lists the failed events and their reasons.
 
-**A stack stuck in `UPDATE_ROLLBACK_FAILED` (`cmms-app`, `cmms-edge` or `cmms-dr`).** Rolling back sometimes needs to remove the
+**A stack stuck in `UPDATE_ROLLBACK_FAILED` (`cmms-app` or `cmms-edge`).** Rolling back sometimes needs to remove the
 permissions boundary from a role that had none before 0.29.0 (the app's two task roles). The guard refuses that, so the rollback
 cannot finish. The run says so and prints the exact stack and resources. Two ways out, the same thing:
 
-1. **Actions, Deploy to AWS, Run workflow**, branch `main`: set `continue_rollback_stack` to the stack (`cmms-app`,
-   `cmms-edge` or `cmms-dr`) and `resources_to_skip` to the logical resource ids printed in the failed run, comma-separated
+1. **Actions, Deploy to AWS, Run workflow**, branch `main`: set `continue_rollback_stack` to the stack (`cmms-app` or
+   `cmms-edge`) and `resources_to_skip` to the logical resource ids printed in the failed run, comma-separated
    (for the roles: `TaskRole,TaskExecutionRole`). It runs *continue update rollback* and deploys nothing.
 2. Or in CloudShell, the command the failed run printed:
    ```bash
    aws cloudformation continue-update-rollback --region <region> --stack-name cmms-app \
      --role-arn arn:aws:iam::<account>:role/cmms-cfn-exec-<region> --resources-to-skip TaskRole TaskExecutionRole
    ```
-   (`cmms-edge` is in `us-east-1`, `cmms-dr` in `eu-west-1`; the execution role is the one of the app's region.)
+   (`cmms-edge` is in `us-east-1`; the execution role is the one of the app's region.)
+
+The recovery stack `cmms-dr` is not deployed by the workflow and the pipeline may not touch it, so it never gets stuck there. If
+`setup.sh` leaves it in a failed state, a console administrator handles it in the CloudFormation console (Ireland), as for any
+stack, then re-runs `setup.sh`.
 
 The skipped role simply keeps its boundary. When the stack reads `UPDATE_ROLLBACK_COMPLETE`, fix the cause the log named and
 run **Deploy to AWS** again with `continue_rollback_stack` back on `none`.
@@ -414,10 +433,10 @@ instead, or have a developer fix forward (to go back to a public load balancer t
 There is no do-it-yourself revert to 0.28.x: once 0.29.0 has been applied, the boundary on the app's roles cannot be removed by the
 pipeline, and an older template tries to remove it.
 
-**A failed first deployment of `cmms-edge`** (ROLLBACK_COMPLETE) is removed and started again by the workflow. **`cmms-dr`** is
-never removed automatically, because it holds the locked copies: it stops with a message. Its key, vault and buckets are kept on
-purpose, so after a failed first create they stay behind and a retry fails with "already exists". They are empty then; a console
-administrator deletes the leftovers and the stack in the console and re-runs. **`cmms-app`** in ROLLBACK_COMPLETE after a failed
+**A failed first deployment of `cmms-edge`** (ROLLBACK_COMPLETE) is removed and started again by the workflow. **`cmms-dr`**'s
+first creation is `setup.sh`'s: if it fails, CloudFormation removes the key, vault and buckets it had just made (they are empty
+then; once created they are kept even when the stack is deleted), and the next `setup.sh` run removes the failed stack and
+creates it again. **`cmms-app`** in ROLLBACK_COMPLETE after a failed
 first deployment is removed and started again by the workflow; its fixed-name backup bucket, vault and option group go with it
 because they were new in that deploy.
 
@@ -509,8 +528,9 @@ that a restore works before the day you need it.
 The checklist behind a release of 0.29.0. Detail is in [DEPLOY_AWS.md](DEPLOY_AWS.md).
 
 1. Pick a **quiet hour** for the deploy (5 to 10 minutes of errors while the load balancer switches).
-2. **Re-run `setup.sh`** in CloudShell, in the app's region (London). The first deploy after merging stops with "Re-run
-   deploy/aws/setup.sh in CloudShell" until you do.
+2. **Re-run `setup.sh`** in CloudShell, in the app's region (London). It also creates the recovery stack `cmms-dr` in Ireland.
+   The first deploy after merging stops with "Re-run deploy/aws/setup.sh in CloudShell" until you do. Later, a change to
+   `infra/aws/dr.yml` (or `deploy/aws/bootstrap.yml`) also needs `setup.sh` again; the deploy workflow never applies it.
 3. In GitHub, set **`CMMS_ALERT_EMAIL`** (required). Check whether GuardDuty is already on in London and N. Virginia (set
    `CMMS_CREATE_GUARDDUTY_LONDON` or `CMMS_CREATE_GUARDDUTY_US_EAST` to `false` where a detector already exists), and
    `CMMS_DB_MAJOR_ENGINE_VERSION` against the live database. Leave the firewall on `count` and e-mail confirmation off.

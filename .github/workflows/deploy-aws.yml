@@ -15,7 +15,7 @@ on:
           Recovery only: a stack stuck in UPDATE_ROLLBACK_FAILED. Pick it to run "continue update rollback" instead of
           deploying (the failed deploy's log prints the exact stack and resources to skip). Leave on none to deploy.
         type: choice
-        options: [none, cmms-app, cmms-edge, cmms-dr]
+        options: [none, cmms-app, cmms-edge]
         default: none
       resources_to_skip:
         description: Recovery only - the logical resource ids to skip, comma-separated (copy them from the failed deploy's log).
@@ -99,7 +99,7 @@ jobs:
           CFN_POLL_SLEEP="${CFN_POLL_SLEEP:-30}"
 
           cfn_need_setup() {
-            echo "::error::Re-run deploy/aws/setup.sh in CloudShell (0.29.0 adds two stacks), then re-run this workflow."
+            echo "::error::Re-run deploy/aws/setup.sh in CloudShell (it sets up the deploy role and the recovery stack cmms-dr in Ireland, which this workflow only reads), then re-run this workflow."
             exit 1
           }
 
@@ -227,7 +227,7 @@ jobs:
           }
           LIB
 
-      - name: Read the bootstrap stack
+      - name: Read the setup stacks (cmms-github here, cmms-dr in Ireland)
         id: boot
         run: |
           set -euo pipefail
@@ -238,10 +238,31 @@ jobs:
           boundary=$(cfn_output "$BOOTSTRAP_STACK" "$AWS_REGION" BoundaryPolicyArn)
           bucket=$(cfn_output "$BOOTSTRAP_STACK" "$AWS_REGION" TemplateBucketName)
           if [ -z "$exec_role" ] || [ -z "$boundary" ] || [ -z "$bucket" ]; then cfn_need_setup; fi
+          # The recovery stack belongs to setup.sh: the pipeline may not deploy or change it, only read its outputs.
+          vault=$(cfn_output "$DR_STACK" "$DR_REGION" DrVaultArn)
+          key=$(cfn_output "$DR_STACK" "$DR_REGION" DrKeyArn)
+          files_copy=$(cfn_output "$DR_STACK" "$DR_REGION" FilesCopyBucketArn)
+          backups_copy=$(cfn_output "$DR_STACK" "$DR_REGION" BackupsCopyBucketArn)
+          if [ -z "$vault" ] || [ -z "$key" ] || [ -z "$files_copy" ] || [ -z "$backups_copy" ]; then cfn_need_setup; fi
+          # A change to infra/aws/dr.yml only reaches AWS when setup.sh is run again; say so (the deploy goes on). Compared
+          # without trailing spaces and trailing empty lines, which the CLI's text output may add.
+          norm() { awk '{ sub(/[ \t\r]+$/, ""); line[NR] = $0 } END { n = NR; while (n > 0 && line[n] == "") n--; for (i = 1; i <= n; i++) print line[i] }' "$1"; }
+          deployed=$(mktemp)
+          if aws cloudformation get-template --region "$DR_REGION" --stack-name "$DR_STACK" --query TemplateBody --output text >"$deployed" 2>/dev/null; then
+            if ! cmp -s <(norm "$deployed") <(norm infra/aws/dr.yml); then
+              echo "::warning::infra/aws/dr.yml differs from the deployed recovery stack $DR_STACK. The workflow never deploys it: re-run deploy/aws/setup.sh in CloudShell to apply the change."
+            fi
+          else
+            echo "::notice::Could not read the template of $DR_STACK to compare it with infra/aws/dr.yml."
+          fi
           {
             echo "exec_role=$exec_role"
             echo "boundary=$boundary"
             echo "bucket=$bucket"
+            echo "vault=$vault"
+            echo "key=$key"
+            echo "files_copy=$files_copy"
+            echo "backups_copy=$backups_copy"
           } >> "$GITHUB_OUTPUT"
 
       - name: Sign in to the image registry
@@ -273,15 +294,6 @@ jobs:
           IMAGE: ${{ steps.ecr.outputs.registry }}/cmms:${{ env.COMMIT }}
         run: docker push "$IMAGE"
 
-      - name: Deploy the recovery stack (cmms-dr, Ireland)
-        env:
-          EXEC_ROLE: ${{ steps.boot.outputs.exec_role }}
-        run: |
-          set -euo pipefail
-          source "$RUNNER_TEMP/cfn.sh"
-          # Never removed automatically (recreate = no): it holds the locked copies.
-          cfn_deploy "$DR_STACK" "$DR_REGION" infra/aws/dr.yml "$EXEC_ROLE" no
-
       - name: Deploy the edge stack (cmms-edge, N. Virginia)
         env:
           EXEC_ROLE: ${{ steps.boot.outputs.exec_role }}
@@ -294,24 +306,14 @@ jobs:
               AlertEmail="$ALERT_EMAIL" \
               CreateGuardDutyDetector="$CREATE_GUARDDUTY_US_EAST"
 
-      - name: Read the stack outputs
+      - name: Read the edge stack's outputs
         id: outputs
         run: |
           set -euo pipefail
           source "$RUNNER_TEMP/cfn.sh"
           web_acl=$(cfn_output "$EDGE_STACK" "$EDGE_REGION" WebAclArn)
-          vault=$(cfn_output "$DR_STACK" "$DR_REGION" DrVaultArn)
-          key=$(cfn_output "$DR_STACK" "$DR_REGION" DrKeyArn)
-          files_copy=$(cfn_output "$DR_STACK" "$DR_REGION" FilesCopyBucketArn)
-          backups_copy=$(cfn_output "$DR_STACK" "$DR_REGION" BackupsCopyBucketArn)
-          if [ -z "$web_acl" ] || [ -z "$vault" ] || [ -z "$key" ] || [ -z "$files_copy" ] || [ -z "$backups_copy" ]; then cfn_need_setup; fi
-          {
-            echo "web_acl=$web_acl"
-            echo "vault=$vault"
-            echo "key=$key"
-            echo "files_copy=$files_copy"
-            echo "backups_copy=$backups_copy"
-          } >> "$GITHUB_OUTPUT"
+          if [ -z "$web_acl" ]; then echo "::error::The edge stack $EDGE_STACK has no WebAclArn output."; exit 1; fi
+          echo "web_acl=$web_acl" >> "$GITHUB_OUTPUT"
 
       - name: Deploy the application (the first run takes about 30 minutes, mostly creating the database)
         id: deploy
@@ -321,10 +323,10 @@ jobs:
           BOUNDARY_ARN: ${{ steps.boot.outputs.boundary }}
           TEMPLATE_BUCKET: ${{ steps.boot.outputs.bucket }}
           WEB_ACL_ARN: ${{ steps.outputs.outputs.web_acl }}
-          DR_VAULT_ARN: ${{ steps.outputs.outputs.vault }}
-          DR_KEY_ARN: ${{ steps.outputs.outputs.key }}
-          FILES_COPY_ARN: ${{ steps.outputs.outputs.files_copy }}
-          BACKUPS_COPY_ARN: ${{ steps.outputs.outputs.backups_copy }}
+          DR_VAULT_ARN: ${{ steps.boot.outputs.vault }}
+          DR_KEY_ARN: ${{ steps.boot.outputs.key }}
+          FILES_COPY_ARN: ${{ steps.boot.outputs.files_copy }}
+          BACKUPS_COPY_ARN: ${{ steps.boot.outputs.backups_copy }}
         run: |
           set -euo pipefail
           source "$RUNNER_TEMP/cfn.sh"
@@ -425,7 +427,7 @@ jobs:
           case "$STACK_TO_FIX" in
             cmms-app) region="$AWS_REGION" ;;
             cmms-edge) region=us-east-1 ;;
-            cmms-dr) region=eu-west-1 ;;
+            # cmms-dr is not here: it belongs to setup.sh, and the pipeline may not touch it (a console administrator does).
             *) echo "::error::Unknown stack $STACK_TO_FIX"; exit 1 ;;
           esac
           if [[ ! "$SKIP_IDS" =~ ^[A-Za-z0-9,\ ]*$ ]]; then
