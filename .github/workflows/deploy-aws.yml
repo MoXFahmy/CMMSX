@@ -9,6 +9,18 @@ on:
     types: [completed]
     branches: [main]
   workflow_dispatch:
+    inputs:
+      continue_rollback_stack:
+        description: >-
+          Recovery only: a stack stuck in UPDATE_ROLLBACK_FAILED. Pick it to run "continue update rollback" instead of
+          deploying (the failed deploy's log prints the exact stack and resources to skip). Leave on none to deploy.
+        type: choice
+        options: [none, cmms-app, cmms-edge, cmms-dr]
+        default: none
+      resources_to_skip:
+        description: Recovery only - the logical resource ids to skip, comma-separated (copy them from the failed deploy's log).
+        type: string
+        default: ""
 
 permissions:
   id-token: write # sign in to AWS with GitHub's OIDC token, no stored keys
@@ -24,7 +36,7 @@ jobs:
     # Only this repository's own pushes to main (never pull requests from forks) and manual runs.
     if: >-
       vars.AWS_DEPLOY_ROLE_ARN != '' && (
-        github.event_name == 'workflow_dispatch' || (
+        (github.event_name == 'workflow_dispatch' && (inputs.continue_rollback_stack == '' || inputs.continue_rollback_stack == 'none')) || (
           github.event.workflow_run.conclusion == 'success' &&
           github.event.workflow_run.event == 'push' &&
           github.event.workflow_run.head_repository.full_name == github.repository))
@@ -46,7 +58,28 @@ jobs:
       PUSH_SECRET_ARN: ${{ vars.CMMS_PUSH_SECRET_ARN }}
       # AI assistant (optional): ARN of the Secrets Manager secret holding the Claude API key. See docs/AI_ASSISTANT.md.
       ANTHROPIC_SECRET_ARN: ${{ vars.CMMS_ANTHROPIC_SECRET_ARN }}
+      # Security and backups (0.29.0). The alert address is required; the rest have safe defaults.
+      ALERT_EMAIL: ${{ vars.CMMS_ALERT_EMAIL }}
+      WAF_MODE: ${{ vars.CMMS_WAF_MODE || 'count' }}
+      REQUIRE_EMAIL_CONFIRMATION: ${{ vars.CMMS_REQUIRE_EMAIL_CONFIRMATION || 'false' }}
+      CREATE_GUARDDUTY_LONDON: ${{ vars.CMMS_CREATE_GUARDDUTY_LONDON || 'true' }}
+      CREATE_GUARDDUTY_US_EAST: ${{ vars.CMMS_CREATE_GUARDDUTY_US_EAST || 'true' }}
+      DB_MAJOR_ENGINE_VERSION: ${{ vars.CMMS_DB_MAJOR_ENGINE_VERSION || '16.00' }}
+      IRELAND_DB_COPY: ${{ vars.CMMS_IRELAND_DB_COPY || 'replication' }}
+      BOOTSTRAP_STACK: cmms-github
+      DR_STACK: cmms-dr
+      DR_REGION: eu-west-1
+      EDGE_STACK: cmms-edge
+      EDGE_REGION: us-east-1
     steps:
+      - name: Check the settings
+        run: |
+          if [ -z "$ALERT_EMAIL" ]; then
+            echo "::error::Set the repository variable CMMS_ALERT_EMAIL to the address that should receive CMX alarms, then re-run."
+            exit 1
+          fi
+          case "$WAF_MODE" in count|block) ;; *) echo "::error::CMMS_WAF_MODE must be count or block, not '$WAF_MODE'."; exit 1 ;; esac
+
       - uses: actions/checkout@v4
         with:
           ref: ${{ env.COMMIT }}
@@ -58,45 +91,241 @@ jobs:
           aws-region: ${{ vars.AWS_REGION }}
           role-duration-seconds: 7200
 
+      - name: Prepare the deploy helpers
+        run: |
+          # Shared by the steps below: deploy a stack through a change set that is printed first, and explain a failure.
+          cat > "$RUNNER_TEMP/cfn.sh" <<'LIB'
+          # shellcheck shell=bash
+          CFN_POLL_SLEEP="${CFN_POLL_SLEEP:-30}"
+
+          cfn_need_setup() {
+            echo "::error::Re-run deploy/aws/setup.sh in CloudShell (0.29.0 adds two stacks), then re-run this workflow."
+            exit 1
+          }
+
+          # The stack's status, NONE when it does not exist, ACCESS_DENIED when the deploy role may not look.
+          cfn_status() {
+            local out err
+            err=$(mktemp)
+            if out=$(aws cloudformation describe-stacks --region "$2" --stack-name "$1" --query 'Stacks[0].StackStatus' --output text 2>"$err"); then
+              echo "$out"
+            elif grep -qiE 'does not exist' "$err"; then
+              echo NONE
+            elif grep -qiE 'AccessDenied|not authorized' "$err"; then
+              echo ACCESS_DENIED
+            else
+              cat "$err" >&2
+              return 1
+            fi
+          }
+
+          # One output of a stack; empty when the stack or the output is missing.
+          cfn_output() {
+            local value
+            value=$(aws cloudformation describe-stacks --region "$2" --stack-name "$1" \
+              --query "Stacks[0].Outputs[?OutputKey=='$3'].OutputValue | [0]" --output text 2>/dev/null || true)
+            if [ "$value" = None ] || [ "$value" = null ]; then value=""; fi
+            echo "$value"
+          }
+
+          cfn_events() {
+            echo "Failed events of $1:"
+            aws cloudformation describe-stack-events --region "$2" --stack-name "$1" --max-items 60 \
+              --query "StackEvents[?contains(ResourceStatus, 'FAILED')].[Timestamp, LogicalResourceId, ResourceStatusReason]" \
+              --output table || true
+          }
+
+          # A stack that cannot finish rolling back: say exactly how to carry on.
+          cfn_stuck_hint() {
+            local ids
+            ids=$(aws cloudformation describe-stack-events --region "$2" --stack-name "$1" --max-items 100 \
+              --query "StackEvents[?ResourceStatus=='UPDATE_FAILED'].LogicalResourceId" --output text 2>/dev/null \
+              | tr '\t' '\n' | grep -vx "$1" | sort -u | paste -sd, - || true)
+            echo "::error::$1 is stuck in UPDATE_ROLLBACK_FAILED. Nothing more is deployed until it is unstuck."
+            echo "Fix the cause shown above, then recover with the Run workflow button (Deploy to AWS: continue_rollback_stack = $1, resources_to_skip = ${ids:-<the failed logical ids>}), or in CloudShell:"
+            echo "  aws cloudformation continue-update-rollback --region $2 --stack-name $1 --role-arn $3 --resources-to-skip ${ids//,/ }"
+            echo "Then re-run this workflow."
+          }
+
+          cfn_settle() {
+            local status n=0
+            while [ "$n" -lt 120 ]; do
+              status=$(cfn_status "$1" "$2") || return 1
+              case "$status" in *_IN_PROGRESS) sleep "$CFN_POLL_SLEEP"; n=$((n + 1)) ;; *) echo "$status"; return 0 ;; esac
+            done
+            echo "$status"
+          }
+
+          cfn_after_failure() {
+            local status
+            cfn_events "$1" "$2"
+            status=$(cfn_settle "$1" "$2") || status=UNKNOWN
+            echo "$1 ended in $status."
+            if [ "$status" = UPDATE_ROLLBACK_FAILED ]; then cfn_stuck_hint "$1" "$2" "$3"; fi
+          }
+
+          # cfn_deploy STACK REGION TEMPLATE EXEC_ROLE RECREATE_IF_FAILED_FIRST_CREATE(yes|no) [aws deploy arguments...]
+          cfn_deploy() {
+            local stack=$1 region=$2 template=$3 role=$4 recreate=$5 status kind cs log
+            shift 5
+            status=$(cfn_status "$stack" "$region") || return 1
+            case "$status" in
+              ACCESS_DENIED) cfn_need_setup ;;
+              ROLLBACK_COMPLETE)
+                if [ "$recreate" != yes ]; then
+                  echo "::error::$stack is in ROLLBACK_COMPLETE after a failed first deployment. It holds data that must not be removed automatically: look at its events in the CloudFormation console, then remove it by hand and re-run."
+                  return 1
+                fi
+                echo "Removing the failed first deployment of $stack..."
+                aws cloudformation delete-stack --region "$region" --stack-name "$stack" --role-arn "$role"
+                aws cloudformation wait stack-delete-complete --region "$region" --stack-name "$stack"
+                status=NONE ;;
+              UPDATE_ROLLBACK_FAILED) cfn_stuck_hint "$stack" "$region" "$role"; return 1 ;;
+              REVIEW_IN_PROGRESS) ;;
+              *_IN_PROGRESS) echo "::error::$stack is busy ($status). Wait for it to finish, then re-run."; return 1 ;;
+            esac
+            kind=update
+            if [ "$status" = NONE ] || [ "$status" = REVIEW_IN_PROGRESS ]; then kind=create; fi
+
+            log=$(mktemp)
+            if ! aws cloudformation deploy --region "$region" --stack-name "$stack" --template-file "$template" \
+              --role-arn "$role" --capabilities CAPABILITY_IAM --tags application=4c-cmms \
+              --no-fail-on-empty-changeset --no-execute-changeset "$@" >"$log" 2>&1; then
+              cat "$log"
+              if grep -qiE 'AccessDenied|not authorized' "$log"; then cfn_need_setup; fi
+              return 1
+            fi
+
+            # The deploy role may not list change sets, so take the change set's ARN from what deploy printed.
+            cs=$(grep -oE 'arn:[a-z-]+:cloudformation:[^ ]+:changeSet/[^ ]+' "$log" | tail -n 1 || true)
+            if [ -z "$cs" ]; then
+              echo "$stack: no changes."
+              return 0
+            fi
+
+            echo "Changes to $stack ($region):"
+            # shellcheck disable=SC2016 # the backticks are a JMESPath literal, not a shell expansion
+            aws cloudformation describe-change-set --region "$region" --stack-name "$stack" --change-set-name "$cs" \
+              --query 'Changes[].ResourceChange.[Action,LogicalResourceId,ResourceType,Replacement||`"-"`]' --output table
+            aws cloudformation execute-change-set --region "$region" --stack-name "$stack" --change-set-name "$cs"
+            if ! aws cloudformation wait "stack-$kind-complete" --region "$region" --stack-name "$stack"; then
+              cfn_after_failure "$stack" "$region" "$role"
+              return 1
+            fi
+            echo "$stack: done."
+          }
+          LIB
+
+      - name: Read the bootstrap stack
+        id: boot
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/cfn.sh"
+          status=$(cfn_status "$BOOTSTRAP_STACK" "$AWS_REGION")
+          if [ "$status" = ACCESS_DENIED ] || [ "$status" = NONE ]; then cfn_need_setup; fi
+          exec_role=$(cfn_output "$BOOTSTRAP_STACK" "$AWS_REGION" CloudFormationExecutionRoleArn)
+          boundary=$(cfn_output "$BOOTSTRAP_STACK" "$AWS_REGION" BoundaryPolicyArn)
+          bucket=$(cfn_output "$BOOTSTRAP_STACK" "$AWS_REGION" TemplateBucketName)
+          if [ -z "$exec_role" ] || [ -z "$boundary" ] || [ -z "$bucket" ]; then cfn_need_setup; fi
+          {
+            echo "exec_role=$exec_role"
+            echo "boundary=$boundary"
+            echo "bucket=$bucket"
+          } >> "$GITHUB_OUTPUT"
+
       - name: Sign in to the image registry
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
 
       - uses: docker/setup-buildx-action@v3
 
-      - name: Build and push the image
+      - name: Build the image
         uses: docker/build-push-action@v6
         with:
           context: .
-          push: true
+          load: true
+          push: false
           tags: ${{ steps.ecr.outputs.registry }}/cmms:${{ env.COMMIT }}
           build-args: VERSION=${{ env.COMMIT }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-      - name: Deploy (the first run takes about 30 minutes, mostly creating the database)
-        id: deploy
+      - name: Scan the image (stops on a critical flaw that has a fix)
         env:
           IMAGE: ${{ steps.ecr.outputs.registry }}/cmms:${{ env.COMMIT }}
         run: |
-          account=$(aws sts get-caller-identity --query Account --output text)
-          cfn_role="arn:aws:iam::${account}:role/cmms-cfn-exec-${AWS_REGION}"
+          docker run --rm -v /var/run/docker.sock:/var/run/docker.sock aquasec/trivy:0.58.2 \
+            image --scanners vuln --severity CRITICAL --ignore-unfixed --exit-code 1 --no-progress "$IMAGE"
+
+      - name: Push the image
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/cmms:${{ env.COMMIT }}
+        run: docker push "$IMAGE"
+
+      - name: Deploy the recovery stack (cmms-dr, Ireland)
+        env:
+          EXEC_ROLE: ${{ steps.boot.outputs.exec_role }}
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/cfn.sh"
+          # Never removed automatically (recreate = no): it holds the locked copies.
+          cfn_deploy "$DR_STACK" "$DR_REGION" infra/aws/dr.yml "$EXEC_ROLE" no
+
+      - name: Deploy the edge stack (cmms-edge, N. Virginia)
+        env:
+          EXEC_ROLE: ${{ steps.boot.outputs.exec_role }}
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/cfn.sh"
+          cfn_deploy "$EDGE_STACK" "$EDGE_REGION" infra/aws/edge.yml "$EXEC_ROLE" yes \
+            --parameter-overrides \
+              WafMode="$WAF_MODE" \
+              AlertEmail="$ALERT_EMAIL" \
+              CreateGuardDutyDetector="$CREATE_GUARDDUTY_US_EAST"
+
+      - name: Read the stack outputs
+        id: outputs
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/cfn.sh"
+          web_acl=$(cfn_output "$EDGE_STACK" "$EDGE_REGION" WebAclArn)
+          vault=$(cfn_output "$DR_STACK" "$DR_REGION" DrVaultArn)
+          key=$(cfn_output "$DR_STACK" "$DR_REGION" DrKeyArn)
+          files_copy=$(cfn_output "$DR_STACK" "$DR_REGION" FilesCopyBucketArn)
+          backups_copy=$(cfn_output "$DR_STACK" "$DR_REGION" BackupsCopyBucketArn)
+          if [ -z "$web_acl" ] || [ -z "$vault" ] || [ -z "$key" ] || [ -z "$files_copy" ] || [ -z "$backups_copy" ]; then cfn_need_setup; fi
+          {
+            echo "web_acl=$web_acl"
+            echo "vault=$vault"
+            echo "key=$key"
+            echo "files_copy=$files_copy"
+            echo "backups_copy=$backups_copy"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Deploy the application (the first run takes about 30 minutes, mostly creating the database)
+        id: deploy
+        env:
+          IMAGE: ${{ steps.ecr.outputs.registry }}/cmms:${{ env.COMMIT }}
+          EXEC_ROLE: ${{ steps.boot.outputs.exec_role }}
+          BOUNDARY_ARN: ${{ steps.boot.outputs.boundary }}
+          TEMPLATE_BUCKET: ${{ steps.boot.outputs.bucket }}
+          WEB_ACL_ARN: ${{ steps.outputs.outputs.web_acl }}
+          DR_VAULT_ARN: ${{ steps.outputs.outputs.vault }}
+          DR_KEY_ARN: ${{ steps.outputs.outputs.key }}
+          FILES_COPY_ARN: ${{ steps.outputs.outputs.files_copy }}
+          BACKUPS_COPY_ARN: ${{ steps.outputs.outputs.backups_copy }}
+        run: |
+          set -euo pipefail
+          source "$RUNNER_TEMP/cfn.sh"
           prefix_list=$(aws ec2 describe-managed-prefix-lists \
             --filters Name=prefix-list-name,Values=com.amazonaws.global.cloudfront.origin-facing \
             --query 'PrefixLists[0].PrefixListId' --output text)
           if [[ ! "$prefix_list" =~ ^pl- ]]; then echo "::error::CloudFront prefix list not found in $AWS_REGION"; exit 1; fi
 
-          # A first deployment that failed and rolled back cannot be updated; remove it and start again.
-          status=$(aws cloudformation describe-stacks --stack-name "$STACK" --query 'Stacks[0].StackStatus' --output text 2>/dev/null || echo NONE)
-          if [ "$status" = ROLLBACK_COMPLETE ]; then
-            echo "Removing the failed first deployment..."
-            aws cloudformation delete-stack --stack-name "$STACK" --role-arn "$cfn_role"
-            aws cloudformation wait stack-delete-complete --stack-name "$STACK"
-          fi
-
-          aws cloudformation deploy --stack-name "$STACK" --template-file infra/aws/cmms.yml \
-            --role-arn "$cfn_role" --capabilities CAPABILITY_IAM --no-fail-on-empty-changeset \
-            --tags application=4c-cmms \
+          # The template is too big to send inline, so it goes through the bootstrap's template bucket.
+          # A first deployment that failed and rolled back cannot be updated; it is removed and started again.
+          cfn_deploy "$STACK" "$AWS_REGION" infra/aws/cmms.yml "$EXEC_ROLE" yes \
+            --s3-bucket "$TEMPLATE_BUCKET" \
             --parameter-overrides \
               ImageUri="$IMAGE" \
               OriginPrefixListId="$prefix_list" \
@@ -108,7 +337,18 @@ jobs:
               Domain="$DOMAIN" \
               DomainCertificateArn="$DOMAIN_CERTIFICATE_ARN" \
               PushSecretArn="$PUSH_SECRET_ARN" \
-              AnthropicSecretArn="$ANTHROPIC_SECRET_ARN"
+              AnthropicSecretArn="$ANTHROPIC_SECRET_ARN" \
+              BoundaryPolicyArn="$BOUNDARY_ARN" \
+              WebAclArn="$WEB_ACL_ARN" \
+              DrVaultArn="$DR_VAULT_ARN" \
+              DrKeyArn="$DR_KEY_ARN" \
+              FilesCopyBucketArn="$FILES_COPY_ARN" \
+              BackupsCopyBucketArn="$BACKUPS_COPY_ARN" \
+              RequireEmailConfirmation="$REQUIRE_EMAIL_CONFIRMATION" \
+              DbMajorEngineVersion="$DB_MAJOR_ENGINE_VERSION" \
+              IrelandDatabaseCopy="$IRELAND_DB_COPY" \
+              AlertEmail="$ALERT_EMAIL" \
+              CreateGuardDutyDetector="$CREATE_GUARDDUTY_LONDON"
 
           url=$(aws cloudformation describe-stacks --stack-name "$STACK" \
             --query "Stacks[0].Outputs[?OutputKey=='Url'].OutputValue" --output text)
@@ -116,13 +356,6 @@ jobs:
           cloudfront=$(aws cloudformation describe-stacks --stack-name "$STACK" \
             --query "Stacks[0].Outputs[?OutputKey=='DistributionDomain'].OutputValue" --output text)
           echo "cloudfront=$cloudfront" >> "$GITHUB_OUTPUT"
-
-      - name: Show why the deployment failed
-        if: failure() && steps.deploy.outcome == 'failure'
-        run: |
-          aws cloudformation describe-stack-events --stack-name "$STACK" --max-items 40 \
-            --query "StackEvents[?contains(ResourceStatus, 'FAILED')].[Timestamp, LogicalResourceId, ResourceStatusReason]" \
-            --output table || true
 
       - name: Wait for the new version to answer
         env:
@@ -147,7 +380,66 @@ jobs:
             echo "Version \`$(cat VERSION 2>/dev/null || echo unknown)\` · commit \`$COMMIT\` · region \`$AWS_REGION\` · stack \`$STACK\` · database \`$DB_INSTANCE_CLASS\` · sign-up open: \`$ALLOW_REGISTRATION\`"
             echo ""
             echo "CloudFront address: \`${{ steps.deploy.outputs.cloudfront }}\`${DOMAIN:+ (own address: \`$DOMAIN\`)} · e-mail: ${MAIL_FROM_ADDRESS:-off}"
+            echo ""
+            echo "Web firewall: \`$WAF_MODE\` · e-mail confirmation on sign-up: \`$REQUIRE_EMAIL_CONFIRMATION\` · alarms go to \`$ALERT_EMAIL\`"
+            if [ "$WAF_MODE" = count ]; then
+              echo ""
+              echo "The web firewall is only counting. After a day or two with no real users caught, set CMMS_WAF_MODE to block and re-run."
+            fi
           } >> "$GITHUB_STEP_SUMMARY"
+
+  recover:
+    name: Continue a stuck rollback
+    # Recovery only: runs when a stack is chosen on the Run workflow form. It deploys nothing.
+    if: >-
+      vars.AWS_DEPLOY_ROLE_ARN != '' && github.event_name == 'workflow_dispatch' &&
+      inputs.continue_rollback_stack != '' && inputs.continue_rollback_stack != 'none'
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      STACK_TO_FIX: ${{ inputs.continue_rollback_stack }}
+      SKIP_IDS: ${{ inputs.resources_to_skip }}
+    steps:
+      - name: Sign in to AWS
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 7200
+
+      - name: Continue the rollback
+        run: |
+          set -euo pipefail
+          case "$STACK_TO_FIX" in
+            cmms-app) region="$AWS_REGION" ;;
+            cmms-edge) region=us-east-1 ;;
+            cmms-dr) region=eu-west-1 ;;
+            *) echo "::error::Unknown stack $STACK_TO_FIX"; exit 1 ;;
+          esac
+          if [[ ! "$SKIP_IDS" =~ ^[A-Za-z0-9,\ ]*$ ]]; then
+            echo "::error::resources_to_skip may only hold logical resource ids separated by commas."
+            exit 1
+          fi
+          account=$(aws sts get-caller-identity --query Account --output text)
+          cfn_role="arn:aws:iam::${account}:role/cmms-cfn-exec-${AWS_REGION}"
+          status=$(aws cloudformation describe-stacks --region "$region" --stack-name "$STACK_TO_FIX" --query 'Stacks[0].StackStatus' --output text)
+          if [ "$status" != UPDATE_ROLLBACK_FAILED ]; then
+            echo "::error::$STACK_TO_FIX is in $status, not UPDATE_ROLLBACK_FAILED. Nothing to continue."
+            exit 1
+          fi
+          read -r -a skip <<< "${SKIP_IDS//,/ }"
+          args=()
+          if [ "${#skip[@]}" -gt 0 ]; then args=(--resources-to-skip "${skip[@]}"); fi
+          aws cloudformation continue-update-rollback --region "$region" --stack-name "$STACK_TO_FIX" --role-arn "$cfn_role" "${args[@]}"
+          if aws cloudformation wait stack-rollback-complete --region "$region" --stack-name "$STACK_TO_FIX"; then
+            echo "$STACK_TO_FIX rolled back. Re-run Deploy to AWS (with continue_rollback_stack on none) to deploy again."
+          else
+            aws cloudformation describe-stack-events --region "$region" --stack-name "$STACK_TO_FIX" --max-items 40 \
+              --query "StackEvents[?contains(ResourceStatus, 'FAILED')].[Timestamp, LogicalResourceId, ResourceStatusReason]" --output table || true
+            echo "::error::$STACK_TO_FIX is still not rolled back. Add the failed resources above to resources_to_skip and run again."
+            exit 1
+          fi
 
   tag:
     name: Tag the release
