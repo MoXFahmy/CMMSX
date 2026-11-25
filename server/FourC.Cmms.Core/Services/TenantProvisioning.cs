@@ -80,7 +80,8 @@ public static partial class TenantProvisioning
     /// <summary>Creates a tenant with default roles and categories. The caller's DbContext must be bound to the new tenant id.</summary>
     public static async Task<(Tenant Tenant, AppUser Admin)> CreateAsync(
         CmmsDbContext db, IPasswordHasher<AppUser> hasher, Guid tenantId, string orgName, string adminName, string adminEmail, string adminPassword,
-        bool seedCategories = true, string? language = null, CancellationToken ct = default)
+        bool seedCategories = true, string? language = null, CancellationToken ct = default,
+        DateTimeOffset? signUpPendingSince = null, string? signUpTokenHash = null, DateTimeOffset? signUpTokenExpires = null)
     {
         var slug = Slugify(orgName);
         var baseSlug = slug; var i = 1;
@@ -88,7 +89,9 @@ public static partial class TenantProvisioning
 
         return await db.InTransactionAsync(async token =>
         {
-        var tenant = new Tenant { Id = tenantId, Name = orgName.Trim(), Slug = slug };
+        // Sign-up e-mail check (0.29.0): the pending state is saved with the organization itself, never after it.
+        var tenant = new Tenant { Id = tenantId, Name = orgName.Trim(), Slug = slug,
+            SignUpPendingSince = signUpPendingSince, SignUpTokenHash = signUpTokenHash, SignUpTokenExpires = signUpTokenExpires };
         if (language is not null && Languages.IsSupported(language)) tenant.Settings.DefaultLanguage = language;
         db.Tenants.Add(tenant);
         var roles = DefaultRoles.Select(r => new Role { TenantId = tenantId, Name = r.Name, Description = r.Description, Permissions = [.. r.Permissions], IsSystem = r.Name == "Administrator" }).ToList();

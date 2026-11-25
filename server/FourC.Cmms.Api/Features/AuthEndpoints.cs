@@ -103,18 +103,18 @@ public static class AuthEndpoints
 
             var tenantId = Guid.CreateVersion7();
             await using var db = new CmmsDbContext(options, new FixedTenantContext(tenantId, source: "Web"));
-            var (tenant, admin) = await TenantProvisioning.CreateAsync(db, hasher, tenantId, req.OrganizationName, req.FullName, req.Email, req.Password!, language: Translator.CurrentLanguage, ct: ct);
             if (confirm)
             {
-                // The owner waits for the e-mailed link (0.29.0); nothing is signed in until it is used.
+                // The owner waits for the e-mailed link (0.29.0): the organization is saved as pending in the same commit that creates it,
+                // so it is never usable before the link, even if queueing the e-mail fails (the owner can then ask for a new link).
                 var token = SignUpConfirmation.NewToken();
-                tenant.SignUpPendingSince = DateTimeOffset.UtcNow;
-                tenant.SignUpTokenHash = SignUpConfirmation.Hash(token);
-                tenant.SignUpTokenExpires = DateTimeOffset.UtcNow + SignUpConfirmation.LinkLife;
-                await mail.SignUpConfirmationAsync(db, tenant, admin, token, ct);
+                var (pending, owner) = await TenantProvisioning.CreateAsync(db, hasher, tenantId, req.OrganizationName, req.FullName, req.Email, req.Password!, language: Translator.CurrentLanguage, ct: ct,
+                    signUpPendingSince: DateTimeOffset.UtcNow, signUpTokenHash: SignUpConfirmation.Hash(token), signUpTokenExpires: DateTimeOffset.UtcNow + SignUpConfirmation.LinkLife);
+                await mail.SignUpConfirmationAsync(db, pending, owner, token, ct);
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(new { ok = true, confirm = true });
             }
+            var (_, admin) = await TenantProvisioning.CreateAsync(db, hasher, tenantId, req.OrganizationName, req.FullName, req.Email, req.Password!, language: Translator.CurrentLanguage, ct: ct);
             var user = await users.FindByIdAsync(admin.Id.ToString());
             await signIn.SignInAsync(user!, isPersistent: true);
             return Results.Ok(new { ok = true });
