@@ -95,6 +95,16 @@ public static class InventoryEndpoints
             paged.Total, paged.Page, paged.PageSize);
     }
 
+    /// <summary>
+    /// One quantity move in a transaction that may run again after a dropped connection (0.29.1): starts from what is stored, because a failed
+    /// try may have changed the part's average cost in memory (and a receipt would then apply it twice).
+    /// </summary>
+    private static Task<StockTransaction> PostFreshAsync(CmmsDbContext db, ITenantContext ctx, StockPost post, CancellationToken tk)
+    {
+        db.ChangeTracker.Clear();
+        return StockLedger.PostAsync(db, ctx, post, tk);
+    }
+
     public static void MapInventoryEndpoints(this RouteGroupBuilder api)
     {
         PeopleEndpoints.MapLookup(api, "/part-groups", "Part groups", db => db.PartGroups, () => new PartGroup { Code = "", Name = "" }, Permissions.InventoryManage,
@@ -337,7 +347,7 @@ public static class InventoryEndpoints
                 }, ct);
                 return Results.Ok(new { Units = units.Select(u => new { u.Id, u.AssetNumber, u.SerialNumber }) });
             }
-            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Receipt, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
+            var tx = await db.InTransactionAsync(tk => PostFreshAsync(db, ctx, new StockPost(StockTransactionType.Receipt, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
                 i.UnitCost, SupplierId: i.SupplierId, Reference: i.Reference, BatchNumber: i.BatchNumber, ExpiryDate: i.ExpiryDate, Notes: i.Notes), tk), ct);
             return Results.Ok(new { tx.Id });
         }).RequirePermission(Permissions.InventoryTransact);
@@ -350,7 +360,7 @@ public static class InventoryEndpoints
                 WorkOrderId: i.WorkOrderId, LocationId: i.LocationId, BatchNumber: i.BatchNumber, Notes: i.Notes, CostCentreId: await DirectCostCentreAsync(db, i, ct));
             await StockLedger.CheckAsync(db, post, ct); // a batch that expired or ran out is said before "Issue anyway?"
             if (!i.ConfirmReserved && await ReservedConflictAsync(db, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.WorkOrderId, ct) is { } reserved) return reserved;
-            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, post, tk), ct);
+            var tx = await db.InTransactionAsync(tk => PostFreshAsync(db, ctx, post, tk), ct);
             return Results.Ok(new { tx.Id });
         }).RequirePermission(Permissions.InventoryTransact);
 
@@ -368,7 +378,7 @@ public static class InventoryEndpoints
                 lastIssue = await db.StockTransactions.Where(x => x.WorkOrderId == wo && x.PartId == i.PartId && x.Type == StockTransactionType.Issue).OrderByDescending(x => x.CreatedAt).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
             }
             var costCentre = await DirectCostCentreAsync(db, i, ct);
-            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Return, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
+            var tx = await db.InTransactionAsync(tk => PostFreshAsync(db, ctx, new StockPost(StockTransactionType.Return, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
                 WorkOrderId: i.WorkOrderId, LocationId: i.LocationId, BatchNumber: i.BatchNumber, Notes: i.Notes, RelatedTransactionId: lastIssue,
                 CostCentreId: costCentre), tk), ct);
             return Results.Ok(new { tx.Id });
@@ -391,7 +401,7 @@ public static class InventoryEndpoints
         {
             if (Missing(i.PartId, i.StoreId) is { } bad) return bad;
             if (string.IsNullOrWhiteSpace(i.Notes)) return new Validator().Required("notes", i.Notes, "Reason").Problem();
-            var tx = await db.InTransactionAsync(tk => StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Adjustment, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
+            var tx = await db.InTransactionAsync(tk => PostFreshAsync(db, ctx, new StockPost(StockTransactionType.Adjustment, i.PartId!.Value, i.StoreId!.Value, i.Quantity, i.Date ?? Today,
                 BatchNumber: i.BatchNumber, Notes: i.Notes), tk), ct);
             return Results.Ok(new { tx.Id });
         }).RequirePermission(Permissions.InventoryTransact);

@@ -1306,5 +1306,6 @@
  "Each store can be listed only once.": "يمكن ذكر كل مخزن مرة واحدة فقط.",
  "These budgets were changed by someone else. Reload them and try again.": "غيّر شخص آخر هذه الميزانيات. أعد تحميلها وحاول مرة أخرى.",
  "A list or a value is given twice. Capital letters don't make them different.": "قائمة أو قيمة مذكورة مرتين. الأحرف الكبيرة لا تجعلهما مختلفتين.",
- "Fill in every list and every value: none can be empty.": "املأ كل قائمة وكل قيمة: لا يمكن ترك أي منها فارغًا."
+ "Fill in every list and every value: none can be empty.": "املأ كل قائمة وكل قيمة: لا يمكن ترك أي منها فارغًا.",
+ "Serial numbers were already switched on for this part by someone else.": "قام شخص آخر بتفعيل الأرقام التسلسلية لهذه القطعة قبلك."
 }

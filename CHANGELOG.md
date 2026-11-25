@@ -57,6 +57,8 @@ notification now opens the right page.
 
 ### Right totals
 - **Completed (30 days)** on the dashboard counts the organization's own days, and the list its link opens shows the same orders.
+- The failure tree report and the reports left open at the end (no "to" date) now use the organization's days and today, as the
+  work orders its lines open do; the year-to-date presets use the organization's today too.
 - An asset's work history counts a stop shared by two work orders once.
 - A re-order proposal shows one total per currency instead of adding prices in different currencies.
 - The year-to-date cost-centre budget counts the current month only for the days that have passed (partly covered months in a
@@ -67,7 +69,8 @@ notification now opens the right page.
   budget at once, odd lists sent to the lists screen, duplicate stores in a switch-on, a cost centre that is unknown or inactive,
   and a request access window with an empty date now get a plain message (409 or 400) instead of a server error or a quietly
   wrong save. The purchase-order API refuses a link to a request line that is unknown, hidden, not approved, or already on another
-  order. Switching a part to serial numbers while stock moves can no longer slip through.
+  order. Switching a part to serial numbers while stock moves can no longer slip through, and a second switch-on at the same moment is
+  told it was already switched on.
 - Restarting an approval asks for confirmation.
 - The request form drops recipients the chosen site can't offer.
 

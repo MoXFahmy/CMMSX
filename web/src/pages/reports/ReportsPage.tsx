@@ -19,6 +19,7 @@ import { CostCentrePicker, useCostCentres } from '@/components/CostCentrePicker'
 import { PrintHeader } from '@/components/PrintHeader';
 import { printFilters } from './printFilters';
 import { isTree, PLAN_PARTS, planText, rowLink, treeRows, type PlanCell } from './reportCells';
+import { localToday, PRESETS } from './presets';
 import { fmtDate, fmtDateTime, fmtNumber, fmtPrice } from '@/components/utils';
 import { downloadCsv } from '../inventory/InventoryPage';
 import { groupData, useAssetGroups } from '@/components/ReferencePickers';
@@ -62,15 +63,6 @@ export function ReportsPage() {
   );
 }
 
-const PRESETS: { key: string; range: () => [string, string] }[] = [
-  { key: 'thisMonth', range: () => [dayjs().startOf('month').format('YYYY-MM-DD'), dayjs().format('YYYY-MM-DD')] },
-  { key: 'lastMonth', range: () => [dayjs().subtract(1, 'month').startOf('month').format('YYYY-MM-DD'), dayjs().subtract(1, 'month').endOf('month').format('YYYY-MM-DD')] },
-  { key: 'last90', range: () => [dayjs().subtract(89, 'day').format('YYYY-MM-DD'), dayjs().format('YYYY-MM-DD')] },
-  { key: 'ytd', range: () => [dayjs().startOf('year').format('YYYY-MM-DD'), dayjs().format('YYYY-MM-DD')] },
-  { key: 'last12', range: () => [dayjs().subtract(12, 'month').add(1, 'day').format('YYYY-MM-DD'), dayjs().format('YYYY-MM-DD')] },
-  { key: 'lastYear', range: () => [dayjs().subtract(1, 'year').startOf('year').format('YYYY-MM-DD'), dayjs().subtract(1, 'year').endOf('year').format('YYYY-MM-DD')] },
-];
-
 export function ReportViewPage() {
   const { t } = useTranslation();
   const { key = '' } = useParams();
@@ -86,7 +78,7 @@ export function ReportViewPage() {
   // Budget against actual (0.20.0) opens on this year to date; the others on the last 12 months.
   const defaultPreset = key === 'budget-vs-actual' ? 'ytd' : 'last12';
   const preset = p('preset') || (p('from') ? '' : defaultPreset);
-  const [from, to] = preset ? PRESETS.find((x) => x.key === preset)!.range() : [p('from'), p('to')];
+  const [from, to] = preset ? PRESETS.find((x) => x.key === preset)!.range(localToday(me?.tenant.settings.timeZone)) : [p('from'), p('to')];
   const groupParam = def?.params.find((x) => x.name === 'groupBy');
   const daysParam = def?.params.find((x) => x.name === 'days');
   // 0.14.0: one asset (with its components) and a year.

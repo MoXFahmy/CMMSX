@@ -173,6 +173,7 @@ public static partial class TechEndpoints
         {
             answer = await db.InTransactionAsync(async tk =>
             {
+                db.ChangeTracker.Clear(); // may run again after a dropped connection: the change loads what it needs afresh (0.29.1)
                 var result = await apply();
                 db.TechActions.Add(Record(userId, clientId, type, at, result));
                 await db.SaveChangesAsync(tk);

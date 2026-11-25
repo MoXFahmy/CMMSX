@@ -101,7 +101,9 @@ public static class ReportEndpoints
             var def = Catalog.FirstOrDefault(r => r.Key == key);
             if (def is null) return Results.NotFound();
             if (!(await perms.GetAsync(Guid.Parse(http.User.FindFirstValue(ClaimTypes.NameIdentifier)!))).Contains(def.Permission)) return Results.Forbid();
-            var t = to ?? Today;
+            // The organization's own today (0.29.1), not UTC's: a range left open at the end stops on the organization's date.
+            var orgSettings = (await db.Tenants.AsNoTracking().FirstAsync(x => x.Id == db.CurrentTenantId, ct)).Settings;
+            var t = to ?? Downtime.LocalDay(DateTimeOffset.UtcNow, Downtime.Zone(orgSettings.TimeZone));
             var f = from ?? t.AddMonths(-12).AddDays(1);
             if (f > t) throw new FourC.Cmms.Core.Common.DomainException("The start date is after the end date.");
             if (t.DayNumber - f.DayNumber > 3700) throw new FourC.Cmms.Core.Common.DomainException("Choose a period of ten years or less.");
@@ -116,7 +118,6 @@ public static class ReportEndpoints
             var y = year ?? Today.Year;
             if (def.Params.Any(p => p.Type == "year") && y is < 2000 or > 2100) throw new FourC.Cmms.Core.Common.DomainException(ChooseYear);
             // The organization's names for types, priorities, statuses and criticality (0.21.0) label the rows.
-            var orgSettings = (await db.Tenants.AsNoTracking().FirstAsync(x => x.Id == db.CurrentTenantId, ct)).Settings;
             var a = new ReportArgs(f, t, siteId, gb, Math.Clamp(days ?? 180, 1, 3650), assetId, y, components == true, costCentreId, orgSettings, byGroup);
             ReportResult r = key switch
             {
@@ -546,7 +547,9 @@ public static class ReportEndpoints
 
     private static async Task<ReportResult> FailureTreeAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
     {
-        var (s, e) = (Start(a.From), End(a.To));
+        // Days are the organization's (0.29.1), as the work order list its lines open reads completedFrom and completedTo.
+        var tz = Downtime.Zone(a.Settings?.TimeZone);
+        var (s, e) = (FourC.Cmms.Core.Assets.DowntimeMath.Midnight(a.From, tz), FourC.Cmms.Core.Assets.DowntimeMath.Midnight(a.To.AddDays(1), tz));
         var wos = InFailureTree(Wo(db, a).Where(w => w.CompletedAt >= s && w.CompletedAt < e));
         var items = await wos.Select(w => new
         {

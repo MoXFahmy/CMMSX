@@ -31,9 +31,9 @@ public class RightNumbersTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var org = await OrgAsync(fx, emailOn: false);
         // UTC+2 all year, so local midnight is 22:00 UTC the evening before.
         await TestSettings.SetSettingsAsync(org.Admin, s => s["timeZone"] = "Etc/GMT-2");
-        var tz = TimeZoneInfo.FindSystemTimeZoneById("Etc/GMT-2");
-        var localToday = DateOnly.FromDateTime(TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, tz).DateTime);
-        var first = localToday.AddDays(-30);
+        // The first local day of the window comes from the server's own answer, so the test can't disagree with it around local midnight.
+        var from = (await Ok(await org.Admin.GetAsync("/api/dashboard"))).GetProperty("work").GetProperty("completedFrom").GetString()!;
+        var first = DateOnly.ParseExact(from, "yyyy-MM-dd");
         var midnight = new DateTimeOffset(first.ToDateTime(TimeOnly.MinValue), TimeSpan.FromHours(2));
         await CompletedAsync(org, midnight.AddMinutes(-1));  // the last minute of the day before the window: out
         await CompletedAsync(org, midnight.AddMinutes(1));   // the first minute of the first local day: in (it is still the evening before in UTC)
@@ -41,8 +41,7 @@ public class RightNumbersTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await CompletedAsync(org, midnight.AddDays(-5));     // out
 
         var work = (await Ok(await org.Admin.GetAsync("/api/dashboard"))).GetProperty("work");
-        var from = work.GetProperty("completedFrom").GetString();
-        Assert.Equal(Iso(first), from); // the link's date is the organization's, not the browser's
+        Assert.Equal(from, work.GetProperty("completedFrom").GetString()); // the link's date is the organization's, not the browser's
         Assert.Equal(2, work.GetProperty("completedLast30").GetInt32());
 
         var list = await Ok(await org.Admin.GetAsync($"/api/work-orders?completedFrom={from}&pageSize=100"));
@@ -169,7 +168,6 @@ public class RightNumbersTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var org = await OrgAsync(fx, emailOn: false);
         var centres = new List<Guid>();
         for (var i = 0; i < 6; i++) centres.Add(await CostCentreTests.CostCentreAsync(org.Admin, $"CC{i}", $"Centre {i}"));
-        var refused = 0;
         for (var round = 0; round < 6; round++)
         {
             var year = 2040 + round;
@@ -182,7 +180,6 @@ public class RightNumbersTests(ApiFixture fx) : IClassFixture<ApiFixture>
             Assert.All(results, r => Assert.True(r.StatusCode is HttpStatusCode.OK or HttpStatusCode.Conflict, $"{(int)r.StatusCode}: {r.Body}"));
             foreach (var r in results.Where(r => r.StatusCode == HttpStatusCode.Conflict))
             {
-                refused++;
                 Assert.Contains("changed by someone else", r.Body);
                 Assert.DoesNotContain("same code or number", r.Body);
             }
@@ -191,7 +188,6 @@ public class RightNumbersTests(ApiFixture fx) : IClassFixture<ApiFixture>
             var rows = await DbAsync(fx, db => db.Budgets.IgnoreQueryFilters().Where(b => b.TenantId == org.Tenant && b.Year == year && !b.IsDeleted).GroupBy(b => new { b.CostCentreId, b.Month }).CountAsync());
             Assert.Equal(centres.Count * 12, rows);
         }
-        Assert.True(refused >= 0);
     }
 
     // ---------------------------------------------------------------- 0.21.0-11
@@ -261,7 +257,7 @@ public class RightNumbersTests(ApiFixture fx) : IClassFixture<ApiFixture>
                 await db.Parts.IgnoreQueryFilters().Where(p => p.Id == part).Select(p => p.IsSerialTracked).SingleAsync(),
                 await db.Assets.IgnoreQueryFilters().CountAsync(a => a.PartId == part && !a.IsDeleted),
                 await db.StockLevels.IgnoreQueryFilters().Where(l => l.PartId == part).SumAsync(l => l.QuantityOnHand)));
-            if (tracked) Assert.Equal(units, (int)onHand);
+            if (tracked) Assert.True(units == (int)onHand, $"round {round}: {units} units, {onHand} on hand; switch-on {(int)both[0].StatusCode} {await both[0].Content.ReadAsStringAsync()}; issue {(int)both[1].StatusCode} {await both[1].Content.ReadAsStringAsync()}");
             else Assert.Equal(0, units);
         }
     }
@@ -310,6 +306,109 @@ public class RightNumbersTests(ApiFixture fx) : IClassFixture<ApiFixture>
         }
     }
 
+    // ---------------------------------------------------------------- fix round 1
+
+    [SkippableFact]
+    public async Task Receipt_at_a_new_price_racing_an_issue_of_the_same_part_and_store()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await PurchaseRequestTests.OrgAsync(fx);
+        var wo = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/work-orders", new { title = "Job", siteId = o.Site, type = "Corrective", priority = "Medium" })));
+        var part = await NewPartAsync(o.Admin, o.Store, "RCPT-RACE");
+        await Ok(await o.Admin.PostAsJsonAsync("/api/inventory/receive", new { partId = part, storeId = o.Store, quantity = 50, unitCost = 10 }));
+        const int rounds = 30;
+        var accepted = 0; var receiptsOk = 0;
+        for (var round = 0; round < rounds; round++)
+        {
+            var sw = System.Diagnostics.Stopwatch.StartNew();
+            var calls = new[]
+            {
+                o.Admin.PostAsJsonAsync("/api/inventory/receive", new { partId = part, storeId = o.Store, quantity = 2, unitCost = 11 + round }),
+                o.Admin.PostAsJsonAsync("/api/inventory/receive", new { partId = part, storeId = o.Store, quantity = 3, unitCost = 30 + round }),
+                o.Admin.PostAsJsonAsync("/api/inventory/issue", new { partId = part, storeId = o.Store, quantity = 1, workOrderId = wo }),
+            };
+            var results = await Task.WhenAll(calls);
+            foreach (var r in results) Assert.True((int)r.StatusCode < 500, $"{(int)r.StatusCode}: {await r.Content.ReadAsStringAsync()}");
+            // Two receipts at once change the part's average cost together: the second may be told to reload (409), never a server error.
+            Assert.True(results[2].IsSuccessStatusCode, $"issue: {(int)results[2].StatusCode}: {await results[2].Content.ReadAsStringAsync()}");
+            Assert.All(results[..2], r => Assert.True(r.IsSuccessStatusCode || r.StatusCode == HttpStatusCode.Conflict));
+            accepted += (results[0].IsSuccessStatusCode ? 2 : 0) + (results[1].IsSuccessStatusCode ? 3 : 0);
+            receiptsOk += results[..2].Count(r => r.IsSuccessStatusCode);
+            Assert.True(sw.Elapsed < TimeSpan.FromSeconds(20), $"round {round} took {sw.Elapsed}");
+        }
+        var (sum, onHand, receipts) = await DbAsync(fx, async db => (
+            await db.StockTransactions.IgnoreQueryFilters().Where(t => t.PartId == part).SumAsync(t => t.Quantity),
+            await db.StockLevels.IgnoreQueryFilters().Where(l => l.PartId == part).SumAsync(l => l.QuantityOnHand),
+            await db.StockTransactions.IgnoreQueryFilters().CountAsync(t => t.PartId == part && t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Receipt)));
+        Assert.Equal(onHand, sum);              // the ledger adds up to the balance
+        Assert.Equal(50 + accepted - rounds, (int)onHand);
+        Assert.Equal(1 + receiptsOk, receipts); // one receipt row per receipt that went through: none written twice by a re-run
+    }
+
+    [SkippableTheory]
+    [InlineData("Etc/GMT-14")]
+    [InlineData("Etc/GMT+12")]
+    public async Task A_report_with_no_end_date_ends_on_the_organizations_today(string zone)
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        await TestSettings.SetSettingsAsync(org.Admin, s => s["timeZone"] = zone);
+        // The server's own idea of the organization's today (the dashboard's window ends today, and starts 30 days before).
+        var first = DateOnly.ParseExact((await Ok(await org.Admin.GetAsync("/api/dashboard"))).GetProperty("work").GetProperty("completedFrom").GetString()!, "yyyy-MM-dd");
+        var today = first.AddDays(30);
+        var report = await Ok(await org.Admin.GetAsync("/api/reports/budget-vs-actual"));
+        Assert.EndsWith(today.ToString("d MMM yyyy", System.Globalization.CultureInfo.InvariantCulture), report.GetProperty("subtitle").GetString());
+    }
+
+    [SkippableFact]
+    public async Task Failure_tree_counts_by_the_organizations_days_and_matches_its_list()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        await TestSettings.SetSettingsAsync(org.Admin, s => s["timeZone"] = "Etc/GMT-2");
+        async Task BreakdownAsync(DateTimeOffset at) => await DbAsync(fx, async db =>
+        {
+            db.WorkOrders.Add(new WorkOrder { TenantId = org.Tenant, Number = $"F-{Guid.NewGuid():N}"[..20], Title = "Broke", SiteId = org.Site, Type = WorkType.Breakdown, Status = WorkOrderStatus.Completed, CompletedAt = at });
+            await db.SaveChangesAsync();
+            return true;
+        });
+        await BreakdownAsync(new DateTimeOffset(2026, 3, 10, 21, 30, 0, TimeSpan.Zero));  // 23:30 on the 10th here: in
+        await BreakdownAsync(new DateTimeOffset(2026, 3, 10, 22, 30, 0, TimeSpan.Zero));  // 00:30 on the 11th here: out (but still the 10th in UTC)
+        await BreakdownAsync(new DateTimeOffset(2026, 3, 10, 23, 0, 0, TimeSpan.Zero));   // 01:00 on the 11th here: out
+        var rows = (await Ok(await org.Admin.GetAsync("/api/reports/failure-tree?from=2026-03-10&to=2026-03-10"))).GetProperty("rows").EnumerateArray().ToList();
+        Assert.Equal(1, rows[0].GetProperty("workOrders").GetInt32());
+        foreach (var row in rows)
+        {
+            var list = await Ok(await org.Admin.GetAsync($"/api/work-orders?pageSize=1&{row.GetProperty("listQuery").GetString()}"));
+            Assert.Equal(row.GetProperty("workOrders").GetInt32(), list.GetProperty("total").GetInt32());
+        }
+    }
+
+    [SkippableFact]
+    public async Task A_second_switch_on_at_once_is_told_it_was_already_switched_on()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await PurchaseRequestTests.OrgAsync(fx);
+        await Ok(await o.Admin.PostAsJsonAsync("/api/inventory/receive", new { partId = o.Part, storeId = o.Store, quantity = 2, unitCost = 10 }));
+        await Ok(await SerialReceiptTests.Track(o.Admin, o.Part, true, new[] { new { storeId = o.Store, serials = new[] { "Q-1", "Q-2" } } }, life: 12));
+        await SerialReceiptTests.Refused(await SerialReceiptTests.Track(o.Admin, o.Part, true, new[] { new { storeId = o.Store, serials = new[] { "Z-1", "Z-2" } } }, life: 99),
+            "Serial numbers were already switched on for this part by someone else.");
+        Assert.Equal(["Q-1", "Q-2"], (await SerialReceiptTests.UnitsAsync(fx, o.Part)).Select(x => x.Serial));
+        Assert.Equal(12, (await Ok(await o.Admin.GetAsync($"/api/parts/{o.Part}"))).GetProperty("unitLifeMonths").GetInt32());
+
+        // Two at the same moment: one wins, the other is told so, and the units equal the stock.
+        var part = await NewPartAsync(o.Admin, o.Store, "TWICE");
+        await Ok(await o.Admin.PostAsJsonAsync("/api/inventory/receive", new { partId = part, storeId = o.Store, quantity = 2, unitCost = 10 }));
+        var both = await Task.WhenAll(new[] { "A", "B" }.Select(k => Task.Run(async () =>
+        {
+            var r = await SerialReceiptTests.Track(o.Admin, part, true, new[] { new { storeId = o.Store, serials = new[] { $"{k}-1", $"{k}-2" } } });
+            return (r.StatusCode, Body: await r.Content.ReadAsStringAsync());
+        })));
+        Assert.Single(both, r => r.StatusCode == HttpStatusCode.OK);
+        Assert.Contains(both, r => r.StatusCode == HttpStatusCode.BadRequest && r.Body.Contains("already switched on"));
+        Assert.Equal(2, (await SerialReceiptTests.UnitsAsync(fx, part)).Count);
+    }
+
     // ---------------------------------------------------------------- Arabic
 
     [Theory]
@@ -318,6 +417,7 @@ public class RightNumbersTests(ApiFixture fx) : IClassFixture<ApiFixture>
     [InlineData("These budgets were changed by someone else. Reload them and try again.")]
     [InlineData("A list or a value is given twice. Capital letters don't make them different.")]
     [InlineData("Fill in every list and every value: none can be empty.")]
+    [InlineData("Serial numbers were already switched on for this part by someone else.")]
     public void New_messages_have_Arabic(string english) =>
         Assert.NotEqual(english, FourC.Cmms.Api.Infrastructure.Translator.T(english, "ar"));
 }

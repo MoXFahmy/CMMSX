@@ -114,24 +114,34 @@ public static class SerialUnitEndpoints
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(new { part.Id, part.IsSerialTracked });
             }
+            if (part.IsSerialTracked && i.Stores is { Count: > 0 } && i.Stores.Any(st => st.Serials is { Count: > 0 }))
+                throw new DomainException("Serial numbers were already switched on for this part by someone else.");
             if (!part.IsSerialTracked)
             {
                 if (part.IsShelfItem) throw new DomainException(UnitRules.SerialShelf);
                 var stores = i.Stores ?? [];
                 if (stores.GroupBy(s => s.StoreId).Any(g => g.Count() > 1)) throw new DomainException("Each store can be listed only once.");
                 var given = stores.ToDictionary(s => s.StoreId, s => UnitRules.CleanSerials(s.Serials ?? []));
+                var attempts = 0;
                 var switched = await db.InTransactionAsync(async tk =>
                 {
                     // May run again after a dropped connection: start from what is stored, not from what a failed try left in memory.
                     db.ChangeTracker.Clear();
+                    // The stock lines first (0.29.1), then the part: a quantity move locks its line before it reads the part, so what is counted here is what stays
+                    // (a move under way is waited for; a later one finds the part serial-tracked and is refused) and nobody holds the part while waiting for a line.
+                    // (The quantity is read so the row itself is locked, not only an index entry: a move updates the row by its key.)
+                    await db.Database.SqlQuery<decimal>($"SELECT QuantityOnHand AS Value FROM StockLevels WITH (UPDLOCK, HOLDLOCK) WHERE PartId = {id}").ToListAsync(tk);
                     var current = await db.Parts.FirstOrDefaultAsync(p => p.Id == id, tk) ?? throw new DomainException("Part not found.");
-                    if (current.IsSerialTracked) return current;
-                    // The part first (0.29.1): this waits for quantity moves under way and makes later ones see the part as serial-tracked and refuse,
-                    // and the stock lines are held until the units are in, so what is counted is what stays.
+                    if (current.IsSerialTracked)
+                    {
+                        // Another request switched it on first: say so rather than drop these serial numbers. (A re-run of this same request after a dropped connection that did commit is a success.)
+                        if (attempts++ == 0) throw new DomainException("Serial numbers were already switched on for this part by someone else.");
+                        return current;
+                    }
+                    attempts++;
                     current.UnitLifeMonths = i.UnitLifeMonths;
                     current.IsSerialTracked = true;
                     await db.SaveChangesAsync(tk);
-                    await db.Database.SqlQuery<Guid>($"SELECT Id AS Value FROM StockLevels WITH (UPDLOCK, HOLDLOCK) WHERE PartId = {id}").ToListAsync(tk);
                     // Every store holding the part, at every site: a store left without units would be stuck (its stock can't move any more).
                     var levels = await db.StockLevels.AllSites().Where(l => l.PartId == id && l.QuantityOnHand != 0).Select(l => new { l.StoreId, l.QuantityOnHand, l.Store!.Code }).ToListAsync(tk);
                     var visible = await db.Stores.Select(s => s.Id).ToListAsync(tk);
