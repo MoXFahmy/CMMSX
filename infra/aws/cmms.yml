@@ -1,7 +1,8 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
-  CMX - web app + API on ECS Fargate behind an Application Load Balancer and CloudFront (HTTPS),
-  RDS for SQL Server, S3 for attachments. Deployed by .github/workflows/deploy-aws.yml; see docs/DEPLOY_AWS.md.
+  CMX - web app + API on ECS Fargate behind an internal Application Load Balancer that only CloudFront (HTTPS, with the
+  cmms-edge WAF web ACL) reaches, through a VPC origin; RDS for SQL Server, S3 for attachments. Deployed by
+  .github/workflows/deploy-aws.yml; see docs/DEPLOY_AWS.md.
 
 Parameters:
   ImageUri:
@@ -11,8 +12,8 @@ Parameters:
     Type: String
     AllowedPattern: "^pl-[0-9a-f]+$"
     Description: >-
-      Managed prefix list com.amazonaws.global.cloudfront.origin-facing in this region, so only CloudFront can reach
-      the load balancer. The deployment workflow looks it up.
+      Managed prefix list com.amazonaws.global.cloudfront.origin-facing in this region: CloudFront's VPC origin reaches the
+      internal load balancer from these addresses. The deployment workflow looks it up.
   AllowRegistration:
     Type: String
     AllowedValues: ["true", "false"]
@@ -70,6 +71,23 @@ Parameters:
     Default: 300
     MinValue: 0
     Description: AI actions a month that any organization may use at most (each organization can set a lower limit).
+  BoundaryPolicyArn:
+    Type: String
+    AllowedPattern: "^arn:aws[a-z-]*:iam::[0-9]{12}:policy/cmms/cmms-boundary-.+$"
+    Description: >-
+      Permissions boundary every role under /cmms/ carries (output BoundaryPolicyArn of the cmms-github setup stack).
+      The CloudFormation execution role only creates or changes roles that carry it.
+  WebAclArn:
+    Type: String
+    AllowedPattern: "^arn:aws[a-z-]*:wafv2:us-east-1:[0-9]{12}:global/webacl/.+$"
+    Description: WAF web ACL for the CloudFront distribution (output WebAclArn of the cmms-edge stack in us-east-1).
+  RequireEmailConfirmation:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "false"
+    Description: >-
+      New organizations confirm their owner's e-mail address before use. Turn on only once Amazon SES has production
+      access (in the SES sandbox the confirmation e-mail only reaches verified addresses).
 
 Conditions:
   HasDomain: !And [!Not [!Equals [!Ref Domain, ""]], !Not [!Equals [!Ref DomainCertificateArn, ""]]]
@@ -99,7 +117,7 @@ Resources:
       VpcId: !Ref Vpc
       InternetGatewayId: !Ref InternetGateway
 
-  # Public subnets: load balancer and the app task (it needs outbound internet for ECR, S3, logs and secrets).
+  # Public subnets: the app task (it needs outbound internet for ECR, S3, logs, secrets, SES, Firebase and Claude).
   PublicSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -118,7 +136,8 @@ Resources:
       MapPublicIpOnLaunch: true
       Tags: [{ Key: Name, Value: !Sub "${AWS::StackName}-public-2" }]
 
-  # Private subnets: the database only (no internet route).
+  # Private subnets (no internet route): the database and the internal load balancer, which CloudFront reaches through
+  # its VPC origin.
   PrivateSubnet1:
     Type: AWS::EC2::Subnet
     Properties:
@@ -161,6 +180,9 @@ Resources:
       SubnetId: !Ref PublicSubnet2
       RouteTableId: !Ref PublicRouteTable
 
+  # The VPC origin's traffic comes from CloudFront's origin-facing addresses (option 1 in the CloudFront guide; option 2,
+  # the CloudFront-VPCOrigins-Service-SG group, only exists after the VPC origin does). The load balancer is internal,
+  # so nothing outside the VPC can reach it whatever this rule says.
   LoadBalancerSecurityGroup:
     Type: AWS::EC2::SecurityGroup
     Properties:
@@ -296,6 +318,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       Path: /cmms/
+      PermissionsBoundary: !Ref BoundaryPolicyArn
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -321,6 +344,7 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       Path: /cmms/
+      PermissionsBoundary: !Ref BoundaryPolicyArn
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:
@@ -380,6 +404,8 @@ Resources:
             # TLS ends at CloudFront, which reports the original scheme in CloudFront-Forwarded-Proto.
             - { Name: ASPNETCORE_FORWARDEDHEADERS_ENABLED, Value: "true" }
             - { Name: ForwardedHeaders__ProtoHeaderName, Value: CloudFront-Forwarded-Proto }
+            # The visitor's own address for the sign-in and sign-up limits (0.29.0), from CloudFront. Never stored or logged.
+            - { Name: Abuse__ViewerAddressHeader, Value: CloudFront-Viewer-Address }
             # Traffic to the database stays inside the VPC; the RDS certificate is not in the container's trust store.
             - Name: ConnectionStrings__Cmms
               Value: !Sub "Server=tcp:${Database.Endpoint.Address},${Database.Endpoint.Port};Database=cmms;Encrypt=True;TrustServerCertificate=True;Connection Timeout=60"
@@ -388,6 +414,8 @@ Resources:
             - { Name: Storage__Bucket, Value: !Ref FilesBucket }
             - { Name: Storage__Region, Value: !Ref AWS::Region }
             - { Name: Auth__AllowRegistration, Value: !Ref AllowRegistration }
+            # New organizations confirm their e-mail before use (0.29.0); needs SES production access.
+            - { Name: Auth__RequireEmailConfirmation, Value: !Ref RequireEmailConfirmation }
             # Links in e-mails point here.
             - Name: App__PublicUrl
               Value: !If [HasDomain, !Sub "https://${Domain}", !Sub "https://${Distribution.DomainName}"]
@@ -411,18 +439,20 @@ Resources:
               awslogs-region: !Ref AWS::Region
               awslogs-stream-prefix: cmms
 
-  LoadBalancer:
+  # Internal (0.29.0): no public address, in the private subnets; only CloudFront's VPC origin reaches it. It replaced the
+  # internet-facing LoadBalancer, TargetGroup and Listener (a Scheme change replaces a load balancer, so these are new
+  # resources and the old ones were removed in the same deploy).
+  InternalLoadBalancer:
     Type: AWS::ElasticLoadBalancingV2::LoadBalancer
-    DependsOn: PublicDefaultRoute
     Properties:
       Type: application
-      Scheme: internet-facing
-      Subnets: [!Ref PublicSubnet1, !Ref PublicSubnet2]
+      Scheme: internal
+      Subnets: [!Ref PrivateSubnet1, !Ref PrivateSubnet2]
       SecurityGroups: [!Ref LoadBalancerSecurityGroup]
       LoadBalancerAttributes:
         - { Key: idle_timeout.timeout_seconds, Value: "120" }
 
-  TargetGroup:
+  InternalTargetGroup:
     Type: AWS::ElasticLoadBalancingV2::TargetGroup
     Properties:
       VpcId: !Ref Vpc
@@ -438,19 +468,22 @@ Resources:
       TargetGroupAttributes:
         - { Key: deregistration_delay.timeout_seconds, Value: "30" }
 
-  Listener:
+  InternalListener:
     Type: AWS::ElasticLoadBalancingV2::Listener
     Properties:
-      LoadBalancerArn: !Ref LoadBalancer
+      LoadBalancerArn: !Ref InternalLoadBalancer
       Protocol: HTTP
       Port: 80
       DefaultActions:
         - Type: forward
-          TargetGroupArn: !Ref TargetGroup
+          TargetGroupArn: !Ref InternalTargetGroup
 
+  # After the distribution: the cutover moves CloudFront to the internal load balancer first, then this service's task to its
+  # target group (the gap between the two is the switch's only downtime). The listener must exist before the service uses
+  # the target group.
   Service:
     Type: AWS::ECS::Service
-    DependsOn: Listener
+    DependsOn: [InternalListener, Distribution]
     Properties:
       Cluster: !Ref Cluster
       TaskDefinition: !Ref TaskDefinition
@@ -471,10 +504,11 @@ Resources:
       LoadBalancers:
         - ContainerName: cmms
           ContainerPort: 8080
-          TargetGroupArn: !Ref TargetGroup
+          TargetGroupArn: !Ref InternalTargetGroup
 
   # ---------------------------------------------------------------- HTTPS front end (CloudFront)
-  # Forwards everything the app needs (cookies, query strings, headers) plus CloudFront-Forwarded-Proto.
+  # Forwards everything the app needs (cookies, query strings, headers) plus CloudFront-Forwarded-Proto and the visitor's
+  # address (CloudFront-Viewer-Address, for the app's per-address limits).
   OriginRequestPolicy:
     Type: AWS::CloudFront::OriginRequestPolicy
     Properties:
@@ -483,9 +517,21 @@ Resources:
         Comment: CMX - forward everything to the app
         HeadersConfig:
           HeaderBehavior: allViewerAndWhitelistCloudFront
-          Headers: [CloudFront-Forwarded-Proto]
+          Headers: [CloudFront-Forwarded-Proto, CloudFront-Viewer-Address]
         CookiesConfig: { CookieBehavior: all }
         QueryStringsConfig: { QueryStringBehavior: all }
+
+  # CloudFront's private way into the VPC (HTTP on port 80 to the internal load balancer, inside AWS's network). Creating it
+  # takes up to 15 minutes. CloudFront needs an internet gateway on the VPC to accept it (it routes nothing through it).
+  VpcOrigin:
+    Type: AWS::CloudFront::VpcOrigin
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      VpcOriginEndpointConfig:
+        Name: !Sub "${AWS::StackName}-app"
+        Arn: !Ref InternalLoadBalancer
+        HTTPPort: 80
+        OriginProtocolPolicy: http-only
 
   Distribution:
     Type: AWS::CloudFront::Distribution
@@ -493,6 +539,8 @@ Resources:
       DistributionConfig:
         Enabled: true
         Comment: !Sub "CMX (${AWS::StackName}, ${AWS::Region})"
+        # The cmms-edge web ACL (us-east-1): managed rules and per-address rate limits in front of everything.
+        WebACLId: !Ref WebAclArn
         HttpVersion: http2and3
         PriceClass: PriceClass_All
         Aliases: !If [HasDomain, [!Ref Domain], !Ref AWS::NoValue]
@@ -502,10 +550,9 @@ Resources:
           - { CloudFrontDefaultCertificate: true }
         Origins:
           - Id: app
-            DomainName: !GetAtt LoadBalancer.DNSName
-            CustomOriginConfig:
-              OriginProtocolPolicy: http-only
-              HTTPPort: 80
+            DomainName: !GetAtt InternalLoadBalancer.DNSName
+            VpcOriginConfig:
+              VpcOriginId: !GetAtt VpcOrigin.Id
               OriginReadTimeout: 60
         DefaultCacheBehavior:
           TargetOriginId: app
