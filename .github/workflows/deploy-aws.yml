@@ -199,14 +199,25 @@ jobs:
             # The deploy role may not list change sets, so take the change set's ARN from what deploy printed.
             cs=$(grep -oE 'arn:[a-z-]+:cloudformation:[^ ]+:changeSet/[^ ]+' "$log" | tail -n 1 || true)
             if [ -z "$cs" ]; then
-              echo "$stack: no changes."
-              return 0
+              if grep -q 'No changes to deploy' "$log"; then
+                echo "$stack: no changes."
+                return 0
+              fi
+              echo "::error::Could not find the change set of $stack in the deploy output, so nothing was applied. The output was:"
+              cat "$log"
+              return 1
             fi
 
             echo "Changes to $stack ($region):"
             # shellcheck disable=SC2016 # the backticks are a JMESPath literal, not a shell expansion
             aws cloudformation describe-change-set --region "$region" --stack-name "$stack" --change-set-name "$cs" \
               --query 'Changes[].ResourceChange.[Action,LogicalResourceId,ResourceType,Replacement||`"-"`]' --output table
+            replaced=$(aws cloudformation describe-change-set --region "$region" --stack-name "$stack" --change-set-name "$cs" \
+              --query "Changes[?ResourceChange.Replacement=='True' || ResourceChange.Replacement=='Conditional'].ResourceChange.LogicalResourceId" \
+              --output text | tr '\t' ' ')
+            if [ -n "$replaced" ]; then
+              echo "::warning::$stack: these resources will be replaced (or may be): $replaced. Applying anyway."
+            fi
             aws cloudformation execute-change-set --region "$region" --stack-name "$stack" --change-set-name "$cs"
             if ! aws cloudformation wait "stack-$kind-complete" --region "$region" --stack-name "$stack"; then
               cfn_after_failure "$stack" "$region" "$role"
@@ -381,7 +392,7 @@ jobs:
             echo ""
             echo "CloudFront address: \`${{ steps.deploy.outputs.cloudfront }}\`${DOMAIN:+ (own address: \`$DOMAIN\`)} · e-mail: ${MAIL_FROM_ADDRESS:-off}"
             echo ""
-            echo "Web firewall: \`$WAF_MODE\` · e-mail confirmation on sign-up: \`$REQUIRE_EMAIL_CONFIRMATION\` · alarms go to \`$ALERT_EMAIL\`"
+            echo "Web firewall: \`$WAF_MODE\` · e-mail confirmation on sign-up: \`$REQUIRE_EMAIL_CONFIRMATION\` · alarm address: \`$([ -n "$ALERT_EMAIL" ] && echo set || echo not set)\`"
             if [ "$WAF_MODE" = count ]; then
               echo ""
               echo "The web firewall is only counting. After a day or two with no real users caught, set CMMS_WAF_MODE to block and re-run."
