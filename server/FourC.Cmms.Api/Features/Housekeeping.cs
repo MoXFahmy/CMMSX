@@ -1,5 +1,6 @@
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Files;
+using FourC.Cmms.Core.Notifications;
 using Microsoft.EntityFrameworkCore;
 
 namespace FourC.Cmms.Api.Features;
@@ -12,6 +13,16 @@ public static class Housekeeping
     /// within days (changes older than 30 days are refused anyway).
     /// </summary>
     public static readonly TimeSpan KeepTechActions = TimeSpan.FromDays(90);
+
+    /// <summary>How long a push message is kept once sent or failed (0.29.1); only the log of what the phones were told.</summary>
+    public static readonly TimeSpan KeepPushMessages = TimeSpan.FromDays(30);
+
+    /// <summary>Deletes sent and failed push messages older than <see cref="KeepPushMessages"/>, for every organization; anything still queued stays.</summary>
+    public static Task<int> TrimPushAsync(CmmsDbContext db, DateTimeOffset now, CancellationToken ct = default)
+    {
+        var before = now - KeepPushMessages;
+        return db.PushMessages.IgnoreQueryFilters().Where(p => p.Status != EmailStatus.Pending && p.CreatedAt < before).ExecuteDeleteAsync(ct);
+    }
 
     /// <summary>Deletes records of phone changes older than <see cref="KeepTechActions"/>, for every organization.</summary>
     public static Task<int> TrimAsync(CmmsDbContext db, DateTimeOffset now, CancellationToken ct = default)

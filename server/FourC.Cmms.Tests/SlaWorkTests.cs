@@ -19,6 +19,10 @@ public class SlaWorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
         return body.Length == 0 ? default : JsonDocument.Parse(body).RootElement.Clone();
     }
     private static Guid Id(JsonElement e) => e.GetProperty("id").GetGuid();
+    /// <summary>A Cairo wall-clock time on a day, as the instant it is (daylight saving included).</summary>
+    private static DateTimeOffset LocalToUtc(DateOnly day, int hour, int minute) =>
+        new(TimeZoneInfo.ConvertTimeToUtc(day.ToDateTime(new TimeOnly(hour, minute)), TimeZoneInfo.FindSystemTimeZoneById("Africa/Cairo")), TimeSpan.Zero);
+
     private static DateTimeOffset? At(JsonElement e, string p) => e.TryGetProperty(p, out var v) && v.ValueKind != JsonValueKind.Null ? v.GetDateTimeOffset() : null;
     private static void Near(DateTimeOffset expected, DateTimeOffset? actual, int toleranceSeconds = 120)
     {
@@ -79,8 +83,9 @@ public class SlaWorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
         var o = await SetupAsync();
-        var d = await DetailAsync(o.C, await CreateAsync(o.C, Wo(o.Site, dueDate: "2026-12-01")));
-        Assert.Equal(DateTimeOffset.Parse("2026-12-01T21:59:59Z"), At(d, "dueAt"));
+        var day = Loop.Today.AddDays(40);
+        var d = await DetailAsync(o.C, await CreateAsync(o.C, Wo(o.Site, dueDate: Loop.Iso(day))));
+        Assert.Equal(Sla.EndOfDay(day, TimeZoneInfo.FindSystemTimeZoneById("Africa/Cairo")), At(d, "dueAt"));
         Assert.False(d.GetProperty("dueFromTarget").GetBoolean());
     }
 
@@ -89,9 +94,11 @@ public class SlaWorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
         var o = await SetupAsync();
-        var d = await DetailAsync(o.C, await CreateAsync(o.C, Wo(o.Site, dueAt: DateTimeOffset.Parse("2026-12-01T21:30:00Z"))));
-        Assert.Equal("2026-12-01", d.GetProperty("dueDate").GetString()); // 23:30 in Cairo, not the next day
-        Assert.Equal(DateTimeOffset.Parse("2026-12-01T21:30:00Z"), At(d, "dueAt"));
+        var day = Loop.Today.AddDays(40);
+        var late = LocalToUtc(day, 23, 30);
+        var d = await DetailAsync(o.C, await CreateAsync(o.C, Wo(o.Site, dueAt: late)));
+        Assert.Equal(Loop.Iso(day), d.GetProperty("dueDate").GetString()); // 23:30 in Cairo, not the next day
+        Assert.Equal(late, At(d, "dueAt"));
         Assert.False(d.GetProperty("dueFromTarget").GetBoolean());
     }
 
@@ -463,10 +470,11 @@ public class SlaWorkTests(ApiFixture fx) : IClassFixture<ApiFixture>
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
         var o = await SetupAsync();
-        // 01:00 on 2 December in Cairo is 23:00 UTC on 1 December: not before a planned start of 2 December.
+        // 01:00 on a day in Cairo is the evening before in UTC: not before a planned start of that day.
+        var day = Loop.Today.AddDays(40);
         var r = await o.C.PostAsJsonAsync("/api/work-orders", new
         {
-            title = "Night job", siteId = o.Site, type = "Corrective", priority = "Medium", plannedStart = "2026-12-02", dueAt = DateTimeOffset.Parse("2026-12-01T23:00:00Z"),
+            title = "Night job", siteId = o.Site, type = "Corrective", priority = "Medium", plannedStart = Loop.Iso(day), dueAt = LocalToUtc(day, 1, 0),
         });
         Assert.True(r.IsSuccessStatusCode, await r.Content.ReadAsStringAsync());
     }

@@ -251,7 +251,9 @@ verified while in the sandbox). Failed messages are retried after 1, 5, 30 and 1
 ## Push notifications
 
 From 0.11.0 the Android app can show a notification when a job is assigned to the technician or their request is
-approved; tapping it opens the job. It needs a Firebase project (free) and the 0.11.0 app or later. Releases build the
+approved; tapping a job notification opens the job and tapping a "Request approved" one opens the request in the web
+page. Sent and failed notification records are deleted after 30 days; a phone Firebase reports as unreachable (removed app,
+invalid token, another project's token) is forgotten and not retried. It needs a Firebase project (free) and the 0.11.0 app or later. Releases build the
 app with the project's app file (`google-services.json`); the server needs the project's **service account key** to
 send.
 

@@ -44,6 +44,18 @@ public class LogoTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Logo_download_carries_nosniff_and_the_content_policy()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        await Ok(await UploadAsync(org.Admin, Png(100)));
+        var got = await org.Admin.GetAsync("/api/settings/logo");
+        Assert.Equal(HttpStatusCode.OK, got.StatusCode);
+        Assert.Equal("nosniff", string.Join(",", got.Headers.GetValues("X-Content-Type-Options")));
+        Assert.Equal(FourC.Cmms.Api.Infrastructure.SecurityHeaders.ContentSecurityPolicy, string.Join(",", got.Headers.GetValues("Content-Security-Policy")));
+    }
+
+    [SkippableFact]
     public async Task Logo_type_and_size_are_checked()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

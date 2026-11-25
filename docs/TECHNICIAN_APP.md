@@ -96,7 +96,9 @@ The phone keeps a copy of the parts and stock of the stores at your sites, refre
 - **Unlock with fingerprint or face:** switch it on under **Sync**. The app then asks for it when it opens and after 5
   minutes away. It doesn't replace the sign-in: you stay signed in for 30 days as before.
 - **Notifications:** the app asks once for permission. You then get a notification when a job is assigned to you or
-  your request is approved; tapping it opens the job. This needs the 0.11.0 app and the server set up for push (see
+  your request is approved; tapping a job notification opens the job, and tapping a "Request approved" notification opens
+  the request in the full CMX web page inside the app. A phone only gets notifications while its person is signed in to
+  the technician app (people without an employee record get them from 0.39.0). This needs the 0.11.0 app and the server set up for push (see
   *Push notifications* in docs/DEPLOY_AWS.md).
 
 Both need the Android app from 0.11.0 on; older apps and the browser keep working without them.

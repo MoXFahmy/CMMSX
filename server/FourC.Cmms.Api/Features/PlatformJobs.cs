@@ -5,7 +5,7 @@ using Microsoft.EntityFrameworkCore;
 namespace FourC.Cmms.Api.Features;
 
 /// <summary>
-/// The platform's own jobs (0.29.0), over every organization: once a day, unconfirmed sign-ups past their week are removed. Starts two
+/// The platform's own jobs (0.29.0), over every organization: once a day, unconfirmed sign-ups past their week are removed and push messages sent or failed over 30 days ago are deleted. Starts two
 /// minutes after the server, then looks at the UTC date every hour; the last day it ran is kept in memory, so a restart runs that day's
 /// work once more (each job is safe to repeat). One server runs it, like the PM scheduler. Off when <c>Platform:JobsAutoRun</c> is false.
 /// </summary>
@@ -52,6 +52,7 @@ public sealed class PlatformJobs(IServiceScopeFactory scopes, IConfiguration con
     public async Task RunDailyAsync(DateTimeOffset now, CancellationToken ct)
     {
         await RunJobAsync("Removing unconfirmed sign-ups", db => PendingSignUps.PurgeAsync(db, now, ct, log), ct);
+        await RunJobAsync("Removing old push messages", db => Housekeeping.TrimPushAsync(db, now, ct), ct);
         await RunJobAsync("Measuring the database", db => DatabaseSize.MeasureAsync(db, log, ct), ct);
     }
 

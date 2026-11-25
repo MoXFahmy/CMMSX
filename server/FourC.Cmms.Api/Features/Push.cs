@@ -70,12 +70,20 @@ public sealed class FcmPushTransport(IConfiguration config, IHttpClientFactory h
         using var res = await client.SendAsync(req, ct);
         if (res.IsSuccessStatusCode) return PushResult.Sent;
         var text = await res.Content.ReadAsStringAsync(ct);
-        // The phone uninstalled the app or the token was replaced: forget it.
-        if ((int)res.StatusCode == 404 || text.Contains("UNREGISTERED", StringComparison.Ordinal) || text.Contains("registration-token-not-registered", StringComparison.Ordinal))
-            return PushResult.Gone;
+        if (IsDeadToken((int)res.StatusCode, text)) return PushResult.Gone;
         log.LogWarning("Firebase answered {Status} for a push.", (int)res.StatusCode);
         return PushResult.Failed;
     }
+
+    /// <summary>
+    /// Firebase says this phone's token will never work: the app was uninstalled or the token replaced (404 / UNREGISTERED), the
+    /// token isn't a valid one (400 INVALID_ARGUMENT), or it belongs to another Firebase project (403 SENDER_ID_MISMATCH).
+    /// Such a token is forgotten and never retried; any other failure is retried later.
+    /// </summary>
+    public static bool IsDeadToken(int status, string answer) =>
+        status == 404 || answer.Contains("UNREGISTERED", StringComparison.Ordinal) || answer.Contains("registration-token-not-registered", StringComparison.Ordinal)
+        || (status == 400 && answer.Contains("INVALID_ARGUMENT", StringComparison.Ordinal))
+        || (status == 403 && answer.Contains("SENDER_ID_MISMATCH", StringComparison.Ordinal));
 
     /// <summary>An OAuth access token for Firebase Messaging, from a JWT signed with the service account's key (cached until near expiry).</summary>
     private async Task<string> AccessTokenAsync(Account a, HttpClient client, CancellationToken ct)
@@ -125,13 +133,16 @@ public sealed class PushOutbox(IConfiguration config, AccessService access)
         await QueueAsync(db, ctx, users, w.SiteId, path, () => (Translator.T($"New job: {w.Number}"), Bilingual.Pick(w.Title, w.TitleAr)), $"/tech/jobs/{w.Id}", "WorkOrder", w.Id, ct);
     }
 
-    /// <summary>A request approved: its requester hears when they raised it with their login.</summary>
+    /// <summary>
+    /// A request approved: its requester hears when they raised it with their login. Tapping it opens the request on the full web
+    /// page (the phone shell has no requests page; a link outside /tech leaves it for the web app).
+    /// </summary>
     public async Task RequestApprovedAsync(CmmsDbContext db, ITenantContext ctx, WorkRequest r, string workOrderNumber, CancellationToken ct)
     {
         if (!Configured || r.CreatedById is not { } creator) return;
         var path = r.LocationId is { } lid ? await db.Locations.AllSites().Where(l => l.Id == lid).Select(l => l.Path).FirstOrDefaultAsync(ct) : null;
         await QueueAsync(db, ctx, [creator], r.SiteId, path, () => (Translator.T($"Request approved: {r.Number}"), Translator.T($"Work order {workOrderNumber}: {r.Title}")),
-            $"/tech/requests", "WorkRequest", r.Id, ct);
+            $"/work-requests?open={r.Id}", "WorkRequest", r.Id, ct);
     }
 
     private async Task QueueAsync(CmmsDbContext db, ITenantContext ctx, IReadOnlyCollection<Guid> userIds, Guid siteId, string? locationPath,

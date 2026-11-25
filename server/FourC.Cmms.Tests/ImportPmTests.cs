@@ -101,10 +101,10 @@ public class ImportPmTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
         var c = await NewOrganizationAsync(fx);
         var result = await RunAsync(c, Book([.. Basics(),
-            new Sheet("PM schedules", ScheduleHeadings, ["PM-LUB-01", "Pump lubrication", "LUB-M", "CAI", "PUMP-01", "Every", 3m, "Month", null, new DateOnly(2026, 12, 1)])]));
+            new Sheet("PM schedules", ScheduleHeadings, ["PM-LUB-01", "Pump lubrication", "LUB-M", "CAI", "PUMP-01", "Every", 3m, "Month", null, Loop.Today.AddDays(30)])]));
         Assert.Equal(1, Count(SheetOf(result, "PmSchedules"), "new"));
         var s = await ScheduleAsync(c, "PM-LUB-01");
-        Assert.Equal("2026-12-01", s.GetProperty("nextDueDate").GetString());
+        Assert.Equal(Loop.Iso(Loop.Today.AddDays(30)), s.GetProperty("nextDueDate").GetString());
         Assert.Equal("Every 3 months", s.GetProperty("schedule").GetString());
     }
 
@@ -115,8 +115,8 @@ public class ImportPmTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var c = await NewOrganizationAsync(fx);
         var result = await RunAsync(c, Book([.. Basics(),
             new Sheet("PM schedules", ScheduleHeadings,
-                ["PM-A", "No task", null, "CAI", "PUMP-01", "Every", 1m, "Month", null, new DateOnly(2026, 12, 1)],
-                ["PM-B", "No site", "LUB-M", null, "PUMP-01", "Every", 1m, "Month", null, new DateOnly(2026, 12, 1)])]));
+                ["PM-A", "No task", null, "CAI", "PUMP-01", "Every", 1m, "Month", null, Loop.Today.AddDays(30)],
+                ["PM-B", "No site", "LUB-M", null, "PUMP-01", "Every", 1m, "Month", null, Loop.Today.AddDays(30)])]));
         var sheet = SheetOf(result, "PmSchedules");
         Assert.Equal((0, 2), (Count(sheet, "new"), Count(sheet, "problems")));
         Assert.Contains("Task code is required.", ProblemsOf(sheet));
@@ -129,7 +129,7 @@ public class ImportPmTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
         var c = await NewOrganizationAsync(fx);
         var sheet = SheetOf(await CheckAsync(c, Book([.. Basics(),
-            new Sheet("PM schedules", ScheduleHeadings, ["PM-M-01", "Run hours", "LUB-M", "CAI", "PUMP-01", "Meter", 1m, null, null, new DateOnly(2026, 12, 1)])])), "PmSchedules");
+            new Sheet("PM schedules", ScheduleHeadings, ["PM-M-01", "Run hours", "LUB-M", "CAI", "PUMP-01", "Meter", 1m, null, null, Loop.Today.AddDays(30)])])), "PmSchedules");
         Assert.Contains("Set up meter-based schedules on screen.", ProblemsOf(sheet));
     }
 

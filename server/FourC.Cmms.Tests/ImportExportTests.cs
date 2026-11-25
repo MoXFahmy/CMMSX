@@ -34,7 +34,7 @@ public class ImportExportTests(ApiFixture fx) : IClassFixture<ApiFixture>
             new Sheet("PM steps", ["Task code", "Step", "Description"], ["LUB-M", 1m, "Grease bearings"], ["LUB-M", 2m, "Check belts"]),
             new Sheet("PM parts", ["Task code", "Part number", "Quantity"], ["LUB-M", "BRG-6205", 2m]),
             new Sheet("PM schedules", ["Code", "Name", "Task code", "Site code", "Asset number", "Schedule", "Every", "Unit", "Start date", "Assignees"],
-                ["PM-LUB-01", "Pump lubrication", "LUB-M", "CAI", "PUMP-01", "Every", 3m, "Month", new DateOnly(2026, 12, 1), "E1"])));
+                ["PM-LUB-01", "Pump lubrication", "LUB-M", "CAI", "PUMP-01", "Every", 3m, "Month", Loop.Today.AddDays(30), "E1"])));
 
         var current = await (await c.GetAsync("/api/import/current")).Content.ReadAsByteArrayAsync();
         var check = await CheckAsync(c, current);

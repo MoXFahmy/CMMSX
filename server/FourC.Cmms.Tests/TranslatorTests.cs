@@ -60,7 +60,7 @@ public class ArabicAnswersTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Contains("is required.", await en.Content.ReadAsStringAsync());
 
         // A rule broken on the server (an error, not a field).
-        var backwards = await c.SendAsync(Arabic(HttpMethod.Get, "/api/reports/wo-throughput?from=2026-12-01&to=2026-01-01"));
+        var backwards = await c.SendAsync(Arabic(HttpMethod.Get, $"/api/reports/wo-throughput?from={Loop.Iso(Loop.Today)}&to={Loop.Iso(Loop.Today.AddDays(-60))}"));
         Assert.Equal(HttpStatusCode.BadRequest, backwards.StatusCode);
         Assert.Contains("تاريخ البدء بعد تاريخ الانتهاء.", await backwards.Content.ReadAsStringAsync());
     }
