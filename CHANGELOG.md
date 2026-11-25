@@ -6,8 +6,8 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); num
 
 ## [0.29.1] - 2026-11-25
 
-A fix release: the privacy, safety and data-loss problems left by the reviews of 0.8.0–0.26.1, plus three small things on the AWS
-side. Nothing new to learn: screens work as before, with a few clearer messages. One database change (a column that remembers
+A fix release: the privacy, safety and data-loss problems left by the reviews of 0.7.0–0.26.1 (the few items from 0.6.0 and
+earlier wait for 0.29.2), plus three small things on the AWS side. Nothing new to learn: screens work as before, with a few clearer messages. One database change (a column that remembers
 which work an AI diagnosis was based on) is applied automatically when the new version starts. The logo download's
 security headers were already fixed by 0.29.0 and are only pinned by a test now. Registering **phone notifications for people who
 have no employee link** needs push code in the full web app, so it moves to 0.39.0 (iOS and phone); the "Request approved"
@@ -46,13 +46,17 @@ notification now opens the right page.
 ### Saves that no longer lose data
 - Editing a completed work order can't start a new stop by ticking "asset down" (report it in the asset's Downtime tab).
 - Clearing "Runs hours a day" now means all day (24), not "keep the old value".
-- Making a work group, saving a purchase order, deleting or renaming brands, models, units, stores and parts, and creating a work
-  order with a stop each save fully or not at all.
+- Making a work group, editing, deleting or cancelling a purchase order, renaming or merging brands, models and units, deleting
+  stores and parts, and creating a work order with a stop each save fully or not at all.
+- Receiving an order, transferring stock, a stock take, posting a stock count, receiving serial parts and ordering from requests
+  stay correct if the connection drops while they are saving: they start again from what is stored, so nothing is booked twice
+  (no second receipt, no wrong average cost, no second e-mail).
 - Importing PMs keeps a meter PM's calendar dates and uses them when a PM is switched on again; importing an asset onto a group PM
   says so instead of dropping the asset.
 - Saving a supplier's catalogue row without "preferred" no longer clears the part's preferred supplier.
 - Removing a company contact who is named on open work lines is refused (naming the work orders you can see); unticking
-  "Contractor" no longer deletes the company's rates; they are hidden and come back when it is ticked again.
+  "Contractor" no longer deletes the company's rates; they are hidden and come back when it is ticked again, and rates entered
+  at the same time are added to them (a rate for a category that is already kept replaces it).
 - Short-for-work drafts say which lines were skipped and why instead of dropping them.
 
 ### Right totals
@@ -65,14 +69,24 @@ notification now opens the right page.
   report range are counted by their days).
 
 ### Clear messages instead of errors
-- Two buyers ordering the same purchase-request line, two receipts at once, two people adding the same supplier or the first
-  budget at once, odd lists sent to the lists screen, duplicate stores in a switch-on, a cost centre that is unknown or inactive,
-  and a request access window with an empty date now get a plain message (409 or 400) instead of a server error or a quietly
-  wrong save. The purchase-order API refuses a link to a request line that is unknown, hidden, not approved, or already on another
+- Two buyers ordering the same purchase-request line, two people receiving the same order line at once (the phone too), two
+  people adding the same supplier or the first budget at once, odd lists sent to the lists screen, duplicate stores in a
+  switch-on, a cost centre that is unknown or inactive, and a request access window with an empty date now get a clear message
+  instead of a server error or a quietly wrong save. The purchase-order API refuses a link to a request line that is unknown, hidden, not approved, or already on another
   order. Switching a part to serial numbers while stock moves can no longer slip through, and a second switch-on at the same moment is
   told it was already switched on.
 - Restarting an approval asks for confirmation.
 - The request form drops recipients the chosen site can't offer.
+
+### Good to know
+- Two people receiving **different lines of one order** at the same moment: the second is told "This record was changed by someone
+  else. Reload it and try again." and receives again (the order is checked as a whole).
+- The **completed-date** filter on work lists, its exports and API-key callers now use the organization's days; the **created-date**
+  filters still use UTC days.
+- A PM whose recipient has lost access to the PM's place can't be saved until that recipient is removed from it.
+- A purchase request moves to "Ordered" when an order with linked request lines is saved from the order screen or through the API,
+  as it already did when ordered from the requests list.
+- Meter readings get the same range limit as other numbers (impossibly large values are refused).
 
 ### For whoever runs CMX on AWS
 - **CloudFront error alarm** (`cmms-cloudfront-errors`, N. Virginia, to the edge alert topic): CloudFront's 5xx rate at 5 percent
