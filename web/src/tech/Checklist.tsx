@@ -3,7 +3,7 @@ import { ActionIcon, Alert, Badge, Button, Card, Checkbox, Group, NumberInput, S
 import { useTranslation } from 'react-i18next';
 import { IconCamera, IconChecks, IconLock, IconShieldCheck } from '@tabler/icons-react';
 import { AnswerButtons } from '@/components/AnswerButtons';
-import { answered, failed, levelColor, outOfRange, rangeMessage, roundProgress } from '@/components/measure';
+import { answered, failed, levelColor, outOfRange, rangeMessage, roundProgress, tooBig } from '@/components/measure';
 import { notifyError } from '@/components/utils';
 import { safetyOpen } from './complete';
 import type { TechBundle, TechJob, TechPlaces, TechStep } from './types';
@@ -78,6 +78,7 @@ function PhoneStep({ s, locked, bundle, meters: allMeters, job, photos, onChange
     const v = typeof raw === 'number' ? raw : raw.trim() === '' ? null : Number(raw.replace(',', '.'));
     if (v === null) { if (s.value !== null && s.value !== undefined) onChange({ isDone: false }); return; }
     if (Number.isNaN(v) || v === s.value) return;
+    if (tooBig(v)) { notifyError(new Error(t('checklist.valueTooBig'))); return; }
     if (point && outOfRange(point, v)) { notifyError(new Error(rangeMessage(point, t))); return; }
     if (type === 'Meter' && !s.meterId && !meterId) { notifyError(new Error(t('checklist.chooseMeter'))); return; }
     onChange({ value: v, meterId: type === 'Meter' && !s.meterId && meterId ? meterId : undefined });

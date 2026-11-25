@@ -527,10 +527,15 @@ public static class WorkOrderEndpoints
             }, ct);
         }).RequirePermission(Permissions.WorkOrdersExecute);
 
-        g.MapDelete("/{id:guid}/tasks/{taskId:guid}", async (Guid id, Guid taskId, CmmsDbContext db, CancellationToken ct) =>
+        g.MapDelete("/{id:guid}/tasks/{taskId:guid}", async (Guid id, Guid taskId, CmmsDbContext db, ITenantContext ctx, PermissionService perms, CancellationToken ct) =>
         {
             await RequireOpenAsync(db, id, ct);
-            db.WorkOrderTasks.RemoveRange(await db.WorkOrderTasks.Where(x => x.Id == taskId && x.WorkOrderId == id).ToListAsync(ct)); // each line logged (0.25.0)
+            var steps = await db.WorkOrderTasks.Where(x => x.Id == taskId && x.WorkOrderId == id).ToListAsync(ct);
+            // The safety gate (0.29.1): "before starting" and photo-required steps go only with the right to edit work orders; carrying out
+            // work is enough for any other step, and for adding and answering steps. Checked here because the permission depends on the step.
+            if (steps.Any(x => x.BeforeStart || x.PhotoRequired) && !(await perms.GetAsync(ctx.UserId!.Value)).Contains(Permissions.WorkOrdersEdit))
+                throw new DomainException(Checklists.GateRemoval);
+            db.WorkOrderTasks.RemoveRange(steps); // each line logged (0.25.0)
             await db.SaveChangesAsync(ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.WorkOrdersExecute);

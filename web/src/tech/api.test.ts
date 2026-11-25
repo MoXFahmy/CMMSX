@@ -69,6 +69,23 @@ describe('api', () => {
     expect(form?.get('userId')).toBe('ann');
   });
 
+  it('a photo for a step carries the step text, a photo for nothing does not', async () => {
+    let form: FormData | undefined;
+    vi.stubGlobal('fetch', async (_url: string, init: RequestInit) => { form = init.body as FormData; return new Response(JSON.stringify({ status: 'done' }), { status: 200 }); });
+    await sendChange(change({ fileKey: 'c1', payload: { kind: 'photo', fileName: 'p.jpg', taskId: 't1', stepText: 'Check belt tension' } }), new Blob(['x'], { type: 'image/jpeg' }));
+    expect([form?.get('taskId'), form?.get('stepText')]).toEqual(['t1', 'Check belt tension']);
+    await sendChange(change({ fileKey: 'c1', payload: { kind: 'photo', fileName: 'p.jpg' } }), new Blob(['x'], { type: 'image/jpeg' }));
+    expect(form?.has('stepText')).toBe(false);
+    await sendChange(change({ fileKey: 'c1', payload: { kind: 'photo', fileName: 'p.jpg', taskId: 't1', stepText: 'x'.repeat(900) } }), new Blob(['x'], { type: 'image/jpeg' }));
+    expect(String(form?.get('stepText')).length).toBe(500);
+  });
+
+  it('a number beyond the range comes back as a refusal with its message, not a retry', async () => {
+    const message = 'Enter a number between -99,999,999,999,999 and 99,999,999,999,999.';
+    vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ status: 'rejected', message }), { status: 200 }));
+    expect(await sendChange(change({ type: 'task.update', payload: { taskId: 't1', value: 1e15 } }))).toEqual({ kind: 'rejected', message, code: undefined });
+  });
+
   it('a change made by someone else than who is signed in now comes back as otherUser', async () => {
     vi.stubGlobal('fetch', async () => new Response(JSON.stringify({ status: 'otherUser', code: 'otherUser' }), { status: 409 }));
     expect(await sendChange(change())).toEqual({ kind: 'otherUser' });

@@ -15,11 +15,11 @@ public class SafetyStepTests(ApiFixture fx) : IClassFixture<ApiFixture>
 
     private sealed record Setup(Loop.Org Org, Guid Wo, List<WorkOrderTask> Steps);
 
-    private async Task<Setup> SetupAsync(Loop.Org? existing = null)
+    private async Task<Setup> SetupAsync(Loop.Org? existing = null, object[]? steps = null)
     {
         var org = existing ?? await OrgAsync(fx, emailOn: false);
         var asset = await AssetAsync(org.Admin, org.Site, "Press");
-        var t = await TypedTemplateAsync(org.Admin, $"S{Guid.NewGuid():N}"[..8], Steps);
+        var t = await TypedTemplateAsync(org.Admin, $"S{Guid.NewGuid():N}"[..8], steps ?? Steps);
         var wo = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/work-orders", new
         {
             title = "Service", siteId = org.Site, assetId = asset, priority = "Medium", type = "Preventive", templateId = t,
@@ -148,4 +148,66 @@ public class SafetyStepTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var s = await SetupAsync();
         Assert.Contains(Blocked, await Bad(await MoveAsync(s.Org.Admin, s.Wo, new { status = "Completed", completionNotes = "Done" })));
     }
+
+    private static Task<HttpResponseMessage> RemoveAsync(HttpClient c, Guid wo, Guid step) => c.DeleteAsync($"/api/work-orders/{wo}/tasks/{step}");
+
+    private const string OnlyEditors = "Only people who can edit work orders can remove a safety or photo step.";
+
+    [SkippableFact]
+    public async Task Carry_out_only_cannot_remove_a_before_start_step()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync();
+        var tech = await UserAsync(fx, s.Org.Admin, "Technician");
+        var refused = await RemoveAsync(tech.Client, s.Wo, s.Steps[0].Id);
+        Assert.True(refused.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Forbidden, refused.StatusCode.ToString());
+        Assert.Contains(OnlyEditors, await refused.Content.ReadAsStringAsync());
+        Assert.Equal(2, (await StepsAsync(s.Wo)).Count);
+        // The gate still holds: work can't start until the safety step is answered.
+        Assert.Contains(Blocked, await Bad(await MoveAsync(s.Org.Admin, s.Wo, new { status = "InProgress" })));
+    }
+
+    [SkippableFact]
+    public async Task Carry_out_only_cannot_remove_a_photo_required_step()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync(steps: [new { description = "Belt", type = "Check", photoRequired = true, followUp = "None" }, new { description = "Clean", type = "Check", followUp = "None" }]);
+        var tech = await UserAsync(fx, s.Org.Admin, "Technician");
+        var refused = await RemoveAsync(tech.Client, s.Wo, s.Steps[0].Id);
+        Assert.True(refused.StatusCode is System.Net.HttpStatusCode.BadRequest or System.Net.HttpStatusCode.Forbidden, refused.StatusCode.ToString());
+        Assert.Equal(2, (await StepsAsync(s.Wo)).Count);
+        // A plain step can still be removed by the same person.
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, (await RemoveAsync(tech.Client, s.Wo, s.Steps[1].Id)).StatusCode);
+        Assert.Single(await StepsAsync(s.Wo));
+    }
+
+    [SkippableFact]
+    public async Task Editor_can_remove_gate_steps()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync(steps: [new { description = "Lock out", type = "Check", beforeStart = true }, new { description = "Belt", type = "Check", photoRequired = true, followUp = "None" }]);
+        var manager = await UserAsync(fx, s.Org.Admin, "Maintenance Manager");
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, (await RemoveAsync(manager.Client, s.Wo, s.Steps[0].Id)).StatusCode);
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, (await RemoveAsync(s.Org.Admin, s.Wo, s.Steps[1].Id)).StatusCode);
+        Assert.Empty(await StepsAsync(s.Wo));
+    }
+
+    [SkippableFact]
+    public async Task Carry_out_only_can_still_add_and_answer_steps()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync();
+        var tech = await UserAsync(fx, s.Org.Admin, "Technician");
+        await Ok(await AnswerAsync(tech.Client, s.Wo, s.Steps[0].Id, new { answer = "Ok" }));
+        await Ok(await tech.Client.PostAsJsonAsync($"/api/work-orders/{s.Wo}/tasks", new { description = "Wipe the guard" }));
+        Assert.Equal(3, (await StepsAsync(s.Wo)).Count);
+        // The step the person added is plain, so they can remove it again.
+        var added = (await StepsAsync(s.Wo)).Single(x => x.Description == "Wipe the guard");
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, (await RemoveAsync(tech.Client, s.Wo, added.Id)).StatusCode);
+    }
+
+    [Theory]
+    [InlineData("Only people who can edit work orders can remove a safety or photo step.")]
+    public void New_gate_messages_have_Arabic(string english) =>
+        Assert.NotEqual(english, FourC.Cmms.Api.Infrastructure.Translator.T(english, "ar"));
 }

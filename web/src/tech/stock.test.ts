@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { available, canUseByQuantity, findPart, queuedCount, searchParts, shortBy, stillReserved } from './stock';
+import { available, canUseByQuantity, canUseStock, findPart, queuedCount, searchParts, shortBy, stillReserved } from './stock';
 import type { StockPart, TechStock } from './types';
 import type { QueuedChange } from './outbox';
 
@@ -50,5 +50,12 @@ describe('serial parts on the phone (0.24.0)', () => {
   it("serial parts can't be used by quantity", () => {
     expect(canUseByQuantity(part())).toBe(true);
     expect(canUseByQuantity(part({ isSerialTracked: true }))).toBe(false);
+  });
+
+  it('counts and issuing follow the stock permission, and stay on for servers that send no flag', () => {
+    expect(canUseStock({ can: { issueStock: true } })).toBe(true);
+    expect(canUseStock({ can: { issueStock: false } })).toBe(false);
+    expect(canUseStock({ can: {} })).toBe(true);
+    expect(canUseStock(undefined)).toBe(true);
   });
 });

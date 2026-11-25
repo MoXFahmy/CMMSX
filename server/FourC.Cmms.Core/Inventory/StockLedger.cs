@@ -110,7 +110,7 @@ public static class StockLedger
         if (moved == 0)
         {
             var onHand = await db.StockLevels.Where(l => l.Id == level.Id).Select(l => l.QuantityOnHand).FirstAsync(ct);
-            throw new DomainException($"Not enough stock: {part.PartNumber} has {onHand:0.###} {part.UnitOfMeasure} in {store.Code}.");
+            throw new NotEnoughStockException($"Not enough stock: {part.PartNumber} has {onHand:0.###} {part.UnitOfMeasure} in {store.Code}.");
         }
 
         var tx = new StockTransaction
@@ -165,3 +165,6 @@ public static class StockLedger
 
     private static string? Trim(string? s, int max) => string.IsNullOrWhiteSpace(s) ? null : s.Trim().Length <= max ? s.Trim() : s.Trim()[..max];
 }
+
+/// <summary>The stock level couldn't cover the move (someone else may have just taken the stock): a refusal with the same text and status as any other.</summary>
+public sealed class NotEnoughStockException(string message) : DomainException(message);

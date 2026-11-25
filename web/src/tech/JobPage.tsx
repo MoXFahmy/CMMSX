@@ -53,7 +53,8 @@ export function JobPage() {
   const safetyBlocked = safetyOpen(job.tasks, null).some((s) => !s.assetId);
   const start = () => (safetyBlocked ? notifyError(new Error(t('checklist.safetyFirstBody'))) : void change('status.change', { status: 'InProgress' }));
   const addStepPhoto = async (taskId: string, f: File) => {
-    try { await add({ type: 'photo.add', workOrderId: job.id, payload: { kind: 'photo', taskId } }, { blob: await shrink(f), fileName: f.name.replace(/\.\w+$/, '') + '.jpg' }); }
+    const stepText = job.tasks.find((s) => s.id === taskId)?.description;
+    try { await add({ type: 'photo.add', workOrderId: job.id, payload: { kind: 'photo', taskId, stepText } }, { blob: await shrink(f), fileName: f.name.replace(/\.\w+$/, '') + '.jpg' }); }
     catch (e) { notifyError(e); }
   };
 

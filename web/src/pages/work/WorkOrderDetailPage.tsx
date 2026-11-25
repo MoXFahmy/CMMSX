@@ -259,7 +259,7 @@ export function WorkOrderDetailPage() {
             </Grid.Col>
           </Grid>
         </Tabs.Panel>
-        <Tabs.Panel value="tasks"><ChecklistPanel w={w} canExec={canExec} onChange={refresh} /></Tabs.Panel>
+        <Tabs.Panel value="tasks"><ChecklistPanel w={w} canExec={canExec} canEdit={can(P.woEdit)} onChange={refresh} /></Tabs.Panel>
         <Tabs.Panel value="labor"><Stack><PlannedHoursCard w={w} canPlan={canPlanHours} onChange={refresh} currency={currency} /><LaborPanel w={w} canExec={canExec} onChange={refresh} currency={currency} /></Stack></Tabs.Panel>
         <Tabs.Panel value="contractors"><ContractorsPanel w={w} canPlan={canPlanHours} canExec={canExec} onChange={refresh} currency={currency} /></Tabs.Panel>
         <Tabs.Panel value="parts"><Stack>

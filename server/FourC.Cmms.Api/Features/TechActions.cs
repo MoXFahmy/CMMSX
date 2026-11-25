@@ -65,6 +65,10 @@ public static partial class TechEndpoints
         "application/vnd.ms-excel", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet", "text/plain", "text/csv",
     };
     private const long MaxFileBytes = 50 * 1024 * 1024;
+    /// <summary>The longest step text a phone photo carries; a longer one is cut (the photo is never refused for it).</summary>
+    private const int MaxStepText = 500;
+    private const string RemovedStepNote = "Photo for a step that was removed";
+    private const string RemovedStepNamedNote = "Photo for a step that was removed: {0}";
     private static readonly TimeSpan OldestChange = TimeSpan.FromDays(30);
 
     /// <summary>409 "otherUser": the change was queued by another person; the phone keeps it until they sign in again.</summary>
@@ -119,10 +123,23 @@ public static partial class TechEndpoints
                     if (!ImageTypes.Contains(type)) throw new Rejected($"{file.FileName} isn't a photo (JPEG, PNG or WebP).");
                     if (file.Length > MaxImageBytes) throw new Rejected($"{file.FileName} is larger than 10 MB.");
                 }
-                var att = await AttachmentEndpoints.SaveAttachmentAsync(db, storage, "WorkOrder", w.Id, file, ct);
-                // A photo taken on a checklist step (0.13.0).
+                // A photo taken on a checklist step (0.13.0). When the step was removed meanwhile, the photo is kept on the work order with a
+                // note naming the step (0.29.1); the phone sends the step's text with the photo, older phones don't.
+                Guid? stepId = null;
+                string? removedNote = null;
                 if (Guid.TryParse(form["taskId"], out var taskId))
-                    att.WorkOrderTaskId = await db.WorkOrderTasks.AnyAsync(t => t.Id == taskId && t.WorkOrderId == w.Id, ct) ? taskId : throw new Rejected("This checklist step was removed.");
+                {
+                    if (await db.WorkOrderTasks.AnyAsync(t => t.Id == taskId && t.WorkOrderId == w.Id, ct)) stepId = taskId;
+                    else
+                    {
+                        var stepText = form["stepText"].ToString().Clean();
+                        if (stepText is { Length: > MaxStepText }) stepText = stepText[..MaxStepText];
+                        removedNote = Translator.T(stepText is null ? RemovedStepNote : string.Format(RemovedStepNamedNote, stepText));
+                    }
+                }
+                var att = await AttachmentEndpoints.SaveAttachmentAsync(db, storage, "WorkOrder", w.Id, file, ct);
+                att.WorkOrderTaskId = stepId;
+                if (removedNote is not null) att.Description = removedNote;
                 if (signature)
                 {
                     var by = form["signedBy"].ToString().Clean() ?? ctx.UserName;
@@ -361,7 +378,8 @@ public static partial class TechEndpoints
             }
             case "count.line":
             {
-                Require(allowed, Permissions.InventoryView);
+                // Counting needs the stock permission, as creating and posting a count does on the web (0.29.1).
+                Require(allowed, Permissions.InventoryTransact);
                 var p = Read<CountPayload>(input.Payload, options);
                 await StockCountEndpoints.CountLineAsync(db, ctx, p.CountId, p.PartId, p.Quantity, at, ct);
                 await db.SaveChangesAsync(ct);

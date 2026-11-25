@@ -1,4 +1,5 @@
 using System.Net.Http.Headers;
+using System.Text.Json;
 using System.Net.Http.Json;
 using FourC.Cmms.Core.Pm;
 using FourC.Cmms.Core.Work;
@@ -127,4 +128,77 @@ public class StepCompletionTests(ApiFixture fx) : IClassFixture<ApiFixture>
         await Ok(await org.Admin.PutAsJsonAsync($"/api/work-orders/{s.Wo}/tasks/{s.Steps[0].Id}", new { value = 21.5m }));
         await Ok(await CompleteAsync(org.Admin, s.Wo));
     }
+
+    /// <summary>A phone photo for a checklist step (/api/tech/files), optionally with the step's text as new phones send it.</summary>
+    private static async Task<JsonElement> PhonePhotoAsync(HttpClient c, Guid wo, Guid step, string? stepText)
+    {
+        using var form = new MultipartFormDataContent
+        {
+            { new StringContent(Guid.NewGuid().ToString()), "clientId" }, { new StringContent(DateTimeOffset.UtcNow.ToString("O")), "at" },
+            { new StringContent(wo.ToString()), "workOrderId" }, { new StringContent("photo"), "kind" }, { new StringContent(step.ToString()), "taskId" },
+        };
+        if (stepText is not null) form.Add(new StringContent(stepText), "stepText");
+        var file = new ByteArrayContent(Jpeg);
+        file.Headers.ContentType = new MediaTypeHeaderValue("image/jpeg");
+        form.Add(file, "file", "belt.jpg");
+        return await Ok(await c.PostAsync("/api/tech/files", form));
+    }
+
+    private Task<List<FourC.Cmms.Core.Files.Attachment>> PhotosAsync(Guid wo) =>
+        DbAsync(fx, db => db.Attachments.IgnoreQueryFilters().Where(a => a.EntityId == wo).ToListAsync());
+
+    [SkippableFact]
+    public async Task Photo_for_a_removed_step_is_kept_as_an_attachment_with_a_note()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync([Check("Belt", photo: true)]);
+        await Ok(await s.Org.Admin.DeleteAsync($"/api/work-orders/{s.Wo}/tasks/{s.Steps[0].Id}"));
+        var answer = await PhonePhotoAsync(s.Org.Admin, s.Wo, s.Steps[0].Id, "Belt");
+        Assert.Equal("done", Status(answer));
+        var photo = Assert.Single(await PhotosAsync(s.Wo));
+        Assert.Null(photo.WorkOrderTaskId);
+        Assert.Equal("Photo for a step that was removed: Belt", photo.Description);
+        // The file is on the work order's attachment list.
+        var listed = (await Ok(await s.Org.Admin.GetAsync($"/api/attachments?entityType=WorkOrder&entityId={s.Wo}"))).EnumerateArray().Single();
+        Assert.Equal("Photo for a step that was removed: Belt", listed.GetProperty("description").GetString());
+    }
+
+    [SkippableFact]
+    public async Task Photo_for_a_removed_step_from_an_old_phone_gets_the_generic_note()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync([Check("Belt", photo: true)]);
+        await Ok(await s.Org.Admin.DeleteAsync($"/api/work-orders/{s.Wo}/tasks/{s.Steps[0].Id}"));
+        Assert.Equal("done", Status(await PhonePhotoAsync(s.Org.Admin, s.Wo, s.Steps[0].Id, null)));
+        var photo = Assert.Single(await PhotosAsync(s.Wo));
+        Assert.Null(photo.WorkOrderTaskId);
+        Assert.Equal("Photo for a step that was removed", photo.Description);
+    }
+
+    [SkippableFact]
+    public async Task A_long_step_text_is_cut_not_refused()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync([Check("Belt", photo: true)]);
+        await Ok(await s.Org.Admin.DeleteAsync($"/api/work-orders/{s.Wo}/tasks/{s.Steps[0].Id}"));
+        Assert.Equal("done", Status(await PhonePhotoAsync(s.Org.Admin, s.Wo, s.Steps[0].Id, new string('x', 900))));
+        Assert.Equal("Photo for a step that was removed: " + new string('x', 500), Assert.Single(await PhotosAsync(s.Wo)).Description);
+    }
+
+    [SkippableFact]
+    public async Task Photo_for_a_step_that_still_exists_keeps_its_step_and_no_note()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync([Check("Belt", photo: true)]);
+        Assert.Equal("done", Status(await PhonePhotoAsync(s.Org.Admin, s.Wo, s.Steps[0].Id, "Belt")));
+        var photo = Assert.Single(await PhotosAsync(s.Wo));
+        Assert.Equal(s.Steps[0].Id, photo.WorkOrderTaskId);
+        Assert.Null(photo.Description);
+    }
+
+    [Theory]
+    [InlineData("Photo for a step that was removed")]
+    [InlineData("Photo for a step that was removed: {0}")]
+    public void New_photo_notes_have_Arabic(string english) =>
+        Assert.NotEqual(english, FourC.Cmms.Api.Infrastructure.Translator.T(english, "ar"));
 }

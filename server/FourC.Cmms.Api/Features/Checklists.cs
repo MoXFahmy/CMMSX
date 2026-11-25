@@ -17,6 +17,12 @@ public static class Checklists
 
     public const string WrongKind = "This step needs a different kind of answer.";
     public const string ChooseMeter = "Choose the meter this reading is for.";
+    public const string GateRemoval = "Only people who can edit work orders can remove a safety or photo step.";
+    public const string NoSuchAnswer = "That isn't a valid answer.";
+    /// <summary>What a step's value or a meter reading can be: the columns hold 18 digits with 3 or 4 after the point.</summary>
+    public const decimal MaxValue = 99_999_999_999_999m;
+    public const string OutOfRange = "Enter a number between -99,999,999,999,999 and 99,999,999,999,999.";
+    public static bool Overflows(decimal value) => Math.Abs(value) > MaxValue;
 
     /// <summary>
     /// Answers a step (web, All OK, phone): checks the answer fits the step, judges a number against its measurement point (range, level,
@@ -26,6 +32,8 @@ public static class Checklists
         StepChange c, DateTimeOffset at, CancellationToken ct)
     {
         var v = new Validator();
+        if (c.Answer is { } given && !Enum.IsDefined(given)) { v.Add("answer", NoSuchAnswer); return v; }
+        if (c.Value is { } size && Overflows(size)) { v.Add("value", OutOfRange); return v; }
         var takesValue = t.Type is StepType.Number or StepType.Meter;
         if (c.Answer is not null && t.Type != StepType.Check || c.Value is not null && !takesValue || c.Text is not null && t.Type != StepType.Text
             || c.IsDone is true && t.Type != StepType.Check && c.Value is null && c.Text is null && !StepRules.Answered(t))

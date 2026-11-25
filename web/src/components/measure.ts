@@ -22,6 +22,10 @@ export function levelOf(p: PointLimits, value: number): MeasureLevel {
   return 'Normal';
 }
 
+/** The largest number a step's value or a meter reading can hold (the database columns); the server refuses more (0.29.1). */
+export const MAX_VALUE = 99_999_999_999_999;
+export const tooBig = (value: number) => Math.abs(value) > MAX_VALUE;
+
 /** A value that can't be right at all (typed 850 for 85.0). */
 export const outOfRange = (p: PointLimits, value: number) => (set(p.validMin) && value < p.validMin) || (set(p.validMax) && value > p.validMax);
 

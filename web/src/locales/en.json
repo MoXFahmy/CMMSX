@@ -2190,6 +2190,7 @@
     "followUp": "Follow-up {{number}}",
     "followUpRaised": "Follow-up {{number}} raised",
     "outOfRange": "Enter a value from {{min}} to {{max}} {{unit}}.",
+    "valueTooBig": "Enter a number between -99,999,999,999,999 and 99,999,999,999,999.",
     "fromStep": "From step {{step}} of",
     "answers": {
       "Ok": "OK",

@@ -7,7 +7,7 @@ import { IconCamera, IconChecks, IconLock, IconPhoto, IconPlus, IconShieldCheck,
 import { ApiError, api, del, get, post, put } from '@/api/client';
 import type { MeterItem, WorkOrderDetail, WorkOrderStep } from '@/api/types';
 import { AnswerButtons } from '@/components/AnswerButtons';
-import { answered, failed, levelColor, levelOf, outOfRange, rangeMessage, roundProgress } from '@/components/measure';
+import { answered, failed, levelColor, levelOf, outOfRange, rangeMessage, roundProgress, tooBig } from '@/components/measure';
 import { confirmAction } from '@/components/confirm';
 import { fromNow, notifyError, notifySuccess } from '@/components/utils';
 import { pick } from '@/components/bilingual';
@@ -21,7 +21,7 @@ const message = (e: unknown) => (e instanceof ApiError ? Object.values(e.fieldEr
  * A work order's checklist (0.13.0): safety steps first (the others wait for them), an answer that fits each step's type, photos on a step,
  * All OK, each round asset's progress in green or red, and the follow-up a failed step raised.
  */
-export function ChecklistPanel({ w, canExec, onChange }: { w: WorkOrderDetail; canExec: boolean; onChange: () => Promise<void> }) {
+export function ChecklistPanel({ w, canExec, canEdit = false, onChange }: { w: WorkOrderDetail; canExec: boolean; canEdit?: boolean; onChange: () => Promise<void> }) {
   const { t } = useTranslation();
   const [text, setText] = useState('');
   const [textAr, setTextAr] = useState(''); // 0.28.0: the step in Arabic (optional)
@@ -71,7 +71,7 @@ export function ChecklistPanel({ w, canExec, onChange }: { w: WorkOrderDetail; c
                 </Group>
               )}
               {[...g.steps].sort((a, b) => Number(b.beforeStart) - Number(a.beforeStart) || a.sequence - b.sequence).map((x) => (
-                <StepRow key={x.id} w={w} x={x} canExec={canExec} locked={!x.beforeStart && safetyOpen(x.assetId).length > 0} onChange={onChange} />
+                <StepRow key={x.id} w={w} x={x} canExec={canExec} canEdit={canEdit} locked={!x.beforeStart && safetyOpen(x.assetId).length > 0} onChange={onChange} />
               ))}
             </Stack>
           );
@@ -87,7 +87,7 @@ export function ChecklistPanel({ w, canExec, onChange }: { w: WorkOrderDetail; c
 }
 
 /** One step: the answer its type asks for, remarks, photos and its follow-up. */
-function StepRow({ w, x, canExec, locked, onChange }: { w: WorkOrderDetail; x: Step; canExec: boolean; locked: boolean; onChange: () => Promise<void> }) {
+function StepRow({ w, x, canExec, canEdit, locked, onChange }: { w: WorkOrderDetail; x: Step; canExec: boolean; canEdit: boolean; locked: boolean; onChange: () => Promise<void> }) {
   const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const point = w.points?.find((p) => p.id === x.measurementPointId);
@@ -113,6 +113,7 @@ function StepRow({ w, x, canExec, locked, onChange }: { w: WorkOrderDetail; x: S
     const v = raw.trim() === '' ? null : Number(raw.replace(',', '.'));
     if (v === null) { if (x.value !== null && x.value !== undefined) void send({ isDone: false }); return; }
     if (Number.isNaN(v) || v === x.value) return;
+    if (tooBig(v)) { notifyError(new Error(t('checklist.valueTooBig'))); return; }
     if (point && outOfRange(point, v)) { notifyError(new Error(rangeMessage(point, t))); return; }
     void send({ value: v, meterId: x.type === 'Meter' && !x.meterId ? meterId : undefined });
   };
@@ -138,7 +139,7 @@ function StepRow({ w, x, canExec, locked, onChange }: { w: WorkOrderDetail; x: S
           {x.followUp && <Badge size="sm" color="orange" component={Link} to={x.followUp.kind === 'workOrder' ? `/work-orders/${x.followUp.id}` : `/work-requests/${x.followUp.id}`}
             style={{ cursor: 'pointer' }}>{t('checklist.followUp', { number: x.followUp.number })}</Badge>}
           {x.isDone && <Text fz="xs" c="dimmed" visibleFrom="xs">{x.doneBy} · {fromNow(x.doneAt)}</Text>}
-          {canExec && <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('common.delete')} onClick={async () => { try { await del(`/work-orders/${w.id}/tasks/${x.id}`); await onChange(); } catch (e) { notifyError(e); } }}><IconTrash size={14} /></ActionIcon>}
+          {canExec && (canEdit || !(x.beforeStart || x.photoRequired)) && <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('common.delete')} onClick={async () => { try { await del(`/work-orders/${w.id}/tasks/${x.id}`); await onChange(); } catch (e) { notifyError(e); } }}><IconTrash size={14} /></ActionIcon>}
         </Group>
       </Group>
       <Group gap="xs" pl={24} wrap="wrap" align="center">

@@ -40,6 +40,8 @@ type TechState = {
 
 const Ctx = createContext<TechState | null>(null);
 export const useTech = () => useContext(Ctx)!;
+/** For tests: render a page with a state of its own. */
+export { Ctx as TechContext };
 
 export function TechProvider({ children }: { children: ReactNode }) {
   const [phase, setPhase] = useState<Phase>('starting');

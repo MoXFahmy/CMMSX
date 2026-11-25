@@ -4,7 +4,7 @@ import { useNavigate, useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
 import { IconChevronLeft, IconPackage, IconPlus, IconSearch } from '@tabler/icons-react';
 import { fmtQty, notifyError, notifySuccess } from '@/components/utils';
-import { available, canUseByQuantity, findPart, queuedCount, searchParts, shortBy, stillReserved } from './stock';
+import { available, canUseByQuantity, canUseStock, findPart, queuedCount, searchParts, shortBy, stillReserved } from './stock';
 import { useTech } from './useTech';
 import type { PlannedLine, StockPart, TechJob } from './types';
 
@@ -60,7 +60,7 @@ function QuantityForm({ part, storeId, ownReserved = 0, initial, label, onSave, 
 export function JobParts({ job }: { job: TechJob }) {
   const { t } = useTranslation();
   const { stock, bundle, add } = useTech();
-  const canIssue = bundle?.can?.issueStock ?? true;
+  const canIssue = canUseStock(bundle);
   const [using, setUsing] = useState<PlannedLine | null>(null);
   const [returning, setReturning] = useState<PlannedLine | null>(null);
   const [adding, setAdding] = useState(false);
@@ -134,13 +134,14 @@ export function JobParts({ job }: { job: TechJob }) {
 export function StockSearchPage() {
   const { t } = useTranslation();
   const navigate = useNavigate();
-  const { stock } = useTech();
+  const { stock, bundle } = useTech();
+  const canCount = canUseStock(bundle);
   return (
     <Stack>
       <Back to="/tech" label={t('tech.myJobs')} />
       <Title order={4}>{t('techStock.stock')}</Title>
       <PartSearch onPick={(p) => navigate(`/tech/parts/${p.id}`)} />
-      {(stock?.counts.length ?? 0) > 0 && (
+      {canCount && (stock?.counts.length ?? 0) > 0 && (
         <Card><Stack gap="xs"><Title order={6}>{t('techStock.openCounts')}</Title>
           {stock!.counts.map((c) => <Anchor key={c.id} onClick={() => navigate(`/tech/counts/${c.id}`)}>{c.name} · {stock!.stores.find((s) => s.id === c.storeId)?.code}</Anchor>)}
         </Stack></Card>
@@ -173,7 +174,7 @@ export function PartPage() {
             <Text fz="sm" fw={600}>{fmtQty(l.onHand)} {part.unitOfMeasure}{l.reserved > 0 ? ` (${t('techStock.reserved', { qty: fmtQty(l.reserved) })})` : ''}</Text></Group>;
         })}
       </Stack></Card>
-      {jobs.length > 0 && canUseByQuantity(part) && <Button onClick={() => setIssuing(true)}>{t('techStock.issueToJob')}</Button>}
+      {canUseStock(bundle) && jobs.length > 0 && canUseByQuantity(part) && <Button onClick={() => setIssuing(true)}>{t('techStock.issueToJob')}</Button>}
       {!canUseByQuantity(part) && <Text fz="sm" c="dimmed">{t('techStock.fitInstead')}</Text>}
       <Modal opened={issuing} onClose={() => setIssuing(false)} title={t('techStock.issueToJob')}>
         {!job ? (
@@ -194,10 +195,10 @@ export function PartPage() {
 export function CountPage() {
   const { t } = useTranslation();
   const { id = '' } = useParams();
-  const { stock, queue, add } = useTech();
+  const { stock, bundle, queue, add } = useTech();
   const [part, setPart] = useState<StockPart | null>(null);
   const [qty, setQty] = useState<number | ''>('');
-  const count = stock?.counts.find((c) => c.id === id);
+  const count = canUseStock(bundle) ? stock?.counts.find((c) => c.id === id) : undefined;
   const counted = useMemo(() => (stock?.parts ?? []).map((p) => ({ p, q: queuedCount(queue, id, p.id) })).filter((x) => x.q !== undefined), [stock, queue, id]);
   if (!count) return <Stack><Back to="/tech/stock" label={t('techStock.stock')} /><Text c="dimmed">{t('techStock.countGone')}</Text></Stack>;
   const store = stock!.stores.find((s) => s.id === count.storeId);

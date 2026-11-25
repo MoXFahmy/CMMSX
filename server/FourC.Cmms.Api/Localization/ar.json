@@ -1288,5 +1288,10 @@
  "Select the button to confirm your e-mail address and start using CMX. The link works for 48 hours and once only. If you didn't sign up, you can ignore this e-mail.": "اضغط على الزر لتأكيد عنوان بريدك الإلكتروني وابدأ استخدام CMX. الرابط صالح لمدة 48 ساعة ويُستخدم مرة واحدة فقط. إذا لم تسجّل أنت، يمكنك تجاهل هذه الرسالة.",
  "Confirm e-mail address": "تأكيد عنوان البريد الإلكتروني",
  "{0} can't see this PM's place, so they would not get its e-mail. Choose someone who can.": "{0} لا يرى مكان هذه الصيانة الدورية، لذا لن تصله رسائلها. اختر شخصًا يراه.",
- "This contract also covers assets at other sites that you can't see, so it can't be limited to one site.": "يشمل هذا العقد أيضًا أصولًا في مواقع أخرى لا يمكنك رؤيتها، لذا لا يمكن حصره في موقع واحد."
+ "This contract also covers assets at other sites that you can't see, so it can't be limited to one site.": "يشمل هذا العقد أيضًا أصولًا في مواقع أخرى لا يمكنك رؤيتها، لذا لا يمكن حصره في موقع واحد.",
+ "Only people who can edit work orders can remove a safety or photo step.": "لا يمكن إزالة خطوة السلامة أو خطوة الصورة إلا لمن يملك صلاحية تعديل أوامر العمل.",
+ "That isn't a valid answer.": "هذه ليست إجابة صالحة.",
+ "Enter a number between -99,999,999,999,999 and 99,999,999,999,999.": "أدخل رقمًا بين -99,999,999,999,999 و99,999,999,999,999.",
+ "Photo for a step that was removed": "صورة لخطوة تمت إزالتها",
+ "Photo for a step that was removed: {0}": "صورة لخطوة تمت إزالتها: {0}"
 }

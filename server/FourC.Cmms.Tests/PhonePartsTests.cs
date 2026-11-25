@@ -1,5 +1,7 @@
 using System.Net.Http.Json;
 using System.Text.Json;
+using FourC.Cmms.Core.Inventory;
+using Microsoft.EntityFrameworkCore;
 using static FourC.Cmms.Tests.Loop;
 using static FourC.Cmms.Tests.Phone;
 
@@ -168,6 +170,84 @@ public class PhonePartsTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var answer = await ActAsync(s.Org.Admin, "stock.issue", new { partId = s.Part, storeId = s.Store, quantity = 1, workOrderId = other }, other);
         Assert.Equal("done", Status(answer));
         Assert.Equal(4m, await OnHandAsync(s.Org.Admin, s.Part, s.Store));
+    }
+}
+
+public class PhoneStockPermissionTests(ApiFixture fx) : IClassFixture<ApiFixture>
+{
+    /// <summary>A person with this role, linked to an employee and assigned to one job.</summary>
+    private async Task<(HttpClient Client, Guid Wo)> PersonAsync(Loop.Org org, string[] permissions)
+    {
+        var role = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/roles", new { name = $"R{Guid.NewGuid():N}"[..10], description = "Test", permissions })));
+        var email = Addr("phone");
+        var user = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/users", new { fullName = "Phone", email, isActive = true, roleIds = new[] { role }, password = Loop.Password })));
+        var c = fx.Client();
+        await Ok(await c.PostAsJsonAsync("/api/auth/login", new { email, password = Loop.Password, rememberMe = false }));
+        var emp = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/employees", new { code = $"E{Guid.NewGuid():N}"[..8], fullName = "Phone", userId = user, isContractor = false })));
+        var wo = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/work-orders", new { title = "Job", siteId = org.Site, locationId = org.Location, priority = "Low", type = "Corrective", assigneeIds = new[] { emp } })));
+        return (c, wo);
+    }
+
+    [SkippableFact]
+    public async Task Role_without_stock_permission_gets_no_stock_actions_in_the_bundle()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var store = await StoreAsync(org.Admin, org.Site);
+        var part = await PartAsync(org.Admin, store);
+        await ReceiveAsync(org.Admin, part, store, 5);
+        var count = Id(await Ok(await org.Admin.PostAsJsonAsync("/api/stock-counts", new { storeId = store, name = "November" })));
+        await EmployeeAsync(org.Admin, "ME", userId: org.AdminId);
+
+        var viewOnly = await PersonAsync(org, ["workorders.view", "workorders.execute", "inventory.view"]);
+        Assert.False((await Ok(await viewOnly.Client.GetAsync("/api/tech/bundle"))).GetProperty("can").GetProperty("issueStock").GetBoolean());
+        Assert.Empty((await Ok(await viewOnly.Client.GetAsync("/api/tech/stock"))).GetProperty("counts").EnumerateArray());
+
+        // Someone with the stock permission still gets the counts.
+        var keeper = await PersonAsync(org, ["workorders.view", "workorders.execute", "inventory.view", "inventory.transact"]);
+        Assert.True((await Ok(await keeper.Client.GetAsync("/api/tech/bundle"))).GetProperty("can").GetProperty("issueStock").GetBoolean());
+        Assert.Contains((await Ok(await keeper.Client.GetAsync("/api/tech/stock"))).GetProperty("counts").EnumerateArray(), c => Id(c) == count);
+
+        // The server refuses the actions too, whatever the phone shows.
+        var line = await ActAsync(viewOnly.Client, "count.line", new { countId = count, partId = part, quantity = 3 });
+        Assert.Equal(("rejected", "You don't have permission to do this."), (Status(line), Message(line)));
+        var issue = await ActAsync(viewOnly.Client, "stock.issue", new { partId = part, storeId = store, quantity = 1, workOrderId = viewOnly.Wo }, viewOnly.Wo);
+        Assert.Equal("rejected", Status(issue));
+        Assert.Equal("done", Status(await ActAsync(keeper.Client, "count.line", new { countId = count, partId = part, quantity = 3 })));
+        Assert.Equal(5m, await OnHandAsync(org.Admin, part, store));
+    }
+}
+
+public class PhoneLastPartTests(ApiFixture fx) : IClassFixture<ApiFixture>
+{
+    [SkippableFact]
+    public async Task Two_phones_issuing_the_last_part_make_the_second_short()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx, emailOn: false);
+        var store = await StoreAsync(org.Admin, org.Site);
+        var me = await EmployeeAsync(org.Admin, "ME", userId: org.AdminId);
+        // Several rounds, because the two reads only collide some of the time.
+        for (var round = 0; round < 4; round++)
+        {
+            var part = await PartAsync(org.Admin, store, $"LAST-{round}");
+            await ReceiveAsync(org.Admin, part, store, 1);
+            var jobs = new List<Guid>();
+            for (var i = 0; i < 6; i++)
+                jobs.Add(Id(await Ok(await org.Admin.PostAsJsonAsync("/api/work-orders", new { title = $"Job {round}-{i}", siteId = org.Site, locationId = org.Location, priority = "Low", type = "Corrective", assigneeIds = new[] { me.Id } }))));
+            // Six phones, one part left: all of them are told "done".
+            var answers = await Task.WhenAll(jobs.Select(wo => ActAsync(org.Admin, "part.use", new { partId = part, storeId = store, quantity = 1 }, wo)));
+            Assert.All(answers, a => Assert.Equal("done", Status(a)));
+            Assert.Equal(5, answers.Count(a => Message(a) == "Only 0 in the store; the rest is on the store keeper's list."));
+            // Stock ends at 0 (never negative); one phone got the part, the others are short and on the store keeper's list.
+            Assert.Equal(0m, await OnHandAsync(org.Admin, part, store));
+            Assert.Equal(1, await DbAsync(fx, db => db.StockTransactions.IgnoreQueryFilters().CountAsync(t => t.PartId == part && t.Type == StockTransactionType.Issue)));
+            var shortages = (await Ok(await org.Admin.GetAsync($"/api/inventory/shortages?storeId={store}"))).EnumerateArray()
+                .Where(r => r.GetProperty("partId").GetGuid() == part).ToList();
+            Assert.Equal(5, shortages.Count);
+            Assert.All(shortages, r => Assert.Equal(1m, r.GetProperty("short").GetDecimal()));
+            Assert.Equal(5, await DbAsync(fx, db => db.WorkOrderParts.IgnoreQueryFilters().CountAsync(l => l.PartId == part)));
+        }
     }
 }
 

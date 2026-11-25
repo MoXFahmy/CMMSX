@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
 import en from '@/locales/en.json';
-import { answered, failed, formatValue, levelOf, outOfRange, printedStep, rangeMessage, roundProgress, toggleAnswer, type PointLimits, type StepState } from './measure';
+import { answered, failed, formatValue, levelOf, outOfRange, printedStep, rangeMessage, roundProgress, toggleAnswer, tooBig, type PointLimits, type StepState } from './measure';
 
 /** English, as the app shows it. */
 const t = ((key: string, values?: Record<string, unknown>) => {
@@ -75,5 +75,11 @@ describe('printed step', () => {
     expect(printedStep(step({ type: 'Text', textValue: 'Belt worn' }), t)).toEqual({ mark: '☑', result: 'Belt worn' });
     expect(printedStep(step({ type: 'Number' }), t)).toEqual({ mark: '☐', result: '' });
   });
-});
 
+  it('refuses numbers the database columns cannot hold', () => {
+    expect(tooBig(99_999_999_999_999)).toBe(false);
+    expect(tooBig(-99_999_999_999_999)).toBe(false);
+    expect(tooBig(1e15)).toBe(true);
+    expect(tooBig(-1e14)).toBe(true);
+  });
+});

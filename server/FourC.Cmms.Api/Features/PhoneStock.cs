@@ -18,6 +18,8 @@ public static class PhoneStock
     public const string ShortMessage = "Only {0} in the store; the rest is on the store keeper's list.";
     public const string ReservedMessage = "This took parts reserved for {0}.";
     public const string AskedMessage = "Added to the job's parts; the store keeper issues them.";
+    /// <summary>How many times a phone that lost the race for the last parts reads the stock again before giving up on issuing any.</summary>
+    private const int MaxRaces = 3;
     public const string ShelfMessage = "{0} is a shelf-life part: added to the job's parts; the store keeper issues it with its batch.";
 
     /// <summary>Issues <paramref name="quantity"/> to the job. Returns the note for the technician, or null. The caller saves.</summary>
@@ -31,16 +33,34 @@ public static class PhoneStock
             await PlanAsync(db, w.Id, partId, storeId, quantity, ct);
             return string.Format(ShelfMessage, part.PartNumber);
         }
-        var onHand = await Planning.OnHandAsync(db, partId, storeId, ct);
-        var toIssue = part.AllowNegativeStock ? quantity : Math.Min(quantity, Math.Max(onHand, 0));
         var notes = new List<string>();
-        if (toIssue > 0)
+        var day = await DayAsync(db, at, ct);
+        decimal onHand, toIssue;
+        // Two phones can take the last of the stock at the same moment (0.29.1): the ledger moves it atomically, so the one that loses
+        // the race reads the stock again and takes what is left, even nothing. Its remainder is short, as when it read the stock late.
+        for (var attempt = 0; ; attempt++)
         {
+            onHand = await Planning.OnHandAsync(db, partId, storeId, ct);
+            toIssue = part.AllowNegativeStock ? quantity : Math.Min(quantity, Math.Max(onHand, 0));
+            if (toIssue <= 0) break;
             var lines = await Planning.OpenLinesAsync(db, partId, storeId, ct);
             var others = Reservations.WouldShort(onHand, lines, toIssue, w.Id);
+            try
+            {
+                await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, toIssue, day, WorkOrderId: w.Id, Notes: "From the phone"), ct);
+            }
+            catch (NotEnoughStockException) when (attempt < MaxRaces)
+            {
+                continue;
+            }
+            catch (NotEnoughStockException)
+            {
+                // Still losing after several tries: nothing is issued, the whole quantity is short.
+                onHand = 0; toIssue = 0;
+                break;
+            }
             if (others.Count > 0) notes.Add(string.Format(ReservedMessage, string.Join(", ", others.Select(o => o.WorkOrderNumber).Distinct())));
-            await StockLedger.PostAsync(db, ctx, new StockPost(StockTransactionType.Issue, partId, storeId, toIssue, await DayAsync(db, at, ct),
-                WorkOrderId: w.Id, Notes: "From the phone"), ct);
+            break;
         }
         var rest = quantity - toIssue;
         if (rest > 0)

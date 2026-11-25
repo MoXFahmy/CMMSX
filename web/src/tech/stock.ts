@@ -37,5 +37,11 @@ export function queuedCount(queue: QueuedChange[], countId: string, partId: stri
   return mine.length ? mine[mine.length - 1].p.quantity : undefined;
 }
 
+/**
+ * Whether this person may issue parts to a job and count stock (the stock permission). The server refuses these actions for everyone else (0.29.1);
+ * a server without the flag (before 0.11.0) is taken to allow them.
+ */
+export const canUseStock = (bundle?: { can?: { issueStock?: boolean } } | null) => bundle?.can?.issueStock ?? true;
+
 /** Serial parts (0.24.0) are fitted and removed as units on the job, never used or given back by quantity. */
 export const canUseByQuantity = (part: StockPart) => !part.isSerialTracked;

@@ -2258,6 +2258,7 @@
     "followUp": "متابعة {{number}}",
     "followUpRaised": "أُنشئت المتابعة {{number}}",
     "outOfRange": "أدخل قيمة من {{min}} إلى {{max}} {{unit}}.",
+    "valueTooBig": "أدخل رقمًا بين -99,999,999,999,999 و99,999,999,999,999.",
     "fromStep": "من الخطوة {{step}} في",
     "answers": {
       "Ok": "سليم",

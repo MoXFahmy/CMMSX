@@ -252,8 +252,11 @@ public static partial class TechEndpoints
                 CancelReasons = await db.CancelReasons.AsNoTracking().Where(r => r.IsActive).OrderBy(r => r.Name).Select(r => new { r.Id, Name = ar && r.NameAr != null ? r.NameAr : r.Name }).ToListAsync(ct),
                 PmTasks = await db.PmTasks.AsNoTracking().Where(t => t.IsActive).OrderBy(t => t.Code)
                     .Select(t => new { t.Id, t.Code, Name = ar && t.NameAr != null ? t.NameAr : t.Name, Steps = t.Steps.OrderBy(s => s.Sequence).Select(s => ar && s.DescriptionAr != null ? s.DescriptionAr : s.Description) }).ToListAsync(ct),
-                Counts = await db.StockCounts.AsNoTracking().Where(c => c.Status == FourC.Cmms.Core.Inventory.StockCountStatus.Open && storeIds.Contains(c.StoreId))
-                    .OrderBy(c => c.CreatedAt).Select(c => new { c.Id, c.Name, c.StoreId }).ToListAsync(ct),
+                // Counting needs the stock permission (0.29.1): the others don't get the open counts, and the server refuses their lines.
+                Counts = allowed.Contains(Permissions.InventoryTransact)
+                    ? await db.StockCounts.AsNoTracking().Where(c => c.Status == FourC.Cmms.Core.Inventory.StockCountStatus.Open && storeIds.Contains(c.StoreId))
+                        .OrderBy(c => c.CreatedAt).Select(c => new { c.Id, c.Name, c.StoreId }).ToListAsync(ct)
+                    : [],
                 PurchaseOrders = allowed.Contains(Permissions.PurchasingReceive)
                     ? await db.PurchaseOrders.AsNoTracking()
                         .Where(o => (o.Status == FourC.Cmms.Core.Purchasing.PurchaseOrderStatus.Approved || o.Status == FourC.Cmms.Core.Purchasing.PurchaseOrderStatus.PartiallyReceived)

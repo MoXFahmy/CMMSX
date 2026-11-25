@@ -481,7 +481,8 @@ public static class PmEndpoints
         {
             var id = meter.Id;
             var at = input.ReadAt ?? DateTimeOffset.UtcNow;
-            var v = new Validator().When(at > DateTimeOffset.UtcNow.AddMinutes(10), "readAt", "A reading cannot be in the future.").MaxLength("note", input.Note, "Note", 1000);
+            var v = new Validator().When(at > DateTimeOffset.UtcNow.AddMinutes(10), "readAt", "A reading cannot be in the future.").MaxLength("note", input.Note, "Note", 1000)
+                .When(Checklists.Overflows(input.Value), "value", Checklists.OutOfRange); // what the columns hold (0.29.1)
             // Spike guard (legacy "Max Daily Increment"): ask for confirmation instead of silently accepting a probable typo.
             if (!input.Confirm && meter.CurrentReading is { } last && meter.LastReadAt is { } lastAt)
             {

@@ -197,4 +197,69 @@ public class StepAnswerTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(("rejected", "Enter a value from 0 to 60 °C."), (Status(answer), Message(answer)));
         Assert.Empty(await ReadingsOfAsync(s.Wo));
     }
+
+    private const string OutOfRange = "Enter a number between -99,999,999,999,999 and 99,999,999,999,999.";
+    private const string NoSuchAnswer = "That isn't a valid answer.";
+    private static readonly object[] PlainNumber = [new { description = "Count", type = "Number" }, new { description = "Belt", type = "Check" }];
+
+    [SkippableFact]
+    public async Task Undefined_answer_value_is_refused()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync(PlainNumber);
+        Assert.Contains(NoSuchAnswer, await Bad(await AnswerAsync(s, 1, new { answer = 9 })));
+        Assert.Null((await StepsAsync(s.Wo))[1].Answer);
+        var phone = await ActAsync(s.Org.Admin, "task.update", new { taskId = s.Steps[1].Id, answer = 9 }, s.Wo);
+        Assert.Equal(("rejected", NoSuchAnswer), (Status(phone), Message(phone)));
+        Assert.Null((await StepsAsync(s.Wo))[1].Answer);
+        // The defined answers still work, by name and by number.
+        await Ok(await AnswerAsync(s, 1, new { answer = 2 }));
+        Assert.Equal(StepAnswer.NotOk, (await StepsAsync(s.Wo))[1].Answer);
+    }
+
+    [SkippableFact]
+    public async Task Number_beyond_the_column_range_is_refused_with_a_range_message()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync(PlainNumber);
+        Assert.Contains(OutOfRange, await Bad(await AnswerAsync(s, 0, new { value = 1000000000000000m })));
+        Assert.Contains(OutOfRange, await Bad(await AnswerAsync(s, 0, new { value = -100000000000000m })));
+        Assert.Null((await StepsAsync(s.Wo))[0].Value);
+        await Ok(await AnswerAsync(s, 0, new { value = 99999999999999m })); // the largest the column holds
+        Assert.Equal(99999999999999m, (await StepsAsync(s.Wo))[0].Value);
+    }
+
+    [SkippableFact]
+    public async Task Meter_reading_beyond_the_column_range_is_refused()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        Guid meter = Guid.Empty;
+        var s = await SetupAsync([new { description = "Hours", type = "Meter" }], async (org, asset) => meter = await MeterAsync(org.Admin, asset, "HX"));
+        Assert.Contains(OutOfRange, await Bad(await AnswerAsync(s, 0, new { value = 1000000000000000m, meterId = meter })));
+        Assert.Contains(OutOfRange, await Bad(await s.Org.Admin.PostAsJsonAsync($"/api/meters/{meter}/readings", new { value = 1000000000000000m })));
+        var phone = await ActAsync(s.Org.Admin, "reading.add", new { meterId = meter, value = 1000000000000000m });
+        Assert.Equal(("rejected", OutOfRange), (Status(phone), Message(phone)));
+    }
+
+    [SkippableFact]
+    public async Task Phone_number_beyond_range_returns_the_message_not_a_retry()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync(PlainNumber);
+        // An answer, not a server error: the phone shows the message instead of retrying and setting the change aside.
+        var response = await s.Org.Admin.PostAsJsonAsync("/api/tech/actions", new
+        {
+            clientId = Guid.NewGuid(), at = DateTimeOffset.UtcNow, type = "task.update", workOrderId = s.Wo, payload = new { taskId = s.Steps[0].Id, value = 1000000000000000m },
+        });
+        Assert.Equal(System.Net.HttpStatusCode.OK, response.StatusCode);
+        var answer = await Ok(response);
+        Assert.Equal(("rejected", OutOfRange), (Status(answer), Message(answer)));
+        Assert.Null((await StepsAsync(s.Wo))[0].Value);
+    }
+
+    [Theory]
+    [InlineData("Enter a number between -99,999,999,999,999 and 99,999,999,999,999.")]
+    [InlineData("That isn't a valid answer.")]
+    public void New_answer_messages_have_Arabic(string english) =>
+        Assert.NotEqual(english, FourC.Cmms.Api.Infrastructure.Translator.T(english, "ar"));
 }
