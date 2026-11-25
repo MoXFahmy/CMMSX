@@ -203,8 +203,9 @@ Resources:
   # the recovery stack cmms-dr (infra/aws/dr.yml, eu-west-1), which setup.sh deploys as the account administrator. The
   # pipeline creates none of them, so it may change none of them: not even settings that look harmless, because a lifecycle
   # rule, a vault access policy or a key policy can destroy or lock away the copies once their retention ends. What the
-  # pipeline does need keeps working: S3 replication into the Ireland buckets (s3:Replicate*), AWS Backup copies into the
-  # Ireland vault (backup:CopyIntoBackupVault) and RDS replicating automated backups with the Ireland key (key use and
+  # pipeline does need keeps working: S3 replication of new files and versions into the Ireland buckets
+  # (s3:ReplicateObject, s3:ReplicateTags; never deletions, so s3:ReplicateDelete is denied there), AWS Backup copies into
+  # the Ireland vault (backup:CopyIntoBackupVault) and RDS replicating automated backups with the Ireland key (key use and
   # grants), all for the app's own roles; and creating or changing anything in London or N. Virginia (other ARNs).
   # The vault lock and Object Lock are governance mode: the account's own console administrator (root or an IAM
   # administrator outside the pipeline) can still lift them. Names are fixed by the recovery stack (cmms-dr, eu-west-1).
@@ -300,8 +301,8 @@ Resources:
           # noncurrent versions once their lock ends). Update* covers object encryption and the metadata tables, as does
           # CreateBucketMetadata*. The buckets never get a bucket policy (same-account replication needs none), so they can't
           # be opened to another account, whose principals these denies don't reach. S3 replication from London uses its own
-          # actions (s3:ReplicateObject, s3:ReplicateDelete, s3:ReplicateTags, s3:ReplicateObjectAnnotation, as the app's
-          # replication role) and keeps working, as does reading. The "*" in the ARN covers the buckets and their objects.
+          # actions (s3:ReplicateObject, s3:ReplicateTags, s3:ReplicateObjectAnnotation, as the app's replication role) and
+          # keeps working, as does reading. The "*" in the ARN covers the buckets and their objects.
           - Sid: KeepTheIrelandBuckets
             Effect: Deny
             Action:
@@ -310,6 +311,14 @@ Resources:
               - s3:Update*
               - s3:CreateBucketMetadata*
             Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
+          # Deletions never reach Ireland: replication copies new files and versions only (both rules in cmms.yml keep
+          # DeleteMarkerReplication Disabled), so nothing needs to replicate a delete marker there. Denied, a pipeline that
+          # switched delete-marker replication on in London and then deleted files there still couldn't make the Ireland
+          # versions noncurrent (the Ireland lifecycle would remove them after their lock).
+          - Sid: KeepDeleteMarkersOutOfIreland
+            Effect: Deny
+            Action: s3:ReplicateDelete
+            Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*/*"
           # No access point may exist (KeepAccessPointsOut); in case one does, nothing is written or deleted through it.
           - Sid: KeepObjectsBehindAccessPoints
             Effect: Deny
@@ -518,6 +527,10 @@ Resources:
                   - s3:Update*
                   - s3:CreateBucketMetadata*
                 Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
+              - Sid: KeepDeleteMarkersOutOfIreland
+                Effect: Deny
+                Action: s3:ReplicateDelete
+                Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*/*"
               - Sid: KeepObjectsBehindAccessPoints
                 Effect: Deny
                 Action:

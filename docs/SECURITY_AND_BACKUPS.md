@@ -91,7 +91,8 @@ only when you **re-run `setup.sh`**, never by running the deploy workflow (which
   their own schedule.
 - **Ireland buckets**: S3 Object Lock, governance mode, default retention 35 days (files) and 90 days (exports). They have no
   bucket policy on purpose. The pipeline may not add one, nor change their lifecycle, replication, Object Lock, versioning or
-  any other setting, nor write or delete anything in them (S3 replication from London still copies into them).
+  any other setting, nor write or delete anything in them, nor replicate a deletion into them (S3 replication from London
+  still copies every new file and version into them; deletions were never copied).
 - **Ireland key** (`alias/cmms-dr`): encrypts the Ireland vault and the replicated database backups. Never disable it and never
   schedule its deletion: the copies cannot be read without it. The pipeline cannot do either, nor change the key's policy.
 
