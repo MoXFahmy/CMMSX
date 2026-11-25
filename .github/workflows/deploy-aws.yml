@@ -331,8 +331,22 @@ jobs:
           source "$RUNNER_TEMP/cfn.sh"
           # The app stack's distribution id, for the edge stack's error alarm. Empty (the alarm is skipped) on a first-ever
           # deploy, and until the app stack has been deployed once with the DistributionId output (0.29.1 adds it).
-          dist_id=$(cfn_output "$STACK" "$AWS_REGION" DistributionId)
-          if [ -z "$dist_id" ]; then echo "No distribution id yet: the CloudFront error alarm is skipped this time."; fi
+          # An app stack that exists but cannot be read right now (a failed call) must not remove the alarm: the edge stack's
+          # current value stays (the deploy role already describes both stacks).
+          dist_id=""
+          app_status=$(cfn_status "$STACK" "$AWS_REGION") || app_status=UNREADABLE
+          if [ "$app_status" = NONE ]; then
+            echo "The application stack does not exist yet: the CloudFront error alarm is skipped this time."
+          elif dist_id=$(aws cloudformation describe-stacks --region "$AWS_REGION" --stack-name "$STACK" \
+              --query "Stacks[0].Outputs[?OutputKey=='DistributionId'].OutputValue | [0]" --output text 2>/dev/null); then
+            if [ "$dist_id" = None ] || [ "$dist_id" = null ]; then dist_id=""; fi
+            if [ -z "$dist_id" ]; then echo "No distribution id yet: the CloudFront error alarm is skipped this time."; fi
+          else
+            dist_id=$(aws cloudformation describe-stacks --region "$EDGE_REGION" --stack-name "$EDGE_STACK" \
+              --query "Stacks[0].Parameters[?ParameterKey=='DistributionId'].ParameterValue | [0]" --output text 2>/dev/null || true)
+            if [ "$dist_id" = None ] || [ "$dist_id" = null ]; then dist_id=""; fi
+            echo "::warning::Could not read the application stack's outputs: the CloudFront error alarm keeps the distribution it has (${dist_id:-none})."
+          fi
           cfn_deploy "$EDGE_STACK" "$EDGE_REGION" infra/aws/edge.yml "$EXEC_ROLE" yes \
             --parameter-overrides \
               WafMode="$WAF_MODE" \
