@@ -73,3 +73,17 @@ jobs:
           shellcheck -x deploy/azure/setup.sh deploy/aws/setup.sh scripts/*.sh
       - name: Test the release script
         run: bash scripts/test-release.sh
+  security:
+    # Known-vulnerable packages (NuGet, npm) and leaked secrets; scripts/security-check.sh explains the rules and the allowlist.
+    runs-on: ubuntu-latest
+    env:
+      # The commits this push or pull request adds; a push to a new branch (all-zero "before") scans the working tree only.
+      GITLEAKS_RANGE: ${{ github.event_name == 'pull_request' && format('{0}..{1}', github.event.pull_request.base.sha, github.event.pull_request.head.sha) || format('{0}..{1}', github.event.before, github.sha) }}
+    steps:
+      - uses: actions/checkout@v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-dotnet@v4
+        with: { dotnet-version: "10.0.x" }
+      - uses: actions/setup-node@v4
+        with: { node-version: 22 }
+      - run: bash scripts/security-check.sh

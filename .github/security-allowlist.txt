@@ -1,0 +1,6 @@
+# Reviewed exceptions to scripts/security-check.sh (the "security" job in ci.yml).
+# One per line:  <id>|<reason>|<expires YYYY-MM-DD>
+#   id       a GHSA-... advisory id, nuget:<package>, npm:<package>, or a gitleaks fingerprint (all printed by the script)
+#   reason   why it is safe or why it cannot be fixed yet
+#   expires  the entry stops working on this date (UTC); at most 90 days ahead, so every exception gets looked at again
+# Prefer fixing the package. Secret-scan false positives belong in .gitleaks.toml, not here.

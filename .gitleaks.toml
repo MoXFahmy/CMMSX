@@ -1,0 +1,3 @@
+title = "CMX secret scan"
+[extend]
+useDefault = true
