@@ -1,7 +1,7 @@
 import type { SecuritySettings } from '@/api/types';
 
 /** What a sign-in answer asks for next (0.25.0): done, a new password first, confirming another device's session, or an error to show. */
-export type SignInStep = 'done' | 'renew' | 'other-session' | 'error';
+export type SignInStep = 'done' | 'renew' | 'other-session' | 'unconfirmed' | 'error';
 
 function codeOf(body: unknown): string | undefined {
   return body && typeof body === 'object' && 'code' in body && typeof (body as { code: unknown }).code === 'string' ? (body as { code: string }).code : undefined;
@@ -11,6 +11,7 @@ export function signInStep(status: number, body: unknown): SignInStep {
   if (status >= 200 && status < 300) return 'done';
   const code = codeOf(body);
   if (status === 403 && (code === 'password-expired' || code === 'password-rules')) return 'renew';
+  if (status === 403 && code === 'email-unconfirmed') return 'unconfirmed';
   if (status === 409 && code === 'other-session') return 'other-session';
   return 'error';
 }

@@ -43,6 +43,7 @@ import { PlanningPage } from './pages/planning/PlanningPage';
 import { AvailabilityPage } from './pages/planning/AvailabilityPage';
 import { TimesheetPage } from './pages/planning/TimesheetPage';
 import { QrRedirect } from './pages/QrRedirect';
+import { ConfirmEmailPage } from './pages/AuthPages';
 import { RequestFeedbackPage } from './pages/work/RequestFeedbackPage';
 export function App() {
   const { me, loading } = useAuth();
@@ -57,6 +58,7 @@ export function App() {
       <Routes>
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
+        <Route path="/confirm-email" element={<ConfirmEmailPage />} />
         <Route path="*" element={<Navigate to={`/login?next=${encodeURIComponent(location.pathname + location.search)}`} replace />} />
       </Routes>
     );

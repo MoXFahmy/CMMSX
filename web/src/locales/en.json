@@ -98,6 +98,13 @@
     "add": "Add"
   },
   "auth": {
+    "checkEmailTitle": "Check your e-mail",
+    "checkEmailText": "We sent a link to {{email}}. Open it within 48 hours to start using CMX.",
+    "unconfirmed": "Confirm your e-mail address to start using CMX.",
+    "resendLink": "Send the link again",
+    "linkSent": "We sent a new link. Check your e-mail.",
+    "confirming": "Confirming your e-mail…",
+    "linkInvalid": "This link has expired or was already used.",
     "signIn": "Sign in",
     "signInTitle": "Welcome back",
     "signInSubtitle": "Sign in to your organization",

@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { Alert, Card, Center, Container, Loader, Stack, Text, Title } from '@mantine/core';
 import { useParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
-import { get, post } from '@/api/client';
+import { ApiError, get, post } from '@/api/client';
 import { fmtDateTime } from '@/components/utils';
 import { AnswerForm } from './RequestLoop';
 
@@ -11,16 +11,21 @@ type Page = {
   workOrderNumber?: string | null; completedAt?: string | null; completionNotes?: string | null; refuseNeedsComment: boolean;
 };
 
+/** Why the page couldn't load: too many tries from this network (the server's own words, to wait) or a link that's gone. */
+export function feedbackLoadFailure(e: unknown): { state: 'limited' | 'gone'; message: string | null } {
+  return e instanceof ApiError && e.status === 429 ? { state: 'limited', message: e.message } : { state: 'gone', message: null };
+}
+
 /** The single-use link's page (0.10.0): a requester without a login accepts or refuses finished work. No sign-in, only this request. */
 export function RequestFeedbackPage() {
   const { token } = useParams();
   const { t, i18n } = useTranslation();
   const [page, setPage] = useState<Page | null>(null);
-  const [state, setState] = useState<'loading' | 'open' | 'gone' | 'accepted' | 'refused'>('loading');
+  const [state, setState] = useState<'loading' | 'open' | 'gone' | 'limited' | 'accepted' | 'refused'>('loading');
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     get<Page>(`/public/feedback/${token}`).then((p) => { setPage(p); setState('open'); if (p.language && p.language !== i18n.language) void i18n.changeLanguage(p.language); })
-      .catch(() => setState('gone'));
+      .catch((e) => { const f = feedbackLoadFailure(e); setState(f.state); setError(f.message); });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [token]);
   const answer = async (accepted: boolean, rating: number | null, comment: string) => {
@@ -31,7 +36,8 @@ export function RequestFeedbackPage() {
     <Container size={560} py="xl">
       {state === 'loading' && <Center py="xl"><Loader /></Center>}
       {state === 'gone' && <Alert color="gray" title={t('requestLoop.linkGoneTitle')}>{t('requestLoop.linkGone')}</Alert>}
-      {page && state !== 'loading' && state !== 'gone' && (
+      {state === 'limited' && error && <Alert color="orange">{error}</Alert>}
+      {page && state !== 'loading' && state !== 'gone' && state !== 'limited' && (
         <Card withBorder padding="lg"><Stack>
           <Text c="dimmed" fz="sm">{page.organization}</Text>
           <Title order={3}>{t('requestLoop.publicTitle')}</Title>
