@@ -131,14 +131,14 @@ downtime).
 |---|---|---|---|
 | `cmms-github` | eu-west-2 | OIDC deploy role, ECR, CloudFormation execution role (existing) | By the user, `setup.sh` |
 | `cmms-edge` (new) | us-east-1 | WAF web ACL, its alarm and SNS topic, GuardDuty detector for us-east-1 | GitHub workflow, before the app stack |
-| `cmms-dr` (new) | eu-west-1 (Ireland) | Locked AWS Backup vault, file-copy bucket, native-backup copy bucket | GitHub workflow, before the app stack |
+| `cmms-dr` (new) | eu-west-1 (Ireland) | Locked AWS Backup vault, file-copy bucket, native-backup copy bucket | By the user, `setup.sh` (decision R17; the workflow only reads it) |
 | `cmms-app` | eu-west-2 | App, database, files, plus everything below | GitHub workflow (existing) |
 
 *Second region: eu-west-1 (my call: closest and cheapest EU region to London; both stay in the UK/EU).*
 
 `bootstrap.yml` changes: the deploy role may also manage `cmms-edge` in us-east-1 and `cmms-dr` in eu-west-1 (CloudFormation
 actions on those stack ARNs, PassRole of the existing execution role, which is global). The user re-runs `setup.sh` once; the
-script prints what changed. The workflow deploys `cmms-dr`, then `cmms-edge`, reads their outputs (vault ARN, bucket ARNs, web
+script prints what changed. `setup.sh` deploys `cmms-dr` (decision R17: the pipeline never changes the recovery stack); the workflow deploys `cmms-edge`, reads both stacks' outputs (vault ARN, bucket ARNs, web
 ACL ARN) and passes them to `cmms-app` as parameters. A missing output (first run before setup is re-run) fails the deploy with
 a message that says to re-run `setup.sh`.
 

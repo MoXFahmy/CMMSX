@@ -119,7 +119,7 @@ Then delete the four repository variables. The *Deploy to Azure* workflow then s
 | Symptom | Fix |
 |---|---|
 | Setup: `az ad app create` fails with insufficient privileges | Your organization restricts app registrations; ask an Entra administrator to run step 1. |
-| Deploy: *"No matching federated identity record"* (`AADSTS700213`) | The workflow ran from a branch other than `main`, or the repository was renamed. Re-run `setup.sh` with `REPO=owner/name`. |
+| Deploy: *"No matching federated identity record"* (`AADSTS700213`) | The workflow ran from a branch other than `main`, or the repository was renamed. Re-run `setup.sh` with `REPO=owner/name`. From 0.29.1 `setup.sh` also adds the sign-in GitHub now sends with the numeric owner and repository ids (credential `github-main-ids`); re-run it once on an existing deployment. |
 | Deploy: SQL *"location is not accepting creation of new … servers"* | That region has no SQL capacity for your subscription. Delete the resource group, re-run `setup.sh` with another `LOCATION` (e.g. `westeurope`, `northeurope`, `swedencentral`, `italynorth`), update `AZURE_RESOURCE_GROUP` if you changed it, and deploy again. |
 | Deploy: an error about the managed identity or principal not being found | Azure had not yet finished creating the new identity. Re-run the workflow. |
 | *"did not report version … within 10 minutes"* | The app failed to start. Open **Log stream** on the container app; the first lines show why (often the database connection). |

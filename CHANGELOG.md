@@ -4,6 +4,87 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.29.1] - 2026-11-25
+
+A fix release: the privacy, safety and data-loss problems left by the reviews of 0.8.0–0.26.1, plus three small things on the AWS
+side. Nothing new to learn: screens work as before, with a few clearer messages. One database change (a column that remembers
+which work an AI diagnosis was based on) is applied automatically when the new version starts. The logo download's
+security headers were already fixed by 0.29.0 and are only pinned by a test now. Registering **phone notifications for people who
+have no employee link** needs push code in the full web app, so it moves to 0.39.0 (iOS and phone); the "Request approved"
+notification now opens the right page.
+
+### Privacy and access
+- **Request answer page:** the public page behind a "how did we do?" link no longer shows the requester's name.
+- **Request e-mails and pickers:** the people you can choose to be told about requests are only those who can view requests. E-mails
+  about a request still reach everyone chosen, but people who can't open requests get the same text without the link. A person
+  chosen earlier who can no longer view requests is shown as "(can't view requests)" so they can be taken off.
+- **PM templates:** a work order made from a PM no longer lists the template's documents to people without PM access.
+- **PM e-mail recipients:** saving a PM refuses a recipient who can't see the PM's place, with their name, instead of silently never
+  sending them the mail.
+- **Purchase orders:** "waiting for your signature" e-mails go only to people who can approve purchases today.
+- **Anonymised people:** the Reply-To address of queued e-mails that held their address is cleared too.
+- **Contracts:** the check that stops a contract being limited to one site now notices assets at sites you can't see, and its
+  message names none of them.
+- **AI diagnosis:** a diagnosis shows its text only to people who can see all the work orders it was built from (people who can see
+  the whole organization always can). Others see "This diagnosis used work you can't see" with a button to run it again on their
+  own view. Diagnoses made before this version are visible to whole-organization access only.
+- **Access editing:** taking away a person's last place when every place they had was deleted now asks first and says what they
+  will see afterwards.
+- A new automatic test fails the build when a query lifts the site limits while also depending on them.
+
+### Safety steps and the phone
+- "Before starting" and "photo required" checklist steps can only be removed by people who can edit work orders.
+- A photo the phone sends for a step that was removed in the meantime is kept on the work order as "Photo for a step that was
+  removed: ..." instead of being lost.
+- Checklist answers refuse impossible answers and numbers too large to store.
+- People without the permission to move stock no longer see "Issue to a job" or the counts on the phone, and the server refuses it.
+- Two phones using the last of a part at once: the second takes what is left and the rest goes on the store keeper's shortage list
+  instead of failing.
+- Dead phone notification tokens (wrong sender, invalid token) are removed instead of retried, and old sent messages are cleaned
+  up after 30 days.
+
+### Saves that no longer lose data
+- Editing a completed work order can't start a new stop by ticking "asset down" (report it in the asset's Downtime tab).
+- Clearing "Runs hours a day" now means all day (24), not "keep the old value".
+- Making a work group, saving a purchase order, deleting or renaming brands, models, units, stores and parts, and creating a work
+  order with a stop each save fully or not at all.
+- Importing PMs keeps a meter PM's calendar dates and uses them when a PM is switched on again; importing an asset onto a group PM
+  says so instead of dropping the asset.
+- Saving a supplier's catalogue row without "preferred" no longer clears the part's preferred supplier.
+- Removing a company contact who is named on open work lines is refused (naming the work orders you can see); unticking
+  "Contractor" no longer deletes the company's rates; they are hidden and come back when it is ticked again.
+- Short-for-work drafts say which lines were skipped and why instead of dropping them.
+
+### Right totals
+- **Completed (30 days)** on the dashboard counts the organization's own days, and the list its link opens shows the same orders.
+- An asset's work history counts a stop shared by two work orders once.
+- A re-order proposal shows one total per currency instead of adding prices in different currencies.
+- The year-to-date cost-centre budget counts the current month only for the days that have passed (partly covered months in a
+  report range are counted by their days).
+
+### Clear messages instead of errors
+- Two buyers ordering the same purchase-request line, two receipts at once, two people adding the same supplier or the first
+  budget at once, odd lists sent to the lists screen, duplicate stores in a switch-on, a cost centre that is unknown or inactive,
+  and a request access window with an empty date now get a plain message (409 or 400) instead of a server error or a quietly
+  wrong save. The purchase-order API refuses a link to a request line that is unknown, hidden, not approved, or already on another
+  order. Switching a part to serial numbers while stock moves can no longer slip through.
+- Restarting an approval asks for confirmation.
+- The request form drops recipients the chosen site can't offer.
+
+### For whoever runs CMX on AWS
+- **CloudFront error alarm** (`cmms-cloudfront-errors`, N. Virginia, to the edge alert topic): CloudFront's 5xx rate at 5 percent
+  or more in 3 of 5 minutes. The app stack now has a `DistributionId` output and the workflow passes it to `cmms-edge`; the alarm
+  appears on the deploy after the one that adds the output, and is skipped on a first-ever deploy. No `setup.sh` re-run.
+- **Sign-in alarm:** the app now logs `SignInRefused` (no address, no e-mail) when it turns an attempt away, and the alarm counts it
+  with `SignInFailed`, so an attack that is being refused keeps the alarm on.
+- **Azure setup:** `deploy/azure/setup.sh` also trusts GitHub's sign-in with numeric owner and repository ids (credential
+  `github-main-ids`), as the AWS setup does; an existing Azure deployment re-runs `setup.sh` once.
+- **Security check in CI:** a gitleaks report that is missing, empty or not a list (such as `{}`) now fails the check (gitleaks
+  v8.21.2 writes `[]` when it finds nothing), and the security job stops after 20 minutes.
+- **Docs:** DEPLOY_AWS's first step says "about 5 minutes" (it also creates `cmms-dr`); the quiet-hour advice allows for a
+  rollback's time; the 0.29.0 design's stack table says `setup.sh` creates `cmms-dr`.
+- Tests that used a fixed December 2026 date now use dates relative to today.
+
 ## [0.29.0] - 2026-11-25
 
 Platform shield and automatic backups. For people using CMX: a new organization now confirms its owner's e-mail address before it

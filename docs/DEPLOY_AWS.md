@@ -46,7 +46,7 @@ see the checklist at the end.
 - Choose the region, e.g. `me-central-1` (UAE), `me-south-1` (Bahrain), `eu-central-1` (Frankfurt) or `us-east-1`.
 - Admin access to this GitHub repository.
 
-## 1. Connect AWS to GitHub (once, about 2 minutes)
+## 1. Connect AWS to GitHub (once, about 5 minutes)
 
 1. Sign in to the AWS console and switch to your chosen region (menu at the top right).
 2. Open **CloudShell** (the `>_` icon in the top bar).
@@ -58,7 +58,8 @@ see the checklist at the end.
    bash setup.sh
    ```
 
-The script ([deploy/aws/setup.sh](../deploy/aws/setup.sh)) creates the CloudFormation stack `cmms-github`
+The script ([deploy/aws/setup.sh](../deploy/aws/setup.sh)) takes about 5 minutes because it creates two stacks: the Ireland
+recovery stack `cmms-dr` (below) and the CloudFormation stack `cmms-github`
 ([deploy/aws/bootstrap.yml](../deploy/aws/bootstrap.yml)), containing:
 - the GitHub sign-in (an OpenID Connect provider, or it reuses yours if the account already has one);
 - a role that GitHub Actions may assume only from this repository's `main` branch. That role can push images and
@@ -151,7 +152,7 @@ section is what you do to turn it on.
 |---|---|---|
 | `cmms-github` | the app's region | GitHub sign-in, image repository, the CloudFormation role, the permissions boundary and backup guard, the template bucket (`cmms-templates-<account>-<region>`), the CloudTrail trail and its bucket. Created by you with `setup.sh`. |
 | `cmms-dr` (new) | `eu-west-1` (Ireland) | The locked backup vault, its encryption key and the two Object Lock buckets for file and database-export copies. Created and updated by you with `setup.sh`, never by the workflow. |
-| `cmms-edge` (new) | `us-east-1` (N. Virginia) | The web firewall (CloudFront's firewall must live here), its alarm and e-mail topic, the GuardDuty detector for that region |
+| `cmms-edge` (new) | `us-east-1` (N. Virginia) | The web firewall (CloudFront's firewall must live here), its two alarms (blocked requests, and from 0.29.1 CloudFront 5xx errors) and e-mail topic, the GuardDuty detector for that region |
 | `cmms-app` | the app's region | The app, database, files, backup plan, alarms, GuardDuty, and the new load balancer and CloudFront connection |
 
 The workflow reads `cmms-dr`'s outputs, deploys `cmms-edge`, then `cmms-app`, and passes the ids between them. The app's
@@ -167,8 +168,9 @@ The workflow compares the file with what is deployed and prints a warning when t
    **up to about 20 minutes of errors** (503): CloudFront switches to the new load balancer first, and each edge answers 503
    until the app's new task is healthy behind it. Nothing happens to the database. **Avoid two windows**, so that a failed
    first deploy can still remove its new, empty backup vault and export bucket when it rolls back: do not start between
-   **00:00 and 02:00 UTC** (the daily snapshot into the new London vault starts at 01:00 UTC, and the deploy takes about 40
-   minutes), and not on a **Sunday after 02:00 UTC** (the app starts the weekly export into the new bucket as soon as the new
+   **00:00 and 02:00 UTC** (the daily snapshot into the new London vault starts at 01:00 UTC, the deploy takes about 40
+   minutes, and a rollback adds its own time, up to about another 40 minutes; so a deploy that starts before 00:00 and fails
+   late can still be rolling back at 01:00, which is why a start well before midnight, such as 22:30 UTC, is the safer choice), and not on a **Sunday after 02:00 UTC** (the app starts the weekly export into the new bucket as soon as the new
    version runs).
 2. **Re-run `setup.sh`** in CloudShell, in the app's region, exactly as in step 1 above. It is safe to run again and changes only
    what 0.29.0 needs: it creates the recovery stack `cmms-dr` in Ireland (a few minutes), lets GitHub deploy `cmms-edge`, adds
@@ -344,5 +346,9 @@ This setup is designed for evaluation and early customers. Before it holds produ
 - **Scale-out**: the app runs one task, because the PM scheduler and start-up migrations assume a single instance.
   Running more tasks first needs a distributed lock for the scheduler.
 - **Monitoring**: from 0.29.0 alarms cover 5xx errors, app down, database CPU, storage and size, failed sign-ins, backups and
-  restore tests. Response time is not alarmed.
+  restore tests. From 0.29.1 the failed sign-ins alarm also counts the attempts the app turns away (`SignInRefused`), so a
+  sustained attack keeps it on, and `cmms-cloudfront-errors` (N. Virginia) watches CloudFront's own 5xx rate. That alarm needs the
+  distribution's id, which the workflow reads from the app stack's `DistributionId` output before it deploys `cmms-edge`; the
+  first deploy of 0.29.1 adds the output and the next deploy creates the alarm (a first-ever deploy has no distribution, so the
+  alarm is skipped). Nothing to re-run in `setup.sh`. Response time is not alarmed.
 - **Separate environments**: a staging stack that deploys first, with production promoted by approval.

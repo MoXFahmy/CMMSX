@@ -80,7 +80,7 @@ with junk, the junk is copied to Ireland as new versions, and the good ones stay
 ### Locks
 
 The Ireland vault, its key and the two Ireland buckets are in the stack **`cmms-dr`**, which `setup.sh` creates and updates as
-you, the account administrator ([DEPLOY_AWS.md](DEPLOY_AWS.md#1-connect-aws-to-github-once-about-2-minutes)). The deploy pipeline
+you, the account administrator ([DEPLOY_AWS.md](DEPLOY_AWS.md#1-connect-aws-to-github-once-about-5-minutes)). The deploy pipeline
 can read it but cannot change it, and cannot change any setting on what it holds: so a change to `infra/aws/dr.yml` takes effect
 only when you **re-run `setup.sh`**, never by running the deploy workflow (which warns when the two differ).
 
@@ -101,7 +101,7 @@ only when you **re-run `setup.sh`**, never by running the deploy workflow (which
 ## 3. Alarms and e-mails
 
 All alarms go to the address in `CMMS_ALERT_EMAIL`. Two SNS topics send them: `cmms-alerts` (London) and `cmms-edge-alerts`
-(N. Virginia, only for the firewall alarm and N. Virginia GuardDuty findings). Each recipient confirms each subscription once,
+(N. Virginia, only for the firewall alarm, the CloudFront error alarm and N. Virginia GuardDuty findings). Each recipient confirms each subscription once,
 by the link in the e-mail AWS sends. Until then nothing arrives, so check this first when no alarm has ever reached anyone
 (`aws sns list-subscriptions-by-topic --region <region> --topic-arn <arn>` shows `PendingConfirmation` for an unconfirmed one).
 
@@ -118,11 +118,12 @@ raw JSON: look for `state`, `status`, `severity`, `type` and `title`. Alarm name
 | `cmms-app-database-disk` | Free database storage below 3 GB (of 20 GB) | Check the size alarm below. More storage is a change to `AllocatedStorage` in `infra/aws/cmms.yml`; in an emergency raise it in the RDS console (Modify) and put the same value in the template so the next deploy does not fight it. |
 | `cmms-app-database-size` | The daily size measurement reached 7 GB (7,168 MB) | The free SQL Server Express edition stops at **10 GB**, and then writes fail. You have time, not much. Plan the move to a bigger edition: restore a snapshot into a new instance (minutes of downtime). Attachments are in S3, not in the database, so growth is data, history and logs. |
 | `cmms-app-database-size-not-measured` | **"Database size not measured":** no daily size line (`DatabaseSize mb=`) in the app log for 2 days | The 7 GB alarm is blind until this is fixed. The app measures once a day. Check the app is running, then the log for `Platform job failed: Measuring the database`. Platform jobs are off if the setting `Platform:JobsAutoRun` is false. |
-| `cmms-app-sign-in-attack` | More than 50 failed sign-ins in 5 minutes | Someone is guessing passwords (or a shift of people forgot a changed password; wrong passwords, locked accounts and unknown e-mails all count). The per-address limit already turns an address away after 20 wrong tries in 15 minutes. To see the addresses: N. Virginia console, *WAF & Shield*, web ACL `cmms-edge-webacl`, *Sampled requests*. If it is a real attack and the firewall is still in `count`, switch to `block`. |
+| `cmms-app-sign-in-attack` | More than 50 failed or turned-away sign-ins in 5 minutes (from 0.29.1 the app's refusals, logged as `SignInRefused`, count too, so the alarm stays on while an attack is being turned away) | Someone is guessing passwords (or a shift of people forgot a changed password; wrong passwords, locked accounts and unknown e-mails all count). The per-address limit already turns an address away after 20 wrong tries in 15 minutes. To see the addresses: N. Virginia console, *WAF & Shield*, web ACL `cmms-edge-webacl`, *Sampled requests*. If it is a real attack and the firewall is still in `count`, switch to `block`. |
 | `cmms-app-native-export-error` | An export reported `BackupExport status=ERROR` | Sundays only. Read the log line in `/ecs/cmms-app` for the reason. The app tries again every hour that Sunday until it works (or gives up after 3 hours of waiting on one try). Common causes: the option group or its role was changed, the bucket is missing. Fix, then wait for the next try, or restart the service to try at once (an export is due on a Sunday from 02:00 UTC until one has succeeded). On any other day the next Sunday tries again. |
 | `cmms-app-native-export-missing` | No successful export in the last calendar week (Monday to Sunday, UTC); fires **the Monday after a missed Sunday** | The week was missed, so the newest `.bak` is more than a week old. Fix the cause as above. The alarm stays on until a week that contains a successful export has ended, so it can still show on the next Monday after you fixed it. The other layers (snapshots, point-in-time) were not affected. |
 | `cmms-app-files-replication-failed` | S3 failed to copy one or more uploaded files to Ireland (`cmms-dr-files-<account>`) in 5 minutes | The London copy is fine; the Ireland copy of those files is missing. S3 console, the files bucket (output `FilesBucketName`), *Metrics*, *Replication metrics* shows when. Usual causes: the Ireland bucket was changed or removed by hand, or the replication role (`cmms-app-ReplicationRole-…`) was changed. Fix the cause, then copy the failed files once with an S3 Batch Replication job limited to objects whose replication status is *Failed* (as in [section 8](#8-one-time-steps-after-the-first-deploy), step 1). The alarm stays on until a file copies successfully again (the next upload). |
 | `cmms-app-exports-replication-failed` | S3 failed to copy the weekly export (`native/cmms-<date>.bak`) to Ireland (`cmms-dr-backups-<account>`) | The London export is fine; Ireland lacks that week's copy. Same causes and fix as above, on the export bucket (output `BackupsBucketName`). The alarm stays on until the next export copies, a week later, unless you copy the failed one with Batch Replication. |
+| `cmms-cloudfront-errors` (N. Virginia, topic `cmms-edge-alerts`; from 0.29.1) | CloudFront answered 5 percent or more of requests with a 5xx error, in 3 of the last 5 minutes | The app or its load balancer is failing for visitors, or an origin is down. Check `cmms-app-site-errors` and open the site yourself. It is created once the app stack reports a `DistributionId`; with no traffic it stays quiet. |
 | `cmms-waf-blocking` (N. Virginia, topic `cmms-edge-alerts`) | More than 1,000 requests blocked in 5 minutes | An attack, or a rule catching real users. Check *Sampled requests* on the web ACL. If real users are caught, go back to `count` ([DEPLOY_AWS.md](DEPLOY_AWS.md#move-the-web-firewall-to-block)). In `count` mode nothing is blocked, so this alarm cannot fire; look at the counted requests instead. |
 
 ### E-mails that are not alarms
@@ -542,7 +543,7 @@ The checklist behind a release of 0.29.0. Detail is in [DEPLOY_AWS.md](DEPLOY_AW
 
 1. Pick a **quiet hour** for the deploy (up to about 20 minutes of errors while the load balancer switches). **Avoid two
    windows**: not between **00:00 and 02:00 UTC** (the first daily snapshot goes into the new London vault from 01:00 UTC; the
-   first deploy takes about 40 minutes) and not on a **Sunday after 02:00 UTC** (the app starts the weekly export into the new
+   first deploy takes about 40 minutes and a rollback adds up to about 40 more, so start well before midnight, such as 22:30 UTC) and not on a **Sunday after 02:00 UTC** (the app starts the weekly export into the new
    export bucket as soon as the new version runs). A failed first deploy removes its new vault and export bucket only while
    they are empty; with something in them the rollback cannot finish and a console administrator has to empty them first.
    (With `CMMS_IRELAND_DB_COPY` = `hourly-snapshots` a snapshot lands every hour, so no window is safe: if such a first deploy
