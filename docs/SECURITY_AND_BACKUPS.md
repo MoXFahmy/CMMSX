@@ -63,7 +63,7 @@ figure holds for the default Ireland method below; with the fallback it is 1 to 
 | Daily snapshot | AWS Backup, 01:00 UTC | 35 days | London vault `cmms-app-vault`, copied to Ireland vault `cmms-dr-vault` |
 | Monthly snapshot | AWS Backup, 1st of the month, 01:00 UTC | 12 months | both vaults |
 | Weekly export | Native SQL Server backup (`.bak`) written by RDS every Sunday from 02:00 UTC, started by the app. File `native/cmms-<date>.bak` | 90 days | bucket `cmms-backups-<account>-eu-west-2` (London), replicated to `cmms-dr-backups-<account>` (Ireland) |
-| Files (attachments) | S3 versioning plus replication of every new file and version to Ireland. Old versions expire after 90 days | 90 days of old versions | files bucket (London), `cmms-dr-files-<account>` (Ireland) |
+| Files (attachments) | S3 versioning plus replication of every new file and version to Ireland. Replaced and deleted versions expire after 90 days in London and after **1 year** in Ireland | 90 days of old versions (London), 1 year (Ireland) | files bucket (London), `cmms-dr-files-<account>` (Ireland) |
 | Infrastructure | Templates and workflow in git | forever | GitHub |
 
 **Which Ireland database method is configured.** By default (`CMMS_IRELAND_DB_COPY` = `replication`) the database reaches
@@ -74,7 +74,8 @@ London). The exposure becomes 1 to 2 hours, and there is no point-in-time restor
 the weekly export and the file copies are the same either way.
 
 **Deletions are not copied.** If a file is deleted in London, it stays current in Ireland. Replication copies new files and new
-versions only.
+versions only. **Ireland keeps replaced file versions longer** (a year, against London's 90 days): if someone overwrote files
+with junk, the junk is copied to Ireland as new versions, and the good ones stay there, replaced but recoverable, for a year.
 
 ### Locks
 
@@ -89,7 +90,8 @@ only when you **re-run `setup.sh`**, never by running the deploy workflow (which
   mode (nobody can delete, irreversible) is a decision for later, after a quarter of clean rehearsals.
 - **London vault** (`cmms-app-vault`): an access policy lets only the root user delete a recovery point. Snapshots still expire on
   their own schedule.
-- **Ireland buckets**: S3 Object Lock, governance mode, default retention 35 days (files) and 90 days (exports). They have no
+- **Ireland buckets**: S3 Object Lock, governance mode, default retention 35 days (files) and 90 days (exports); replaced file
+  versions are kept a year after they are replaced (exports expire after 90 days, as in London). They have no
   bucket policy on purpose. The pipeline may not add one, nor change their lifecycle, replication, Object Lock, versioning or
   any other setting, nor write or delete anything in them, nor replicate a deletion into them (S3 replication from London
   still copies every new file and version into them; deletions were never copied).
@@ -281,8 +283,8 @@ aws s3api list-object-versions --region <region> --bucket "$B" --prefix "<key>" 
   ```bash
   aws s3api copy-object --region <region> --bucket "$B" --key "<key>" --copy-source "$B/<key>?versionId=<VersionId>"
   ```
-  (Old versions are kept 90 days.)
-- **From the Ireland copy** (London bucket lost, or the versions are gone):
+  (Old versions are kept 90 days in London.)
+- **From the Ireland copy** (London bucket lost, or the versions are gone; Ireland keeps replaced versions for a year):
   ```bash
   aws s3api list-object-versions --region eu-west-1 --bucket "cmms-dr-files-$ACCOUNT" --prefix "<key>"
   aws s3api get-object --region eu-west-1 --bucket "cmms-dr-files-$ACCOUNT" --key "<key>" --version-id "<VersionId>" restored-file

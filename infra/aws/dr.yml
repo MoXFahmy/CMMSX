@@ -119,11 +119,12 @@ Resources:
           - ObjectOwnership: BucketOwnerEnforced
       LifecycleConfiguration:
         Rules:
-          - Id: expire-old-versions-after-90-days
+          # A year, not London's 90 days: a version overwritten by junk replicated over every key stays recoverable here.
+          - Id: expire-old-versions-after-365-days
             Status: Enabled
             Prefix: ""
             NoncurrentVersionExpiration:
-              NoncurrentDays: 90
+              NoncurrentDays: 365
             ExpiredObjectDeleteMarker: true
             AbortIncompleteMultipartUpload:
               DaysAfterInitiation: 7

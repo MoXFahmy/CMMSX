@@ -58,7 +58,7 @@ parked, so this release takes the next number after 0.28.0.
   (about 15 minutes of changes at risk; point-in-time restore works in Ireland too); `CMMS_IRELAND_DB_COPY=hourly-snapshots`
   switches to the fallback if RDS refuses the default (hourly snapshot copy kept 7 days; 1 to 2 hours at risk). A weekly native
   export (`.bak`, Sundays) is kept 90 days in London and Ireland, and every file is copied to Ireland. Old file versions are now
-  kept 90 days (was 14). Once a month AWS Backup restores the latest snapshot into a temporary instance and e-mails the result.
+  kept 90 days in London (was 14) and a year in Ireland (`infra/aws/dr.yml`, applied by `setup.sh`). Once a month AWS Backup restores the latest snapshot into a temporary instance and e-mails the result.
   Files uploaded before this release need one S3 Batch Replication job to be copied to Ireland (docs/SECURITY_AND_BACKUPS.md).
 - **Logs** are kept 90 days (was 30) and written one JSON line per entry, which the alarms read.
 

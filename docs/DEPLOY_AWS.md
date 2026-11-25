@@ -30,11 +30,12 @@ In the region you choose:
 have free-tier credits that cover part of this. Deleting the stacks stops the charges (see the end of this page).
 
 From 0.29.0 two more stacks and some account-wide services are added (see *Security and backups* below), about **$30–50 a
-month** more. The parts add up to about $25–45 at today's database size: the web firewall (~$12), GuardDuty (~$3–10),
-snapshots and copies in a second region (~$3–8), the continuous database copy (~$2–5), file and export replication (~$1–3),
-the replication metrics behind the two "copy to Ireland failed" alarms (~$3: S3 bills them as CloudWatch custom metrics,
-four per replication rule), CloudTrail and the other alarms (~$1–4). The headline leaves room for growth and data transfer. VPC origins, private subnets, Object
-Lock and the e-mail topics cost nothing. The restore test costs well under $1 a month. All in, expect **about $90–125 a month**.
+month** more. The parts add up to about $25–45 at today's database size: the web firewall (~$12), GuardDuty (~$3–10), snapshots
+and copies in a second region (~$3–8), the continuous database copy (~$2–5), file and export replication, with a year of
+replaced file versions kept in Ireland (~$1–3), the replication metrics behind the two "copy to Ireland failed" alarms (~$3: S3
+bills them as CloudWatch custom metrics, four per replication rule), CloudTrail and the other alarms (~$1–4). The headline
+leaves room for growth and data transfer. VPC origins, private subnets, Object Lock and the e-mail topics cost nothing. The
+restore test costs well under $1 a month. All in, expect **about $90–125 a month**.
 
 SQL Server Express is free to license and supports databases up to 10 GB, which is plenty for evaluation. For production,
 see the checklist at the end.
@@ -281,7 +282,8 @@ put another proxy in front of the app, let it pass request bodies of 52 MB.
   login is in Secrets Manager (stack output `DatabaseSecretArn`).
 - **Alarms** arrive at `CMMS_ALERT_EMAIL`; what each one means and what to do is in
   [SECURITY_AND_BACKUPS.md](SECURITY_AND_BACKUPS.md#3-alarms-and-e-mails).
-- **Deleted attachments** stay recoverable for 90 days (and a copy of every file is kept in Ireland). In S3, open the bucket
+- **Deleted attachments** stay recoverable for 90 days (and a copy of every file is kept in Ireland, where replaced versions
+  are kept a year). In S3, open the bucket
   from the stack output `FilesBucketName` and turn on **Show versions**.
 - **Own domain** (e.g. `cmms.example.com`):
   1. In **ACM, region us-east-1** (CloudFront only uses certificates from there), request a public certificate for the
