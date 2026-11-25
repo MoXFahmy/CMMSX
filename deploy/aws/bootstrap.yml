@@ -115,7 +115,9 @@ Resources:
   TrailBucket:
     Type: AWS::S3::Bucket
     Condition: CreateTheTrail
-    DeletionPolicy: Retain # the logs outlive the stack
+    # The logs outlive the stack; a setup run that fails while creating the bucket removes it again, so the
+    # next run can create it (Retain would keep it and make every re-run fail on the taken name).
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub "cmms-trail-${AWS::AccountId}"
@@ -287,39 +289,40 @@ Resources:
               - s3:CreateAccessPointForObjectLambda
               - s3:CreateMultiRegionAccessPoint
             Resource: "*"
-          # The Ireland copies (cmms-dr-files-<account>, cmms-dr-backups-<account>) and the CloudTrail logs
-          # (cmms-trail-<account>), also through any access point. Plain DeleteObject only adds a delete marker on the
-          # versioned Object Lock buckets in Ireland (and the bucket's own create handler uses it), so it's denied on the
-          # trail bucket alone.
+          # The Ireland copies (cmms-dr-files-<account>, cmms-dr-backups-<account>). Plain DeleteObject only adds a delete
+          # marker on these versioned Object Lock buckets (and the bucket's own create handler uses it), so it stays allowed.
           - Sid: KeepObjectVersions
             Effect: Deny
             Action: s3:DeleteObjectVersion
-            Resource:
-              - !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*/*"
-              - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*/*"
-              - !Sub "arn:${AWS::Partition}:s3:*:${AWS::AccountId}:accesspoint/*/object/*"
-          - Sid: KeepTheTrailLogs
+            Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*/*"
+          # No access point may exist (KeepAccessPointsOut); in case one does, nothing is written or deleted through it.
+          - Sid: KeepObjectsBehindAccessPoints
             Effect: Deny
-            Action: s3:DeleteObject
-            Resource:
-              - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*/*"
-              - !Sub "arn:${AWS::Partition}:s3:*:${AWS::AccountId}:accesspoint/*/object/*"
-          # The Ireland buckets never get a bucket policy (same-account replication needs none); the trail bucket's is
-          # written once by this stack. Neither can be opened to another account, whose principals these denies don't reach.
-          - Sid: KeepTheBucketsClosed
+            Action:
+              - s3:PutObject
+              - s3:DeleteObject
+              - s3:DeleteObjectVersion
+            Resource: !Sub "arn:${AWS::Partition}:s3:*:${AWS::AccountId}:accesspoint/*/object/*"
+          # The Ireland buckets never get a bucket policy (same-account replication needs none), so they can't be opened
+          # to another account, whose principals these denies don't reach.
+          - Sid: KeepTheIrelandBucketsClosed
             Effect: Deny
             Action:
               - s3:DeleteBucket
               - s3:PutBucketPolicy
               - s3:DeleteBucketPolicy
-            Resource:
-              - !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
-              - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*"
-          - Sid: KeepTheTrailBucketSettings
+            Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
+          # The trail bucket (cmms-trail-<account>) is set up by this stack and written only by CloudTrail as its service
+          # principal, which these denies don't reach. Nothing the pipeline deploys writes to it, so every write is denied:
+          # overwriting or deleting a log (an overwritten log becomes a noncurrent version the lifecycle removes a day after
+          # its lock ends), the policy, lifecycle, lock, encryption, requester pays, ownership, ACLs and replication.
+          # The "*" in the ARN covers the bucket and its objects.
+          - Sid: KeepTheTrailBucket
             Effect: Deny
             Action:
-              - s3:PutLifecycleConfiguration
-              - s3:PutBucketObjectLockConfiguration
+              - s3:Put*
+              - s3:Replicate*
+              - s3:Delete*
             Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*"
           # Boundary only: a role inside it never writes IAM (service-linked roles, which only their service can use,
           # stay possible) and never passes or assumes a role outside /cmms/ (e.g. this pipeline's own roles).
@@ -490,30 +493,27 @@ Resources:
               - Sid: KeepObjectVersions
                 Effect: Deny
                 Action: s3:DeleteObjectVersion
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*/*"
-                  - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*/*"
-                  - !Sub "arn:${AWS::Partition}:s3:*:${AWS::AccountId}:accesspoint/*/object/*"
-              - Sid: KeepTheTrailLogs
+                Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*/*"
+              - Sid: KeepObjectsBehindAccessPoints
                 Effect: Deny
-                Action: s3:DeleteObject
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*/*"
-                  - !Sub "arn:${AWS::Partition}:s3:*:${AWS::AccountId}:accesspoint/*/object/*"
-              - Sid: KeepTheBucketsClosed
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                Resource: !Sub "arn:${AWS::Partition}:s3:*:${AWS::AccountId}:accesspoint/*/object/*"
+              - Sid: KeepTheIrelandBucketsClosed
                 Effect: Deny
                 Action:
                   - s3:DeleteBucket
                   - s3:PutBucketPolicy
                   - s3:DeleteBucketPolicy
-                Resource:
-                  - !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
-                  - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*"
-              - Sid: KeepTheTrailBucketSettings
+                Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
+              - Sid: KeepTheTrailBucket
                 Effect: Deny
                 Action:
-                  - s3:PutLifecycleConfiguration
-                  - s3:PutBucketObjectLockConfiguration
+                  - s3:Put*
+                  - s3:Replicate*
+                  - s3:Delete*
                 Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*"
 
   # GitHub Actions (main branch of GitHubRepo only) assumes this role: push images, deploy the app stacks

@@ -50,19 +50,28 @@ fi
 
 # One multi-region CloudTrail trail is enough (a second one of the same events costs $2 per 100,000 events). Keep the
 # choice made on an earlier run; otherwise create cmms-trail unless another multi-region trail is already logging.
+# describe-trails also lists multi-region trails set up in other regions. A cmms-trail set up in this region is this
+# stack's own (never "another" trail). A cmms-trail from another region (this setup run there first, e.g. before a
+# rebuild here) counts even if its region is down and can't report logging: its bucket name is taken account-wide.
 CREATE_TRAIL=$(aws cloudformation describe-stacks --stack-name "$STACK" \
   --query "Stacks[0].Parameters[?ParameterKey=='CreateTrail'].ParameterValue" --output text 2>/dev/null || true)
 if [ "$CREATE_TRAIL" != "true" ] && [ "$CREATE_TRAIL" != "false" ]; then
   CREATE_TRAIL=true
-  read -r -a TRAILS <<< "$(aws cloudtrail describe-trails \
-    --query "trailList[?IsMultiRegionTrail && Name!='cmms-trail'].TrailARN" --output text 2>/dev/null || true)"
-  for TRAIL in "${TRAILS[@]}"; do
-    if [ "$(aws cloudtrail get-trail-status --name "$TRAIL" --query IsLogging --output text 2>/dev/null || true)" = "True" ]; then
-      echo "Found CloudTrail trail $TRAIL (multi-region, logging): using it instead of creating cmms-trail."
+  while IFS=$'\t' read -r TRAIL_NAME TRAIL_ARN TRAIL_HOME; do
+    [ -n "$TRAIL_ARN" ] || continue
+    if [ "$TRAIL_NAME" = cmms-trail ]; then
+      echo "Found CMX's CloudTrail trail $TRAIL_ARN (set up in $TRAIL_HOME): using it instead of creating another."
       CREATE_TRAIL=false
       break
     fi
-  done
+    if [ "$(aws cloudtrail get-trail-status --name "$TRAIL_ARN" --query IsLogging --output text 2>/dev/null || true)" = "True" ]; then
+      echo "Found CloudTrail trail $TRAIL_ARN (multi-region, logging): using it instead of creating cmms-trail."
+      CREATE_TRAIL=false
+      break
+    fi
+  done <<< "$(aws cloudtrail describe-trails \
+    --query "trailList[?IsMultiRegionTrail && !(Name=='cmms-trail' && HomeRegion=='$REGION')].[Name, TrailARN, HomeRegion]" \
+    --output text 2>/dev/null || true)"
 fi
 
 # GitHub signs its tokens with a subject that includes the owner's and repository's numeric ids
