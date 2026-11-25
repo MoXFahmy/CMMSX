@@ -94,7 +94,7 @@ versions only.
 All alarms go to the address in `CMMS_ALERT_EMAIL`. Two SNS topics send them: `cmms-alerts` (London) and `cmms-edge-alerts`
 (N. Virginia, only for the firewall alarm and N. Virginia GuardDuty findings). Each recipient confirms each subscription once,
 by the link in the e-mail AWS sends. Until then nothing arrives, so check this first when no alarm has ever reached anyone
-(`aws sns list-subscriptions-by-topic --topic-arn <arn>` shows `PendingConfirmation` for an unconfirmed one).
+(`aws sns list-subscriptions-by-topic --region <region> --topic-arn <arn>` shows `PendingConfirmation` for an unconfirmed one).
 
 Alarms from CloudWatch say the alarm name and why. Backup, restore test and GuardDuty e-mails come through EventBridge and are
 raw JSON: look for `state`, `status`, `severity`, `type` and `title`. Alarm names start with the app stack's name (`cmms-app`).
@@ -157,11 +157,14 @@ aws rds restore-db-instance-to-point-in-time --region <region> \
   --source-db-instance-identifier <identifier> --target-db-instance-identifier cmms-restore-1 \
   --restore-time 2026-12-01T09:30:00Z \
   --db-subnet-group-name <subnet-group> --vpc-security-group-ids <security-group> \
-  --option-group-name <option-group> --no-publicly-accessible
+  --option-group-name <option-group> --no-publicly-accessible --no-multi-az \
+  --copy-tags-to-snapshot --auto-minor-version-upgrade
 ```
 
 (Use `--use-latest-restorable-time` instead of `--restore-time` for the newest point.) The time is UTC. Restoring takes
-roughly 20 to 60 minutes.
+roughly 20 to 60 minutes. The flags match the database in `infra/aws/cmms.yml` (private, one zone, tags copied to snapshots,
+minor upgrades on, the native-backup option group). A restore keeps the source's storage encryption key, instance class and
+master password, but **not** its backup retention or the copy to Ireland; section 4.5 sets those.
 
 ### 4.2 A point in time in Ireland
 
@@ -179,12 +182,15 @@ backup, *Actions*, *Restore to point in time*. Or:
 aws rds restore-db-instance-to-point-in-time --region eu-west-1 \
   --source-db-instance-automated-backups-arn <DBInstanceAutomatedBackupsArn> \
   --target-db-instance-identifier cmms-restore-ie --use-latest-restorable-time \
-  --no-publicly-accessible
+  --db-subnet-group-name <subnet-group> --vpc-security-group-ids <security-group> \
+  --option-group-name <option-group> --no-publicly-accessible --no-multi-az \
+  --copy-tags-to-snapshot --auto-minor-version-upgrade
 ```
 
-Add `--db-subnet-group-name` and `--vpc-security-group-ids` for the network the app will run in. The Ireland option groups are
-separate from London's; the restored instance has no native-backup option until the stack there makes one (see [section
-5](#5-rebuild-in-ireland)). This method exists only when `CMMS_IRELAND_DB_COPY` is `replication`.
+Use the subnet group, security group and option group of the network the app will run in. Option groups are per region: the
+London one is not there, so a restored instance has no native-backup option until you give it the one the stack in that region
+made (see [section 5](#5-rebuild-in-ireland)); without it the weekly export fails. This method exists only when
+`CMMS_IRELAND_DB_COPY` is `replication`.
 
 ### 4.3 A snapshot from the London vault
 
@@ -205,6 +211,10 @@ copies for 7 days.
 Any restored instance is a new instance with its own address. The simplest way to give it to the app is to swap names, so the
 address the app already uses points at it. The app must be stopped while you do this.
 
+A restore into the same stack (4.1, 4.3, or 4.4 in the app's own region) keeps the database login the stack's secret already
+holds, so no password step is needed. A restore into a **different** stack (a rebuild) does not: see [section 5](#5-rebuild-in-ireland),
+step 6.
+
 1. Stop the app (no writes while you swap). Take the cluster and service names from the `cmms-app` stack's outputs
    `ClusterName` and `ServiceName`:
    ```bash
@@ -221,9 +231,26 @@ address the app already uses points at it. The app must be stopped while you do 
    aws ecs update-service --region <region> --cluster <ClusterName> --service <ServiceName> --desired-count 1
    ```
 4. Check `https://<address>/api/health`, sign in, and look at the newest records.
-5. Run **Deploy to AWS** once (Actions, Run workflow). CloudFormation re-applies the settings a restore does not carry over
-   (backup copying to Ireland, retention). Check in the RDS console that the new instance has the same backup retention (35
-   days) and option group as before.
+5. **Put the backup settings back.** A restore starts with RDS's default backup retention and no copy to Ireland, and running
+   **Deploy to AWS** does **not** fix that: CloudFormation only changes what the template or its parameters changed, and it does
+   not notice that a setting on the database differs. Set them yourself (wait for the instance to be *available* first):
+   ```bash
+   aws rds modify-db-instance --region <region> --db-instance-identifier <identifier> --backup-retention-period 35 --apply-immediately
+   aws rds describe-db-instances --region <region> --db-instance-identifier <identifier> \
+     --query "DBInstances[0].[BackupRetentionPeriod,DBInstanceArn,OptionMemberships[0].OptionGroupName,DBSubnetGroup.DBSubnetGroupName]" --output text
+   ```
+   The first number should read `35`; the option group must be the stack's (it carries the native backup option). Then, only if
+   `CMMS_IRELAND_DB_COPY` is `replication`, start the copy to Ireland again. The key is the `cmms-dr` stack's output `DrKeyArn`:
+   ```bash
+   KEY=$(aws cloudformation describe-stacks --region eu-west-1 --stack-name cmms-dr --query "Stacks[0].Outputs[?OutputKey=='DrKeyArn'].OutputValue" --output text)
+   aws rds start-db-instance-automated-backups-replication --region eu-west-1 \
+     --source-db-instance-arn <DBInstanceArn from above> --kms-key-id "$KEY" --backup-retention-period 7
+   aws rds describe-db-instance-automated-backups --region eu-west-1 \
+     --query "DBInstanceAutomatedBackups[].[DBInstanceIdentifier,Status,RestoreWindow.LatestTime]" --output table
+   ```
+   The new instance should appear in Ireland (a few minutes, then a recent `LatestTime`). On the hourly fallback there is
+   nothing to start. The table above lists every setting the template gives the database; the template sets no deletion
+   protection and no log exports, so there is nothing else to restore.
 6. Keep `<identifier>-old` for a few days, then delete it in the RDS console. Do not delete it before you are sure.
 
 ### 4.6 A single file
@@ -281,7 +308,7 @@ For when the London region is lost or unusable for a long time. This is document
 ([section 9](#9-the-quarterly-rehearsal)). It needs a console administrator, because it uses the root or administrator access the
 pipeline does not have.
 
-1. **Make sure the copies are fine.** In Ireland: `cmms-dr-vault` holds recent recovery points; `describe-db-instance-automated-backups`
+1. **Make sure the copies are fine.** In Ireland: `cmms-dr-vault` holds recent recovery points; `aws rds describe-db-instance-automated-backups --region eu-west-1`
    (section 4.2) shows a recent `LatestTime` when you use `replication`; the files bucket `cmms-dr-files-<account>` has the files.
    Nothing here depends on London.
 2. **Set up the new region.** In CloudShell **in the new region**: `bash setup.sh` (`REGION=eu-west-1 bash setup.sh` also works).
@@ -300,8 +327,25 @@ pipeline does not have.
    - The new region gets its own weekly-export bucket, `cmms-backups-<account>-<region>`; the London one is kept.
 6. **Bring the data.** Stop the new app (section 4.5, step 1). Restore the Ireland copy as a new instance **inside the new stack's
    network** (section 4.2 for the point in time, or 4.4 for a snapshot), using the subnet group, security group and option group
-   of the empty instance the stack made (the commands in [section 4](#4-restore) show them). Then swap names (4.5, steps 2 to 6).
-   Copy the files into the new bucket:
+   of the empty instance the stack made (the commands in [section 4](#4-restore) show them). Then swap names (4.5, steps 2 and 3
+   only: leave the app stopped, skip the start).
+   **Reset the database password before starting the app.** The new stack made its own random password for the login
+   `cmmsadmin` and keeps it in its secret (stack output `DatabaseSecretArn`); the app reads it from there. The restored copy still
+   has the **old** stack's password, so the app could not sign in to it, and a deploy would not change that. Set the restored
+   instance's password to the new secret's value (the secret stays the one place the password lives). The commands keep it out
+   of the screen and of the shell history:
+   ```bash
+   PW=$(aws secretsmanager get-secret-value --region <new region> --secret-id <DatabaseSecretArn> --query SecretString --output text \
+     | python3 -c 'import sys,json; print(json.load(sys.stdin)["password"])')
+   aws rds modify-db-instance --region <new region> --db-instance-identifier <identifier> --master-user-password "$PW" --apply-immediately
+   unset PW
+   aws rds wait db-instance-available --region <new region> --db-instance-identifier <identifier>
+   ```
+   This takes a few minutes. Then start the app with a fresh deployment, so its tasks pick the connection up again:
+   ```bash
+   aws ecs update-service --region <new region> --cluster <ClusterName> --service <ServiceName> --desired-count 1 --force-new-deployment
+   ```
+   Put the backup settings back (4.5, step 5; in the new region), then copy the files into the new bucket:
    ```bash
    aws s3 sync "s3://cmms-dr-files-$ACCOUNT" "s3://<new FilesBucketName>" --region eu-west-1
    ```
@@ -364,6 +408,8 @@ quiet hour. If the deploy fails, CloudFormation rolls back by itself and the pub
 from you. If the deploy succeeds but the site misbehaves, do not re-run an old 0.28.x commit: its template would take the
 permissions boundary off the app's roles, which the guard refuses, and leave the stack stuck. Deploy the last good 0.29.x commit
 instead, or have a developer fix forward (to go back to a public load balancer the template has to change, keeping the boundary).
+There is no do-it-yourself revert to 0.28.x: once 0.29.0 has been applied, the boundary on the app's roles cannot be removed by the
+pipeline, and an older template tries to remove it.
 
 **A failed first deployment of `cmms-edge`** (ROLLBACK_COMPLETE) is removed and started again by the workflow. **`cmms-dr`** is
 never removed automatically, because it holds the locked copies: it stops with a message. Its key, vault and buckets are kept on
@@ -423,7 +469,7 @@ that a restore works before the day you need it.
    aws cloudwatch set-alarm-state --region <region> --alarm-name cmms-app-site-errors --state-value ALARM --state-reason "rehearsal"
    aws cloudwatch set-alarm-state --region us-east-1 --alarm-name cmms-waf-blocking --state-value ALARM --state-reason "rehearsal"
    ```
-   Both alarms return to normal by themselves on the next check. Also check `aws sns list-subscriptions-by-topic` for both topics
+   Both alarms return to normal by themselves on the next check. Also check `aws sns list-subscriptions-by-topic --region <region> --topic-arn <arn>` for each topic (`us-east-1` for `cmms-edge-alerts`)
    shows no `PendingConfirmation`.
 2. **The Ireland vault is current.** The newest recovery point in `cmms-dr-vault` is less than a day and a half old and the
    vault is locked:
