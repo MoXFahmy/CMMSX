@@ -5,14 +5,6 @@ Description: >-
   cmms-dr by .github/workflows/deploy-aws.yml before the app stack; see docs/DEPLOY_AWS.md. Everything here is kept when
   the stack is deleted, because these are the copies that must survive a mistake.
 
-Parameters:
-  SourceAccountId:
-    Type: String
-    AllowedPattern: "^[0-9]{12}$"
-    Description: >-
-      AWS account that owns the London app stack and sends copies here (the same account that deploys this stack).
-      Used by the key policy to admit only that account's RDS and AWS Backup.
-
 Resources:
   # Encrypts the Ireland vault and the Ireland copies of the RDS automated backups. Never disable it and never schedule
   # its deletion: the recovery copies cannot be read without it.
@@ -51,7 +43,7 @@ Resources:
             Resource: "*"
             Condition:
               StringEquals:
-                "kms:CallerAccount": !Ref SourceAccountId
+                "kms:CallerAccount": !Ref AWS::AccountId
                 "kms:ViaService": !Sub "rds.${AWS::Region}.amazonaws.com"
           # Documented statement for AWS Backup: vault encryption, copies into the vault and restores from it.
           - Sid: AllowBackupInThisAccount
@@ -69,7 +61,7 @@ Resources:
             Resource: "*"
             Condition:
               StringEquals:
-                "kms:CallerAccount": !Ref SourceAccountId
+                "kms:CallerAccount": !Ref AWS::AccountId
                 "kms:ViaService": !Sub "backup.${AWS::Region}.amazonaws.com"
 
   DrKeyAlias:
@@ -119,6 +111,16 @@ Resources:
       OwnershipControls:
         Rules:
           - ObjectOwnership: BucketOwnerEnforced
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-versions-after-90-days
+            Status: Enabled
+            Prefix: ""
+            NoncurrentVersionExpiration:
+              NoncurrentDays: 90
+            ExpiredObjectDeleteMarker: true
+            AbortIncompleteMultipartUpload:
+              DaysAfterInitiation: 7
 
   BackupsCopyBucket:
     Type: AWS::S3::Bucket

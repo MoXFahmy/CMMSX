@@ -40,6 +40,11 @@ Parameters:
     MaxValue: 2000000000
     Description: Requests per 5 minutes per address, all paths, above which requests are blocked.
 
+Mappings:
+  Names:
+    WebAcl:
+      Value: cmms-edge-webacl   # one name for the ACL, its metric and the alarm dimension
+
 Conditions:
   CountOnly: !Equals [!Ref WafMode, count]
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
@@ -51,7 +56,7 @@ Resources:
   WebAcl:
     Type: AWS::WAFv2::WebACL
     Properties:
-      Name: cmms-edge-webacl
+      Name: !FindInMap [Names, WebAcl, Value]
       Description: CMX CloudFront protection with managed rule groups and per-address rate limits
       Scope: CLOUDFRONT
       DefaultAction:
@@ -64,7 +69,7 @@ Resources:
       VisibilityConfig:
         SampledRequestsEnabled: true
         CloudWatchMetricsEnabled: true
-        MetricName: cmms-edge-webacl
+        MetricName: !FindInMap [Names, WebAcl, Value]
       Rules:
         - Name: AWSManagedRulesAmazonIpReputationList
           Priority: 1
@@ -160,7 +165,11 @@ Resources:
                           UriPath: {}
                         TextTransformations:
                           - Priority: 0
-                            Type: NONE
+                            Type: URL_DECODE
+                          - Priority: 1
+                            Type: LOWERCASE
+                          - Priority: 2
+                            Type: NORMALIZE_PATH
                         PositionalConstraint: STARTS_WITH
           VisibilityConfig:
             SampledRequestsEnabled: true
@@ -187,7 +196,11 @@ Resources:
                     UriPath: {}
                   TextTransformations:
                     - Priority: 0
-                      Type: NONE
+                      Type: URL_DECODE
+                    - Priority: 1
+                      Type: LOWERCASE
+                    - Priority: 2
+                      Type: NORMALIZE_PATH
                   PositionalConstraint: STARTS_WITH
           VisibilityConfig:
             SampledRequestsEnabled: true
@@ -218,6 +231,34 @@ Resources:
       TopicName: cmms-edge-alerts
       DisplayName: CMX edge alerts
 
+  # Lets CloudWatch alarms (same account) and EventBridge publish to the topic.
+  AlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref AlertTopic
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowEventBridgePublish
+            Effect: Allow
+            Principal:
+              Service: events.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref AlertTopic
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref AWS::AccountId
+          - Sid: AllowCloudWatchAlarmPublish
+            Effect: Allow
+            Principal:
+              Service: cloudwatch.amazonaws.com
+            Action: sns:Publish
+            Resource: !Ref AlertTopic
+            Condition:
+              StringEquals:
+                "aws:SourceAccount": !Ref AWS::AccountId
+
   AlertSubscription:
     Type: AWS::SNS::Subscription
     Condition: HasAlertEmail
@@ -235,9 +276,7 @@ Resources:
       MetricName: BlockedRequests
       Dimensions:
         - Name: WebACL
-          Value: cmms-edge-webacl
-        - Name: Region
-          Value: Global
+          Value: !FindInMap [Names, WebAcl, Value]
         - Name: Rule
           Value: ALL
       Statistic: Sum
@@ -248,7 +287,6 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions:
         - !Ref AlertTopic
-    DependsOn: WebAcl
 
   # Basic detector: nothing but the WAF runs in this Region.
   Detector:
@@ -257,6 +295,24 @@ Resources:
     Properties:
       Enable: true
       FindingPublishingFrequency: FIFTEEN_MINUTES
+
+  GuardDutyFindings:
+    Type: AWS::Events::Rule
+    Properties:
+      Name: cmms-edge-guardduty-findings
+      Description: GuardDuty findings of severity 4 or higher in us-east-1 to the edge alert topic.
+      State: ENABLED
+      EventPattern:
+        source:
+          - aws.guardduty
+        detail-type:
+          - GuardDuty Finding
+        detail:
+          severity:
+            - numeric: [">=", 4]
+      Targets:
+        - Id: alert-topic
+          Arn: !Ref AlertTopic
 
 Outputs:
   WebAclArn:
