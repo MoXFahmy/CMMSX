@@ -357,7 +357,7 @@ public static class ReportEndpoints
     {
         var (s, e) = (Start(a.From), End(a.To));
         var xs = await Wo(db, a).Where(w => w.AssetId != null && w.CreatedAt >= s && w.CreatedAt < e && w.Status != WorkOrderStatus.Cancelled && (w.Type == WorkType.Breakdown || w.AssetWasDown))
-            .Select(w => new { w.Id, AssetId = w.AssetId!.Value, w.Asset!.AssetNumber, w.Asset.Name, w.Asset.DowntimeCostPerHour, Code = w.FailureCode!.Code, CodeName = w.FailureCode.Name, w.DowntimeHours, w.StartedAt, w.CompletedAt, w.CreatedAt, w.DowntimeEventId })
+            .Select(w => new { w.Id, AssetId = w.AssetId!.Value, w.Asset!.AssetNumber, Name = (Bilingual.Arabic && w.Asset.NameAr != null ? w.Asset.NameAr : w.Asset.Name), w.Asset.DowntimeCostPerHour, Code = w.FailureCode!.Code, CodeName = (Bilingual.Arabic && w.FailureCode.NameAr != null ? w.FailureCode.NameAr : w.FailureCode.Name), w.DowntimeHours, w.StartedAt, w.CompletedAt, w.CreatedAt, w.DowntimeEventId })
             .ToListAsync(ct);
         // Work orders sharing one stop (two requests about the same stop) carry its hours once: on the one completed first.
         var counted = xs.Where(x => x.DowntimeEventId != null).GroupBy(x => x.DowntimeEventId)
@@ -386,7 +386,7 @@ public static class ReportEndpoints
             .Where(x => db.DowntimeEvents.Any(d => d.AssetId == x.Id && d.StartedAt < e && (d.EndedAt == null || d.EndedAt > s))
                      || db.WorkOrders.Any(w => w.AssetId == x.Id && w.AssetWasDown && w.DowntimeEventId == null && w.CompletedAt >= s && w.CompletedAt < e))
             // The asset's cost per hour, else its category's (0.14.0).
-            .Select(x => new AssetClock(x.Id, x.AssetNumber, x.Name, x.RunsHoursPerDay, x.RunsOn, x.DowntimeCostPerHour ?? (x.Category == null ? null : x.Category.DowntimeCostPerHour))).ToListAsync(ct);
+            .Select(x => new AssetClock(x.Id, x.AssetNumber, (Bilingual.Arabic && x.NameAr != null ? x.NameAr : x.Name), x.RunsHoursPerDay, x.RunsOn, x.DowntimeCostPerHour ?? (x.Category == null ? null : x.Category.DowntimeCostPerHour))).ToListAsync(ct);
         var history = await Downtime.LoadAsync(db, clocks.Select(x => x.Id).ToList(), a.From, a.To, tz, ct);
         var now = DateTimeOffset.UtcNow;
         var measured = clocks.Select(x =>
@@ -419,7 +419,7 @@ public static class ReportEndpoints
         if (a.AssetGroupId is { } g) { var members = AssetGroupEndpoints.Members(db, g); q = q.Where(d => members.Contains(d.AssetId)); }
         const int most = 5000;
         var stops = await q.OrderBy(d => d.StartedAt).Take(most + 1)
-            .Select(d => new { d.AssetId, d.Asset!.AssetNumber, AssetName = d.Asset.Name, d.Asset.RunsHoursPerDay, d.Asset.RunsOn, d.StartedAt, d.EndedAt, d.Reason, d.SourceNumber })
+            .Select(d => new { d.AssetId, d.Asset!.AssetNumber, AssetName = (Bilingual.Arabic && d.Asset.NameAr != null ? d.Asset.NameAr : d.Asset.Name), d.Asset.RunsHoursPerDay, d.Asset.RunsOn, d.StartedAt, d.EndedAt, d.Reason, d.SourceNumber })
             .ToListAsync(ct);
         var cut = stops.Count > most;
         if (cut) stops = stops.Take(most).ToList();
@@ -442,7 +442,7 @@ public static class ReportEndpoints
         var answers = await db.RequestFeedback.AsNoTracking().Where(f => f.AnsweredAt >= from && f.AnsweredAt < to)
             .Join(requests, f => f.WorkRequestId, r => r.Id, (f, r) => new
             {
-                f.Accepted, f.Rating, f.AnsweredAt, Site = r.Site!.Name, Type = r.RequestType!.Name,
+                f.Accepted, f.Rating, f.AnsweredAt, Site = r.Site!.Name, Type = (Bilingual.Arabic && r.RequestType!.NameAr != null ? r.RequestType!.NameAr : r.RequestType!.Name),
                 Trade = db.WorkOrders.Where(w => w.Id == f.WorkOrderId).Select(w => w.Trade!.Name).FirstOrDefault(),
                 Team = db.WorkOrders.Where(w => w.Id == f.WorkOrderId).Select(w => w.Team!.Name).FirstOrDefault(),
             }).ToListAsync(ct);
@@ -472,7 +472,7 @@ public static class ReportEndpoints
         var cancelled = await Wo(db, a).Where(w => w.Status == WorkOrderStatus.Cancelled)
             .Select(w => new
             {
-                Reason = w.CancelReason!.Name, Trade = w.Trade!.Name, Site = w.Site!.Name,
+                Reason = (Bilingual.Arabic && w.CancelReason!.NameAr != null ? w.CancelReason!.NameAr : w.CancelReason!.Name), Trade = w.Trade!.Name, Site = w.Site!.Name,
                 At = db.WorkOrderStatusChanges.Where(c => c.WorkOrderId == w.Id && c.ToStatus == WorkOrderStatus.Cancelled).Max(c => (DateTimeOffset?)c.ChangedAt),
             }).Where(x => x.At >= from && x.At < to).ToListAsync(ct);
         string Key(DateTimeOffset at, string? reason, string? trade, string? site) => a.GroupBy switch
@@ -500,7 +500,7 @@ public static class ReportEndpoints
         const int most = 5000;
         var list = await q.OrderByDescending(r => r.ReadAt).Take(most + 1).Select(r => new
         {
-            r.ReadAt, r.Value, r.Level, r.AssetId, r.PointId, Asset = db.Assets.Where(x => x.Id == r.AssetId).Select(x => x.AssetNumber + " · " + x.Name).FirstOrDefault(),
+            r.ReadAt, r.Value, r.Level, r.AssetId, r.PointId, Asset = db.Assets.Where(x => x.Id == r.AssetId).Select(x => x.AssetNumber + " · " + (Bilingual.Arabic && x.NameAr != null ? x.NameAr : x.Name)).FirstOrDefault(),
             WorkOrder = db.WorkOrders.Where(w => w.Id == r.WorkOrderId).Select(w => w.Number).FirstOrDefault(),
             FollowUp = db.WorkOrders.Where(w => w.Id == r.FollowUpWorkOrderId).Select(w => w.Number).FirstOrDefault()
                 ?? db.WorkRequests.Where(w => w.Id == r.FollowUpRequestId).Select(w => w.Number).FirstOrDefault(),
@@ -550,8 +550,8 @@ public static class ReportEndpoints
         var wos = InFailureTree(Wo(db, a).Where(w => w.CompletedAt >= s && w.CompletedAt < e));
         var items = await wos.Select(w => new
         {
-            w.Id, w.SymptomId, SymptomCode = w.Symptom!.Code, SymptomName = w.Symptom.Name, w.FailureCodeId, CauseCode = w.FailureCode!.Code, CauseName = w.FailureCode.Name,
-            w.RemedyId, RemedyCode = w.Remedy!.Code, RemedyName = w.Remedy.Name, w.DowntimeHours, w.DowntimeEventId, w.CompletedAt, w.CreatedAt,
+            w.Id, w.SymptomId, SymptomCode = w.Symptom!.Code, SymptomName = (Bilingual.Arabic && w.Symptom.NameAr != null ? w.Symptom.NameAr : w.Symptom.Name), w.FailureCodeId, CauseCode = w.FailureCode!.Code, CauseName = (Bilingual.Arabic && w.FailureCode.NameAr != null ? w.FailureCode.NameAr : w.FailureCode.Name),
+            w.RemedyId, RemedyCode = w.Remedy!.Code, RemedyName = (Bilingual.Arabic && w.Remedy.NameAr != null ? w.Remedy.NameAr : w.Remedy.Name), w.DowntimeHours, w.DowntimeEventId, w.CompletedAt, w.CreatedAt,
         }).ToListAsync(ct);
         var costs = (await CostLinesAsync(db, wos, null, null, ct)).GroupBy(c => c.WoId)
             .ToDictionary(g => g.Key, g => (Hours: g.Sum(x => x.Hours), Cost: g.Sum(x => x.Total)));
@@ -610,7 +610,7 @@ public static class ReportEndpoints
                 && (w.WorkRequestId == null && w.StartBy >= s && w.StartBy < e || w.PmScheduleId == null && w.DueAt >= s && w.DueAt < e))
             .OrderBy(w => w.StartBy ?? w.DueAt).Take(most).Select(w => new
             {
-                w.Id, w.Number, w.Title, w.Priority, Trade = w.Trade!.Name, w.CreatedAt, w.WorkRequestId, w.PmScheduleId, w.StartBy, w.RespondedAt, w.DueAt, w.CompletedAt,
+                w.Id, w.Number, Title = (Bilingual.Arabic && w.TitleAr != null ? w.TitleAr : w.Title), w.Priority, Trade = w.Trade!.Name, w.CreatedAt, w.WorkRequestId, w.PmScheduleId, w.StartBy, w.RespondedAt, w.DueAt, w.CompletedAt,
                 Finished = w.Status == WorkOrderStatus.Completed || w.Status == WorkOrderStatus.Closed,
             }).ToListAsync(ct);
         string? Word(DateTimeOffset deadline, DateTimeOffset? done, bool finished) => Outcome(deadline, done, finished, now) switch
@@ -724,7 +724,7 @@ public static class ReportEndpoints
         var dims = new Dictionary<Guid, (string Site, string Type, string Trade, string Team, string Asset, string Category, string CostCentre)>();
         foreach (var chunk in ids.Chunk(1000))
             foreach (var d in await db.WorkOrders.AsNoTracking().Where(w => chunk.Contains(w.Id)).Select(w => new { w.Id, Site = w.Site!.Name, w.Type, Trade = w.Trade!.Name,
-                         Team = w.Team!.Name, Asset = w.Asset == null ? null : w.Asset.AssetNumber + " · " + w.Asset.Name, Category = w.Asset!.Category!.Name, w.CostCentreId }).ToListAsync(ct))
+                         Team = w.Team!.Name, Asset = w.Asset == null ? null : w.Asset.AssetNumber + " · " + (Bilingual.Arabic && w.Asset.NameAr != null ? w.Asset.NameAr : w.Asset.Name), Category = (Bilingual.Arabic && w.Asset!.Category!.NameAr != null ? w.Asset!.Category!.NameAr : w.Asset!.Category!.Name), w.CostCentreId }).ToListAsync(ct))
                 dims[d.Id] = (d.Site, Lists.Name(a.Settings, d.Type), d.Trade ?? "No trade", d.Team ?? "No team", d.Asset ?? "No asset (location work)", d.Category ?? "Uncategorised",
                     d.CostCentreId is { } dc ? centrePaths.GetValueOrDefault(dc) ?? "No cost centre" : "No cost centre");
         string Key(CostLine l) => a.GroupBy switch
@@ -822,7 +822,7 @@ public static class ReportEndpoints
             .ToList();
         var ids = visits.Select(v => v.Pm).Distinct().ToList();
         var pms = await db.PmSchedules.AsNoTracking().Where(p => ids.Contains(p.Id))
-            .Select(p => new { p.Id, p.Code, p.Name, p.AssetId, AssetNumber = p.Asset!.AssetNumber, AssetName = p.Asset.Name, p.MultiAssetMode, Count = p.Assets.Count }).ToListAsync(ct);
+            .Select(p => new { p.Id, p.Code, Name = (Bilingual.Arabic && p.NameAr != null ? p.NameAr : p.Name), p.AssetId, AssetNumber = p.Asset!.AssetNumber, AssetName = (Bilingual.Arabic && p.Asset.NameAr != null ? p.Asset.NameAr : p.Asset.Name), p.MultiAssetMode, Count = p.Assets.Count }).ToListAsync(ct);
         string Asset(Guid? assetId, string? number, string? name, MultiAssetMode mode, int count) => assetId is not null ? $"{number} · {name}"
             : count > 0 ? Translator.T(string.Format(mode == MultiAssetMode.Group ? "Group of {0} assets" : "Round of {0} assets", count)) : "—";
         var rows = pms.OrderBy(p => p.AssetNumber ?? "\uffff").ThenBy(p => p.Code).Select(p =>
@@ -848,7 +848,7 @@ public static class ReportEndpoints
 
     private static async Task<ReportResult> AssetHistoryAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
     {
-        var root = await db.Assets.AsNoTracking().Where(x => x.Id == a.AssetId).Select(x => new { x.Id, x.AssetNumber, x.Name }).FirstAsync(ct);
+        var root = await db.Assets.AsNoTracking().Where(x => x.Id == a.AssetId).Select(x => new { x.Id, x.AssetNumber, Name = (Bilingual.Arabic && x.NameAr != null ? x.NameAr : x.Name) }).FirstAsync(ct);
         var ids = new HashSet<Guid> { root.Id };
         if (a.Components)
         {
@@ -862,9 +862,9 @@ public static class ReportEndpoints
         var wos = db.WorkOrders.AsNoTracking().Where(w => w.AssetId != null && ids.Contains(w.AssetId.Value) && w.CreatedAt >= s && w.CreatedAt < e);
         var items = await wos.OrderByDescending(w => w.CreatedAt).Select(w => new
         {
-            w.Id, w.Number, w.Title, w.Type, w.CreatedAt, w.DowntimeHours, Asset = w.Asset!.AssetNumber,
-            Symptom = w.Symptom == null ? null : w.Symptom.Code + " · " + w.Symptom.Name, Cause = w.FailureCode == null ? null : w.FailureCode.Code + " · " + w.FailureCode.Name,
-            Remedy = w.Remedy == null ? null : w.Remedy.Code + " · " + w.Remedy.Name,
+            w.Id, w.Number, Title = (Bilingual.Arabic && w.TitleAr != null ? w.TitleAr : w.Title), w.Type, w.CreatedAt, w.DowntimeHours, Asset = w.Asset!.AssetNumber,
+            Symptom = w.Symptom == null ? null : w.Symptom.Code + " · " + (Bilingual.Arabic && w.Symptom.NameAr != null ? w.Symptom.NameAr : w.Symptom.Name), Cause = w.FailureCode == null ? null : w.FailureCode.Code + " · " + (Bilingual.Arabic && w.FailureCode.NameAr != null ? w.FailureCode.NameAr : w.FailureCode.Name),
+            Remedy = w.Remedy == null ? null : w.Remedy.Code + " · " + (Bilingual.Arabic && w.Remedy.NameAr != null ? w.Remedy.NameAr : w.Remedy.Name),
         }).Take(5000).ToListAsync(ct);
         var costs = (await CostLinesAsync(db, wos, null, null, ct)).GroupBy(c => c.WoId)
             .ToDictionary(g => g.Key, g => (Hours: g.Sum(x => x.Hours), Cost: g.Sum(x => x.Total)));
@@ -885,7 +885,7 @@ public static class ReportEndpoints
         var q = db.Assets.AsNoTracking();
         if (a.SiteId is { } s) q = q.Where(x => x.SiteId == s);
         if (a.AssetGroupId is { } g) { var members = AssetGroupEndpoints.Members(db, g); q = q.Where(x => members.Contains(x.Id)); }
-        var xs = await q.Select(x => new { Category = x.Category!.Name, x.Status, x.PurchasePrice, x.CurrentValue }).ToListAsync(ct);
+        var xs = await q.Select(x => new { Category = (Bilingual.Arabic && x.Category!.NameAr != null ? x.Category!.NameAr : x.Category!.Name), x.Status, x.PurchasePrice, x.CurrentValue }).ToListAsync(ct);
         var rows = xs.GroupBy(x => x.Category ?? "Uncategorised").OrderBy(g => g.Key).Select(g => Row(("category", g.Key),
             ("active", g.Count(x => x.Status == FourC.Cmms.Core.Assets.AssetStatus.Active)), ("underRepair", g.Count(x => x.Status == FourC.Cmms.Core.Assets.AssetStatus.UnderRepair)),
             ("inactive", g.Count(x => x.Status is FourC.Cmms.Core.Assets.AssetStatus.Inactive or FourC.Cmms.Core.Assets.AssetStatus.InStorage)),
@@ -928,7 +928,7 @@ public static class ReportEndpoints
         var xs = await Levels(db, a).Where(l => l.ReorderQuantity > 0 && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel && l.Part!.IsActive).Select(l => new
         {
             Reserved = (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0),
-            l.PartId, l.Part!.PartNumber, l.Part.Name, l.Part.UnitOfMeasure, l.Part.IsCritical, Store = l.Store!.Code, l.QuantityOnHand, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity,
+            l.PartId, l.Part!.PartNumber, Name = (Bilingual.Arabic && l.Part.NameAr != null ? l.Part.NameAr : l.Part.Name), l.Part.UnitOfMeasure, l.Part.IsCritical, Store = l.Store!.Code, l.QuantityOnHand, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity,
             OnOrder = db.PurchaseOrderLines.Where(x => x.PartId == l.PartId && x.StoreId == l.StoreId && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId && open.Contains(o.Status)))
                 .Sum(x => (decimal?)((x.Quantity - x.QuantityReceived) * x.PackSize)) ?? 0,
             Price = l.Part.LastPurchasePrice ?? l.Part.AverageCost,
@@ -957,8 +957,8 @@ public static class ReportEndpoints
         if (a.SiteId is { } s) q = q.Where(t => t.Store!.SiteId == s);
         var xs = await q.Select(t => new
         {
-            t.PartId, Part = t.Part!.PartNumber + " · " + t.Part.Name, t.Part.UnitOfMeasure, Group = t.Part.Group!.Name, Qty = -t.Quantity, Cost = -t.Quantity * t.UnitCost, t.WorkOrderId,
-            Asset = db.WorkOrders.Where(w => w.Id == t.WorkOrderId).Select(w => w.Asset!.AssetNumber + " · " + w.Asset.Name).FirstOrDefault(),
+            t.PartId, Part = t.Part!.PartNumber + " · " + (Bilingual.Arabic && t.Part.NameAr != null ? t.Part.NameAr : t.Part.Name), t.Part.UnitOfMeasure, Group = t.Part.Group!.Name, Qty = -t.Quantity, Cost = -t.Quantity * t.UnitCost, t.WorkOrderId,
+            Asset = db.WorkOrders.Where(w => w.Id == t.WorkOrderId).Select(w => w.Asset!.AssetNumber + " · " + (Bilingual.Arabic && w.Asset.NameAr != null ? w.Asset.NameAr : w.Asset.Name)).FirstOrDefault(),
         }).ToListAsync(ct);
         var groups = a.GroupBy switch
         {
@@ -981,7 +981,7 @@ public static class ReportEndpoints
         var cutoff = Today.AddDays(-a.Days);
         var xs = await Levels(db, a).Where(l => l.QuantityOnHand > 0).Select(l => new
         {
-            l.PartId, l.Part!.PartNumber, l.Part.Name, Store = l.Store!.Code, l.QuantityOnHand, Value = l.QuantityOnHand * l.Part.AverageCost,
+            l.PartId, l.Part!.PartNumber, Name = (Bilingual.Arabic && l.Part.NameAr != null ? l.Part.NameAr : l.Part.Name), Store = l.Store!.Code, l.QuantityOnHand, Value = l.QuantityOnHand * l.Part.AverageCost,
             LastIssue = db.StockTransactions.Where(t => t.PartId == l.PartId && t.StoreId == l.StoreId && t.Type == StockTransactionType.Issue).Max(t => (DateOnly?)t.Date),
             LastReceipt = db.StockTransactions.Where(t => t.PartId == l.PartId && t.StoreId == l.StoreId && (t.Type == StockTransactionType.Receipt || t.Type == StockTransactionType.TransferIn)).Max(t => (DateOnly?)t.Date),
         }).ToListAsync(ct);

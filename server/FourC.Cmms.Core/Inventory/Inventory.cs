@@ -29,6 +29,8 @@ public class Part : TenantEntity
 {
     public required string PartNumber { get; set; }
     public required string Name { get; set; }
+    /// <summary>0.28.0: the name in Arabic; empty = the main name for everyone.</summary>
+    public string? NameAr { get; set; }
     public string? Specification { get; set; }
     public string? Manufacturer { get; set; }
     public string? ManufacturerPartNumber { get; set; }

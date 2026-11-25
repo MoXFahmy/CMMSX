@@ -123,16 +123,16 @@ export function LocationFormModal({ opened, onClose, location, init, onSaved }: 
   const form = useForm({
     initialValues: {
       siteId: '' as string | null, parentId: null as string | null, code: '', name: '', type: 'Space' as string | null, criticality: 'Medium' as string | null,
-      description: '', notesToTechnician: '', latitude: '' as number | '', longitude: '' as number | '', isActive: true, costCentreId: null as string | null,
+      description: '', notesToTechnician: '', nameAr: '', notesToTechnicianAr: '', latitude: '' as number | '', longitude: '' as number | '', isActive: true, costCentreId: null as string | null,
     },
   });
   useEffect(() => {
     if (!opened) return;
     form.setValues(location ? {
       siteId: location.siteId, parentId: location.parentId ?? null, code: location.code, name: location.name, type: location.type, criticality: location.criticality,
-      description: location.description ?? '', notesToTechnician: location.notesToTechnician ?? '', latitude: location.latitude ?? '', longitude: location.longitude ?? '', isActive: location.isActive,
+      description: location.description ?? '', notesToTechnician: location.notesToTechnician ?? '', nameAr: location.nameAr ?? '', notesToTechnicianAr: location.notesToTechnicianAr ?? '', latitude: location.latitude ?? '', longitude: location.longitude ?? '', isActive: location.isActive,
       costCentreId: location.costCentreId ?? null,
-    } : { siteId: init?.siteId ?? null, parentId: init?.parentId ?? null, code: '', name: '', type: init?.parentId ? 'Room' : 'Building', criticality: 'Medium', description: '', notesToTechnician: '', latitude: '', longitude: '', isActive: true, costCentreId: null });
+    } : { siteId: init?.siteId ?? null, parentId: init?.parentId ?? null, code: '', name: '', type: init?.parentId ? 'Room' : 'Building', criticality: 'Medium', description: '', notesToTechnician: '', nameAr: '', notesToTechnicianAr: '', latitude: '', longitude: '', isActive: true, costCentreId: null });
     form.resetDirty();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [opened, location, init?.siteId, init?.parentId]);
@@ -162,6 +162,7 @@ export function LocationFormModal({ opened, onClose, location, init, onSaved }: 
           <SimpleGrid cols={{ base: 1, sm: 3 }}>
             <TextInput label={t('common.code')} required {...form.getInputProps('code')} />
             <TextInput label={t('common.name')} required style={{ gridColumn: 'span 2' }} {...form.getInputProps('name')} />
+            <TextInput label={t('bilingual.nameAr')} dir="rtl" maxLength={300} style={{ gridColumn: 'span 2' }} {...form.getInputProps('nameAr')} />
           </SimpleGrid>
           <SimpleGrid cols={2}>
             <Select label={t('common.type')} required data={LOCATION_TYPES.map((x) => ({ value: x, label: t(`locationType.${x}`) }))} {...form.getInputProps('type')} />
@@ -171,6 +172,7 @@ export function LocationFormModal({ opened, onClose, location, init, onSaved }: 
             description={t('costCentres.locationHint')} error={form.errors.costCentreId} />
           <Textarea label={t('common.description')} autosize minRows={2} {...form.getInputProps('description')} />
           <Textarea label={t('locations.notesToTechnician')} description={t('locations.notesToTechnicianHint')} autosize minRows={2} {...form.getInputProps('notesToTechnician')} />
+          <Textarea label={t('bilingual.notesAr')} dir="rtl" autosize minRows={2} {...form.getInputProps('notesToTechnicianAr')} />
           <SimpleGrid cols={2}>
             <NumberInput label={t('locations.latitude')} decimalScale={6} {...form.getInputProps('latitude')} />
             <NumberInput label={t('locations.longitude')} decimalScale={6} {...form.getInputProps('longitude')} />

@@ -22,6 +22,7 @@ import { MeasurementPointsTab } from './MeasurementPointsTab';
 import { fmtDate, fmtDateTime, fmtMoney, fmtNumber, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { BulkBar, FilterChips, ListTools, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 import { apiQuery } from '@/components/list/apiQueries';
+import { TranslateButton } from '@/components/TranslateButton';
 
 const TABS = ['schedules', 'tasks', 'calendars', 'points', 'generate', 'forecast', 'meters'] as const;
 
@@ -34,7 +35,7 @@ export function PmPage() {
   return (
     <>
       <PageHeader title={t('pm.title')} subtitle={t('pm.subtitle')}
-        actions={can(P.pmManage) && current === 'schedules' && <Button leftSection={<IconPlus size={16} />} component={Link} to="/pm/schedules/new">{t('pm.newSchedule')}</Button>} />
+        actions={can(P.pmManage) && current === 'schedules' && <Group gap="xs"><TranslateButton list="pm-schedules" refresh={[['pm-schedules']]} /><Button leftSection={<IconPlus size={16} />} component={Link} to="/pm/schedules/new">{t('pm.newSchedule')}</Button></Group>} />
       <Tabs value={current} onChange={(v) => navigate(`/pm/${v}`)} keepMounted={false}>
         <Tabs.List mb="lg">{TABS.filter((x) => x !== 'generate' || can(P.pmGenerate)).map((x) => <Tabs.Tab key={x} value={x}>{t(`pm.${x}`)}</Tabs.Tab>)}</Tabs.List>
         <Tabs.Panel value="schedules"><SchedulesTab /></Tabs.Panel>
@@ -133,7 +134,7 @@ function TasksTab() {
   return (
     <Card p={0}>
       <Group justify="space-between" p="md"><div><Title order={5}>{t('pm.tasks')}</Title><Text fz="sm" c="dimmed">{t('pm12.templatesHint')}</Text></div>
-        {can(P.pmManage) && <Button size="xs" leftSection={<IconPlus size={14} />} component={Link} to="/pm/templates/new">{t('pm12.newTemplate')}</Button>}</Group>
+        <Group gap="xs"><TranslateButton list="templates" refresh={[['pm-tasks']]} />{can(P.pmManage) && <Button size="xs" leftSection={<IconPlus size={14} />} component={Link} to="/pm/templates/new">{t('pm12.newTemplate')}</Button>}</Group></Group>
       <DataTable minHeight={160} fetching={isFetching} records={data ?? []} noRecordsText={t('common.noRecords')} highlightOnHover rowClassName={() => 'clickable-row'} onRowClick={({ record }) => navigate(`/pm/templates/${record.id}`)}
         columns={[
           { accessor: 'code', title: t('pm.taskCode'), noWrap: true, render: (x) => <Text fw={600} fz="sm">{x.code}</Text> },

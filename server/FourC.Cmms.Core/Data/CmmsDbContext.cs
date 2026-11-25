@@ -248,7 +248,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         {
             ConfigureTenantEntity(e);
             e.Property(x => x.Code).HasMaxLength(100);
-            e.Property(x => x.Name).HasMaxLength(300);
+            e.Property(x => x.Name).HasMaxLength(300); e.Property(x => x.NameAr).HasMaxLength(300);
             e.Property(x => x.Path).HasMaxLength(800).IsUnicode(false);
             e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Parent).WithMany().HasForeignKey(x => x.ParentId).OnDelete(DeleteBehavior.Restrict);
@@ -261,7 +261,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         {
             ConfigureTenantEntity(e);
             e.Property(x => x.Code).HasMaxLength(50);
-            e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.NameAr).HasMaxLength(200);
             e.Property(x => x.Color).HasMaxLength(20);
             e.Property(x => x.DowntimeCostPerHour).HasPrecision(18, 2);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
@@ -275,7 +275,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
             e.HasOne<Store>().WithMany().HasForeignKey(x => x.StoreId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => new { x.TenantId, x.PartId, x.SerialNumber }).IsUnique().HasFilter("[PartId] IS NOT NULL AND [IsDeleted] = 0");
             e.Property(x => x.AssetNumber).HasMaxLength(100);
-            e.Property(x => x.Name).HasMaxLength(300);
+            e.Property(x => x.Name).HasMaxLength(300); e.Property(x => x.NameAr).HasMaxLength(300);
             e.Property(x => x.Manufacturer).HasMaxLength(200);
             e.Property(x => x.Model).HasMaxLength(200);
             e.Property(x => x.SerialNumber).HasMaxLength(200);
@@ -403,19 +403,19 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<FailureCode>(e =>
         {
             ConfigureTenantEntity(e);
-            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.NameAr).HasMaxLength(200);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
         b.Entity<Symptom>(e =>
         {
             ConfigureTenantEntity(e);
-            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.NameAr).HasMaxLength(200);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
         b.Entity<Remedy>(e =>
         {
             ConfigureTenantEntity(e);
-            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.NameAr).HasMaxLength(200);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
         b.Entity<Employee>(e =>
@@ -539,7 +539,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<WorkOrder>(e =>
         {
             ConfigureTenantEntity(e);
-            e.Property(x => x.Number).HasMaxLength(50); e.Property(x => x.Title).HasMaxLength(300);
+            e.Property(x => x.Number).HasMaxLength(50); e.Property(x => x.Title).HasMaxLength(300); e.Property(x => x.TitleAr).HasMaxLength(300);
             e.Property(x => x.EstimatedHours).HasPrecision(9, 2); e.Property(x => x.DowntimeHours).HasPrecision(9, 2); e.Property(x => x.RequestedBy).HasMaxLength(200);
             e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
             e.HasOne(x => x.Location).WithMany().HasForeignKey(x => x.LocationId).OnDelete(DeleteBehavior.Restrict);
@@ -574,7 +574,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         });
         b.Entity<WorkOrderTask>(e =>
         {
-            e.Property(x => x.Description).HasMaxLength(1000); e.Property(x => x.DoneBy).HasMaxLength(200); e.HasIndex(x => new { x.TenantId, x.WorkOrderId });
+            e.Property(x => x.Description).HasMaxLength(1000); e.Property(x => x.DoneBy).HasMaxLength(200); e.HasIndex(x => new { x.TenantId, x.WorkOrderId }); e.Property(x => x.DescriptionAr).HasMaxLength(1000);
             e.Property(x => x.Reading).HasMaxLength(100); e.Property(x => x.Remarks).HasMaxLength(2000); e.Property(x => x.LegacyRef).HasMaxLength(200);
             e.Property(x => x.UpdatedByName).HasMaxLength(200);
             e.HasOne<Asset>().WithMany().HasForeignKey(x => x.AssetId).OnDelete(DeleteBehavior.Restrict);
@@ -604,7 +604,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<RequestType>(e =>
         {
             ConfigureTenantEntity(e);
-            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.NameAr).HasMaxLength(200);
             e.Property(x => x.RecipientIds).HasDefaultValueSql("'[]'");
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
             e.HasOne<Trade>().WithMany().HasForeignKey(x => x.DefaultTradeId).OnDelete(DeleteBehavior.Restrict);
@@ -631,7 +631,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<CancelReason>(e =>
         {
             ConfigureTenantEntity(e);
-            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(200); e.Property(x => x.NameAr).HasMaxLength(200);
             e.HasIndex(x => new { x.TenantId, x.Code }).IsUnique().HasFilter("[IsDeleted] = 0");
         });
         b.Entity<WorkRequestComment>(e =>
@@ -698,8 +698,8 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<PmTask>(e =>
         {
             ConfigureTenantEntity(e);
-            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(300); e.Property(x => x.EstimatedHours).HasPrecision(9, 2);
-            e.Property(x => x.Title).HasMaxLength(300); e.Property(x => x.ExpectedStopHours).HasPrecision(9, 2);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(300); e.Property(x => x.EstimatedHours).HasPrecision(9, 2); e.Property(x => x.NameAr).HasMaxLength(300);
+            e.Property(x => x.Title).HasMaxLength(300); e.Property(x => x.ExpectedStopHours).HasPrecision(9, 2); e.Property(x => x.TitleAr).HasMaxLength(300);
             e.Property(x => x.WorkType).HasDefaultValue(WorkType.Preventive);
             e.Property(x => x.RecipientIds).HasDefaultValueSql("'[]'");
             e.HasMany(x => x.Steps).WithOne().HasForeignKey(x => x.PmTaskId).OnDelete(DeleteBehavior.Cascade);
@@ -708,7 +708,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         });
         b.Entity<PmTaskStep>(e =>
         {
-            e.Property(x => x.Description).HasMaxLength(2000); e.Property(x => x.Unit).HasMaxLength(20);
+            e.Property(x => x.Description).HasMaxLength(2000); e.Property(x => x.Unit).HasMaxLength(20); e.Property(x => x.DescriptionAr).HasMaxLength(2000);
             e.HasOne<MeasurementPoint>().WithMany().HasForeignKey(x => x.MeasurementPointId).OnDelete(DeleteBehavior.Restrict);
             e.HasIndex(x => x.MeasurementPointId).HasFilter("[MeasurementPointId] IS NOT NULL");
         });
@@ -744,7 +744,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<PmSchedule>(e =>
         {
             ConfigureTenantEntity(e);
-            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(300);
+            e.Property(x => x.Code).HasMaxLength(50); e.Property(x => x.Name).HasMaxLength(300); e.Property(x => x.NameAr).HasMaxLength(300);
             foreach (var p in new System.Linq.Expressions.Expression<Func<PmSchedule, decimal?>>[] { x => x.MeterInterval, x => x.NextDueReading, x => x.LowerLimit, x => x.UpperLimit })
                 e.Property(p).HasPrecision(18, 3);
             e.HasOne(x => x.Site).WithMany().HasForeignKey(x => x.SiteId).OnDelete(DeleteBehavior.Restrict);
@@ -856,7 +856,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         b.Entity<Part>(e =>
         {
             ConfigureTenantEntity(e);
-            e.Property(x => x.PartNumber).HasMaxLength(100); e.Property(x => x.Name).HasMaxLength(300); e.Property(x => x.Manufacturer).HasMaxLength(200);
+            e.Property(x => x.PartNumber).HasMaxLength(100); e.Property(x => x.Name).HasMaxLength(300); e.Property(x => x.Manufacturer).HasMaxLength(200); e.Property(x => x.NameAr).HasMaxLength(300);
             e.Property(x => x.ManufacturerPartNumber).HasMaxLength(100); e.Property(x => x.UnitOfMeasure).HasMaxLength(30); e.Property(x => x.Barcode).HasMaxLength(200);
             e.Property(x => x.StandardPrice).HasPrecision(18, 4); e.Property(x => x.AverageCost).HasPrecision(18, 4); e.Property(x => x.LastPurchasePrice).HasPrecision(18, 4);
             e.HasOne(x => x.Group).WithMany().HasForeignKey(x => x.GroupId).OnDelete(DeleteBehavior.Restrict);

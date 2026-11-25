@@ -24,7 +24,7 @@ export function PlannedPartsCard({ w, canPlan, canIssue, onChange, onIssue, curr
   const short = w.plannedParts.filter((p) => p.short > 0);
   const requestPurchase = () => navigate('/purchasing/requests/new', { state: { draft: {
     siteId: w.siteId,
-    lines: short.map((p) => ({ partId: p.partId, part: { id: p.partId, partNumber: p.partNumber, name: p.partName }, description: p.partName, unitOfMeasure: p.unitOfMeasure,
+    lines: short.map((p) => ({ partId: p.partId, part: { id: p.partId, partNumber: p.partNumber, name: p.partName }, description: p.mainPartName ?? p.partName, unitOfMeasure: p.unitOfMeasure,
       quantity: p.short, storeId: p.storeId ?? null, workOrderId: w.id, workOrder: { id: w.id, number: w.number }, neededBy: w.dueDate ? w.dueDate.slice(0, 10) : null,
       estimatedUnitPrice: null, reason: '' })),
   } } });

@@ -12,8 +12,9 @@ import { confirmDelete } from '@/components/confirm';
 import { teamOptions, useTeams } from '@/components/teams';
 import { handleFormError, notifyError, notifySuccess } from '@/components/utils';
 import { listItems } from '@/components/listLabels';
+import { TranslateButton } from '@/components/TranslateButton';
 
-const blank = { code: '', name: '', isActive: true, defaultTradeId: null as string | null, defaultPriority: null as string | null, recipientIds: [] as string[], autoApprove: false, teamId: null as string | null };
+const blank = { code: '', name: '', nameAr: '', isActive: true, defaultTradeId: null as string | null, defaultPriority: null as string | null, recipientIds: [] as string[], autoApprove: false, teamId: null as string | null };
 
 /** Settings › Request types (0.10.0): default trade and priority, who is told, and optional automatic approval. */
 export function RequestTypesSettings({ editable }: { editable: boolean }) {
@@ -28,7 +29,7 @@ export function RequestTypesSettings({ editable }: { editable: boolean }) {
   const form = useForm({ initialValues: blank });
   const open = (x: RequestType | null) => {
     setEditing(x);
-    form.setValues(x ? { code: x.code, name: x.name, isActive: x.isActive, defaultTradeId: x.defaultTradeId ?? null, defaultPriority: x.defaultPriority ?? null,
+    form.setValues(x ? { code: x.code, name: x.name, nameAr: x.nameAr ?? '', isActive: x.isActive, defaultTradeId: x.defaultTradeId ?? null, defaultPriority: x.defaultPriority ?? null,
       recipientIds: x.recipientIds ?? [], autoApprove: x.autoApprove, teamId: x.teamId ?? null } : blank);
     form.resetDirty(); form.clearErrors(); m.open();
   };
@@ -44,12 +45,13 @@ export function RequestTypesSettings({ editable }: { editable: boolean }) {
     <Stack maw={1000}>
       <Group justify="space-between">
         <Text c="dimmed" fz="sm">{t('requestTypes.hint')}</Text>
-        {editable && <Button leftSection={<IconPlus size={16} />} onClick={() => open(null)}>{t('requestTypes.new')}</Button>}
+        <Group gap="xs"><TranslateButton list="request-types" refresh={[['request-types']]} />{editable && <Button leftSection={<IconPlus size={16} />} onClick={() => open(null)}>{t('requestTypes.new')}</Button>}</Group>
       </Group>
       <DataTable withTableBorder borderRadius="sm" minHeight={120} fetching={isFetching} records={data ?? []} noRecordsText={t('common.noRecords')}
         columns={[
           { accessor: 'code', title: t('common.code'), width: 110 },
           { accessor: 'name', title: t('common.name') },
+          { accessor: 'nameAr', title: t('bilingual.nameAr'), render: (x) => <Text fz="sm" dir="rtl">{x.nameAr}</Text> },
           { accessor: 'defaultTradeId', title: t('requestTypes.defaultTrade'), render: (x) => tradeName(x.defaultTradeId) ?? '—' },
           { accessor: 'defaultPriority', title: t('requestTypes.defaultPriority'), render: (x) => (x.defaultPriority ? t(`priority.${x.defaultPriority}`) : '—') },
           { accessor: 'recipientIds', title: t('requestTypes.recipients'), render: (x) => x.recipientIds.length || '—' },
@@ -71,6 +73,7 @@ export function RequestTypesSettings({ editable }: { editable: boolean }) {
           <Group grow>
             <TextInput label={t('common.code')} required {...form.getInputProps('code')} />
             <TextInput label={t('common.name')} required {...form.getInputProps('name')} />
+            <TextInput label={t('bilingual.nameAr')} dir="rtl" maxLength={200} {...form.getInputProps('nameAr')} />
           </Group>
           <Group grow>
             <Select label={t('requestTypes.defaultTrade')} clearable searchable data={(trades ?? []).filter((x) => x.isActive || x.id === form.values.defaultTradeId).map((x) => ({ value: x.id, label: x.name }))}

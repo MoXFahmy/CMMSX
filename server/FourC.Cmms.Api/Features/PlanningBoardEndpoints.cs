@@ -66,8 +66,8 @@ public static class PlanningBoardEndpoints
 
     private static IQueryable<JobRow> Project(IQueryable<WorkOrder> q, IQueryable<FourC.Cmms.Core.Pm.PmTask> tasks) => q.Select(w => new JobRow
     {
-        Id = w.Id, Number = w.Number, Title = w.Title, Priority = w.Priority, Status = w.Status, SiteId = w.SiteId, AssetId = w.AssetId,
-        AssetNumber = w.Asset!.AssetNumber, AssetName = w.Asset.Name, Day = w.PlannedStart ?? w.DueDate, PlannedStart = w.PlannedStart, DueAt = w.DueAt,
+        Id = w.Id, Number = w.Number, Title = Bilingual.Arabic && w.TitleAr != null ? w.TitleAr : w.Title, Priority = w.Priority, Status = w.Status, SiteId = w.SiteId, AssetId = w.AssetId,
+        AssetNumber = w.Asset!.AssetNumber, AssetName = Bilingual.Arabic && w.Asset.NameAr != null ? w.Asset.NameAr : w.Asset.Name, Day = w.PlannedStart ?? w.DueDate, PlannedStart = w.PlannedStart, DueAt = w.DueAt,
         DueFromTarget = w.DueFromTarget, StartBy = w.StartBy, RespondedAt = w.RespondedAt, CompletedAt = w.CompletedAt, EstimatedHours = w.EstimatedHours,
         Assignees = w.Assignees.Select(a => new AssigneeRow { EmployeeId = a.EmployeeId, PlannedHours = a.PlannedHours }).ToList(),
         AccessWindows = w.AccessWindows, OnlyWhenStopped = w.OnlyWhenStopped,
@@ -204,7 +204,7 @@ public static class PlanningBoardEndpoints
             if (categoryId is { } k) q = q.Where(x => x.l.ContractorCategoryId == k);
             var shaped = q.Select(x => new
             {
-                LineId = x.l.Id, WorkOrderId = x.w.Id, x.w.Number, x.w.Title, x.w.SiteId, CompanyId = x.l.SupplierId, CompanyName = x.l.Supplier!.Name,
+                LineId = x.l.Id, WorkOrderId = x.w.Id, x.w.Number, Title = Bilingual.Arabic && x.w.TitleAr != null ? x.w.TitleAr : x.w.Title, x.w.SiteId, CompanyId = x.l.SupplierId, CompanyName = x.l.Supplier!.Name,
                 CategoryId = x.l.ContractorCategoryId, CategoryName = x.l.Category == null ? null : x.l.Category.Name,
                 Person = x.l.ContactId == null ? x.l.PersonName : db.SupplierContacts.Where(p => p.Id == x.l.ContactId).Select(p => p.Name).FirstOrDefault(),
                 x.l.PlannedHours, x.l.HoursDone, x.l.DoneOn, x.l.PlannedOn, Day = x.l.PlannedOn ?? x.w.PlannedStart ?? x.w.DueDate,

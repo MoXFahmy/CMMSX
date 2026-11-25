@@ -39,6 +39,22 @@ Requests and answers are JSON. Dates are ISO 8601 (`2026-11-24T08:30:00Z`); ids 
 - **Changes show who made them:** the activity log and each record's History tab name the service account, with the source
   **API**.
 
+### Names in two languages (0.28.0)
+
+Asset, location and part names, category and code names, request types, cancel reasons, work templates (name, title, safety
+notes, steps), PM names, work order titles and steps, and notes to technician can have an Arabic text beside the main one.
+
+- **Answers that show names** (lists, references to other records, reports, labels) give the name in the language of the
+  request's `Accept-Language` header: `ar` gives the Arabic text where there is one, anything else the main text.
+- **A record's own detail** (`GET /api/assets/{id}`, `/locations/{id}`, `/parts/{id}`, `/pm-tasks/{id}`, `/pm-schedules/{id}`,
+  `/work-orders/{id}`) and the Settings lists (`/asset-categories`, `/symptoms`, `/failure-codes`, `/remedies`,
+  `/cancel-reasons`, `/request-types`) give both texts as stored, whatever the language: `name` and `nameAr`, `title` and
+  `titleAr`, `notesToTechnician` and `notesToTechnicianAr`, `safetyNotes` and `safetyNotesAr`, and `descriptionAr` on steps.
+- **Saving:** send the same fields. Leaving an Arabic field out keeps what is there; an empty string clears it.
+- **AI drafts:** `POST /api/translations/draft` with `{ "list": "assets" }` drafts the next batch of missing Arabic texts (when the
+  AI assistant is on; it counts against the month's AI allowance); `POST /api/translations/save` with
+  `{ "list", "field", "items": [{ "id", "ar" }] }` saves them, skipping any text that has an Arabic text by then.
+
 ### What a key can't do
 
 Whatever its roles, a key can't:

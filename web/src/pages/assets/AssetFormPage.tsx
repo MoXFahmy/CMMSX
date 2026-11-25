@@ -15,6 +15,7 @@ import { AssetPicker } from '@/components/AssetPicker';
 import { handleFormError, notifySuccess, toIsoDate } from '@/components/utils';
 import { listDefault, listItems } from '@/components/listLabels';
 import { BrandModelPicker, useAssetGroups } from '@/components/ReferencePickers';
+import { pick } from '@/components/bilingual';
 
 type Values = {
   assetNumber: string; name: string; description: string; categoryId: string | null; siteId: string | null; locationId: string | null; parentAssetId: string | null;
@@ -22,6 +23,8 @@ type Values = {
   commissionedOn: Date | null; disposedOn: Date | null; purchasePrice: number | ''; currentValue: number | ''; salvageValue: number | '';
   expectedLifeYears: number | ''; downtimeCostPerHour: number | ''; warrantyType: string; warrantyExpiresOn: Date | null; warrantyNotes: string;
   notes: string; notesToTechnician: string; customFields: Record<string, string>; onlyWhenStopped: boolean;
+  /** 0.28.0: the Arabic texts, as stored (blank clears). */
+  nameAr: string; notesToTechnicianAr: string;
   runsHoursPerDay: number | ''; runsOn: DayName[]; costCentreId: string | null;
   /** 0.21.0: brand and model from the lists, and the asset's groups. */
   brandId: string | null; modelId: string | null; groupIds: string[];
@@ -32,7 +35,7 @@ type Values = {
 const empty: Values = {
   assetNumber: '', name: '', description: '', categoryId: null, siteId: null, locationId: null, parentAssetId: null, status: 'Active', criticality: 'Medium',
   manufacturer: '', model: '', serialNumber: '', barcode: '', operationNumber: '', commissionedOn: null, disposedOn: null, purchasePrice: '', currentValue: '',
-  salvageValue: '', expectedLifeYears: '', downtimeCostPerHour: '', warrantyType: 'None', warrantyExpiresOn: null, warrantyNotes: '', notes: '', notesToTechnician: '', customFields: {}, onlyWhenStopped: false,
+  salvageValue: '', expectedLifeYears: '', downtimeCostPerHour: '', warrantyType: 'None', warrantyExpiresOn: null, warrantyNotes: '', notes: '', notesToTechnician: '', customFields: {}, onlyWhenStopped: false, nameAr: '', notesToTechnicianAr: '',
   runsHoursPerDay: 24, runsOn: [...DAY_NAMES], costCentreId: null, brandId: null, modelId: null, groupIds: [], endOfLifeOn: null,
 };
 
@@ -74,7 +77,7 @@ export function AssetFormPage() {
         commissionedOn: d(asset.commissionedOn), disposedOn: d(asset.disposedOn), purchasePrice: n(asset.purchasePrice), currentValue: n(asset.currentValue),
         salvageValue: n(asset.salvageValue), expectedLifeYears: n(asset.expectedLifeYears), downtimeCostPerHour: n(asset.downtimeCostPerHour),
         warrantyType: asset.warrantyType, warrantyExpiresOn: d(asset.warrantyExpiresOn), warrantyNotes: asset.warrantyNotes ?? '', notes: asset.notes ?? '',
-        notesToTechnician: asset.notesToTechnician ?? '', onlyWhenStopped: asset.onlyWhenStopped ?? false, costCentreId: asset.costCentreId ?? null, brandId: asset.brandId ?? null, modelId: asset.modelId ?? null, groupIds: asset.groupIds ?? [], customFields: Object.fromEntries(Object.entries(asset.customFields ?? {}).map(([k, v]) => [k, v ?? ''])),
+        notesToTechnician: asset.notesToTechnician ?? '', nameAr: asset.nameAr ?? '', notesToTechnicianAr: asset.notesToTechnicianAr ?? '', onlyWhenStopped: asset.onlyWhenStopped ?? false, costCentreId: asset.costCentreId ?? null, brandId: asset.brandId ?? null, modelId: asset.modelId ?? null, groupIds: asset.groupIds ?? [], customFields: Object.fromEntries(Object.entries(asset.customFields ?? {}).map(([k, v]) => [k, v ?? ''])),
         runsHoursPerDay: asset.runsHoursPerDay ?? 24, runsOn: asset.runsOn ?? [...DAY_NAMES], endOfLifeOn: d(asset.endOfLifeOn ?? undefined),
       });
       form.resetDirty();
@@ -138,9 +141,10 @@ export function AssetFormPage() {
                 <TextInput label={t('assets.number')} placeholder={auto && !editing ? 'Auto' : undefined} description={auto && !editing ? t('assets.numberHint') : undefined}
                   required={editing || !auto} {...form.getInputProps('assetNumber')} />
                 <TextInput label={t('common.name')} required style={{ gridColumn: 'span 2' }} {...form.getInputProps('name')} />
+                <TextInput label={t('bilingual.nameAr')} dir="rtl" maxLength={300} style={{ gridColumn: 'span 2' }} {...form.getInputProps('nameAr')} />
               </SimpleGrid>
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
-                <Select label={t('assets.category')} data={(cats ?? []).filter((c) => c.isActive || c.id === form.values.categoryId).map((c) => ({ value: c.id, label: c.name }))} searchable clearable {...form.getInputProps('categoryId')} />
+                <Select label={t('assets.category')} data={(cats ?? []).filter((c) => c.isActive || c.id === form.values.categoryId).map((c) => ({ value: c.id, label: pick(c.name, c.nameAr) }))} searchable clearable {...form.getInputProps('categoryId')} />
                 <Select label={t('common.status')} required data={listItems('assetStatus', t, form.values.status)} disabled={isUnit} {...form.getInputProps('status')} />
                 <Select label={t('criticality.label')} required data={listItems('criticality', t, form.values.criticality)} {...form.getInputProps('criticality')} />
               </SimpleGrid>
@@ -209,6 +213,7 @@ export function AssetFormPage() {
             </Section>
             <Section title={t('common.notes')}>
               <Textarea label={t('assets.notesToTechnician')} autosize minRows={2} {...form.getInputProps('notesToTechnician')} />
+              <Textarea label={t('bilingual.notesAr')} dir="rtl" autosize minRows={2} {...form.getInputProps('notesToTechnicianAr')} />
               <Checkbox label={t('accessWindows.maintainOnlyWhenStopped')} description={t('accessWindows.maintainOnlyWhenStoppedHint')} {...form.getInputProps('onlyWhenStopped', { type: 'checkbox' })} />
               <Textarea label={t('common.notes')} autosize minRows={3} {...form.getInputProps('notes')} />
             </Section>

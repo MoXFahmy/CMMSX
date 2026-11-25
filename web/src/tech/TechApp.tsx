@@ -276,7 +276,7 @@ function SyncPage() {
           </div>
           <Button size="xs" variant="default" leftSection={<IconRefresh size={14} />} loading={busy} onClick={() => { void drainNow(true); void refresh(); }}>{t('tech.refreshNow')}</Button>
         </Group>
-        {online && <Group mt="xs" justify="space-between"><Text fz="sm">{t('common.language')}</Text><LanguageSwitch /></Group>}
+        {online && <Group mt="xs" justify="space-between"><Text fz="sm">{t('common.language')}</Text><LanguageSwitch onChanged={() => void refresh()} /></Group>}
         {problem && <Alert color="orange" mt="xs" p="xs">{problem === 'server' ? t('tech.refreshServerProblem') : problem}</Alert>}
       </Card>
       <Text fz="xs" fw={700} tt="uppercase" c="dimmed">{t('tech.waiting')} · {sorted.length}</Text>

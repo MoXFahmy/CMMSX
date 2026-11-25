@@ -80,7 +80,7 @@ public static class AssetPartEndpoints
 
     private static async Task<List<AssetPartRow>> ListAsync(CmmsDbContext db, Guid id, CancellationToken ct) =>
         await db.AssetParts.AsNoTracking().Where(x => x.AssetId == id).OrderBy(x => x.Part!.PartNumber)
-            .Select(x => new AssetPartRow(x.PartId, x.Part!.PartNumber, x.Part.Name, x.Part.UnitOfMeasure, x.Quantity, x.Note)).ToListAsync(ct);
+            .Select(x => new AssetPartRow(x.PartId, x.Part!.PartNumber, Bilingual.Arabic && x.Part.NameAr != null ? x.Part.NameAr : x.Part.Name, x.Part.UnitOfMeasure, x.Quantity, x.Note)).ToListAsync(ct);
 
     public sealed record AssetPartRow(Guid PartId, string PartNumber, string Name, string UnitOfMeasure, decimal Quantity, string? Note);
 }

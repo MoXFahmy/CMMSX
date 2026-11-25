@@ -1,3 +1,4 @@
+using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Pm;
@@ -56,7 +57,7 @@ public static class PmGenerator
             // Like 4CSQL's "PM based on actual date" list: show Actual schedules waiting for their last work order.
             var waiting = db.PmSchedules.AsNoTracking().Where(s => s.IsActive && s.Basis == PmBasis.Actual && s.NextDueDate == null && s.LastWorkOrderId != null);
             if (siteId is not null) waiting = waiting.Where(s => s.SiteId == siteId);
-            results.AddRange(await waiting.Select(s => new Result(s.Id, s.Code, s.Name, null, s.PmTask!.Name, s.Asset!.AssetNumber, s.LastWorkOrderId,
+            results.AddRange(await waiting.Select(s => new Result(s.Id, s.Code, s.Name, null, Bilingual.Arabic && s.PmTask!.NameAr != null ? s.PmTask.NameAr : s.PmTask!.Name, s.Asset!.AssetNumber, s.LastWorkOrderId,
                 db.WorkOrders.Where(w => w.Id == s.LastWorkOrderId).Select(w => w.Number).FirstOrDefault(), "Waiting for the last work order to be completed")).ToListAsync(ct));
         }
         return results;
@@ -259,9 +260,13 @@ public static class PmGenerator
         // Told about the work (0.12.0): the template's and the PM's recipients who are still active users.
         var wanted = task.RecipientIds.Concat(s.RecipientIds).Distinct().ToList();
         var recipients = wanted.Count == 0 ? [] : await db.Users.Where(u => wanted.Contains(u.Id) && u.IsActive && u.TenantId == db.CurrentTenantId).Select(u => u.Id).ToListAsync(ct);
-        var description = string.Join("\n\n", new[] { task.Description ?? s.Description, task.SafetyNotes is { Length: > 0 } sn ? $"Safety: {sn}" : null, trigger }.Where(x => !string.IsNullOrWhiteSpace(x)));
+        // Safety notes have their own place on the work order since 0.28.0 (both languages), no longer in the description.
+        var description = string.Join("\n\n", new[] { task.Description ?? s.Description, trigger }.Where(x => !string.IsNullOrWhiteSpace(x)));
         // The template's own title wins (0.12.0); otherwise the PM's name, with the template's for an every-Nth one.
         var title = task.Title is { Length: > 0 } tt ? tt : task.Id == s.PmTaskId ? s.Name : $"{s.Name} — {task.Name}";
+        // Its Arabic twin from the same source (0.28.0); none when that source has no Arabic text.
+        var titleAr = task.Title is { Length: > 0 } ? task.TitleAr : task.Id == s.PmTaskId ? s.NameAr
+            : s.NameAr is null && task.NameAr is null ? null : $"{s.NameAr ?? s.Name} — {task.NameAr ?? task.Name}";
         var start = PmCalendar.NextWorkingDay(due ?? Today, nonWorkingDays ?? []);
         var steps = task.Steps.OrderBy(x => x.Sequence).ToList();
         // A round's assets with their own template (0.12.0) use it on routine visits; an every-Nth visit uses the Nth template for all.
@@ -276,7 +281,8 @@ public static class PmGenerator
         // A round's work order has no single asset: it lists the covered assets and repeats the steps for each of them.
         var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description.Length == 0 ? null : description, task.WorkType, task.Priority ?? s.Priority,
             s.SiteId, round is null ? s.LocationId : s.LocationId ?? PmRound.CommonLocationId(round), round is null ? s.AssetId : null, s.TradeId ?? task.TradeId, assignees,
-            start, PmCalendar.DueDate(s, start, nonWorkingDays ?? []), task.EstimatedHours, null, TeamId: s.TeamId, CostCentreId: costCentre);
+            start, PmCalendar.DueDate(s, start, nonWorkingDays ?? []), task.EstimatedHours, null, TeamId: s.TeamId, CostCentreId: costCentre,
+            TitleAr: titleAr is { Length: > 300 } ? titleAr[..300] : titleAr, SafetyNotes: task.SafetyNotes, SafetyNotesAr: task.SafetyNotesAr);
         // The template's parts come along as planned parts (once per covered asset on a round, from that asset's own template where
         // it has one), reserved in the default store for the site.
         var taskParts = await db.PmTaskParts.AsNoTracking().Where(p => p.PmTaskId == task.Id).Select(p => new { p.PartId, p.Quantity }).ToListAsync(ct);

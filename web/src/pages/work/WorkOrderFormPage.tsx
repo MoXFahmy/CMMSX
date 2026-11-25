@@ -42,10 +42,12 @@ type Values = {
   contractId: string | null;
   /** 0.20.0: empty on a new work order takes the asset's or location's cost centre. */
   costCentreId: string | null;
+  /** 0.28.0: the Arabic title and the safety notes in both languages (from a template; blank clears). */
+  titleAr: string; safetyNotes: string; safetyNotesAr: string;
 };
 const empty: Values = { title: '', description: '', type: 'Corrective', priority: 'Medium', siteId: null, locationId: null, assetId: null, tradeId: null, teamId: null,
   assigneeIds: [], plannedStart: null, dueAt: null, estimatedHours: '', tasks: [], requestedBy: '', assetIsDown: false, accessWindows: [], onlyWhenStopped: null, templateId: null,
-  symptomId: null, contractId: null, costCentreId: null };
+  symptomId: null, contractId: null, costCentreId: null, titleAr: '', safetyNotes: '', safetyNotesAr: '' };
 const local = (v?: string | null) => (v ? dayjs(v).format('YYYY-MM-DD HH:mm:ss') : null);
 const d = (v?: string | null) => (v ? new Date(`${v}T00:00:00`) : null);
 
@@ -75,7 +77,8 @@ export function WorkOrderFormPage() {
       const x = await get<PmTaskDetail>(`/pm-tasks/${templateId}`);
       const v = form.values;
       form.setValues({
-        templateId, title: x.title || x.name, description: [x.description, x.safetyNotes ? `${t('pm.safetyNotes')}: ${x.safetyNotes}` : null].filter(Boolean).join('\n\n'),
+        templateId, title: x.title || x.name, titleAr: x.titleAr || x.nameAr || '', description: x.description ?? '',
+        safetyNotes: x.safetyNotes ?? '', safetyNotesAr: x.safetyNotesAr ?? '',
         type: x.workType ?? v.type, priority: x.priority ?? v.priority, tradeId: x.tradeId ?? v.tradeId, estimatedHours: x.estimatedHours ?? v.estimatedHours, tasks: x.steps,
       });
     } catch (e) { notifyError(e); }
@@ -93,7 +96,7 @@ export function WorkOrderFormPage() {
         assetId: wo.assetId ?? null, tradeId: wo.tradeId ?? null, teamId: wo.teamId ?? null, assigneeIds: wo.assignees.map((a) => a.employeeId), plannedStart: d(wo.plannedStart),
         dueAt: local(wo.dueAt), estimatedHours: wo.estimatedHours ?? '', tasks: [], requestedBy: wo.requestedBy ?? '', assetIsDown: !!wo.downtime,
         accessWindows: wo.accessWindows ?? [], onlyWhenStopped: wo.onlyWhenStopped ?? false, symptomId: wo.symptomId ?? null, contractId: wo.contractId ?? null,
-        costCentreId: wo.costCentreId ?? null,
+        costCentreId: wo.costCentreId ?? null, titleAr: wo.titleAr ?? '', safetyNotes: wo.safetyNotes ?? '', safetyNotesAr: wo.safetyNotesAr ?? '',
       });
       form.resetDirty();
     } else if (source) {
@@ -104,6 +107,8 @@ export function WorkOrderFormPage() {
         assigneeIds: source.assignees.map((a) => a.employeeId), estimatedHours: source.estimatedHours ?? '',
         tasks: [...source.tasks].sort((a, b) => a.sequence - b.sequence).map((x) => x.description),
         accessWindows: source.accessWindows ?? [], onlyWhenStopped: source.onlyWhenStopped ?? null, symptomId: source.symptomId ?? null, contractId: source.contractId ?? null,
+        // 0.28.0: the Arabic title and the safety notes come along (the steps' Arabic texts are matched on the server).
+        titleAr: source.titleAr ?? '', safetyNotes: source.safetyNotes ?? '', safetyNotesAr: source.safetyNotesAr ?? '',
       });
     } else if (asset) {
       form.setValues({ ...start, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id, priority: asset.criticality === 'Critical' ? 'High' : 'Medium' });
@@ -153,7 +158,10 @@ export function WorkOrderFormPage() {
                   data={(templates ?? []).filter((x) => x.isActive).map((x) => ({ value: x.id, label: `${x.code} · ${x.name}` }))} />
               )}
               <TextInput label={t('wr.whatsWrong')} required data-autofocus {...form.getInputProps('title')} />
+              <TextInput label={t('bilingual.titleAr')} dir="rtl" maxLength={300} {...form.getInputProps('titleAr')} />
               <Textarea label={t('wo.description')} autosize minRows={3} {...form.getInputProps('description')} />
+              <Textarea label={t('pm.safetyNotes')} autosize minRows={2} {...form.getInputProps('safetyNotes')} />
+              <Textarea label={t('bilingual.safetyAr')} dir="rtl" autosize minRows={2} {...form.getInputProps('safetyNotesAr')} />
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 <Select label={t('workType.label')} required data={listItems('workType', t, form.values.type)} {...form.getInputProps('type')} />
                 <Select label={t('priority.label')} required data={listItems('priority', t, form.values.priority)} {...form.getInputProps('priority')} />

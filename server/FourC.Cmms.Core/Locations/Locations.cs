@@ -52,11 +52,14 @@ public class Location : TenantEntity
     public Location? Parent { get; set; }
     public required string Code { get; set; }
     public required string Name { get; set; }
+    /// <summary>0.28.0: the name in Arabic; empty = the main name for everyone.</summary>
+    public string? NameAr { get; set; }
     public LocationType Type { get; set; } = LocationType.Space;
     public Criticality Criticality { get; set; } = Criticality.Medium;
     public string? Description { get; set; }
     /// <summary>Shown to technicians on every work order raised at this location.</summary>
     public string? NotesToTechnician { get; set; }
+    public string? NotesToTechnicianAr { get; set; }
     public double? Latitude { get; set; }
     public double? Longitude { get; set; }
     public bool IsActive { get; set; } = true;

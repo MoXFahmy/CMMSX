@@ -39,7 +39,7 @@ public static class TimesheetEndpoints
             var orders = await db.WorkOrders.AsNoTracking()
                 .Where(w => logged.Contains(w.Id) || (w.Status != WorkOrderStatus.Cancelled && (w.PlannedStart ?? w.DueDate) == date
                             && (w.Assignees.Any(a => a.EmployeeId == who) || (w.TeamId != null && teams.Contains(w.TeamId.Value)))))
-                .OrderBy(w => w.Number).Select(w => new { w.Id, w.Number, w.Title, w.Status }).ToListAsync(ct);
+                .OrderBy(w => w.Number).Select(w => new { w.Id, w.Number, Title = Bilingual.Arabic && w.TitleAr != null ? w.TitleAr : w.Title, w.Status }).ToListAsync(ct);
             var available = (await AvailabilityQueries.DaysAsync(db, [who], date, date, ct)).GetValueOrDefault(who)?.GetValueOrDefault(date);
             return Results.Ok(new
             {

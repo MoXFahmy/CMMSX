@@ -18,6 +18,8 @@ import { fmtDate, fmtDateTime, notifyError, notifySuccess } from '@/components/u
 import { FilterChips, ListTools, listText, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
 import { listItems } from '@/components/listLabels';
 import { groupData, useAssetGroups, useBrands } from '@/components/ReferencePickers';
+import { TranslateButton } from '@/components/TranslateButton';
+import { pick } from '@/components/bilingual';
 
 const PAGE_SIZES = [25, 50, 100];
 const DEFAULT_HIDDEN = ['manufacturer', 'model', 'serialNumber', 'commissionedOn', 'warrantyExpiresOn', 'parentAssetNumber'];
@@ -116,6 +118,7 @@ export function AssetsPage() {
     <>
       <PageHeader title={terms.assets} subtitle={t('assets.subtitle')}
         actions={<>
+          <TranslateButton list="assets" refresh={[['assets']]} />
           {can(P.assetsCreate) && <Button leftSection={<IconPlus size={16} />} component={Link} to="/assets/new">{t('assets.new')}</Button>}
         </>} />
       <Card p="sm" mb="md">
@@ -125,7 +128,7 @@ export function AssetsPage() {
             onChange={(v) => set({ siteId: v, locationId: null })} />
           <Select placeholder={terms.location} data={locOpts} value={p('locationId') || null} clearable searchable w={{ base: '100%', xs: 220 }} disabled={!siteForLocations}
             onChange={(v) => set({ locationId: v })} comboboxProps={{ width: 'max-content', position: 'bottom-start' }} />
-          <Select placeholder={t('assets.category')} data={(cats ?? []).map((c) => ({ value: c.id, label: c.name }))} value={p('categoryId') || null} clearable searchable w={{ base: '100%', xs: 190 }}
+          <Select placeholder={t('assets.category')} data={(cats ?? []).map((c) => ({ value: c.id, label: pick(c.name, c.nameAr) }))} value={p('categoryId') || null} clearable searchable w={{ base: '100%', xs: 190 }}
             onChange={(v) => set({ categoryId: v })} />
           <MultiSelect placeholder={p('status') ? undefined : t('common.status')} data={listItems('assetStatus', t, null, true)} w={{ base: '100%', xs: 200 }}
             value={p('status') ? p('status').split(',') : []} onChange={(v) => set({ status: v.join(',') || null })} clearable />
@@ -154,7 +157,7 @@ export function AssetsPage() {
             <Menu><Menu.Target><Button size="xs" variant="white">{t('assets.setCriticality')}</Button></Menu.Target>
               <Menu.Dropdown>{listItems('criticality', t).map((s) => <Menu.Item key={s.value} onClick={() => bulk.mutate({ criticality: s.value as Criticality })}>{s.label}</Menu.Item>)}</Menu.Dropdown></Menu>
             <Menu><Menu.Target><Button size="xs" variant="white">{t('assets.setCategory')}</Button></Menu.Target>
-              <Menu.Dropdown mah={300} style={{ overflowY: 'auto' }}>{(cats ?? []).map((c) => <Menu.Item key={c.id} onClick={() => bulk.mutate({ categoryId: c.id })}>{c.name}</Menu.Item>)}</Menu.Dropdown></Menu>
+              <Menu.Dropdown mah={300} style={{ overflowY: 'auto' }}>{(cats ?? []).map((c) => <Menu.Item key={c.id} onClick={() => bulk.mutate({ categoryId: c.id })}>{pick(c.name, c.nameAr)}</Menu.Item>)}</Menu.Dropdown></Menu>
             <Menu><Menu.Target><Button size="xs" variant="white">{t('assetGroups.one')}</Button></Menu.Target>
               <Menu.Dropdown>
                 <Menu.Item onClick={() => setGroupFor('add')}>{t('assetGroups.addTo')}</Menu.Item>

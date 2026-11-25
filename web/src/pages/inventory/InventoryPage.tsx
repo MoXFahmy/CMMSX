@@ -25,6 +25,7 @@ import { confirmDelete } from '@/components/confirm';
 import { fmtDate, fmtPrice, fmtQty, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { BulkBar, FilterChips, ListTools, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 import { apiQuery } from '@/components/list/apiQueries';
+import { TranslateButton } from '@/components/TranslateButton';
 
 const TABS = ['parts', 'stores', 'transactions', 'shortages', 'counts', 'stock-take', 'groups'] as const;
 
@@ -50,6 +51,7 @@ export function InventoryPage() {
               </Menu.Dropdown>
             </Menu>
           )}
+          <TranslateButton list="parts" refresh={[['parts']]} />
           {can(P.inventoryManage) && <Button leftSection={<IconPlus size={16} />} component={Link} to="/inventory/parts/new">{t('inv.newPart')}</Button>}
         </>} />
       <Tabs value={tab} onChange={(v) => navigate(v === 'parts' ? '/inventory' : `/inventory/${v}`)} mb="md" keepMounted={false}>

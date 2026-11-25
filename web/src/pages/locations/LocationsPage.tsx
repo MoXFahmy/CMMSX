@@ -17,6 +17,8 @@ import { confirmDelete } from '@/components/confirm';
 import { fmtDateTime, notifyError, notifySuccess } from '@/components/utils';
 import { LocationFormModal, SiteFormModal } from './LocationForms';
 import { buildTree, LocationTree, subtreeCount, type TreeNode } from '@/components/LocationTree';
+import { TranslateButton } from '@/components/TranslateButton';
+import { pick, pickNote } from '@/components/bilingual';
 
 type Node = TreeNode;
 
@@ -47,6 +49,7 @@ export function LocationsPage() {
       <PageHeader title={terms.locations} subtitle={t('locations.subtitle')}
         actions={can(P.locationsManage) && (
           <>
+            <TranslateButton list="locations" refresh={[['locations'], ['hierarchy']]} />
             <Button variant="default" leftSection={<IconPlus size={16} />} onClick={() => { setEditSite(null); siteM.open(); }}>{t('locations.newSite')}</Button>
             <Button leftSection={<IconFolderPlus size={16} />} disabled={!h?.sites.length}
               onClick={() => openNewLocation(selSite ?? h?.locations.find((l) => l.id === selLoc)?.siteId ?? h!.sites[0].id, selLoc)}>{t('locations.newLocation')}</Button>
@@ -174,11 +177,11 @@ function LocationPanel({ id, onSelect, onSelectSite, onEdit, onAddChild }: { id:
         <Breadcrumbs separator="›" mb="xs" fz="sm">
           <Anchor fz="sm" onClick={() => onSelectSite(l.site.id)}>{l.site.name}</Anchor>
           {l.ancestors.map((a) => <Anchor key={a.id} fz="sm" onClick={() => onSelect(a.id)}>{a.name}</Anchor>)}
-          <Text fz="sm" c="dimmed">{l.name}</Text>
+          <Text fz="sm" c="dimmed">{pick(l.name, l.nameAr)}</Text>
         </Breadcrumbs>
         <Group justify="space-between" align="flex-start" wrap="nowrap">
           <Group wrap="nowrap"><ThemeIcon size={44} variant="light" radius="md"><LocationTypeIcon type={l.type} size={24} /></ThemeIcon>
-            <Stack gap={0}><Title order={3}>{l.name}</Title><Text c="dimmed" fz="sm">{t(`locationType.${l.type}`)} · {l.code}{!l.isActive && ` · ${t('common.inactive')}`}</Text></Stack></Group>
+            <Stack gap={0}><Title order={3}>{pick(l.name, l.nameAr)}</Title><Text c="dimmed" fz="sm">{t(`locationType.${l.type}`)} · {l.code}{!l.isActive && ` · ${t('common.inactive')}`}</Text></Stack></Group>
           <Group gap="xs" wrap="nowrap">
             <Button variant="default" component={Link} to={`/assets?locationId=${l.id}`} leftSection={<IconBox size={16} />}>{t('locations.viewAssets')}</Button>
             <Menu position="bottom-end">
@@ -208,7 +211,7 @@ function LocationPanel({ id, onSelect, onSelectSite, onEdit, onAddChild }: { id:
           <Stack gap={4}><Text fz="xs" c="dimmed" tt="uppercase" fw={700}>{t('criticality.label')}</Text><CriticalityBadge value={l.criticality} /></Stack>
         </SimpleGrid>
         {(l.description || l.notesToTechnician) && (
-          <SimpleGrid cols={{ base: 1, sm: 2 }} mt="md"><Field label={t('common.description')}>{l.description}</Field><Field label={t('locations.notesToTechnician')}>{l.notesToTechnician}</Field></SimpleGrid>
+          <SimpleGrid cols={{ base: 1, sm: 2 }} mt="md"><Field label={t('common.description')}>{l.description}</Field><Field label={t('locations.notesToTechnician')}>{pickNote(l.notesToTechnician, l.notesToTechnicianAr)}</Field></SimpleGrid>
         )}
         <Text fz="xs" c="dimmed" mt="md">{t('common.updatedAt', { date: fmtDateTime(l.updatedAt ?? l.createdAt) })}</Text>
       </Card>

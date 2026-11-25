@@ -26,9 +26,12 @@ public class PmTask : TenantEntity
 {
     public required string Code { get; set; }
     public required string Name { get; set; }
+    /// <summary>0.28.0: the name in Arabic; empty = the main name for everyone.</summary>
+    public string? NameAr { get; set; }
     public string? Description { get; set; }
     /// <summary>Title of the work orders made from it; empty = the template's name (PM work keeps the PM's name).</summary>
     public string? Title { get; set; }
+    public string? TitleAr { get; set; }
     public WorkType WorkType { get; set; } = WorkType.Preventive;
     /// <summary>Empty = the PM's or the form's priority.</summary>
     public WorkPriority? Priority { get; set; }
@@ -39,6 +42,7 @@ public class PmTask : TenantEntity
     public Guid? TradeId { get; set; }
     public decimal? EstimatedHours { get; set; }
     public string? SafetyNotes { get; set; }
+    public string? SafetyNotesAr { get; set; }
     public bool IsActive { get; set; } = true;
     public List<PmTaskStep> Steps { get; set; } = [];
     /// <summary>Parts every work order generated from this task needs (planned and reserved on generation).</summary>
@@ -59,6 +63,8 @@ public class PmTaskStep : Entity
     public Guid PmTaskId { get; set; }
     public int Sequence { get; set; }
     public required string Description { get; set; }
+    /// <summary>0.28.0: the step in Arabic.</summary>
+    public string? DescriptionAr { get; set; }
     // Smart checklists (0.13.0): what the step asks for, copied onto each work order's step.
     public StepType Type { get; set; }
     /// <summary>A Number step's unit (a step with a measurement point uses the point's); a Meter step's unit picks the asset's meter.</summary>
@@ -77,6 +83,8 @@ public class PmSchedule : TenantEntity
 {
     public required string Code { get; set; }
     public required string Name { get; set; }
+    /// <summary>0.28.0: the name in Arabic; empty = the main name for everyone.</summary>
+    public string? NameAr { get; set; }
     public string? Description { get; set; }
     /// <summary>0.21.0: aimed at an asset group; each generation covers its current members at the PM's site.</summary>
     public Guid? AssetGroupId { get; set; }

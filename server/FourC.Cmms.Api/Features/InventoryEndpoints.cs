@@ -12,14 +12,18 @@ namespace FourC.Cmms.Api.Features;
 public static class InventoryEndpoints
 {
     public sealed record PartLookupRow(Guid Id, string PartNumber, string Name, string? Barcode, string UnitOfMeasure, decimal AverageCost, decimal? LastPurchasePrice,
-        bool IsShelfItem, Guid? PreferredSupplierId, decimal OnHand, decimal? OnAsset);
+        bool IsShelfItem, Guid? PreferredSupplierId, decimal OnHand, decimal? OnAsset,
+        // 0.28.0: Name is in the reader's language; purchasing copies the main name onto its lines.
+        string? MainName = null);
 
     public sealed record StoreInput(string Code, string Name, Guid? SiteId, string? Description, bool IsActive = true);
     public sealed record PartInput(string PartNumber, string Name, string? Specification, string? Manufacturer, string? ManufacturerPartNumber, string UnitOfMeasure,
         Guid? GroupId, decimal StandardPrice, int? LeadTimeDays, bool IsCritical, bool IsShelfItem, bool AllowNegativeStock, Guid? PreferredSupplierId,
         string? Barcode, List<Guid>? AlternatePartIds, string? Notes, bool IsActive = true, List<LevelInput>? Levels = null, string? RowVersion = null,
         // Serial tracking (0.24.0), on a new part only: an existing part is switched on its units (it needs a serial for each piece in stock).
-        bool? IsSerialTracked = null, int? UnitLifeMonths = null);
+        bool? IsSerialTracked = null, int? UnitLifeMonths = null,
+        // 0.28.0: the name in Arabic; left out = kept, blank = cleared.
+        string? NameAr = null);
     public sealed record LevelInput(Guid StoreId, string? Bin, decimal MinLevel, decimal ReorderLevel, decimal MaxLevel, decimal ReorderQuantity);
     /// <param name="Serials">A serial-tracked part's serial numbers, one per piece (0.24.0).</param>
     public sealed record ReceiveInput(Guid? PartId, Guid? StoreId, decimal Quantity, decimal UnitCost, DateOnly? Date, Guid? SupplierId, string? Reference, string? BatchNumber, DateOnly? ExpiryDate, string? Notes,
@@ -43,6 +47,9 @@ public static class InventoryEndpoints
         ["partNumber"] = p => p.PartNumber, ["name"] = p => p.Name, ["group"] = p => p.Group!.Name, ["averageCost"] = p => p.AverageCost, ["manufacturer"] = p => p.Manufacturer,
     };
 
+    /// <summary>The same sorts for Arabic readers: the name sorts by the text they see (0.28.0).</summary>
+    private static readonly Dictionary<string, Expression<Func<Part, object?>>> SortMapAr = new(SortMap, StringComparer.OrdinalIgnoreCase) { ["name"] = p => p.NameAr ?? p.Name };
+
     public sealed class PartFilter
     {
         public string? Search { get; set; }
@@ -65,7 +72,7 @@ public static class InventoryEndpoints
     {
         var storeId = f.StoreId;
         var q = db.Parts.AsNoTracking();
-        if (f.Search.Clean() is { } s) q = q.Where(p => p.PartNumber.Contains(s) || p.Name.Contains(s) || p.Manufacturer!.Contains(s) || p.ManufacturerPartNumber!.Contains(s) || p.Barcode == s);
+        if (f.Search.Clean() is { } s) q = q.Where(p => p.PartNumber.Contains(s) || p.Name.Contains(s) || p.NameAr!.Contains(s) || p.Manufacturer!.Contains(s) || p.ManufacturerPartNumber!.Contains(s) || p.Barcode == s);
         if (f.GroupId is not null) q = q.Where(p => p.GroupId == f.GroupId);
         if (storeId is not null) q = q.Where(p => db.StockLevels.Any(l => l.PartId == p.Id && l.StoreId == storeId));
         if (f.Critical == true) q = q.Where(p => p.IsCritical);
@@ -73,9 +80,10 @@ public static class InventoryEndpoints
         // Re-order checks use available stock (on hand less what open work has reserved).
         if (f.BelowReorder == true) q = q.Where(p => db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0
             && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel));
-        var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "partNumber").Select(p => new
+        var ar = Bilingual.Arabic;
+        var paged = await q.SortBy(f.Sort, f.Dir, ar ? SortMapAr : SortMap, "partNumber").Select(p => new
         {
-            p.Id, p.PartNumber, p.Name, p.Manufacturer, p.UnitOfMeasure, GroupName = p.Group!.Name, p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive, p.IsSerialTracked,
+            p.Id, p.PartNumber, Name = ar && p.NameAr != null ? p.NameAr : p.Name, p.Manufacturer, p.UnitOfMeasure, GroupName = p.Group!.Name, p.AverageCost, p.IsCritical, p.IsShelfItem, p.IsActive, p.IsSerialTracked,
             OnHand = db.StockLevels.Where(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId)).Sum(l => (decimal?)l.QuantityOnHand) ?? 0,
             Reserved = db.StockReservations.Where(r => r.PartId == p.Id && (storeId == null || r.StoreId == storeId)).Sum(r => (decimal?)r.Reserved) ?? 0,
             Low = db.StockLevels.Any(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId) && l.ReorderQuantity > 0 && l.QuantityOnHand - (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0) <= l.ReorderLevel),
@@ -154,12 +162,13 @@ public static class InventoryEndpoints
         g.MapGet("/lookup", async (CmmsDbContext db, string? search, Guid? storeId, Guid? assetId, CancellationToken ct) =>
         {
             var q = db.Parts.AsNoTracking().Where(p => p.IsActive);
-            if (search.Clean() is { } s) q = q.Where(p => p.PartNumber.Contains(s) || p.Name.Contains(s) || p.Barcode == s);
+            if (search.Clean() is { } s) q = q.Where(p => p.PartNumber.Contains(s) || p.Name.Contains(s) || p.NameAr!.Contains(s) || p.Barcode == s);
+            var ar = Bilingual.Arabic;
             var onAsset = assetId is { } aid ? await db.AssetParts.AsNoTracking().Where(x => x.AssetId == aid).ToDictionaryAsync(x => x.PartId, x => x.Quantity, ct) : [];
             var listed = onAsset.Keys.ToList();
             async Task<List<PartLookupRow>> Find(IQueryable<FourC.Cmms.Core.Inventory.Part> parts) => await parts.OrderBy(p => p.PartNumber).Take(30)
-                .Select(p => new PartLookupRow(p.Id, p.PartNumber, p.Name, p.Barcode, p.UnitOfMeasure, p.AverageCost, p.LastPurchasePrice, p.IsShelfItem, p.PreferredSupplierId,
-                    db.StockLevels.Where(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId)).Sum(l => (decimal?)l.QuantityOnHand) ?? 0, null))
+                .Select(p => new PartLookupRow(p.Id, p.PartNumber, ar && p.NameAr != null ? p.NameAr : p.Name, p.Barcode, p.UnitOfMeasure, p.AverageCost, p.LastPurchasePrice, p.IsShelfItem, p.PreferredSupplierId,
+                    db.StockLevels.Where(l => l.PartId == p.Id && (storeId == null || l.StoreId == storeId)).Sum(l => (decimal?)l.QuantityOnHand) ?? 0, null, p.Name))
                 .ToListAsync(ct);
             var first = listed.Count == 0 ? [] : (await Find(q.Where(p => listed.Contains(p.Id)))).Select(r => r with { OnAsset = onAsset[r.Id] }).ToList();
             return first.Concat(await Find(listed.Count == 0 ? q : q.Where(p => !listed.Contains(p.Id)))).ToList();
@@ -183,24 +192,26 @@ public static class InventoryEndpoints
             }
             var order = Reservations.InOrderOfNeed(holders.Select(h => h.Line)).Select((x, n) => (x.LineId, n)).ToDictionary(x => x.LineId, x => x.n);
             var holderIds = holders.Select(h => h.Line.WorkOrderId).ToList();
-            var titles = await db.WorkOrders.AsNoTracking().Where(w => holderIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => w.Title, ct);
+            var titles = await db.WorkOrders.AsNoTracking().Where(w => holderIds.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => Bilingual.Pick(w.Title, w.TitleAr), ct);
             var reservedFor = holders.OrderBy(h => order[h.Line.LineId]).Select(h => new
             {
                 h.Line.WorkOrderId, h.Line.WorkOrderNumber, Title = titles.GetValueOrDefault(h.Line.WorkOrderId), h.StoreCode, Reserved = h.Line.StillReserved, h.Short, h.Line.DueDate,
             }).ToList();
             var batches = p.IsShelfItem ? await db.StockTransactions.AsNoTracking().Where(t => t.PartId == id && t.BatchNumber != null).GroupBy(t => new { t.StoreId, t.BatchNumber })
                 .Select(b => new { b.Key.StoreId, b.Key.BatchNumber, Quantity = b.Sum(t => t.Quantity), Expiry = b.Max(t => t.ExpiryDate) }).Where(b => b.Quantity != 0).ToListAsync(ct) : [];
-            var alternates = await db.Parts.AsNoTracking().Where(x => p.AlternatePartIds.Contains(x.Id)).Select(x => new { x.Id, x.PartNumber, x.Name }).ToListAsync(ct);
+            var ar = Bilingual.Arabic;
+            var alternates = await db.Parts.AsNoTracking().Where(x => p.AlternatePartIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.PartNumber, Name = ar && x.NameAr != null ? x.NameAr : x.Name }).ToListAsync(ct);
             var supplier = p.PreferredSupplierId is { } sid ? await db.Suppliers.AsNoTracking().Where(x => x.Id == sid).Select(x => new { x.Id, x.Code, x.Name }).FirstOrDefaultAsync(ct) : null;
             var onOrder = await db.PurchaseOrderLines.Where(x => x.PartId == id && db.PurchaseOrders.Any(o => o.Id == x.PurchaseOrderId && OpenPo.Contains(o.Status)))
                 .SumAsync(x => (decimal?)((x.Quantity - x.QuantityReceived) * x.PackSize), ct) ?? 0;
             var onHand = levels.Sum(l => l.QuantityOnHand);
             var reservedTotal = levels.Sum(l => l.Reserved);
             var usedOn = await db.AssetParts.AsNoTracking().Where(x => x.PartId == id).OrderBy(x => x.Asset!.AssetNumber)
-                .Select(x => new { x.AssetId, x.Asset!.AssetNumber, AssetName = x.Asset.Name, x.Quantity, x.Note }).ToListAsync(ct);
+                .Select(x => new { x.AssetId, x.Asset!.AssetNumber, AssetName = ar && x.Asset.NameAr != null ? x.Asset.NameAr : x.Asset.Name, x.Quantity, x.Note }).ToListAsync(ct);
             return Results.Ok(new
             {
-                p.Id, p.PartNumber, p.Name, p.Specification, p.Manufacturer, p.ManufacturerPartNumber, p.UnitOfMeasure, p.GroupId, GroupName = p.Group?.Name, p.StandardPrice,
+                p.Id, p.PartNumber, p.Name, p.NameAr, p.Specification, p.Manufacturer, p.ManufacturerPartNumber, p.UnitOfMeasure, p.GroupId, GroupName = p.Group?.Name, p.StandardPrice,
                 p.AverageCost, p.LastPurchasePrice, p.LeadTimeDays, p.IsCritical, p.IsShelfItem, p.AllowNegativeStock, p.PreferredSupplierId, PreferredSupplier = supplier,
                 p.Barcode, p.AlternatePartIds, Alternates = alternates, p.Notes, p.IsActive, p.IsSerialTracked, p.UnitLifeMonths,
                 Levels = levels.Select(l => new { l.Id, l.StoreId, l.StoreCode, l.StoreName, l.Bin, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity, l.QuantityOnHand,
@@ -291,9 +302,10 @@ public static class InventoryEndpoints
             if (type is not null) q = q.Where(x => x.Type == type);
             if (from is not null) q = q.Where(x => x.Date >= from);
             if (to is not null) q = q.Where(x => x.Date <= to);
+            var ar = Bilingual.Arabic;
             return await q.OrderByDescending(x => x.Date).ThenByDescending(x => x.CreatedAt).Select(x => new
             {
-                x.Id, x.Type, x.Date, x.PartId, PartNumber = x.Part!.PartNumber, PartName = x.Part.Name, Unit = x.Part.UnitOfMeasure, x.StoreId, StoreCode = x.Store!.Code,
+                x.Id, x.Type, x.Date, x.PartId, PartNumber = x.Part!.PartNumber, PartName = ar && x.Part.NameAr != null ? x.Part.NameAr : x.Part.Name, Unit = x.Part.UnitOfMeasure, x.StoreId, StoreCode = x.Store!.Code,
                 x.Quantity, x.UnitCost, Total = Math.Round(x.Quantity * x.UnitCost, 2), x.WorkOrderId, WorkOrderNumber = db.WorkOrders.Where(w => w.Id == x.WorkOrderId).Select(w => w.Number).FirstOrDefault(),
                 x.PurchaseOrderId, x.Reference, x.BatchNumber, x.ExpiryDate, x.Notes, x.CreatedByName, x.CreatedAt, x.LocationId, x.CostCentreId,
             }).ToPagedAsync(page ?? 1, pageSize ?? 50, ct);
@@ -390,7 +402,7 @@ public static class InventoryEndpoints
         // Stock take: counted quantities become adjustments for the differences.
         t.MapGet("/stock-take", async (Guid storeId, CmmsDbContext db, CancellationToken ct) =>
             await db.StockLevels.AsNoTracking().Where(l => l.StoreId == storeId && l.Part!.IsActive && !l.Part.IsSerialTracked).OrderBy(l => l.Bin).ThenBy(l => l.Part!.PartNumber)
-                .Select(l => new { l.PartId, l.Part!.PartNumber, l.Part.Name, l.Part.UnitOfMeasure, l.Bin, l.QuantityOnHand, l.Part.IsShelfItem }).ToListAsync(ct))
+                .Select(l => new { l.PartId, l.Part!.PartNumber, Name = Bilingual.Arabic && l.Part.NameAr != null ? l.Part.NameAr : l.Part.Name, l.Part.UnitOfMeasure, l.Bin, l.QuantityOnHand, l.Part.IsShelfItem }).ToListAsync(ct))
             .RequirePermission(Permissions.InventoryView);
         t.MapPost("/stock-take", async (StockTakeInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
@@ -423,6 +435,7 @@ public static class InventoryEndpoints
             var info = await db.WorkOrderParts.AsNoTracking().Where(p => lineIds.Contains(p.Id))
                 .Select(p => new { p.Id, p.WorkOrderId, WorkOrderNumber = db.WorkOrders.Where(w => w.Id == p.WorkOrderId).Select(w => w.Number).FirstOrDefault(),
                     DueDate = db.WorkOrders.Where(w => w.Id == p.WorkOrderId).Select(w => w.DueDate).FirstOrDefault(),
+                    // Purchasing screen (requests are raised from it): the part's main name (0.28.0).
                     p.Part!.PartNumber, PartName = p.Part.Name, p.Part.UnitOfMeasure, StoreCode = p.Store!.Code })
                 .ToDictionaryAsync(p => p.Id, ct);
             return Results.Ok(shorts.Where(s => info.ContainsKey(s.LineId)).Select(s => new
@@ -440,6 +453,7 @@ public static class InventoryEndpoints
             if (siteId is not null) q = q.Where(l => l.Store!.SiteId == siteId);
             var rows = await q.Select(l => new
             {
+                // The re-order proposal is purchasing: the part's main name (0.28.0).
                 l.PartId, l.Part!.PartNumber, PartName = l.Part.Name, l.Part.UnitOfMeasure, l.Part.IsCritical, l.StoreId, StoreCode = l.Store!.Code, l.Store.SiteId,
                 l.QuantityOnHand, l.MinLevel, l.ReorderLevel, l.MaxLevel, l.ReorderQuantity, l.Part.PreferredSupplierId, Price = l.Part.LastPurchasePrice ?? l.Part.AverageCost,
                 Reserved = (db.StockReservations.Where(r => r.PartId == l.PartId && r.StoreId == l.StoreId).Sum(r => (decimal?)r.Reserved) ?? 0),
@@ -531,7 +545,7 @@ public static class InventoryEndpoints
         var changes = Reservations.WouldShort(onHand, lines, quantity, toWorkOrderId);
         if (changes.Count == 0) return null;
         var ids = changes.Select(c => c.WorkOrderId).ToList();
-        var titles = await db.WorkOrders.AsNoTracking().Where(w => ids.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => w.Title, ct);
+        var titles = await db.WorkOrders.AsNoTracking().Where(w => ids.Contains(w.Id)).ToDictionaryAsync(w => w.Id, w => Bilingual.Pick(w.Title, w.TitleAr), ct);
         return Results.Json(new
         {
             Status = 409, Title = "This takes stock reserved for other work.",
@@ -577,7 +591,7 @@ public static class InventoryEndpoints
     }
 
     /// <summary>The checks that need no database (shared with the import). Stock levels have their own, <see cref="LevelRules"/>.</summary>
-    internal static Validator PartRules(PartInput i) => new Validator().Required("partNumber", i.PartNumber, "Part no.", 100).Required("name", i.Name, "Description", 300).Required("unitOfMeasure", i.UnitOfMeasure, "Unit", 30)
+    internal static Validator PartRules(PartInput i) => new Validator().Required("partNumber", i.PartNumber, "Part no.", 100).Required("name", i.Name, "Description", 300).MaxLength("nameAr", i.NameAr, "Description (Arabic)", 300).Required("unitOfMeasure", i.UnitOfMeasure, "Unit", 30)
         .MaxLength("manufacturer", i.Manufacturer, "Manufacturer", 200).When(i.StandardPrice < 0, "standardPrice", "Price cannot be negative.")
         .When(i.LeadTimeDays < 0, "leadTimeDays", "Lead time cannot be negative.");
 
@@ -619,6 +633,7 @@ public static class InventoryEndpoints
 
     internal static void ApplyPart(Part p, PartInput i)
     {
+        if (i.NameAr is not null) p.NameAr = i.NameAr.Clean();
         p.Specification = i.Specification.Clean(); p.Manufacturer = i.Manufacturer.Clean(); p.ManufacturerPartNumber = i.ManufacturerPartNumber.Clean(); p.GroupId = i.GroupId;
         p.StandardPrice = i.StandardPrice; p.LeadTimeDays = i.LeadTimeDays; p.IsCritical = i.IsCritical; p.IsShelfItem = i.IsShelfItem; p.AllowNegativeStock = i.AllowNegativeStock;
         p.PreferredSupplierId = i.PreferredSupplierId; p.Barcode = i.Barcode.Clean(); p.AlternatePartIds = (i.AlternatePartIds ?? []).Where(x => x != p.Id).Distinct().ToList();

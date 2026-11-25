@@ -24,7 +24,9 @@ public static class AssetEndpoints
         decimal? RunsHoursPerDay = null, List<DayOfWeek>? RunsOn = null, bool? OnlyWhenStopped = null, Guid? CostCentreId = null, bool? ManagesCostCentre = null,
         Guid? BrandId = null, Guid? ModelId = null, bool? ManagesBrand = null, List<Guid>? GroupIds = null,
         // 0.24.0: a unit's end of life; pages from before leave it as it is.
-        DateOnly? EndOfLifeOn = null, bool? ManagesEndOfLife = null);
+        DateOnly? EndOfLifeOn = null, bool? ManagesEndOfLife = null,
+        // 0.28.0: Arabic texts; left out (older screens and apps, the import without these columns) = kept, blank = cleared.
+        string? NameAr = null, string? NotesToTechnicianAr = null);
 
     /// <summary>A unit's status and place change only through fit, remove and the unit actions (0.24.0).</summary>
     /// <summary>Not a spare unit: a plain asset, or a unit fitted to another asset (spares stay off the asset list and dashboard, 0.24.0).</summary>
@@ -70,6 +72,12 @@ public static class AssetEndpoints
         ["warrantyExpiresOn"] = a => a.WarrantyExpiresOn, ["createdAt"] = a => a.CreatedAt, ["updatedAt"] = a => a.UpdatedAt,
     };
 
+    /// <summary>The same sorts for Arabic readers: names sort by the text they see (0.28.0).</summary>
+    private static readonly Dictionary<string, Expression<Func<Asset, object?>>> SortMapAr = new(SortMap, StringComparer.OrdinalIgnoreCase)
+    {
+        ["name"] = a => a.NameAr ?? a.Name, ["category"] = a => a.Category!.NameAr ?? a.Category!.Name, ["location"] = a => a.Location!.NameAr ?? a.Location!.Name,
+    };
+
     public static void MapAssetEndpoints(this RouteGroupBuilder api)
     {
         var g = api.MapGroup("/assets").WithTags("Assets");
@@ -81,11 +89,12 @@ public static class AssetEndpoints
         {
             var q = db.Assets.AsNoTracking();
             // Pickers find spare units by number or serial (0.24.0); an empty search lists the machines.
-            if (search.Clean() is { } s) q = q.Where(a => a.AssetNumber.Contains(s) || a.Name.Contains(s) || a.SerialNumber!.Contains(s));
+            if (search.Clean() is { } s) q = q.Where(a => a.AssetNumber.Contains(s) || a.Name.Contains(s) || a.NameAr!.Contains(s) || a.SerialNumber!.Contains(s));
             else q = q.Where(NotSpareUnit);
             if (excludeId is not null) q = q.Where(a => a.Id != excludeId);
             if (siteId is not null) q = q.Where(a => a.SiteId == siteId);
-            return await q.OrderBy(a => a.AssetNumber).Take(30).Select(a => new { a.Id, a.AssetNumber, a.Name, a.SiteId, a.LocationId }).ToListAsync(ct);
+            var ar = Bilingual.Arabic;
+            return await q.OrderBy(a => a.AssetNumber).Take(30).Select(a => new { a.Id, a.AssetNumber, Name = ar && a.NameAr != null ? a.NameAr : a.Name, a.SiteId, a.LocationId }).ToListAsync(ct);
         }).RequirePermission(Permissions.AssetsView);
 
         g.MapGet("/export", ([AsParameters] AssetFilter f, HttpContext http, CmmsDbContext db, CancellationToken ct) =>
@@ -146,26 +155,28 @@ public static class AssetEndpoints
             if (a.Location is not null)
             {
                 var ids = LocationEndpoints.PathIds(a.Location.Path).ToList();
-                var locs = await db.Locations.AsNoTracking().Where(l => ids.Contains(l.Id)).Select(l => new { l.Id, l.Code, l.Name, l.Depth }).ToListAsync(ct);
+                var arTrail = Bilingual.Arabic;
+                var locs = await db.Locations.AsNoTracking().Where(l => ids.Contains(l.Id))
+                    .Select(l => new { l.Id, l.Code, Name = arTrail && l.NameAr != null ? l.NameAr : l.Name, l.Depth }).ToListAsync(ct);
                 locationTrail.AddRange(locs.OrderBy(l => l.Depth).Select(l => new { l.Id, l.Code, l.Name }));
             }
             var userIds = new[] { a.CreatedById, a.UpdatedById }.Where(x => x is not null).ToList();
             var users = await db.Users.AsNoTracking().Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
             // A unit (0.24.0): its part, its store and where it is.
-            var unitPart = a.PartId is { } pid ? await db.Parts.AsNoTracking().Where(p => p.Id == pid).Select(p => new { p.PartNumber, p.Name }).FirstOrDefaultAsync(ct) : null;
+            var unitPart = a.PartId is { } pid ? await db.Parts.AsNoTracking().Where(p => p.Id == pid).Select(p => new { p.PartNumber, p.Name, p.NameAr }).FirstOrDefaultAsync(ct) : null;
             var storeName = a.StoreId is { } sid ? await db.Stores.AllSites().AsNoTracking().Where(s => s.Id == sid).Select(s => s.Name).FirstOrDefaultAsync(ct) : null;
             var image = await db.Attachments.AsNoTracking().Where(x => x.EntityType == "Asset" && x.EntityId == id && x.ContentType.StartsWith("image/"))
                 .OrderByDescending(x => x.IsPrimaryImage).ThenBy(x => x.CreatedAt).Select(x => (Guid?)x.Id).FirstOrDefaultAsync(ct);
             return Results.Ok(new
             {
-                a.Id, a.AssetNumber, a.Name, a.Description, a.CategoryId, Category = a.Category is null ? null : new { a.Category.Id, a.Category.Code, a.Category.Name, a.Category.Color, a.Category.DowntimeCostPerHour },
+                a.Id, a.AssetNumber, a.Name, a.Description, a.CategoryId, Category = a.Category is null ? null : new { a.Category.Id, a.Category.Code, Name = Bilingual.Pick(a.Category.Name, a.Category.NameAr), a.Category.Color, a.Category.DowntimeCostPerHour },
                 a.SiteId, Site = new { a.Site!.Id, a.Site.Code, a.Site.Name }, a.LocationId, LocationTrail = locationTrail,
-                a.ParentAssetId, ParentAsset = a.ParentAsset is null ? null : new { a.ParentAsset.Id, a.ParentAsset.AssetNumber, a.ParentAsset.Name },
+                a.ParentAssetId, ParentAsset = a.ParentAsset is null ? null : new { a.ParentAsset.Id, a.ParentAsset.AssetNumber, Name = Bilingual.Pick(a.ParentAsset.Name, a.ParentAsset.NameAr) },
                 a.Status, a.Criticality, a.Manufacturer, a.Model, a.SerialNumber, a.Barcode, a.OperationNumber,
                 a.CommissionedOn, a.DisposedOn, a.PurchasePrice, a.CurrentValue, a.SalvageValue, a.ExpectedLifeYears, a.DowntimeCostPerHour,
-                a.WarrantyType, a.WarrantyExpiresOn, a.WarrantyNotes, a.Notes, a.NotesToTechnician, a.CustomFields, a.OnlyWhenStopped, a.CostCentreId, a.BrandId, a.ModelId,
+                a.WarrantyType, a.WarrantyExpiresOn, a.WarrantyNotes, a.Notes, a.NotesToTechnician, a.NameAr, a.NotesToTechnicianAr, a.CustomFields, a.OnlyWhenStopped, a.CostCentreId, a.BrandId, a.ModelId,
                 GroupIds = db.AssetGroupMembers.Where(m => m.AssetId == a.Id && db.AssetGroups.Any(g => g.Id == m.AssetGroupId)).Select(m => m.AssetGroupId).ToList(),
-                a.RunsHoursPerDay, a.RunsOn, a.PartId, PartNumber = unitPart?.PartNumber, PartName = unitPart?.Name, a.StoreId, StoreName = storeName, a.EndOfLifeOn,
+                a.RunsHoursPerDay, a.RunsOn, a.PartId, PartNumber = unitPart?.PartNumber, PartName = unitPart is null ? null : Bilingual.Pick(unitPart.Name, unitPart.NameAr), a.StoreId, StoreName = storeName, a.EndOfLifeOn,
                 UnitState = a.PartId is null ? null : UnitRules.StateOf(a).ToString(),
                 DownSince = await db.DowntimeEvents.Where(e => e.AssetId == id && e.EndedAt == null).Select(e => (DateTimeOffset?)e.StartedAt).FirstOrDefaultAsync(ct),
                 ChildCount = await db.Assets.CountAsync(x => x.ParentAssetId == id, ct),
@@ -177,7 +188,7 @@ public static class AssetEndpoints
         }).RequirePermission(Permissions.AssetsView);
 
         g.MapGet("/{id:guid}/children", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
-            await db.Assets.AsNoTracking().Where(a => a.ParentAssetId == id).OrderBy(a => a.AssetNumber).Select(ListProjection).ToListAsync(ct))
+            await db.Assets.AsNoTracking().Where(a => a.ParentAssetId == id).OrderBy(a => a.AssetNumber).Select(ListProjection(Bilingual.Arabic)).ToListAsync(ct))
             .RequirePermission(Permissions.AssetsView);
 
         g.MapGet("/{id:guid}/transfers", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
@@ -187,7 +198,7 @@ public static class AssetEndpoints
             var locIds = rows.SelectMany(r => new[] { r.FromLocationId, r.ToLocationId }).OfType<Guid>().Distinct().ToList();
             var userIds = rows.Select(r => r.TransferredById).OfType<Guid>().Distinct().ToList();
             var sites = await db.Sites.IgnoreQueryFilters().Where(s => siteIds.Contains(s.Id)).ToDictionaryAsync(s => s.Id, s => s.Name, ct);
-            var locs = await db.Locations.IgnoreQueryFilters().Where(l => locIds.Contains(l.Id)).ToDictionaryAsync(l => l.Id, l => l.Name, ct);
+            var locs = await db.Locations.IgnoreQueryFilters().Where(l => locIds.Contains(l.Id)).ToDictionaryAsync(l => l.Id, l => Bilingual.Pick(l.Name, l.NameAr), ct);
             var users = await db.Users.Where(u => userIds.Contains(u.Id)).ToDictionaryAsync(u => u.Id, u => u.FullName, ct);
             return rows.Select(r => new
             {
@@ -294,6 +305,7 @@ public static class AssetEndpoints
                 Manufacturer = src.Manufacturer, Model = src.Model, BrandId = src.BrandId, ModelId = src.ModelId, OperationNumber = src.OperationNumber, PurchasePrice = src.PurchasePrice,
                 ExpectedLifeYears = src.ExpectedLifeYears, DowntimeCostPerHour = src.DowntimeCostPerHour, WarrantyType = src.WarrantyType,
                 Notes = src.Notes, NotesToTechnician = src.NotesToTechnician, CustomFields = new(src.CustomFields),
+                NameAr = src.NameAr, NotesToTechnicianAr = src.NotesToTechnicianAr,
             };
             db.Assets.Add(copy);
             await db.SaveChangesAsync(ct);
@@ -326,15 +338,18 @@ public static class AssetEndpoints
     internal static async Task<PagedResult<AssetListItem>> ListAsync(CmmsDbContext db, AssetFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
     {
         var q = await FilterAsync(db, f, ct);
-        var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "assetNumber").Select(ListProjection).ToPagedAsync(page, pageSize, ct, maxPageSize);
+        var ar = Bilingual.Arabic;
+        var paged = await q.SortBy(f.Sort, f.Dir, ar ? SortMapAr : SortMap, "assetNumber").Select(ListProjection(ar)).ToPagedAsync(page, pageSize, ct, maxPageSize);
         var names = await LocationEndpoints.ResolvePathNamesAsync(db, paged.Items.Select(i => i.LocationPath), ct);
         var down = await Downtime.DownSinceAsync(db, paged.Items.Select(i => i.Id).ToList(), ct);
         return new PagedResult<AssetListItem>(paged.Items.Select(i => i with { LocationPath = names(i.LocationPath), DownSince = down.TryGetValue(i.Id, out var at) ? at : null }).ToList(),
             paged.Total, paged.Page, paged.PageSize);
     }
 
-    private static readonly Expression<Func<Asset, AssetListItem>> ListProjection = a => new AssetListItem(
-        a.Id, a.AssetNumber, a.Name, a.CategoryId, a.Category!.Name, a.Category.Color, a.SiteId, a.Site!.Name, a.LocationId, a.Location!.Name,
+    /// <summary>The list row, names in the reader's language (<paramref name="ar"/>: Arabic texts where there are some).</summary>
+    private static Expression<Func<Asset, AssetListItem>> ListProjection(bool ar) => a => new AssetListItem(
+        a.Id, a.AssetNumber, ar && a.NameAr != null ? a.NameAr : a.Name, a.CategoryId, ar && a.Category!.NameAr != null ? a.Category.NameAr : a.Category!.Name, a.Category.Color,
+        a.SiteId, a.Site!.Name, a.LocationId, ar && a.Location!.NameAr != null ? a.Location.NameAr : a.Location!.Name,
         a.Location.Path, a.ParentAssetId, a.ParentAsset!.AssetNumber, a.Status, a.Criticality, a.Manufacturer, a.Model, a.SerialNumber,
         a.CommissionedOn, a.WarrantyExpiresOn, a.CustomFields, a.UpdatedAt ?? a.CreatedAt, null);
 
@@ -342,7 +357,7 @@ public static class AssetEndpoints
     {
         var q = db.Assets.AsNoTracking();
         if (f.Search.Clean() is { } s)
-            q = q.Where(a => a.AssetNumber.Contains(s) || a.Name.Contains(s) || a.SerialNumber!.Contains(s) || a.Barcode!.Contains(s)
+            q = q.Where(a => a.AssetNumber.Contains(s) || a.Name.Contains(s) || a.NameAr!.Contains(s) || a.SerialNumber!.Contains(s) || a.Barcode!.Contains(s)
                              || a.Model!.Contains(s) || a.Manufacturer!.Contains(s) || a.OperationNumber!.Contains(s));
         else if (f.SpareUnits != true) q = q.Where(NotSpareUnit);
         if (f.SiteId is not null) q = q.Where(a => a.SiteId == f.SiteId);
@@ -380,7 +395,7 @@ public static class AssetEndpoints
     /// <summary>The checks that need no database (shared with the import).</summary>
     internal static Validator AssetRules(AssetInput i, Guid? id, bool requireNumber)
     {
-        var v = new Validator().Required("name", i.Name, "Name", 300)
+        var v = new Validator().Required("name", i.Name, "Name", 300).MaxLength("nameAr", i.NameAr, "Name (Arabic)", 300)
             .MaxLength("manufacturer", i.Manufacturer, "Manufacturer", 200).MaxLength("model", i.Model, "Model", 200)
             .MaxLength("serialNumber", i.SerialNumber, "Serial number", 200).MaxLength("barcode", i.Barcode, "Barcode", 200)
             .MaxLength("operationNumber", i.OperationNumber, "Operation number", 50)
@@ -492,6 +507,8 @@ public static class AssetEndpoints
         a.SalvageValue = i.SalvageValue; a.ExpectedLifeYears = i.ExpectedLifeYears; a.DowntimeCostPerHour = i.DowntimeCostPerHour;
         a.WarrantyType = i.WarrantyType; a.WarrantyExpiresOn = i.WarrantyExpiresOn; a.WarrantyNotes = i.WarrantyNotes.Clean();
         a.Notes = i.Notes.Clean(); a.NotesToTechnician = i.NotesToTechnician.Clean();
+        if (i.NameAr is not null) a.NameAr = i.NameAr.Clean();
+        if (i.NotesToTechnicianAr is not null) a.NotesToTechnicianAr = i.NotesToTechnicianAr.Clean();
         // Left out (older screens, the import without these columns): the running time stays as it is.
         if (i.RunsHoursPerDay is { } hours) a.RunsHoursPerDay = Math.Round(hours, 2); // kept to 2 decimals, as stored
         if (i.RunsOn is { Count: > 0 } days) a.RunsOn = days.Distinct().OrderBy(d => d).ToList();

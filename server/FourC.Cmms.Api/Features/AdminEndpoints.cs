@@ -442,13 +442,13 @@ public static class DashboardEndpoints
             var assets = db.Assets.Where(AssetEndpoints.NotSpareUnit); // spare units stay off the dashboard (0.24.0)
             var byStatus = await assets.GroupBy(a => a.Status).Select(x => new { Status = x.Key, Count = x.Count() }).ToListAsync(ct);
             var byCriticality = await assets.GroupBy(a => a.Criticality).Select(x => new { Criticality = x.Key, Count = x.Count() }).ToListAsync(ct);
-            var byCategory = await assets.GroupBy(a => new { a.CategoryId, Name = a.Category!.Name, Color = a.Category.Color })
+            var byCategory = await assets.GroupBy(a => new { a.CategoryId, Name = Bilingual.Arabic && a.Category!.NameAr != null ? a.Category.NameAr : a.Category!.Name, Color = a.Category.Color })
                 .Select(x => new { x.Key.CategoryId, Name = x.Key.Name ?? "Uncategorized", x.Key.Color, Count = x.Count() }).OrderByDescending(x => x.Count).Take(10).ToListAsync(ct);
             var bySite = await assets.GroupBy(a => new { a.SiteId, a.Site!.Name }).Select(x => new { x.Key.SiteId, x.Key.Name, Count = x.Count() }).OrderByDescending(x => x.Count).ToListAsync(ct);
             var expiring = await assets.AsNoTracking().Where(a => a.WarrantyExpiresOn != null && a.WarrantyExpiresOn >= today && a.WarrantyExpiresOn <= in90)
-                .OrderBy(a => a.WarrantyExpiresOn).Take(8).Select(a => new { a.Id, a.AssetNumber, a.Name, a.WarrantyExpiresOn, a.WarrantyType }).ToListAsync(ct);
+                .OrderBy(a => a.WarrantyExpiresOn).Take(8).Select(a => new { a.Id, a.AssetNumber, Name = Bilingual.Arabic && a.NameAr != null ? a.NameAr : a.Name, a.WarrantyExpiresOn, a.WarrantyType }).ToListAsync(ct);
             var recent = await assets.AsNoTracking().OrderByDescending(a => a.CreatedAt).Take(8)
-                .Select(a => new { a.Id, a.AssetNumber, a.Name, a.Status, a.CreatedAt, SiteName = a.Site!.Name }).ToListAsync(ct);
+                .Select(a => new { a.Id, a.AssetNumber, Name = Bilingual.Arabic && a.NameAr != null ? a.NameAr : a.Name, a.Status, a.CreatedAt, SiteName = a.Site!.Name }).ToListAsync(ct);
             var active = new[] { FourC.Cmms.Core.Work.WorkOrderStatus.Open, FourC.Cmms.Core.Work.WorkOrderStatus.InProgress, FourC.Cmms.Core.Work.WorkOrderStatus.OnHold };
             var since = DateTimeOffset.UtcNow.AddDays(-30);
             var woByStatus = await db.WorkOrders.GroupBy(w => w.Status).Select(x => new { Status = x.Key, Count = x.Count() }).ToListAsync(ct);
@@ -466,7 +466,7 @@ public static class DashboardEndpoints
                 RequestsAwaiting = await db.WorkRequests.CountAsync(r => r.Status == FourC.Cmms.Core.Work.WorkRequestStatus.New, ct),
                 ByStatus = woByStatus, ByPriority = woByPriority,
                 Urgent = await db.WorkOrders.AsNoTracking().Where(w => active.Contains(w.Status)).OrderByDescending(w => w.Priority).ThenBy(w => w.DueDate).Take(6)
-                    .Select(w => new { w.Id, w.Number, w.Title, w.Priority, w.Status, w.DueDate, AssetNumber = w.Asset!.AssetNumber }).ToListAsync(ct),
+                    .Select(w => new { w.Id, w.Number, Title = Bilingual.Arabic && w.TitleAr != null ? w.TitleAr : w.Title, w.Priority, w.Status, w.DueDate, AssetNumber = w.Asset!.AssetNumber }).ToListAsync(ct),
             };
             // People who see several sites: the work at each, side by side (each number opens that site's list).
             var visibleSites = await db.Sites.AsNoTracking().OrderBy(s => s.Name).Select(s => new { s.Id, s.Name }).ToListAsync(ct);

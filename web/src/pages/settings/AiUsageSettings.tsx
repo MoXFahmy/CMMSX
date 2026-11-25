@@ -91,7 +91,7 @@ export function AiUsageSettings() {
         </Group>
         <Group gap="xs" align="flex-end" wrap="wrap">
           <Select w={160} clearable label={t('ai.feature')} value={feature} onChange={(v) => reset(() => setFeature(v))}
-            data={(['Report', 'Diagnosis'] as const).map((x) => ({ value: x, label: t(`ai.features.${x}`) }))} />
+            data={(['Report', 'Diagnosis', 'Translation'] as const).map((x) => ({ value: x, label: t(`ai.features.${x}`) }))} />
           <Select w={170} clearable label={t('ai.result')} value={result} onChange={(v) => reset(() => setResult(v))}
             data={(['Answered', 'Refused', 'Failed', 'OverLimit'] as const).map((x) => ({ value: x, label: t(`ai.results.${x}`) }))} />
           <Select w={200} clearable searchable label={t('ai.who')} value={userId} onChange={(v) => reset(() => setUserId(v))}

@@ -13,26 +13,29 @@ public enum HoldReason { WaitingForParts = 1, WaitingForApproval = 2, WaitingFor
 public enum WorkRequestStatus { New = 1, Approved = 2, Rejected = 3, Cancelled = 4, Closed = 5 }
 
 /// <summary>Failure / cause code used for reliability reporting (legacy failurecause).</summary>
-public class FailureCode : TenantEntity, ICodeLookup
+public class FailureCode : TenantEntity, ICodeLookup, IBilingualName
 {
     public required string Code { get; set; }
     public required string Name { get; set; }
+    public string? NameAr { get; set; }
     public bool IsActive { get; set; } = true;
 }
 
 /// <summary>What people saw (0.14.0): the first of symptom → cause → remedy. Causes are the <see cref="FailureCode"/> list.</summary>
-public class Symptom : TenantEntity, ICodeLookup
+public class Symptom : TenantEntity, ICodeLookup, IBilingualName
 {
     public required string Code { get; set; }
     public required string Name { get; set; }
+    public string? NameAr { get; set; }
     public bool IsActive { get; set; } = true;
 }
 
 /// <summary>What was done about it (0.14.0): the last of symptom → cause → remedy.</summary>
-public class Remedy : TenantEntity, ICodeLookup
+public class Remedy : TenantEntity, ICodeLookup, IBilingualName
 {
     public required string Code { get; set; }
     public required string Name { get; set; }
+    public string? NameAr { get; set; }
     public bool IsActive { get; set; } = true;
 }
 
@@ -94,6 +97,11 @@ public class WorkOrder : TenantEntity
 {
     public required string Number { get; set; }
     public required string Title { get; set; }
+    /// <summary>0.28.0: the title in Arabic (copied from the PM or template); empty = the title for everyone.</summary>
+    public string? TitleAr { get; set; }
+    /// <summary>0.28.0: the template's safety notes, copied when the work order is made (before 0.28.0 they were added to the description).</summary>
+    public string? SafetyNotes { get; set; }
+    public string? SafetyNotesAr { get; set; }
     public string? Description { get; set; }
     public WorkType Type { get; set; } = WorkType.Corrective;
     public WorkPriority Priority { get; set; } = WorkPriority.Medium;
@@ -224,6 +232,7 @@ public class WorkOrderTask : Entity, ITenantOwned
     public Guid WorkOrderId { get; set; }
     public int Sequence { get; set; }
     public required string Description { get; set; }
+    public string? DescriptionAr { get; set; }
     public bool IsDone { get; set; }
     public DateTimeOffset? DoneAt { get; set; }
     public string? DoneBy { get; set; }

@@ -17,10 +17,14 @@ public static class PmEndpoints
     /// <param name="Parts">The parts each generated work order needs; null on an update keeps the task's parts.</param>
     public sealed record TaskInput(string Code, string Name, string? Description, Guid? TradeId, decimal? EstimatedHours, string? SafetyNotes, List<string>? Steps, bool IsActive = true,
         string? RowVersion = null, List<TaskPartInput>? Parts = null, string? Title = null, WorkType? WorkType = null, WorkPriority? Priority = null,
-        List<Guid>? RecipientIds = null, decimal? ExpectedStopHours = null, List<StepInput>? StepDetails = null);
+        List<Guid>? RecipientIds = null, decimal? ExpectedStopHours = null, List<StepInput>? StepDetails = null,
+        // 0.28.0: Arabic texts; left out = kept, blank = cleared.
+        string? NameAr = null, string? TitleAr = null, string? SafetyNotesAr = null);
     /// <summary>A typed template step (0.13.0); <c>TaskInput.StepDetails</c> wins over the plain <c>Steps</c> texts.</summary>
     public sealed record StepInput(string Description, StepType Type = StepType.Check, string? Unit = null, int? Decimals = null, Guid? MeasurementPointId = null,
-        bool PhotoRequired = false, bool BeforeStart = false, FollowUpKind FollowUp = FollowUpKind.Default, Guid? FollowUpTemplateId = null);
+        bool PhotoRequired = false, bool BeforeStart = false, FollowUpKind FollowUp = FollowUpKind.Default, Guid? FollowUpTemplateId = null,
+        // 0.28.0: the step in Arabic; left out = what the step with the same text had, blank = none.
+        string? DescriptionAr = null);
     public sealed record TaskPartInput(Guid PartId, decimal Quantity);
     public const string NeedsTemplate = "Choose a work template for this follow-up.";
     public const string UsedForFollowUps = "This template is used for follow-up work. Mark it inactive instead.";
@@ -34,7 +38,8 @@ public static class PmEndpoints
         bool? ManagesRules = null, List<Core.Assets.AssetStatus>? SkipStatusesOverride = null, List<DayOfWeek>? NonWorkingDaysOverride = null, bool? NoStackingOverride = null,
         List<AssetTemplateInput>? AssetTemplates = null, List<Guid>? CalendarIds = null, List<ExtraMeterInput>? ExtraMeters = null,
         MultiAssetMode? MultiAssetMode = null, GroupPlan? GroupPlan = null, int? SpreadParts = null, Guid? ContractId = null, bool? ManagesContract = null,
-        Guid? CostCentreId = null, bool? ManagesCostCentre = null, Guid? AssetGroupId = null, bool? ManagesAssetGroup = null);
+        Guid? CostCentreId = null, bool? ManagesCostCentre = null, Guid? AssetGroupId = null, bool? ManagesAssetGroup = null,
+        string? NameAr = null);
     /// <summary>A meter trigger on top of the PM's own (0.12.0), whichever comes first.</summary>
     public sealed record ExtraMeterInput(Guid MeterId, decimal Interval, decimal? NextDueReading = null);
     /// <summary>A multi-asset PM's asset with its own template (empty = the PM's).</summary>
@@ -78,7 +83,7 @@ public static class PmEndpoints
     internal static async Task<PagedResult<PmScheduleListItem>> ListAsync(CmmsDbContext db, PmScheduleFilter f, int page, int pageSize, CancellationToken ct, int maxPageSize = 500)
     {
             var q = db.PmSchedules.AsNoTracking();
-        if (f.Search.Clean() is { } s) q = q.Where(x => x.Code.Contains(s) || x.Name.Contains(s) || x.Asset!.AssetNumber.Contains(s));
+        if (f.Search.Clean() is { } s) q = q.Where(x => x.Code.Contains(s) || x.Name.Contains(s) || x.NameAr!.Contains(s) || x.Asset!.AssetNumber.Contains(s));
         if (f.SiteId is not null) q = q.Where(x => x.SiteId == f.SiteId);
         if (f.AssetId is not null) q = q.Where(x => x.AssetId == f.AssetId || (x.Asset != null && x.Asset.ParentAssetId == f.AssetId) || x.Assets.Any(a => a.AssetId == f.AssetId)
             || (x.AssetGroupId != null && db.AssetGroupMembers.Any(m => m.AssetGroupId == x.AssetGroupId && m.AssetId == f.AssetId))); // and PMs on its groups (0.21.0)
@@ -86,14 +91,14 @@ public static class PmEndpoints
         if (f.ActiveOnly == true) q = q.Where(x => x.IsActive);
         if (f.DueWithinDays is { } d) { var until = Today.AddDays(d); q = q.Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= until); }
         var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "nextDueDate").Include(x => x.Meter).Include(x => x.ExtraTasks)
-            .Select(x => new { S = x, SiteName = x.Site!.Name, AssetNumber = x.Asset!.AssetNumber, AssetName = x.Asset.Name, LocationName = x.Location!.Name, TaskCode = x.PmTask!.Code, TaskName = x.PmTask.Name,
+            .Select(x => new { S = x, SiteName = x.Site!.Name, AssetNumber = x.Asset!.AssetNumber, AssetName = Bilingual.Arabic && x.Asset.NameAr != null ? x.Asset.NameAr : x.Asset.Name, LocationName = Bilingual.Arabic && x.Location!.NameAr != null ? x.Location.NameAr : x.Location!.Name, TaskCode = x.PmTask!.Code, TaskName = Bilingual.Arabic && x.PmTask.NameAr != null ? x.PmTask.NameAr : x.PmTask.Name,
                 MeterUnit = x.Meter!.Unit, MeterReading = x.Meter.CurrentReading, AssetCount = x.Assets.Count,
                 LastWorkOrderNumber = db.WorkOrders.Where(w => w.Id == x.LastWorkOrderId).Select(w => w.Number).FirstOrDefault(),
                 OpenWorkOrders = db.WorkOrders.Count(w => w.PmScheduleId == x.Id && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold)) })
             .ToPagedAsync(page, pageSize, ct, maxPageSize);
         var today = Today;
         return new PagedResult<PmScheduleListItem>(paged.Items.Select(i => new PmScheduleListItem(
-            i.S.Id, i.S.Code, i.S.Name, i.S.Type, i.S.Basis, i.S.IsActive, i.S.SiteId, i.SiteName, i.S.AssetId, i.AssetNumber, i.AssetName, i.LocationName,
+            i.S.Id, i.S.Code, Bilingual.Pick(i.S.Name, i.S.NameAr), i.S.Type, i.S.Basis, i.S.IsActive, i.S.SiteId, i.SiteName, i.S.AssetId, i.AssetNumber, i.AssetName, i.LocationName,
             i.TaskCode, i.TaskName, PmCalendar.Describe(i.S, Translator.CurrentLanguage), i.S.NextDueDate, i.S.NextDueReading, i.MeterUnit, i.MeterReading, i.S.LastGeneratedAt,
             i.S.LastWorkOrderId, i.LastWorkOrderNumber, i.OpenWorkOrders, i.S.IsActive && i.S.NextDueDate < today, i.S.ExtraTasks.Count, i.AssetCount, i.S.OnlyWhenStopped)).ToList(),
             paged.Total, paged.Page, paged.PageSize);
@@ -106,9 +111,10 @@ public static class PmEndpoints
         t.MapGet("/", async (CmmsDbContext db, string? search, CancellationToken ct) =>
         {
             var q = db.PmTasks.AsNoTracking();
-            if (search.Clean() is { } s) q = q.Where(x => x.Code.Contains(s) || x.Name.Contains(s));
+            if (search.Clean() is { } s) q = q.Where(x => x.Code.Contains(s) || x.Name.Contains(s) || x.NameAr!.Contains(s));
             var used = await db.PmSchedules.GroupBy(x => x.PmTaskId).Select(g => new { g.Key, C = g.Count() }).ToDictionaryAsync(x => x.Key, x => x.C, ct);
-            var list = await q.OrderBy(x => x.Code).Select(x => new { x.Id, x.Code, x.Name, x.TradeId, x.EstimatedHours, x.IsActive, StepCount = x.Steps.Count }).ToListAsync(ct);
+            var ar = Bilingual.Arabic;
+            var list = await q.OrderBy(x => x.Code).Select(x => new { x.Id, x.Code, Name = ar && x.NameAr != null ? x.NameAr : x.Name, x.TradeId, x.EstimatedHours, x.IsActive, StepCount = x.Steps.Count }).ToListAsync(ct);
             return list.Select(x => new { x.Id, x.Code, x.Name, x.TradeId, x.EstimatedHours, x.IsActive, x.StepCount, ScheduleCount = used.GetValueOrDefault(x.Id) });
         }).RequirePermission(Permissions.PmView);
         t.MapGet("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
@@ -116,14 +122,14 @@ public static class PmEndpoints
             var x = await db.PmTasks.AsNoTracking().Include(y => y.Steps).FirstOrDefaultAsync(y => y.Id == id, ct);
             if (x is null) return Results.NotFound();
             var parts = await db.PmTaskParts.AsNoTracking().Where(p => p.PmTaskId == id).OrderBy(p => p.Part!.PartNumber)
-                .Select(p => new { p.PartId, p.Part!.PartNumber, PartName = p.Part.Name, p.Part.UnitOfMeasure, p.Quantity, UnitCost = p.Part.AverageCost }).ToListAsync(ct);
+                .Select(p => new { p.PartId, p.Part!.PartNumber, PartName = Bilingual.Arabic && p.Part.NameAr != null ? p.Part.NameAr : p.Part.Name, p.Part.UnitOfMeasure, p.Quantity, UnitCost = p.Part.AverageCost }).ToListAsync(ct);
             return Results.Ok(new
             {
-                x.Id, x.Code, x.Name, x.Description, x.TradeId, x.EstimatedHours, x.SafetyNotes, x.IsActive, Steps = x.Steps.OrderBy(s => s.Sequence).Select(s => s.Description),
+                x.Id, x.Code, x.Name, x.NameAr, x.Description, x.TradeId, x.EstimatedHours, x.SafetyNotes, x.SafetyNotesAr, x.IsActive, Steps = x.Steps.OrderBy(s => s.Sequence).Select(s => s.Description),
                 StepDetails = x.Steps.OrderBy(s => s.Sequence).Select(s => new StepInput(s.Description, s.Type, s.Unit, s.Decimals, s.MeasurementPointId, s.PhotoRequired,
-                    s.BeforeStart, s.FollowUp, s.FollowUpTemplateId)),
+                    s.BeforeStart, s.FollowUp, s.FollowUpTemplateId, s.DescriptionAr)),
                 Parts = parts, PartsCost = Math.Round(parts.Sum(p => p.Quantity * p.UnitCost), 2), RowVersion = Convert.ToBase64String(x.RowVersion),
-                x.Title, x.WorkType, x.Priority, x.RecipientIds, x.ExpectedStopHours, UsedBy = await UsedByAsync(db, id, ct),
+                x.Title, x.TitleAr, x.WorkType, x.Priority, x.RecipientIds, x.ExpectedStopHours, UsedBy = await UsedByAsync(db, id, ct),
             });
         }).RequirePermission(Permissions.PmView);
         t.MapPost("/", async (TaskInput input, CmmsDbContext db, CancellationToken ct) =>
@@ -196,14 +202,14 @@ public static class PmEndpoints
             var extraIds = s.ExtraMeters.Select(m => m.MeterId).ToList();
             var extraMeters = await db.Meters.AsNoTracking().Where(m => extraIds.Contains(m.Id)).ToDictionaryAsync(m => m.Id, ct);
             var recent = await db.WorkOrders.AsNoTracking().Where(w => w.PmScheduleId == id).OrderByDescending(w => w.CreatedAt).Take(10)
-                .Select(w => new { w.Id, w.Number, w.Title, w.Status, w.PmDueDate, w.CompletedAt }).ToListAsync(ct);
+                .Select(w => new { w.Id, w.Number, Title = Bilingual.Arabic && w.TitleAr != null ? w.TitleAr : w.Title, w.Status, w.PmDueDate, w.CompletedAt }).ToListAsync(ct);
             var visitCost = (await PmCost.ForSchedulesAsync(db, [s], ct))[(s.Id, s.PmTaskId)];
             return Results.Ok(new
             {
-                s.Id, s.Code, s.Name, s.Description, s.SiteId, s.LocationId, s.AssetId, Asset = s.Asset is null ? null : new { s.Asset.Id, s.Asset.AssetNumber, s.Asset.Name },
-                Assets = s.Assets.Where(a => a.Asset is not null).OrderBy(a => a.Sequence).Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name, a.PmTaskId }),
+                s.Id, s.Code, s.Name, s.NameAr, s.Description, s.SiteId, s.LocationId, s.AssetId, Asset = s.Asset is null ? null : new { s.Asset.Id, s.Asset.AssetNumber, Name = Bilingual.Pick(s.Asset.Name, s.Asset.NameAr) },
+                Assets = s.Assets.Where(a => a.Asset is not null).OrderBy(a => a.Sequence).Select(a => new { a.Asset!.Id, a.Asset.AssetNumber, Name = Bilingual.Pick(a.Asset.Name, a.Asset.NameAr), a.PmTaskId }),
                 s.SkipStatusesOverride, s.NonWorkingDaysOverride, s.NoStackingOverride, s.MultiAssetMode, s.GroupPlan, s.SpreadParts, s.SpreadIndex, s.CycleStart,
-                s.TradeId, s.TeamId, s.Priority, s.AssigneeIds, s.RecipientIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, s.PmTask.Name }, s.OnlyWhenStopped, s.ContractId, s.CostCentreId, s.AssetGroupId,
+                s.TradeId, s.TeamId, s.Priority, s.AssigneeIds, s.RecipientIds, s.PmTaskId, Task = new { s.PmTask!.Id, s.PmTask.Code, Name = Bilingual.Pick(s.PmTask.Name, s.PmTask.NameAr) }, s.OnlyWhenStopped, s.ContractId, s.CostCentreId, s.AssetGroupId,
                 GroupAssets = await GroupAssetsAsync(db, s, ct),
                 ExtraTasks = s.ExtraTasks.Select(e => new { e.PmTaskId, e.EveryNth }), s.Type, s.Basis, s.Frequency, s.Unit, s.WeekOfMonth, s.DayOfWeek, s.DayOfMonth,
                 s.WorkPeriodDays, s.WholeMonth, s.LeadDays, s.StartDate, s.NextDueDate, s.LastDueDate, s.LastGeneratedAt, s.GenerationCount,
@@ -374,11 +380,13 @@ public static class PmEndpoints
             var code = stem;
             for (var n = 2; await db.PmTasks.AnyAsync(x => x.Code == code, ct); n++) code = $"{stem}-{n}";
             var name = $"{src.Name} ({sch.Code})";
+            var nameAr = src.NameAr is null ? null : $"{src.NameAr} ({sch.Code})";
             var copy = new PmTask
             {
                 Code = code, Name = name.Length > 300 ? name[..300] : name, Description = src.Description, TradeId = src.TradeId, EstimatedHours = src.EstimatedHours,
                 SafetyNotes = src.SafetyNotes, IsActive = true, Title = src.Title, WorkType = src.WorkType, Priority = src.Priority, RecipientIds = [.. src.RecipientIds],
                 ExpectedStopHours = src.ExpectedStopHours,
+                NameAr = nameAr is { Length: > 300 } ? nameAr[..300] : nameAr, TitleAr = src.TitleAr, SafetyNotesAr = src.SafetyNotesAr,
             };
             foreach (var st in src.Steps.OrderBy(x => x.Sequence)) copy.Steps.Add(StepCopy.Copy(st, copy.Id));
             foreach (var pt in src.Parts) copy.Parts.Add(new PmTaskPart { PmTaskId = copy.Id, PartId = pt.PartId, Quantity = pt.Quantity });
@@ -410,7 +418,7 @@ public static class PmEndpoints
             var q = db.Meters.AsNoTracking();
             if (assetId is not null) q = q.Where(x => x.AssetId == assetId);
             if (search.Clean() is { } s) q = q.Where(x => x.Code.Contains(s) || x.Name.Contains(s) || x.Asset!.AssetNumber.Contains(s));
-            var rows = await q.OrderBy(x => x.Code).Select(x => new { x.Id, x.Code, x.Name, x.AssetId, AssetNumber = x.Asset!.AssetNumber, AssetName = x.Asset.Name, x.Unit,
+            var rows = await q.OrderBy(x => x.Code).Select(x => new { x.Id, x.Code, x.Name, x.AssetId, AssetNumber = x.Asset!.AssetNumber, AssetName = Bilingual.Arabic && x.Asset.NameAr != null ? x.Asset.NameAr : x.Asset.Name, x.Unit,
                 x.CurrentReading, x.LastReadAt, x.MaxDailyIncrement, x.IsActive, Schedules = db.PmSchedules.Count(p => p.MeterId == x.Id && p.IsActive),
                 x.SourceMeterId, Followers = db.Meters.Count(m => m.SourceMeterId == x.Id) }).ToListAsync(ct);
             // Source codes looked up afterwards, within the organization: lifting the filters inside the list's own query would lift
@@ -519,7 +527,8 @@ public static class PmEndpoints
     {
         var parts = i.Parts ?? [];
         return new Validator().Required("code", i.Code, "Task no.", 50).Required("name", i.Name, "Name", 300).MaxLength("safetyNotes", i.SafetyNotes, "Safety notes", 4000)
-            .MaxLength("title", i.Title, "Title", 300)
+            .MaxLength("title", i.Title, "Title", 300).MaxLength("nameAr", i.NameAr, "Name (Arabic)", 300).MaxLength("titleAr", i.TitleAr, "Title (Arabic)", 300)
+            .MaxLength("safetyNotesAr", i.SafetyNotesAr, "Safety notes (Arabic)", 4000)
             .When(i.WorkType is { } wt && !Enum.IsDefined(wt), "workType", "Choose a work type.").When(i.Priority is { } pr && !Enum.IsDefined(pr), "priority", "Choose a priority.")
             .When(i.ExpectedStopHours is < 0 or > 10_000, "expectedStopHours", "Enter between 0 and 10,000 hours.")
             .When((i.RecipientIds ?? []).Distinct().Count() > 20, "recipientIds", "At most 20 recipients.")
@@ -633,20 +642,25 @@ public static class PmEndpoints
     {
         x.Description = i.Description.Clean(); x.TradeId = i.TradeId; x.EstimatedHours = i.EstimatedHours; x.SafetyNotes = i.SafetyNotes.Clean(); x.IsActive = i.IsActive;
         // Template fields (0.12.0): a type or recipient list left out keeps what is there.
+        if (i.NameAr is not null) x.NameAr = i.NameAr.Clean();
+        if (i.TitleAr is not null) x.TitleAr = i.TitleAr.Clean();
+        if (i.SafetyNotesAr is not null) x.SafetyNotesAr = i.SafetyNotesAr.Clean();
         x.Title = i.Title.Clean(); x.Priority = i.Priority; x.ExpectedStopHours = i.ExpectedStopHours is { } esh ? Math.Round(esh, 2) : null;
         if (i.WorkType is { } wt) x.WorkType = wt;
         if (i.RecipientIds is not null) x.RecipientIds = i.RecipientIds.Distinct().ToList();
         var details = i.StepDetails?.Where(st => st.Description.Clean() is not null).ToList()
             ?? StepCopy.Match((i.Steps ?? []).Select(s => s.Clean()).OfType<string>(), before ?? [])
-                .Select(st => new StepInput(st.Description, st.Type, st.Unit, st.Decimals, st.MeasurementPointId, st.PhotoRequired, st.BeforeStart, st.FollowUp, st.FollowUpTemplateId)).ToList();
+                .Select(st => new StepInput(st.Description, st.Type, st.Unit, st.Decimals, st.MeasurementPointId, st.PhotoRequired, st.BeforeStart, st.FollowUp, st.FollowUpTemplateId, st.DescriptionAr)).ToList();
         var seq = 0;
         foreach (var st in details)
         {
             var text = st.Description.Clean()!;
+            // Arabic left out (the import, an older page): the text the same step had before.
+            var ar = st.DescriptionAr is null ? before?.FirstOrDefault(b => b.Description == text)?.DescriptionAr : st.DescriptionAr.Clean();
             var point = st.Type == StepType.Number ? st.MeasurementPointId : null; // a point gives the unit and decimals
             x.Steps.Add(new PmTaskStep
             {
-                PmTaskId = x.Id, Sequence = ++seq, Description = text.Length > 2000 ? text[..2000] : text, Type = st.Type,
+                PmTaskId = x.Id, Sequence = ++seq, Description = text.Length > 2000 ? text[..2000] : text, DescriptionAr = ar is { Length: > 2000 } ? ar[..2000] : ar, Type = st.Type,
                 Unit = point is null ? st.Unit.Clean() : null, Decimals = point is null ? st.Decimals : null, MeasurementPointId = point, PhotoRequired = st.PhotoRequired, BeforeStart = st.BeforeStart,
                 FollowUp = st.FollowUp, FollowUpTemplateId = st.FollowUp == FollowUpKind.None ? null : st.FollowUpTemplateId,
             });
@@ -656,7 +670,7 @@ public static class PmEndpoints
     /// <summary>The checks that need no database (shared with the import).</summary>
     internal static Validator PmScheduleRules(ScheduleInput i, Guid? id)
     {
-        var v = new Validator().Required("name", i.Name, "Name", 300).MaxLength("code", i.Code, "PM no.", 50)
+        var v = new Validator().Required("name", i.Name, "Name", 300).MaxLength("nameAr", i.NameAr, "Name (Arabic)", 300).MaxLength("code", i.Code, "PM no.", 50)
             .When(!Enum.IsDefined(i.Type), "type", "Choose a schedule type.")
             .When(i.Frequency is < 1 or > 1000, "frequency", "Frequency must be between 1 and 1000.")
             .When(i.WorkPeriodDays is < 1 or > 366, "workPeriodDays", "Work period must be between 1 and 366 days.")
@@ -843,7 +857,7 @@ public static class PmEndpoints
     {
         if (s.AssetGroupId is null) return [];
         var ids = (await PmGenerator.RoundAssetsAsync(db, s, ct)).Select(a => a.Id).ToList();
-        var names = await db.Assets.AllSites().AsNoTracking().Where(a => ids.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => new { a.Id, a.AssetNumber, a.Name }, ct);
+        var names = await db.Assets.AllSites().AsNoTracking().Where(a => ids.Contains(a.Id)).ToDictionaryAsync(a => a.Id, a => new { a.Id, a.AssetNumber, Name = Bilingual.Pick(a.Name, a.NameAr) }, ct);
         return ids.Where(names.ContainsKey).Select(id => (object)names[id]).ToArray();
     }
 
@@ -868,6 +882,7 @@ public static class PmEndpoints
 
     internal static void ApplySchedule(PmSchedule s, ScheduleInput i)
     {
+        if (i.NameAr is not null) s.NameAr = i.NameAr.Clean();
         s.Description = i.Description.Clean(); s.SiteId = i.SiteId; s.LocationId = i.LocationId; s.AssetId = i.AssetId; s.TradeId = i.TradeId; s.TeamId = i.TeamId; s.Priority = i.Priority;
         if (i.OnlyWhenStopped is { } stopped) s.OnlyWhenStopped = stopped; // left out (older pages, the import): unchanged
         if (i.ManagesContract == true) s.ContractId = i.ContractId; // the contract (0.17.0), passed to the work it creates
@@ -993,8 +1008,8 @@ public static class PmEndpoints
     {
         var q = db.PmSchedules.AsNoTracking().Include(x => x.ExtraTasks).Include(x => x.Assets).Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= to);
         if (siteId is not null) q = q.Where(x => x.SiteId == siteId);
-        var list = await q.Select(x => new { S = x, AssetNumber = x.Asset!.AssetNumber, TaskName = x.PmTask!.Name, SiteName = x.Site!.Name }).ToListAsync(ct);
-        var taskNames = await db.PmTasks.AsNoTracking().ToDictionaryAsync(x => x.Id, x => x.Name, ct);
+        var list = await q.Select(x => new { S = x, AssetNumber = x.Asset!.AssetNumber, TaskName = Bilingual.Arabic && x.PmTask!.NameAr != null ? x.PmTask.NameAr : x.PmTask!.Name, SiteName = x.Site!.Name }).ToListAsync(ct);
+        var taskNames = await db.PmTasks.AsNoTracking().ToDictionaryAsync(x => x.Id, x => Bilingual.Pick(x.Name, x.NameAr), ct);
         // Estimated cost per visit, worked out once per schedule and task (not per forecast row).
         var costs = (await PmCost.ForSchedulesAsync(db, list.Select(i => i.S).ToList(), ct)).ToDictionary(x => x.Key, x => x.Value.Total);
         // Each PM's shared calendars (0.12.0), read once for the whole list.
@@ -1004,7 +1019,7 @@ public static class PmEndpoints
         IReadOnlyList<ScheduleCalendar> CalendarsOf(Guid id) => links[id].Where(calendars.ContainsKey).Select(c => calendars[c]).ToList();
         return list.SelectMany(i => PmTriggers.Forecast(i.S, to, perSchedule, CalendarsOf(i.S.Id)).Select((d, k) => new ForecastRow
         {
-            Date = d, Id = i.S.Id, Code = i.S.Code, Name = i.S.Name, AssetId = i.S.AssetId, AssetNumber = i.AssetNumber, SiteId = i.S.SiteId, SiteName = i.SiteName, Type = i.S.Type,
+            Date = d, Id = i.S.Id, Code = i.S.Code, Name = Bilingual.Pick(i.S.Name, i.S.NameAr), AssetId = i.S.AssetId, AssetNumber = i.AssetNumber, SiteId = i.S.SiteId, SiteName = i.SiteName, Type = i.S.Type,
             TaskName = taskNames.GetValueOrDefault(PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + PmTriggers.PeriodOffset(i.S, k))) ?? i.TaskName,
             Cost = costs.GetValueOrDefault((i.S.Id, PmCalendar.TaskFor(i.S, i.S.GenerationCount + 1 + PmTriggers.PeriodOffset(i.S, k)))),
             Overdue = d < Today,

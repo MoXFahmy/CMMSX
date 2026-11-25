@@ -10,6 +10,7 @@ import { AnswerButtons } from '@/components/AnswerButtons';
 import { answered, failed, levelColor, levelOf, outOfRange, rangeMessage, roundProgress } from '@/components/measure';
 import { confirmAction } from '@/components/confirm';
 import { fromNow, notifyError, notifySuccess } from '@/components/utils';
+import { pick } from '@/components/bilingual';
 
 type Step = WorkOrderStep;
 
@@ -23,13 +24,14 @@ const message = (e: unknown) => (e instanceof ApiError ? Object.values(e.fieldEr
 export function ChecklistPanel({ w, canExec, onChange }: { w: WorkOrderDetail; canExec: boolean; onChange: () => Promise<void> }) {
   const { t } = useTranslation();
   const [text, setText] = useState('');
+  const [textAr, setTextAr] = useState(''); // 0.28.0: the step in Arabic (optional)
   const steps = w.tasks;
   const done = steps.filter(answered).length;
   // Safety steps for a step: those without an asset, and its own asset's on a round.
   const safetyOpen = (assetId?: string | null) => steps.filter((s) => s.beforeStart && (!s.assetId || s.assetId === assetId) && (!answered(s) || failed(s)));
   const add = async () => {
     if (!text.trim()) return;
-    try { await post(`/work-orders/${w.id}/tasks`, { description: text }); setText(''); await onChange(); } catch (e) { notifyError(e); }
+    try { await post(`/work-orders/${w.id}/tasks`, { description: text, descriptionAr: textAr }); setText(''); setTextAr(''); await onChange(); } catch (e) { notifyError(e); }
   };
   const allOk = async (assetId?: string) => {
     try {
@@ -77,6 +79,7 @@ export function ChecklistPanel({ w, canExec, onChange }: { w: WorkOrderDetail; c
       </Stack>
       {canExec && (
         <Group mt="md" gap="xs"><TextInput style={{ flex: 1 }} placeholder={t('wo.addTask')} value={text} onChange={(e) => setText(e.currentTarget.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); void add(); } }} />
+          <TextInput style={{ flex: 1 }} dir="rtl" placeholder={t('bilingual.stepAr')} aria-label={t('bilingual.stepAr')} value={textAr} onChange={(e) => setTextAr(e.currentTarget.value)} />
           <Button leftSection={<IconPlus size={14} />} onClick={add}>{t('common.create')}</Button></Group>
       )}
     </Card>
@@ -128,7 +131,7 @@ function StepRow({ w, x, canExec, locked, onChange }: { w: WorkOrderDetail; x: S
         <Group gap={6} wrap="nowrap" style={{ minWidth: 0 }}>
           {x.beforeStart && <Tooltip label={t('steps.beforeStart')}><IconShieldCheck size={16} color="var(--mantine-color-orange-6)" /></Tooltip>}
           {locked && <Tooltip label={t('checklist.lockedHint')}><IconLock size={14} /></Tooltip>}
-          <Text fz="sm" fw={500}>{x.sequence}. {x.description}</Text>
+          <Text fz="sm" fw={500}>{x.sequence}. {pick(x.description, x.descriptionAr)}</Text>
           {x.photoRequired && <Badge size="xs" variant="light" color={x.photos.length ? 'teal' : 'gray'} leftSection={<IconCamera size={10} />}>{t('steps.photoRequired')}</Badge>}
         </Group>
         <Group gap={6} wrap="nowrap">

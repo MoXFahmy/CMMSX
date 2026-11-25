@@ -10,7 +10,8 @@ namespace FourC.Cmms.Api.Features;
 
 public static class PeopleEndpoints
 {
-    public sealed record LookupInput(string Code, string Name, string? Color, bool IsActive = true);
+    /// <param name="NameAr">0.28.0: the Arabic name, for the lists that have one (symptoms, causes, remedies, cancel reasons); left out = kept, blank = cleared.</param>
+    public sealed record LookupInput(string Code, string Name, string? Color, bool IsActive = true, string? NameAr = null);
     public sealed record EmployeeInput(string Code, string FullName, string? JobTitle, string? Email, string? Phone, List<Guid>? TradeIds, List<Guid>? SiteIds,
         decimal? HourlyRate, decimal? OvertimeRate, bool IsContractor, string? Company, Guid? UserId, string? Notes, bool IsActive = true, string? RowVersion = null,
         List<WorkingDay>? WorkingHours = null, Guid? CompanyId = null);
@@ -157,7 +158,7 @@ public static class PeopleEndpoints
     {
         var g = api.MapGroup(path).WithTags(tag);
         g.MapGet("/", async (CmmsDbContext db, CancellationToken ct) =>
-            (await set(db).AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct)).Select(x => new { x.Id, x.Code, x.Name, Color = getColor?.Invoke(x), x.IsActive }))
+            (await set(db).AsNoTracking().OrderBy(x => x.Name).ToListAsync(ct)).Select(x => LookupRow(x, getColor)))
             .RequireAuthorization();
         g.MapPost("/", async (LookupInput input, CmmsDbContext db, CancellationToken ct) =>
         {
@@ -191,11 +192,18 @@ public static class PeopleEndpoints
     }
 
     /// <summary>The checks that need no database (shared with the import).</summary>
-    internal static Validator LookupRules(LookupInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200);
+    internal static Validator LookupRules(LookupInput i) => new Validator().Required("code", i.Code, "Code", 50).Required("name", i.Name, "Name", 200)
+        .MaxLength("nameAr", i.NameAr, "Name (Arabic)", 200);
+
+    /// <summary>A list row as edit forms read it: raw names, and the Arabic name only for the lists that have one.</summary>
+    private static object LookupRow<T>(T x, Func<T, string?>? getColor) where T : TenantEntity, ICodeLookup => x is IBilingualName b
+        ? new { x.Id, x.Code, x.Name, b.NameAr, Color = getColor?.Invoke(x), x.IsActive }
+        : new { x.Id, x.Code, x.Name, Color = getColor?.Invoke(x), x.IsActive };
 
     internal static void ApplyLookup<T>(T item, LookupInput i, Action<T, string?>? setColor) where T : ICodeLookup
     {
         item.Code = i.Code.Trim(); item.Name = i.Name.Trim(); item.IsActive = i.IsActive; setColor?.Invoke(item, i.Color.Clean());
+        if (item is IBilingualName b && i.NameAr is not null) b.NameAr = i.NameAr.Clean();
     }
 
     private static async Task<Validator> ValidateLookupAsync<T>(DbSet<T> set, LookupInput i, Guid? id, CancellationToken ct) where T : TenantEntity, ICodeLookup

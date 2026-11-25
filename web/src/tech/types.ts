@@ -22,6 +22,8 @@ export type TechJob = {
   /** The job's own stop on the asset's downtime log (as of the last refresh): completing the job ends it and fills the downtime. */
   downtime?: { startedAt: string; endedAt?: string | null } | null;
   location?: { id: string; path?: string | null; notesToTechnician?: string | null } | null;
+  /** 0.28.0: the template's safety notes, in the phone's language. */
+  safetyNotes?: string | null;
   roundAssets: { id: string; assetNumber: string; name: string }[];
   tasks: TechStep[];
   plannedParts: { partNumber: string; partName: string; unitOfMeasure: string; quantity: number; storeCode?: string | null }[];
@@ -96,7 +98,8 @@ export type TechBundle = {
 
 /** The assets, locations and meters of my sites (GET /api/tech/places), for scanning offline. */
 export type TechPlaces = {
-  assets: { id: string; assetNumber: string; name: string; barcode?: string | null; siteId: string; locationId?: string | null; notesToTechnician?: string | null }[];
-  locations: { id: string; name: string; path?: string | null; siteId: string; notesToTechnician?: string | null }[];
+  /** 0.28.0: name in the phone's language; otherName the other language's (for searching), when there is one. */
+  assets: { id: string; assetNumber: string; name: string; otherName?: string | null; barcode?: string | null; siteId: string; locationId?: string | null; notesToTechnician?: string | null }[];
+  locations: { id: string; name: string; otherName?: string | null; path?: string | null; siteId: string; notesToTechnician?: string | null }[];
   meters: { id: string; assetId: string; name: string; unit: string; currentReading?: number | null; lastReadAt?: string | null }[];
 };

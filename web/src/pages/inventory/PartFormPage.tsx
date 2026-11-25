@@ -20,9 +20,11 @@ type Values = {
   barcode: string; alternatePartIds: string[]; notes: string; isActive: boolean; levels: Level[];
   /** 0.24.0, on a new part only: later it is switched on the part page, with a serial for each piece in stock. */
   isSerialTracked: boolean; unitLifeMonths: number | '';
+  /** 0.28.0: the name in Arabic, as stored (blank clears). */
+  nameAr: string;
 };
 const empty: Values = {
-  partNumber: '', name: '', specification: '', manufacturer: '', manufacturerPartNumber: '', unitOfMeasure: 'EA', groupId: null, standardPrice: '', leadTimeDays: '',
+  partNumber: '', name: '', nameAr: '', specification: '', manufacturer: '', manufacturerPartNumber: '', unitOfMeasure: 'EA', groupId: null, standardPrice: '', leadTimeDays: '',
   isCritical: false, isShelfItem: false, allowNegativeStock: false, preferredSupplierId: null, barcode: '', alternatePartIds: [], notes: '', isActive: true, levels: [],
   isSerialTracked: false, unitLifeMonths: '',
 };
@@ -49,7 +51,7 @@ export function PartFormPage() {
   useEffect(() => {
     if (!part) return;
     form.setValues({
-      partNumber: part.partNumber, name: part.name, specification: part.specification ?? '', manufacturer: part.manufacturer ?? '', manufacturerPartNumber: part.manufacturerPartNumber ?? '',
+      partNumber: part.partNumber, name: part.name, nameAr: part.nameAr ?? '', specification: part.specification ?? '', manufacturer: part.manufacturer ?? '', manufacturerPartNumber: part.manufacturerPartNumber ?? '',
       unitOfMeasure: part.unitOfMeasure, groupId: part.groupId ?? null, standardPrice: part.standardPrice, leadTimeDays: part.leadTimeDays ?? '', isCritical: part.isCritical,
       isShelfItem: part.isShelfItem, allowNegativeStock: part.allowNegativeStock, preferredSupplierId: part.preferredSupplierId ?? null, barcode: part.barcode ?? '',
       alternatePartIds: part.alternatePartIds, notes: part.notes ?? '', isActive: part.isActive, isSerialTracked: !!part.isSerialTracked, unitLifeMonths: part.unitLifeMonths ?? '',
@@ -98,6 +100,7 @@ export function PartFormPage() {
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 <TextInput label={t('inv.partNumber')} required disabled={editing} description={editing ? t('inv.partNumberFixed') : undefined} {...form.getInputProps('partNumber')} />
                 <TextInput label={t('common.description')} required style={{ gridColumn: 'span 2' }} {...form.getInputProps('name')} />
+                <TextInput label={t('bilingual.descriptionAr')} dir="rtl" maxLength={300} style={{ gridColumn: 'span 2' }} {...form.getInputProps('nameAr')} />
               </SimpleGrid>
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 <Select label={t('inv.group')} data={(groups ?? []).map((g) => ({ value: g.id, label: g.name }))} clearable searchable {...form.getInputProps('groupId')} />

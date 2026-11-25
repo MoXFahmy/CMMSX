@@ -42,6 +42,7 @@ public static partial class TechEndpoints
         // My open jobs. Answers 304 when the phone already has this version (it asks every 15 minutes).
         g.MapGet("/bundle", async (HttpContext http, CmmsDbContext db, ITenantContext ctx, PermissionService perms, IOptions<JsonOptions> json, Ai.IAiClient ai, CancellationToken ct) =>
         {
+            var ar = Bilingual.Arabic; // texts in the phone's language (0.28.0)
             var me = await EmployeeAsync(db, ctx, ct);
             if (me is null) return NotLinked();
             // Mine: assigned to me, or given to a team I'm in (0.9.0).
@@ -51,13 +52,15 @@ public static partial class TechEndpoints
                 .OrderBy(w => w.DueDate == null).ThenBy(w => w.DueDate).ThenBy(w => w.Number).Take(MaxJobs)
                 .Select(w => new
                 {
-                    w.Id, w.Number, w.Title, w.Description, w.Type, w.Priority, w.Status, w.HoldReason, w.DueDate, w.DueAt, w.PlannedStart, w.SiteId,
+                    w.Id, w.Number, Title = ar && w.TitleAr != null ? w.TitleAr : w.Title, w.Description,
+                    SafetyNotes = ar && w.SafetyNotesAr != null ? w.SafetyNotesAr : w.SafetyNotes, w.Type, w.Priority, w.Status, w.HoldReason, w.DueDate, w.DueAt, w.PlannedStart, w.SiteId,
                     TeamName = w.Team == null ? null : w.Team.Name,
-                    Asset = w.Asset == null ? null : new { w.Asset.Id, w.Asset.AssetNumber, w.Asset.Name, w.Asset.NotesToTechnician,
+                    Asset = w.Asset == null ? null : new { w.Asset.Id, w.Asset.AssetNumber, Name = ar && w.Asset.NameAr != null ? w.Asset.NameAr : w.Asset.Name,
+                        NotesToTechnician = ar && w.Asset.NotesToTechnicianAr != null ? w.Asset.NotesToTechnicianAr : w.Asset.NotesToTechnician,
                         DownSince = db.DowntimeEvents.Where(e => e.AssetId == w.AssetId && e.EndedAt == null).Select(e => (DateTimeOffset?)e.StartedAt).FirstOrDefault() },
                     // The job's own stop: completing it ends the stop and fills the downtime from it.
                     Downtime = db.DowntimeEvents.Where(e => e.Id == w.DowntimeEventId).Select(e => new { e.StartedAt, e.EndedAt }).FirstOrDefault(),
-                    w.LocationId, LocationPath = w.Location == null ? null : w.Location.Path, LocationNotes = w.Location == null ? null : w.Location.NotesToTechnician,
+                    w.LocationId, LocationPath = w.Location == null ? null : w.Location.Path, LocationNotes = w.Location == null ? null : ar && w.Location.NotesToTechnicianAr != null ? w.Location.NotesToTechnicianAr : w.Location.NotesToTechnician,
                     w.AccessWindows, w.OnlyWhenStopped, w.GroupId, w.PmTaskId, w.SymptomId, w.FailureCodeId, w.RemedyId,
                 }).ToListAsync(ct);
             var ids = jobs.Select(j => j.Id).ToList();
@@ -70,13 +73,13 @@ public static partial class TechEndpoints
                 .ToLookup(c => c.GroupId, c => new { c.Body, c.UserName, c.CreatedAt });
             var names = await LocationNamesAsync(db, jobs.Where(j => j.LocationPath != null).SelectMany(j => LocationEndpoints.PathIds(j.LocationPath!)).Distinct().ToList(), ct);
             var tasks = (await db.WorkOrderTasks.AsNoTracking().Where(t => ids.Contains(t.WorkOrderId)).OrderBy(t => t.Sequence)
-                .Select(t => new { t.WorkOrderId, t.Id, t.Sequence, t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName,
+                .Select(t => new { t.WorkOrderId, t.Id, t.Sequence, Description = ar && t.DescriptionAr != null ? t.DescriptionAr : t.Description, t.IsDone, t.Reading, t.Remarks, t.AssetId, t.UpdatedAt, t.UpdatedByName,
                     t.Type, t.Unit, t.Decimals, t.MeasurementPointId, t.MeterId, t.PhotoRequired, t.BeforeStart, t.Answer, t.Value, t.TextValue, t.Level,
                     FollowUpNumber = db.WorkOrders.Where(w => w.Id == t.FollowUpWorkOrderId).Select(w => w.Number).FirstOrDefault()
                         ?? db.WorkRequests.Where(r => r.Id == t.FollowUpRequestId).Select(r => r.Number).FirstOrDefault() }).ToListAsync(ct))
                 .ToLookup(t => t.WorkOrderId);
             var round = (await db.WorkOrderAssets.AsNoTracking().Where(a => ids.Contains(a.WorkOrderId) && a.Asset != null).OrderBy(a => a.Sequence)
-                .Select(a => new { a.WorkOrderId, a.Asset!.Id, a.Asset.AssetNumber, a.Asset.Name }).ToListAsync(ct)).ToLookup(a => a.WorkOrderId);
+                .Select(a => new { a.WorkOrderId, a.Asset!.Id, a.Asset.AssetNumber, Name = ar && a.Asset.NameAr != null ? a.Asset.NameAr : a.Asset.Name }).ToListAsync(ct)).ToLookup(a => a.WorkOrderId);
             // Serial units fitted to the jobs' assets (0.24.0), for Remove on the phone.
             var jobAssets = jobs.Where(j => j.Asset != null).Select(j => j.Asset!.Id).Concat(round.SelectMany(r => r.Select(a => a.Id))).Distinct().ToList();
             var fittedUnits = await db.Assets.AllSites().AsNoTracking()
@@ -84,10 +87,10 @@ public static partial class TechEndpoints
                             && a.Status != FourC.Cmms.Core.Assets.AssetStatus.UnderRepair)
                 .OrderBy(a => a.AssetNumber).Select(a => new
                 {
-                    a.Id, a.AssetNumber, a.SerialNumber, a.PartId, PartName = db.Parts.Where(p => p.Id == a.PartId).Select(p => p.Name).FirstOrDefault(), FittedToId = a.ParentAssetId!.Value,
+                    a.Id, a.AssetNumber, a.SerialNumber, a.PartId, PartName = db.Parts.Where(p => p.Id == a.PartId).Select(p => ar && p.NameAr != null ? p.NameAr : p.Name).FirstOrDefault(), FittedToId = a.ParentAssetId!.Value,
                 }).ToListAsync(ct);
             var parts = (await db.WorkOrderParts.AsNoTracking().Where(p => ids.Contains(p.WorkOrderId)).OrderBy(p => p.Part!.PartNumber)
-                .Select(p => new { p.WorkOrderId, p.Part!.PartNumber, PartName = p.Part.Name, p.Part.UnitOfMeasure, p.Quantity, StoreCode = p.Store != null ? p.Store.Code : null })
+                .Select(p => new { p.WorkOrderId, p.Part!.PartNumber, PartName = ar && p.Part.NameAr != null ? p.Part.NameAr : p.Part.Name, p.Part.UnitOfMeasure, p.Quantity, StoreCode = p.Store != null ? p.Store.Code : null })
                 .ToListAsync(ct)).ToLookup(p => p.WorkOrderId);
             var files = (await db.Attachments.AsNoTracking().Where(a => a.EntityType == "WorkOrder" && ids.Contains(a.EntityId)).OrderBy(a => a.CreatedAt)
                 .Select(a => new { a.EntityId, a.Id, a.FileName, a.ContentType, a.IsSignature, a.SignedBy, a.WorkOrderTaskId }).ToListAsync(ct)).ToLookup(a => a.EntityId);
@@ -128,7 +131,7 @@ public static partial class TechEndpoints
             var myLabour = await db.WorkOrderLabor.AsNoTracking().Where(l => l.EmployeeId == me.EmployeeId && l.WorkDate >= today.AddDays(-30) && l.WorkDate <= today.AddDays(1))
                 .OrderByDescending(l => l.WorkDate)
                 .Select(l => new { l.WorkOrderId, Number = db.WorkOrders.Where(w => w.Id == l.WorkOrderId).Select(w => w.Number).FirstOrDefault(),
-                    Title = db.WorkOrders.Where(w => w.Id == l.WorkOrderId).Select(w => w.Title).FirstOrDefault(), l.WorkDate, l.Hours, l.OvertimeHours })
+                    Title = db.WorkOrders.Where(w => w.Id == l.WorkOrderId).Select(w => ar && w.TitleAr != null ? w.TitleAr : w.Title).FirstOrDefault(), l.WorkDate, l.Hours, l.OvertimeHours })
                 .ToListAsync(ct);
             var myHours = (await AvailabilityQueries.DaysAsync(db, [me.EmployeeId], today.AddDays(-30), today, ct)).GetValueOrDefault(me.EmployeeId) ?? [];
             var body = new
@@ -145,7 +148,7 @@ public static partial class TechEndpoints
                 me.EmployeeId, ctx.UserId,
                 Jobs = jobs.Select(j => new
                 {
-                    j.Id, j.Number, j.Title, j.Description, j.Type, j.Priority, j.Status, j.HoldReason, j.DueDate, j.DueAt, j.PlannedStart, j.SiteId, j.TeamName, j.Asset, j.Downtime,
+                    j.Id, j.Number, j.Title, j.SafetyNotes, j.Description, j.Type, j.Priority, j.Status, j.HoldReason, j.DueDate, j.DueAt, j.PlannedStart, j.SiteId, j.TeamName, j.Asset, j.Downtime,
                     j.AccessWindows, j.OnlyWhenStopped, j.SymptomId, j.FailureCodeId, j.RemedyId,
                     Location = j.LocationId is null ? null : new { Id = j.LocationId, Path = PathText(j.LocationPath, names), NotesToTechnician = j.LocationNotes },
                     RoundAssets = round[j.Id].Select(a => new { a.Id, a.AssetNumber, a.Name }),
@@ -181,10 +184,10 @@ public static partial class TechEndpoints
                 ListLabels = settings.ListLabels,
                 // The measurement points the jobs' steps use (0.13.0): the phone judges a reading as it is typed.
                 Points = await Checklists.PointsAsync(db, tasks.SelectMany(g => g).Select(t => t.MeasurementPointId), ct),
-                FailureCodes = await db.FailureCodes.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
+                FailureCodes = await db.FailureCodes.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, Name = ar && f.NameAr != null ? f.NameAr : f.Name }).ToListAsync(ct),
                 // Symptoms and remedies (0.14.0), and the codes most often recorded together on my sites' work, for ordering offline.
-                Symptoms = await db.Symptoms.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
-                Remedies = await db.Remedies.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, f.Name }).ToListAsync(ct),
+                Symptoms = await db.Symptoms.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, Name = ar && f.NameAr != null ? f.NameAr : f.Name }).ToListAsync(ct),
+                Remedies = await db.Remedies.AsNoTracking().Where(f => f.IsActive).OrderBy(f => f.Code).Select(f => new { f.Id, f.Code, Name = ar && f.NameAr != null ? f.NameAr : f.Name }).ToListAsync(ct),
                 CodePairs = await Codes.PairsAsync(db, DateOnly.FromDateTime(DateTime.UtcNow).AddYears(-2), ct),
                 CompletionRules = new
                 {
@@ -213,6 +216,7 @@ public static partial class TechEndpoints
         // for working offline (0.11.0). Answers 304 when the phone already has this version.
         g.MapGet("/stock", async (HttpContext http, CmmsDbContext db, ITenantContext ctx, PermissionService perms, IOptions<JsonOptions> json, CancellationToken ct) =>
         {
+            var ar = Bilingual.Arabic; // texts in the phone's language (0.28.0)
             var me = await EmployeeAsync(db, ctx, ct);
             if (me is null) return NotLinked();
             var sites = me.SiteIds;
@@ -228,7 +232,7 @@ public static partial class TechEndpoints
                     .Select(a => new { a.EntityId, a.Id, a.IsPrimaryImage, a.CreatedAt }).ToListAsync(ct))
                 .GroupBy(a => a.EntityId).ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.IsPrimaryImage).ThenBy(a => a.CreatedAt).First().Id);
             var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).OrderBy(p => p.PartNumber)
-                .Select(p => new { p.Id, p.PartNumber, p.Name, p.UnitOfMeasure, p.Barcode, p.IsShelfItem, p.AllowNegativeStock, p.IsSerialTracked }).ToListAsync(ct);
+                .Select(p => new { p.Id, p.PartNumber, Name = ar && p.NameAr != null ? p.NameAr : p.Name, p.UnitOfMeasure, p.Barcode, p.IsShelfItem, p.AllowNegativeStock, p.IsSerialTracked }).ToListAsync(ct);
             // Serial units in store at my sites (0.24.0), newest first, for Fit a unit offline.
             var spareUnits = await db.Assets.AllSites().AsNoTracking()
                 .Where(a => a.PartId != null && a.StoreId != null && storeIds.Contains(a.StoreId.Value) && a.ParentAssetId == null
@@ -245,9 +249,9 @@ public static partial class TechEndpoints
                     Levels = levels[p.Id].Select(l => new { l.StoreId, OnHand = l.QuantityOnHand, Reserved = reserved.GetValueOrDefault((p.Id, l.StoreId)), l.Bin }),
                 }),
                 Units = spareUnits,
-                CancelReasons = await db.CancelReasons.AsNoTracking().Where(r => r.IsActive).OrderBy(r => r.Name).Select(r => new { r.Id, r.Name }).ToListAsync(ct),
+                CancelReasons = await db.CancelReasons.AsNoTracking().Where(r => r.IsActive).OrderBy(r => r.Name).Select(r => new { r.Id, Name = ar && r.NameAr != null ? r.NameAr : r.Name }).ToListAsync(ct),
                 PmTasks = await db.PmTasks.AsNoTracking().Where(t => t.IsActive).OrderBy(t => t.Code)
-                    .Select(t => new { t.Id, t.Code, t.Name, Steps = t.Steps.OrderBy(s => s.Sequence).Select(s => s.Description) }).ToListAsync(ct),
+                    .Select(t => new { t.Id, t.Code, Name = ar && t.NameAr != null ? t.NameAr : t.Name, Steps = t.Steps.OrderBy(s => s.Sequence).Select(s => ar && s.DescriptionAr != null ? s.DescriptionAr : s.Description) }).ToListAsync(ct),
                 Counts = await db.StockCounts.AsNoTracking().Where(c => c.Status == FourC.Cmms.Core.Inventory.StockCountStatus.Open && storeIds.Contains(c.StoreId))
                     .OrderBy(c => c.CreatedAt).Select(c => new { c.Id, c.Name, c.StoreId }).ToListAsync(ct),
                 PurchaseOrders = allowed.Contains(Permissions.PurchasingReceive)
@@ -268,20 +272,23 @@ public static partial class TechEndpoints
         // The places of my sites, for scanning offline. Answers 304 when the phone already has this version.
         g.MapGet("/places", async (HttpContext http, CmmsDbContext db, ITenantContext ctx, IOptions<JsonOptions> json, CancellationToken ct) =>
         {
+            var ar = Bilingual.Arabic; // texts in the phone's language (0.28.0)
             var me = await EmployeeAsync(db, ctx, ct);
             if (me is null) return NotLinked();
             var sites = me.SiteIds;
             var assets = await db.Assets.AsNoTracking().Where(a => a.Status != AssetStatus.Disposed && (sites.Count == 0 || sites.Contains(a.SiteId)))
-                .OrderBy(a => a.AssetNumber).Select(a => new { a.Id, a.AssetNumber, a.Name, a.Barcode, a.SiteId, a.LocationId, a.NotesToTechnician }).ToListAsync(ct);
+                .OrderBy(a => a.AssetNumber).Select(a => new { a.Id, a.AssetNumber, Name = ar && a.NameAr != null ? a.NameAr : a.Name, OtherName = a.NameAr == null ? null : ar ? a.Name : a.NameAr,
+                    a.Barcode, a.SiteId, a.LocationId, NotesToTechnician = ar && a.NotesToTechnicianAr != null ? a.NotesToTechnicianAr : a.NotesToTechnician }).ToListAsync(ct);
             var locs = await db.Locations.AsNoTracking().Where(l => sites.Count == 0 || sites.Contains(l.SiteId))
-                .Select(l => new { l.Id, l.Name, l.Path, l.SiteId, l.NotesToTechnician }).ToListAsync(ct);
+                .Select(l => new { l.Id, Name = ar && l.NameAr != null ? l.NameAr : l.Name, OtherName = l.NameAr == null ? null : ar ? l.Name : l.NameAr, l.Path, l.SiteId,
+                    NotesToTechnician = ar && l.NotesToTechnicianAr != null ? l.NotesToTechnicianAr : l.NotesToTechnician }).ToListAsync(ct);
             var names = locs.ToDictionary(l => l.Id, l => l.Name);
             var meters = await db.Meters.AsNoTracking().Where(m => m.IsActive && m.Asset!.Status != AssetStatus.Disposed && (sites.Count == 0 || sites.Contains(m.Asset.SiteId)))
                 .Select(m => new { m.Id, m.AssetId, m.Name, m.Unit, m.CurrentReading, m.LastReadAt }).ToListAsync(ct);
             var body = new
             {
                 Assets = assets,
-                Locations = locs.OrderBy(l => l.Path).Select(l => new { l.Id, l.Name, Path = PathText(l.Path, names), l.SiteId, l.NotesToTechnician }),
+                Locations = locs.OrderBy(l => l.Path).Select(l => new { l.Id, l.Name, l.OtherName, Path = PathText(l.Path, names), l.SiteId, l.NotesToTechnician }),
                 Meters = meters,
             };
             return Versioned(http, JsonSerializer.SerializeToUtf8Bytes(body, json.Value.SerializerOptions));
@@ -298,7 +305,7 @@ public static partial class TechEndpoints
     }
 
     private static async Task<Dictionary<Guid, string>> LocationNamesAsync(CmmsDbContext db, List<Guid> ids, CancellationToken ct) =>
-        ids.Count == 0 ? [] : await db.Locations.AsNoTracking().Where(l => ids.Contains(l.Id)).ToDictionaryAsync(l => l.Id, l => l.Name, ct);
+        ids.Count == 0 ? [] : await db.Locations.AsNoTracking().Where(l => ids.Contains(l.Id)).ToDictionaryAsync(l => l.Id, l => Bilingual.Pick(l.Name, l.NameAr), ct);
 
     /// <summary>"Plant › Hall 2 › Line 3" from a materialized path of location ids.</summary>
     private static string? PathText(string? path, IReadOnlyDictionary<Guid, string> names) =>

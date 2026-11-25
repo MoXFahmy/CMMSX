@@ -148,14 +148,19 @@ public static class Checklists
         if (value is { } val && level != MeasureLevel.Normal) lines.Add(Translator.T(string.Format("Value: {0} {1} ({2})", Num(val), unit ?? "", Translator.T(LevelWord(level)))));
         lines.Add(remarks);
         var description = string.Join("\n", lines.Where(x => !string.IsNullOrWhiteSpace(x)));
+        // The main title in the organization's language, whoever answered (0.28.0); the Arabic one is made below.
         string Title(string what) => Translator.T(source is not null && step is not null ? string.Format(FromStep, what, step.Sequence, source.Number)
-            : string.Format(FromReading, what, reading ?? ""));
+            : string.Format(FromReading, what, reading ?? ""), settings.DefaultLanguage);
         if (template is not null)
         {
             var title = Title(template.Title is { Length: > 0 } tt ? tt : template.Name);
+            // The Arabic title (0.28.0): the template's Arabic title with the same "from step" words in Arabic; none without one.
+            var arWhat = template.Title is { Length: > 0 } ? template.TitleAr : template.NameAr;
+            var titleAr = arWhat is null ? null : Translator.T(source is not null && step is not null ? string.Format(FromStep, arWhat, step.Sequence, source.Number)
+                : string.Format(FromReading, arWhat, reading ?? ""), Languages.Arabic);
             var input = new WorkOrderEndpoints.WorkOrderInput(title.Length > 300 ? title[..300] : title, description, template.WorkType,
                 template.Priority ?? source?.Priority ?? WorkPriority.Medium, siteId, locationId, assetId, template.TradeId, null, null, null, template.EstimatedHours, null,
-                TemplateId: template.Id);
+                TemplateId: template.Id, TitleAr: titleAr is { Length: > 300 } ? titleAr[..300] : titleAr ?? "");
             var wo = await WorkOrderEndpoints.CreateAsync(db, ctx, input, null, ct, x => { x.SourceWorkOrderId = source?.Id; x.SourceTaskId = step?.Id; },
                 source is null ? "Follow-up of a reading" : $"Follow-up of {source.Number}", mail);
             return (wo.Id, null, wo.Number);
@@ -184,7 +189,7 @@ public static class Checklists
     internal static async Task<object?> SourceAsync(CmmsDbContext db, Guid? workOrderId, Guid? taskId, CancellationToken ct)
     {
         if (workOrderId is not { } wid) return null;
-        var wo = await db.WorkOrders.AsNoTracking().Where(w => w.Id == wid).Select(w => new { w.Id, w.Number, w.Title }).FirstOrDefaultAsync(ct);
+        var wo = await db.WorkOrders.AsNoTracking().Where(w => w.Id == wid).Select(w => new { w.Id, w.Number, Title = Bilingual.Arabic && w.TitleAr != null ? w.TitleAr : w.Title }).FirstOrDefaultAsync(ct);
         if (wo is null) return null;
         var t = taskId is { } tid ? await db.WorkOrderTasks.AsNoTracking().FirstOrDefaultAsync(x => x.Id == tid, ct) : null;
         var unit = t?.Unit ?? (t?.MeasurementPointId is { } pid ? await db.MeasurementPoints.IgnoreQueryFilters().Where(p => p.Id == pid).Select(p => p.Unit).FirstOrDefaultAsync(ct) : null);
@@ -192,7 +197,7 @@ public static class Checklists
             .Select(a => new { a.Id, a.FileName, a.ContentType }).ToListAsync(ct) : [];
         return new
         {
-            WorkOrderId = wo.Id, wo.Number, wo.Title, StepSequence = t?.Sequence, StepDescription = t?.Description, t?.Answer, t?.Value, Unit = unit, t?.Level, t?.TextValue,
+            WorkOrderId = wo.Id, wo.Number, wo.Title, StepSequence = t?.Sequence, StepDescription = t is null ? null : Bilingual.Pick(t.Description, t.DescriptionAr), t?.Answer, t?.Value, Unit = unit, t?.Level, t?.TextValue,
             t?.Remarks, Photos = photos,
         };
     }

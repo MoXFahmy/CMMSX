@@ -56,6 +56,7 @@ export type EmailStatusInfo = {
 export type RequestType = {
   id: string; code: string; name: string; isActive: boolean; defaultTradeId?: string | null; defaultPriority?: WorkPriority | null;
   recipientIds: string[]; autoApprove: boolean; teamId?: string | null;
+  /** 0.28.0: the Arabic name, raw as stored. */ nameAr?: string | null;
 };
 /** When the work may be done (0.10.0). */
 export type AccessWindow = { start: string; end: string; note?: string | null };
@@ -95,6 +96,7 @@ export type HierarchyLocation = {
 };
 export type Hierarchy = { sites: HierarchySite[]; locations: HierarchyLocation[] };
 export type LocationDetail = {
+  /** 0.28.0: Arabic texts, raw as stored. */ nameAr?: string | null; notesToTechnicianAr?: string | null;
   id: string; siteId: string; site: { id: string; code: string; name: string }; parentId?: string | null; code: string; name: string;
   type: LocationType; criticality: Criticality; description?: string; notesToTechnician?: string; latitude?: number; longitude?: number;
   isActive: boolean; depth: number; createdAt: string; updatedAt?: string; ancestors: { id: string; code: string; name: string }[];
@@ -111,6 +113,7 @@ export type AssetListItem = {
   downSince?: string | null;
 };
 export type AssetDetail = {
+  /** 0.28.0: Arabic texts, raw as stored. */ nameAr?: string | null; notesToTechnicianAr?: string | null;
   onlyWhenStopped?: boolean; costCentreId?: string | null;
   /** 0.21.0 */
   brandId?: string | null; modelId?: string | null; groupIds?: string[];
@@ -140,7 +143,8 @@ export type AssetDowntime = {
   availability30?: number | null; plannedHours30: number; downHours30: number; stops: DowntimeStop[];
 };
 export type AssetPartLine = { partId: string; partNumber: string; name: string; unitOfMeasure: string; quantity: number; note?: string | null };
-export type Category = { id: string; code: string; name: string; description?: string; color?: string; isActive: boolean; assetCount: number; downtimeCostPerHour?: number | null };
+export type Category = { id: string; code: string; name: string; description?: string; color?: string; isActive: boolean; assetCount: number; downtimeCostPerHour?: number | null;
+  /** 0.28.0: the Arabic name, raw as stored. */ nameAr?: string | null };
 export type CustomField = {
   id: string; entityType: string; key: string; label: string; dataType: CustomFieldType; options: string[];
   isRequired: boolean; sortOrder: number; categoryIds: string[]; showInList: boolean;
@@ -197,7 +201,8 @@ export const WO_STATUSES: WorkOrderStatus[] = ['Open', 'InProgress', 'OnHold', '
 export const HOLD_REASONS: HoldReason[] = ['WaitingForParts', 'WaitingForApproval', 'WaitingForAccess', 'WaitingForContractor', 'Other'];
 export const WR_STATUSES: WorkRequestStatus[] = ['New', 'Approved', 'Closed', 'Rejected', 'Cancelled'];
 
-export type Lookup = { id: string; code: string; name: string; color?: string; isActive: boolean; /** Availability types (0.19.0): Away or Extra. */ kind?: string };
+export type Lookup = { id: string; code: string; name: string; color?: string; isActive: boolean; /** Availability types (0.19.0): Away or Extra. */ kind?: string;
+  /** 0.28.0: the Arabic name (symptoms, causes, remedies, cancel reasons), raw as stored. */ nameAr?: string | null };
 export type Employee = {
   id: string; code: string; fullName: string; jobTitle?: string; email?: string; phone?: string; tradeIds: string[]; siteIds: string[];
   hourlyRate?: number; overtimeRate?: number; isContractor: boolean; company?: string; userId?: string; notes?: string; isActive: boolean;
@@ -221,12 +226,13 @@ export type WorkOrderListItem = {
   symptomName?: string | null; causeName?: string | null; remedyName?: string | null;
 };
 /** A work order's checklist step (0.13.0 adds its type, answer, photos and follow-up). */
-export type WorkOrderStep = { id: string; sequence: number; description: string; isDone: boolean; doneAt?: string; doneBy?: string; assetId?: string; reading?: string;
+export type WorkOrderStep = { id: string; sequence: number; description: string; /** 0.28.0 */ descriptionAr?: string | null; isDone: boolean; doneAt?: string; doneBy?: string; assetId?: string; reading?: string;
   remarks?: string; updatedAt?: string; updatedByName?: string; type: import('@/components/measure').StepType; unit?: string | null; decimals?: number | null;
   measurementPointId?: string | null; meterId?: string | null; meterName?: string | null; photoRequired: boolean; beforeStart: boolean; followUpKind: FollowUpKind;
   answer?: import('@/components/measure').StepAnswer | null; value?: number | null; textValue?: string | null; level?: import('@/components/measure').MeasureLevel | null;
   photos: { id: string; fileName: string; contentType: string }[]; followUp?: FollowUpLink | null };
 export type WorkOrderDetail = {
+  /** 0.28.0: the Arabic title and the safety notes (both languages), raw as stored. */ titleAr?: string | null; safetyNotes?: string | null; safetyNotesAr?: string | null;
   /** 0.20.0: its cost centre and the path "Production › Line 1". */
   costCentreId?: string | null; costCentrePath?: string | null;
   id: string; number: string; title: string; description?: string; type: WorkType; priority: WorkPriority; status: WorkOrderStatus; holdReason?: HoldReason;
@@ -272,6 +278,8 @@ export type WorkOrderDetail = {
 export type PlannedPart = {
   id: string; partId: string; partNumber: string; partName: string; unitOfMeasure: string; storeId?: string | null; storeCode?: string | null;
   quantity: number; issued: number; reserved: number; short: number; unitCost: number; plannedCost: number; notes?: string | null;
+  /** 0.28.0: partName is in the reader's language; purchase requests take this main name. */
+  mainPartName?: string | null;
 };
 /** The 409 answer when a stock move would take stock reserved for other work. */
 export type ReservedConflict = { title: string; reserved: { workOrderId: string; workOrderNumber: string; title?: string; moreShort: number }[] };
@@ -332,7 +340,7 @@ export type FollowUpKind = (typeof FOLLOW_UP_KINDS)[number];
 export const MEASUREMENT_KINDS = ['Temperature', 'Pressure', 'Current', 'Voltage', 'Level', 'Consumption', 'Other'] as const;
 export type MeasurementKind = (typeof MEASUREMENT_KINDS)[number];
 /** A template step's definition. */
-export type StepDetail = { description: string; type: import('@/components/measure').StepType; unit?: string | null; decimals?: number | null;
+export type StepDetail = { description: string; /** 0.28.0 */ descriptionAr?: string | null; type: import('@/components/measure').StepType; unit?: string | null; decimals?: number | null;
   measurementPointId?: string | null; photoRequired: boolean; beforeStart: boolean; followUp: FollowUpKind; followUpTemplateId?: string | null };
 export type PointLevels = { validMin?: number | null; validMax?: number | null; alarmLow?: number | null; alertLow?: number | null; target?: number | null;
   alertHigh?: number | null; alarmHigh?: number | null };
@@ -352,7 +360,7 @@ export type StepSource = { workOrderId: string; number: string; title: string; s
   answer?: import('@/components/measure').StepAnswer | null; value?: number | null; unit?: string | null; level?: import('@/components/measure').MeasureLevel | null;
   textValue?: string | null; remarks?: string | null; photos: { id: string; fileName: string; contentType: string }[] };
 
-export type PmTaskDetail = { id: string; code: string; name: string; description?: string; tradeId?: string; estimatedHours?: number; safetyNotes?: string; isActive: boolean; steps: string[];
+export type PmTaskDetail = { id: string; code: string; name: string; /** 0.28.0 */ nameAr?: string | null; titleAr?: string | null; safetyNotesAr?: string | null; description?: string; tradeId?: string; estimatedHours?: number; safetyNotes?: string; isActive: boolean; steps: string[];
   stepDetails: StepDetail[];
   parts: PmTaskPart[]; partsCost: number; rowVersion: string;
   /** Work template fields (0.12.0). */
@@ -370,6 +378,7 @@ export type PmScheduleListItem = {
   onlyWhenStopped?: boolean;
 };
 export type PmScheduleDetail = {
+  /** 0.28.0: the Arabic name, raw as stored. */ nameAr?: string | null;
   onlyWhenStopped?: boolean; costCentreId?: string | null;
   /** 0.21.0: aimed at an asset group, and the members it would cover today. */
   assetGroupId?: string | null; groupAssets?: { id: string; assetNumber: string; name: string }[];
@@ -433,13 +442,14 @@ export type PartListItem = {
   /** 0.24.0: its stock is serial units. */
   isSerialTracked?: boolean;
 };
-export type PartLookup = { id: string; partNumber: string; name: string; unitOfMeasure: string; averageCost: number; lastPurchasePrice?: number; isShelfItem: boolean; preferredSupplierId?: string; onHand: number;
+export type PartLookup = { id: string; partNumber: string; name: string; /** 0.28.0: name is in the reader's language; purchasing lines take this main name. */ mainName?: string | null; unitOfMeasure: string; averageCost: number; lastPurchasePrice?: number; isShelfItem: boolean; preferredSupplierId?: string; onHand: number;
   /** How many the asset's spare-parts list says (only when looked up for an asset). */
   onAsset?: number | null };
 export type StockLevelItem = { id: string; storeId: string; storeCode: string; storeName: string; bin?: string; minLevel: number; reorderLevel: number; maxLevel: number; reorderQuantity: number; quantityOnHand: number;
   /** Reserved for open work orders' planned parts; available = on hand − reserved (may be negative). */
   reserved: number; available: number };
 export type PartDetail = {
+  /** 0.28.0: the Arabic name, raw as stored. */ nameAr?: string | null;
   id: string; partNumber: string; name: string; specification?: string; manufacturer?: string; manufacturerPartNumber?: string; unitOfMeasure: string; groupId?: string; groupName?: string;
   standardPrice: number; averageCost: number; lastPurchasePrice?: number; leadTimeDays?: number; isCritical: boolean; isShelfItem: boolean; allowNegativeStock: boolean;
   preferredSupplierId?: string; preferredSupplier?: { id: string; code: string; name: string }; barcode?: string; alternatePartIds: string[];

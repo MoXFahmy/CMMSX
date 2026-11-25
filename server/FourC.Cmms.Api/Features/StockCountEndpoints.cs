@@ -31,7 +31,7 @@ public static class StockCountEndpoints
             var c = await db.StockCounts.AsNoTracking().Include(x => x.Store).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (c is null) return Results.NotFound();
             var lines = await db.StockCountLines.AsNoTracking().Where(l => l.StockCountId == id)
-                .Select(l => new { l.PartId, l.Part!.PartNumber, PartName = l.Part.Name, l.Part.UnitOfMeasure, l.CountedQuantity, l.CountedByName, l.CountedAt }).ToListAsync(ct);
+                .Select(l => new { l.PartId, l.Part!.PartNumber, PartName = Bilingual.Arabic && l.Part.NameAr != null ? l.Part.NameAr : l.Part.Name, l.Part.UnitOfMeasure, l.CountedQuantity, l.CountedByName, l.CountedAt }).ToListAsync(ct);
             var partIds = lines.Select(l => l.PartId).ToList();
             var levels = await db.StockLevels.AsNoTracking().Where(l => l.StoreId == c.StoreId && partIds.Contains(l.PartId))
                 .ToDictionaryAsync(l => l.PartId, l => new { l.QuantityOnHand, l.Bin }, ct);

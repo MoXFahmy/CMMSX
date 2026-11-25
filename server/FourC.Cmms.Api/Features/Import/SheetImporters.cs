@@ -242,6 +242,7 @@ internal sealed class LocationImporter : RecordImporter<Location>
         ["siteCode"] = c.CodeOf.GetValueOrDefault(l.SiteId), ["code"] = l.Code, ["name"] = l.Name,
         ["parentCode"] = l.ParentId is { } p ? c.CodeOf.GetValueOrDefault(p) : null, ["type"] = l.Type, ["criticality"] = l.Criticality,
         ["description"] = l.Description, ["notesToTechnician"] = l.NotesToTechnician, ["active"] = l.IsActive,
+        ["nameAr"] = l.NameAr, ["notesToTechnicianAr"] = l.NotesToTechnicianAr,
         ["costCentreCode"] = l.CostCentreId is { } lcc ? c.CodeOf.GetValueOrDefault(lcc) : null,
     };
 
@@ -274,7 +275,8 @@ internal sealed class LocationImporter : RecordImporter<Location>
         if (row.HasProblems || siteId is null) return null;
         var input = new LocationEndpoints.LocationInput(siteId.Value, parentId, S(v, "code")!, S(v, "name") ?? "", E(v, "type", LocationType.Space),
             E(v, "criticality", Criticality.Medium), S(v, "description"), S(v, "notesToTechnician"), existing?.Latitude, existing?.Longitude, B(v, "active", true),
-            CostCentreId: Ref(row, c.CostCentres, S(v, "costCentreCode"), "Cost centre"), ManagesCostCentre: true);
+            CostCentreId: Ref(row, c.CostCentres, S(v, "costCentreCode"), "Cost centre"), ManagesCostCentre: true,
+            NameAr: S(v, "nameAr"), NotesToTechnicianAr: S(v, "notesToTechnicianAr"));
         if (!Accept(row, LocationEndpoints.LocationRules(input, existing?.Id))) return null;
         if (existing is not null)
         {
@@ -332,11 +334,11 @@ internal sealed class CategoryImporter : RecordImporter<AssetCategory>
     }
 
     protected override Dictionary<string, object?> Values(ImportContext c, AssetCategory x) => new()
-    { ["code"] = x.Code, ["name"] = x.Name, ["color"] = x.Color, ["downtimeCostPerHour"] = x.DowntimeCostPerHour, ["active"] = x.IsActive };
+    { ["code"] = x.Code, ["name"] = x.Name, ["nameAr"] = x.NameAr, ["color"] = x.Color, ["downtimeCostPerHour"] = x.DowntimeCostPerHour, ["active"] = x.IsActive };
 
     protected override Task<AssetCategory?> SaveAsync(ImportContext c, ImportRow row, AssetCategory? existing, Dictionary<string, object?> v, CancellationToken ct)
     {
-        var input = new AssetCategoryEndpoints.CategoryInput(S(v, "code")!, S(v, "name") ?? "", existing?.Description, S(v, "color"), B(v, "active", true), N(v, "downtimeCostPerHour"));
+        var input = new AssetCategoryEndpoints.CategoryInput(S(v, "code")!, S(v, "name") ?? "", existing?.Description, S(v, "color"), B(v, "active", true), N(v, "downtimeCostPerHour"), S(v, "nameAr"));
         if (!Accept(row, AssetCategoryEndpoints.CategoryRules(input))) return Task.FromResult<AssetCategory?>(null);
         if (existing is not null) { AssetCategoryEndpoints.UpdateCategory(existing, input); return Task.FromResult<AssetCategory?>(null); }
         return Task.FromResult<AssetCategory?>(AssetCategoryEndpoints.CreateCategory(c.Db, input));
@@ -387,11 +389,11 @@ internal abstract class CodeImporter<T> : RecordImporter<T> where T : TenantEnti
         Keep(await ByKey(Set(c).Where(x => codes.Contains(x.Code)), x => x.Code, ct));
     }
 
-    protected override Dictionary<string, object?> Values(ImportContext c, T x) => new() { ["code"] = x.Code, ["name"] = x.Name, ["active"] = x.IsActive };
+    protected override Dictionary<string, object?> Values(ImportContext c, T x) => new() { ["code"] = x.Code, ["name"] = x.Name, ["nameAr"] = (x as IBilingualName)?.NameAr, ["active"] = x.IsActive };
 
     protected override Task<T?> SaveAsync(ImportContext c, ImportRow row, T? existing, Dictionary<string, object?> v, CancellationToken ct)
     {
-        var input = new PeopleEndpoints.LookupInput(S(v, "code")!, S(v, "name") ?? "", null, B(v, "active", true));
+        var input = new PeopleEndpoints.LookupInput(S(v, "code")!, S(v, "name") ?? "", null, B(v, "active", true), S(v, "nameAr"));
         if (!Accept(row, PeopleEndpoints.LookupRules(input))) return Task.FromResult<T?>(null);
         var item = existing ?? Create();
         PeopleEndpoints.ApplyLookup(item, input, null);
@@ -443,7 +445,7 @@ internal sealed class PartGroupImporter : RecordImporter<PartGroup>
 
     protected override Task<PartGroup?> SaveAsync(ImportContext c, ImportRow row, PartGroup? existing, Dictionary<string, object?> v, CancellationToken ct)
     {
-        var input = new PeopleEndpoints.LookupInput(S(v, "code")!, S(v, "name") ?? "", null, B(v, "active", true));
+        var input = new PeopleEndpoints.LookupInput(S(v, "code")!, S(v, "name") ?? "", null, B(v, "active", true), S(v, "nameAr"));
         if (!Accept(row, PeopleEndpoints.LookupRules(input))) return Task.FromResult<PartGroup?>(null);
         var item = existing ?? new PartGroup { Code = "", Name = "" };
         PeopleEndpoints.ApplyLookup(item, input, null);
@@ -586,6 +588,7 @@ internal sealed class AssetImporter : RecordImporter<Asset>
             ["purchasePrice"] = a.PurchasePrice, ["currentValue"] = a.CurrentValue, ["salvageValue"] = a.SalvageValue, ["expectedLifeYears"] = a.ExpectedLifeYears,
             ["downtimeCostPerHour"] = a.DowntimeCostPerHour, ["warrantyType"] = a.WarrantyType, ["warrantyExpiresOn"] = a.WarrantyExpiresOn,
             ["warrantyNotes"] = a.WarrantyNotes, ["description"] = a.Description, ["notes"] = a.Notes, ["notesToTechnician"] = a.NotesToTechnician,
+            ["nameAr"] = a.NameAr, ["notesToTechnicianAr"] = a.NotesToTechnicianAr,
             ["costCentreCode"] = a.CostCentreId is { } acc ? c.CodeOf.GetValueOrDefault(acc) : null,
             ["runsHoursPerDay"] = a.RunsHoursPerDay, ["runsOn"] = a.RunsOn.Cast<Enum>().ToList(),
         };
@@ -649,7 +652,8 @@ internal sealed class AssetImporter : RecordImporter<Asset>
             N(v, "salvageValue"), N(v, "expectedLifeYears"), N(v, "downtimeCostPerHour"), E(v, "warrantyType", WarrantyType.None),
             D(v, "warrantyExpiresOn"), S(v, "warrantyNotes"), S(v, "notes"), S(v, "notesToTechnician"), custom,
             RunsHoursPerDay: N(v, "runsHoursPerDay"), RunsOn: (v.GetValueOrDefault("runsOn") as IEnumerable<Enum>)?.Cast<DayOfWeek>().ToList(),
-            CostCentreId: Ref(row, c.CostCentres, S(v, "costCentreCode"), "Cost centre"), ManagesCostCentre: true);
+            CostCentreId: Ref(row, c.CostCentres, S(v, "costCentreCode"), "Cost centre"), ManagesCostCentre: true,
+            NameAr: S(v, "nameAr"), NotesToTechnicianAr: S(v, "notesToTechnicianAr"));
         var rules = AssetEndpoints.AssetRules(input, existing?.Id, requireNumber);
         var values = AssetEndpoints.CustomFieldValues(rules, c.AssetFields, input);
         if (existing?.PartId is { } unitPart)
@@ -750,7 +754,7 @@ internal sealed class PartImporter : RecordImporter<Part>
 
     protected override Dictionary<string, object?> Values(ImportContext c, Part p) => new()
     {
-        ["partNumber"] = p.PartNumber, ["name"] = p.Name, ["unit"] = p.UnitOfMeasure, ["groupCode"] = p.GroupId is { } g ? c.CodeOf.GetValueOrDefault(g) : null,
+        ["partNumber"] = p.PartNumber, ["name"] = p.Name, ["nameAr"] = p.NameAr, ["unit"] = p.UnitOfMeasure, ["groupCode"] = p.GroupId is { } g ? c.CodeOf.GetValueOrDefault(g) : null,
         ["specification"] = p.Specification, ["manufacturer"] = p.Manufacturer, ["manufacturerPartNumber"] = p.ManufacturerPartNumber,
         ["standardPrice"] = p.StandardPrice, ["leadTimeDays"] = p.LeadTimeDays, ["critical"] = p.IsCritical, ["shelfLife"] = p.IsShelfItem,
         ["allowNegative"] = p.AllowNegativeStock, ["preferredSupplierCode"] = p.PreferredSupplierId is { } s ? c.CodeOf.GetValueOrDefault(s) : null,
@@ -767,7 +771,7 @@ internal sealed class PartImporter : RecordImporter<Part>
         Guid? groupId = groupCode is not null && c.PartGroups.TryGetValue(groupCode, out var known) ? known : null;
         var input = new InventoryEndpoints.PartInput(S(v, "partNumber")!, S(v, "name") ?? "", S(v, "specification"), S(v, "manufacturer"),
             S(v, "manufacturerPartNumber"), S(v, "unit") ?? "", groupId, N(v, "standardPrice") ?? 0, I(v, "leadTimeDays"), B(v, "critical"), B(v, "shelfLife"),
-            B(v, "allowNegative"), supplierId, S(v, "barcode"), existing?.AlternatePartIds, S(v, "notes"), B(v, "active", true));
+            B(v, "allowNegative"), supplierId, S(v, "barcode"), existing?.AlternatePartIds, S(v, "notes"), B(v, "active", true), NameAr: S(v, "nameAr"));
         // Serial tracking (0.24.0): the part page's rules — on only while the part has no stock (its units are registered there), off
         // only when no unit is left.
         var serial = B(v, "serialTracked");
@@ -901,7 +905,7 @@ internal sealed class PmTaskImporter : RecordImporter<PmTask>
 
     protected override Dictionary<string, object?> Values(ImportContext c, PmTask t) => new()
     {
-        ["code"] = t.Code, ["name"] = t.Name, ["description"] = t.Description, ["tradeCode"] = t.TradeId is { } tr ? c.CodeOf.GetValueOrDefault(tr) : null,
+        ["code"] = t.Code, ["name"] = t.Name, ["nameAr"] = t.NameAr, ["titleAr"] = t.TitleAr, ["safetyNotesAr"] = t.SafetyNotesAr, ["description"] = t.Description, ["tradeCode"] = t.TradeId is { } tr ? c.CodeOf.GetValueOrDefault(tr) : null,
         ["estimatedHours"] = t.EstimatedHours, ["safetyNotes"] = t.SafetyNotes, ["active"] = t.IsActive,
         ["title"] = t.Title, ["workType"] = t.WorkType, ["priority"] = t.Priority, ["expectedStopHours"] = t.ExpectedStopHours,
     };
@@ -913,7 +917,7 @@ internal sealed class PmTaskImporter : RecordImporter<PmTask>
         var steps = existing?.Steps.OrderBy(s => s.Sequence).Select(s => s.Description).ToList() ?? [];
         var input = new PmEndpoints.TaskInput(S(v, "code")!, S(v, "name") ?? "", S(v, "description"), tradeId, N(v, "estimatedHours"), S(v, "safetyNotes"),
             steps, B(v, "active", true), Title: S(v, "title"), WorkType: v.GetValueOrDefault("workType") as WorkType?, Priority: v.GetValueOrDefault("priority") as WorkPriority?,
-            ExpectedStopHours: N(v, "expectedStopHours"));
+            ExpectedStopHours: N(v, "expectedStopHours"), NameAr: S(v, "nameAr"), TitleAr: S(v, "titleAr"), SafetyNotesAr: S(v, "safetyNotesAr"));
         if (!Accept(row, PmEndpoints.PmTaskRules(input))) return Task.FromResult<PmTask?>(null);
         if (tradeCode is not null && tradeId is null) input = input with { TradeId = c.EnsureLookup(c.Trades, tradeCode, "Trades") };
         if (existing is not null) { Replace(c, existing, input); return Task.FromResult<PmTask?>(null); }
@@ -1072,7 +1076,7 @@ internal abstract class PmTaskListImporter : ListSheetImporter
 
     /// <summary>A task's typed steps (0.13.0), in order.</summary>
     protected static List<PmEndpoints.StepInput> DetailsOf(PmTask t) => t.Steps.OrderBy(s => s.Sequence)
-        .Select(s => new PmEndpoints.StepInput(s.Description, s.Type, s.Unit, s.Decimals, s.MeasurementPointId, s.PhotoRequired, s.BeforeStart, s.FollowUp, s.FollowUpTemplateId)).ToList();
+        .Select(s => new PmEndpoints.StepInput(s.Description, s.Type, s.Unit, s.Decimals, s.MeasurementPointId, s.PhotoRequired, s.BeforeStart, s.FollowUp, s.FollowUpTemplateId, s.DescriptionAr)).ToList();
 
     /// <summary>Replaces a task's lists through the screen's code, and makes sure the new step and part rows are inserted.</summary>
     internal static void Replace(ImportContext c, PmTask task, PmEndpoints.TaskInput input) => PmTaskImporter.Replace(c, task, input);
@@ -1108,7 +1112,7 @@ internal sealed class PmStepImporter : PmTaskListImporter
         var basis = old is not null && old.Description == text ? old : new PmEndpoints.StepInput(text!);
         var def = basis with
         {
-            Description = text!, Type = row.Get<StepType?>("type") ?? basis.Type, Unit = row.Get<string>("unit").Clean() ?? basis.Unit,
+            Description = text!, DescriptionAr = row.Get<string>("descriptionAr").Clean() ?? basis.DescriptionAr, Type = row.Get<StepType?>("type") ?? basis.Type, Unit = row.Get<string>("unit").Clean() ?? basis.Unit,
             Decimals = row.Get<int?>("decimals") ?? basis.Decimals, MeasurementPointId = pointCode is { Length: > 0 } ? pointId : basis.MeasurementPointId,
             PhotoRequired = row.Get<bool?>("photoRequired") ?? basis.PhotoRequired, BeforeStart = row.Get<bool?>("beforeStart") ?? basis.BeforeStart,
             FollowUp = row.Get<FollowUpKind?>("followUp") ?? basis.FollowUp, FollowUpTemplateId = templateCode is { Length: > 0 } ? templateId : basis.FollowUpTemplateId,
@@ -1382,7 +1386,7 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
 
     protected override Dictionary<string, object?> Values(ImportContext c, PmSchedule s) => new()
     {
-        ["code"] = s.Code, ["name"] = s.Name, ["taskCode"] = c.CodeOf.GetValueOrDefault(s.PmTaskId), ["siteCode"] = c.CodeOf.GetValueOrDefault(s.SiteId),
+        ["code"] = s.Code, ["name"] = s.Name, ["nameAr"] = s.NameAr, ["taskCode"] = c.CodeOf.GetValueOrDefault(s.PmTaskId), ["siteCode"] = c.CodeOf.GetValueOrDefault(s.SiteId),
         ["locationCode"] = s.LocationId is { } l ? c.CodeOf.GetValueOrDefault(l) : null, ["assetNumber"] = s.AssetId is { } a ? c.CodeOf.GetValueOrDefault(a) : null,
         ["tradeCode"] = s.TradeId is { } t ? c.CodeOf.GetValueOrDefault(t) : null, ["priority"] = s.Priority,
         ["schedule"] = s.Type == PmScheduleType.Meter ? null : s.Type, ["every"] = s.Frequency, ["unit"] = s.Unit, ["countFrom"] = s.Basis,
@@ -1436,7 +1440,7 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
             // 0.12.0: the sheet doesn't hold calendars, so a PM keeps its own; its multi-asset mode follows the screen's rules.
             CalendarIds: existing?.Calendars.Select(x => x.ScheduleCalendarId).ToList(), MultiAssetMode: v.GetValueOrDefault("multiAssetMode") as MultiAssetMode?,
             CostCentreId: Ref(row, c.CostCentres, S(v, "costCentreCode"), "Cost centre"), ManagesCostCentre: true,
-            AssetGroupId: Ref(row, c.AssetGroups, S(v, "assetGroupCode"), "Asset group"), ManagesAssetGroup: true);
+            AssetGroupId: Ref(row, c.AssetGroups, S(v, "assetGroupCode"), "Asset group"), ManagesAssetGroup: true, NameAr: S(v, "nameAr"));
         var rules = PmEndpoints.PmScheduleRules(input, existing?.Id);
         if (existing is not null) rules.Merge(PmEndpoints.ScheduleChangeRules(existing, input));
         if (!Accept(row, rules)) return Task.FromResult<PmSchedule?>(null);

@@ -127,7 +127,7 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
     }
 
     /// <summary>Cancelled: the grid's recipients hear why (by default the requester and the people on the work).</summary>
-    public async Task WorkOrderCancelledAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, string? reason, string? note, CancellationToken ct)
+    public async Task WorkOrderCancelledAsync(CmmsDbContext db, ITenantContext ctx, WorkOrder w, LocalWords? reason, string? note, CancellationToken ct)
     {
         if (!Available) return;
         var groups = await GroupsAsync(db, EmailEvents.WorkOrderCancelled, w, null, null, ct);
@@ -621,17 +621,24 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
         return new EmailRecipient(email, r.RequesterName, userId);
     }
 
-    private static async Task<string?> PlaceAsync(CmmsDbContext db, Guid siteId, Guid? locationId, Guid? assetId, CancellationToken ct)
+    /// <summary>"Site › Location › Asset" in both languages (0.28.0): each recipient reads the names in theirs.</summary>
+    private static async Task<LocalWords?> PlaceAsync(CmmsDbContext db, Guid siteId, Guid? locationId, Guid? assetId, CancellationToken ct)
     {
         var site = await db.Sites.AsNoTracking().Where(s => s.Id == siteId).Select(s => s.Name).FirstOrDefaultAsync(ct);
-        var location = locationId is { } l ? await db.Locations.AsNoTracking().Where(x => x.Id == l).Select(x => x.Name).FirstOrDefaultAsync(ct) : null;
-        var asset = assetId is { } a ? await db.Assets.AsNoTracking().Where(x => x.Id == a).Select(x => x.AssetNumber + " · " + x.Name).FirstOrDefaultAsync(ct) : null;
-        var parts = new[] { site, location, asset }.Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
-        return parts.Count == 0 ? null : string.Join(" › ", parts);
+        var location = locationId is { } l ? await db.Locations.AsNoTracking().Where(x => x.Id == l).Select(x => new { x.Name, x.NameAr }).FirstOrDefaultAsync(ct) : null;
+        var asset = assetId is { } a ? await db.Assets.AsNoTracking().Where(x => x.Id == a).Select(x => new { x.AssetNumber, x.Name, x.NameAr }).FirstOrDefaultAsync(ct) : null;
+        string? Join(bool ar)
+        {
+            var parts = new[] { site, location is null ? null : ar ? location.NameAr ?? location.Name : location.Name,
+                asset is null ? null : $"{asset.AssetNumber} · {(ar ? asset.NameAr ?? asset.Name : asset.Name)}" }.Where(x => !string.IsNullOrWhiteSpace(x)).ToList();
+            return parts.Count == 0 ? null : string.Join(" › ", parts);
+        }
+        return Join(false) is { } en ? new LocalWords(en, Join(true)!) : null;
     }
 
     private static async Task<WorkOrderFacts> FactsAsync(CmmsDbContext db, WorkOrder w, CancellationToken ct) =>
-        new(w.Number, w.Title, await PriorityAsync(db, w.Priority, ct), w.DueDate, await PlaceAsync(db, w.SiteId, w.LocationId, w.AssetId, ct), w.Description, w.CompletionNotes);
+        new(w.Number, new LocalWords(w.Title, w.TitleAr ?? w.Title), await PriorityAsync(db, w.Priority, ct), w.DueDate, await PlaceAsync(db, w.SiteId, w.LocationId, w.AssetId, ct), w.Description, w.CompletionNotes,
+            w.SafetyNotes is { } sn ? new LocalWords(sn, w.SafetyNotesAr ?? sn) : null);
 
     private static async Task<RequestFacts> FactsAsync(CmmsDbContext db, WorkRequest r, CancellationToken ct) =>
         new(r.Number, r.Title, await PriorityAsync(db, r.Priority, ct), await PlaceAsync(db, r.SiteId, r.LocationId, r.AssetId, ct));

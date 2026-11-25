@@ -43,6 +43,7 @@ import { locationOptions } from '@/components/LocationPicker';
 import { confirmDelete } from '@/components/confirm';
 import { fromNow, handleFormError, notifyError, notifySuccess } from '@/components/utils';
 import { listItems } from '@/components/listLabels';
+import { TranslateButton } from '@/components/TranslateButton';
 
 export function SettingsPage() {
   const { t } = useTranslation();
@@ -89,13 +90,13 @@ export function SettingsPage() {
         <Tabs.Panel value="categories"><CategorySettings /></Tabs.Panel>
         <Tabs.Panel value="fields"><FieldSettings /></Tabs.Panel>
         <Tabs.Panel value="notifications"><NotificationSettings /></Tabs.Panel>
-        <Tabs.Panel value="symptoms"><LookupTable path="/symptoms" title={t('settings.symptoms')} newLabel={t('settings.newSymptom')} editable={can(P.settingsManage)} /></Tabs.Panel>
-        <Tabs.Panel value="failure-codes"><LookupTable path="/failure-codes" title={t('settings.causes')} newLabel={t('settings.newCause')} editable={can(P.settingsManage)} /></Tabs.Panel>
-        <Tabs.Panel value="remedies"><LookupTable path="/remedies" title={t('settings.remedies')} newLabel={t('settings.newRemedy')} editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="symptoms"><LookupTable path="/symptoms" bilingual="symptoms" title={t('settings.symptoms')} newLabel={t('settings.newSymptom')} editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="failure-codes"><LookupTable path="/failure-codes" bilingual="causes" title={t('settings.causes')} newLabel={t('settings.newCause')} editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="remedies"><LookupTable path="/remedies" bilingual="remedies" title={t('settings.remedies')} newLabel={t('settings.newRemedy')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="request-types"><RequestTypesSettings editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="availability-types"><LookupTable path="/availability-types" title={t('availability.types')} newLabel={t('availability.newType')} editable={can(P.settingsManage)} withColor
           kinds={[{ value: 'Away', label: t('availability.away') }, { value: 'Extra', label: t('availability.extra') }]} /></Tabs.Panel>
-        <Tabs.Panel value="cancel-reasons"><LookupTable path="/cancel-reasons" title={t('settings.cancelReasons')} newLabel={t('settings.newCancelReason')} editable={can(P.settingsManage)} /></Tabs.Panel>
+        <Tabs.Panel value="cancel-reasons"><LookupTable path="/cancel-reasons" bilingual="cancel-reasons" title={t('settings.cancelReasons')} newLabel={t('settings.newCancelReason')} editable={can(P.settingsManage)} /></Tabs.Panel>
         <Tabs.Panel value="users"><UserSettings /></Tabs.Panel>
         <Tabs.Panel value="roles"><RoleSettings /></Tabs.Panel>
         <Tabs.Panel value="api-keys"><ApiKeysSettings account={new URLSearchParams(window.location.search).get('account')} /></Tabs.Panel>
@@ -270,12 +271,12 @@ function CategorySettings() {
   const { data, isFetching } = useQuery({ queryKey: ['categories'], queryFn: () => get<Category[]>('/asset-categories') });
   const [opened, m] = useDisclosure();
   const [editing, setEditing] = useState<Category | null>(null);
-  const form = useForm<{ code: string; name: string; description: string; color: string; isActive: boolean; downtimeCostPerHour: number | '' }>({
-    initialValues: { code: '', name: '', description: '', color: '#228be6', isActive: true, downtimeCostPerHour: '' } });
+  const form = useForm<{ code: string; name: string; nameAr: string; description: string; color: string; isActive: boolean; downtimeCostPerHour: number | '' }>({
+    initialValues: { code: '', name: '', nameAr: '', description: '', color: '#228be6', isActive: true, downtimeCostPerHour: '' } });
   const open = (c: Category | null) => {
     setEditing(c);
-    form.setValues(c ? { code: c.code, name: c.name, description: c.description ?? '', color: c.color ?? '#228be6', isActive: c.isActive, downtimeCostPerHour: c.downtimeCostPerHour ?? '' }
-      : { code: '', name: '', description: '', color: '#228be6', isActive: true, downtimeCostPerHour: '' });
+    form.setValues(c ? { code: c.code, name: c.name, nameAr: c.nameAr ?? '', description: c.description ?? '', color: c.color ?? '#228be6', isActive: c.isActive, downtimeCostPerHour: c.downtimeCostPerHour ?? '' }
+      : { code: '', name: '', nameAr: '', description: '', color: '#228be6', isActive: true, downtimeCostPerHour: '' });
     form.clearErrors(); m.open();
   };
   const submit = form.onSubmit(async (values) => {
@@ -285,10 +286,11 @@ function CategorySettings() {
   });
   return (
     <Card p={0}>
-      <Group justify="space-between" p="md"><Title order={5}>{t('settings.categories')}</Title>{editable && <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => open(null)}>{t('settings.newCategory')}</Button>}</Group>
+      <Group justify="space-between" p="md"><Title order={5}>{t('settings.categories')}</Title><Group gap="xs"><TranslateButton list="categories" refresh={[['categories']]} />{editable && <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => open(null)}>{t('settings.newCategory')}</Button>}</Group></Group>
       <DataTable minHeight={150} fetching={isFetching} records={data ?? []} noRecordsText={t('common.noRecords')} columns={[
         { accessor: 'code', title: t('common.code'), width: 120 },
         { accessor: 'name', title: t('common.name'), render: (c) => <Group gap={8}><span style={{ width: 10, height: 10, borderRadius: 5, background: c.color ?? '#adb5bd', display: 'inline-block' }} />{c.name}</Group> },
+        { accessor: 'nameAr', title: t('bilingual.nameAr'), render: (c) => <Text fz="sm" dir="rtl">{c.nameAr}</Text> },
         { accessor: 'assetCount', title: t('settings.assets'), textAlign: 'right', width: 100 },
         { accessor: 'isActive', title: t('common.status'), width: 110, render: (c) => <Badge color={c.isActive ? 'teal' : 'gray'}>{c.isActive ? t('common.active') : t('common.inactive')}</Badge> },
         { accessor: 'actions', title: '', width: 90, hidden: !editable, render: (c) => (
@@ -300,6 +302,7 @@ function CategorySettings() {
       <Modal opened={opened} onClose={m.close} title={editing ? t('common.edit') : t('settings.newCategory')}>
         <form onSubmit={submit}><Stack>
           <SimpleGrid cols={3}><TextInput label={t('common.code')} required {...form.getInputProps('code')} /><TextInput label={t('common.name')} required style={{ gridColumn: 'span 2' }} {...form.getInputProps('name')} /></SimpleGrid>
+          <TextInput label={t('bilingual.nameAr')} dir="rtl" maxLength={200} {...form.getInputProps('nameAr')} />
           <Textarea label={t('common.description')} autosize {...form.getInputProps('description')} />
           <ColorInput label={t('settings.color')} {...form.getInputProps('color')} />
           <NumberInput label={t('settings.downtimeCostPerHour')} description={t('settings.downtimeCostHint')} min={0} decimalScale={2} {...form.getInputProps('downtimeCostPerHour')} />

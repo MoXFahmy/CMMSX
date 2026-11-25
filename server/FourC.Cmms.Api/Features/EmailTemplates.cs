@@ -13,7 +13,9 @@ public sealed record LocalWords(string En, string Ar)
     public override string ToString() => Translator.CurrentLanguage == "ar" ? Ar : En;
 }
 
-public sealed record WorkOrderFacts(string Number, string Title, LocalWords Priority, DateOnly? DueDate, string? Place, string? Description, string? CompletionNotes);
+/// <remarks>0.28.0: the title and the place in both languages too (each recipient reads their own).</remarks>
+public sealed record WorkOrderFacts(string Number, LocalWords Title, LocalWords Priority, DateOnly? DueDate, LocalWords? Place, string? Description, string? CompletionNotes,
+    LocalWords? Safety = null);
 
 /// <summary>Facts about a purchase order for internal e-mails.</summary>
 public sealed record PoFacts(string Number, string? Supplier, string Total, string? RequestedBy);
@@ -41,7 +43,7 @@ public sealed record PoEmailLine(int Number, string? PartNumber, string Descript
     string UnitPrice, string Discount, string Total);
 
 /// <summary>Facts about a work request that e-mails mention.</summary>
-public sealed record RequestFacts(string Number, string Title, LocalWords Priority, string? Place);
+public sealed record RequestFacts(string Number, string Title, LocalWords Priority, LocalWords? Place);
 
 /// <summary>
 /// The text of every notification. One short layout: heading, a few facts, an optional paragraph, a button to the
@@ -58,7 +60,7 @@ public static class EmailTemplates
     public static EmailContent Assigned(string org, WorkOrderFacts w, string? link, bool pm) => Layout(org,
         pm ? $"PM work {w.Number}: {w.Title}" : $"Work order {w.Number}: {w.Title}",
         pm ? "Preventive maintenance has been assigned to you" : "A work order has been assigned to you",
-        WorkOrderLines(w), w.Description, link, "Open the work order");
+        [.. WorkOrderLines(w), ("Safety notes", w.Safety?.ToString())], w.Description, link, "Open the work order");
 
     public static EmailContent WorkOrderCompleted(string org, WorkOrderFacts w, string? link) => Layout(org,
         $"Completed: {w.Number} {w.Title}", "Work you raised has been completed",
@@ -66,40 +68,40 @@ public static class EmailTemplates
 
     public static EmailContent RequestSubmitted(string org, RequestFacts r, string? requester, string? link) => Layout(org,
         $"New request {r.Number}: {r.Title}", "A new work request is waiting for review",
-        [("Request", $"{r.Number} · {r.Title}"), ("Priority", r.Priority.ToString()), ("Where", r.Place), ("From", requester)], null, link, "Review the request");
+        [("Request", $"{r.Number} · {r.Title}"), ("Priority", r.Priority.ToString()), ("Where", r.Place?.ToString()), ("From", requester)], null, link, "Review the request");
 
     public static EmailContent RequestApproved(string org, RequestFacts r, string workOrderNumber, string? link) => Layout(org,
         $"Your request {r.Number} was approved", "Your work request was approved",
-        [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place)],
+        [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place?.ToString())],
         "The work has been planned. You'll hear from us again when it's done.", link, "View your request");
 
     public static EmailContent RequestRejected(string org, RequestFacts r, string reason, string? link) => Layout(org,
         $"Your request {r.Number} was not approved", "Your work request was not approved",
-        [("Request", $"{r.Number} · {r.Title}"), ("Where", r.Place)], $"Reason: {reason}", link, "View your request");
+        [("Request", $"{r.Number} · {r.Title}"), ("Where", r.Place?.ToString())], $"Reason: {reason}", link, "View your request");
 
     public static EmailContent RequestCompleted(string org, RequestFacts r, string workOrderNumber, string? notes, string? link, bool askAnswer = false) => Layout(org,
         $"Done: your request {r.Number}", askAnswer ? "The work you asked for has been done. Please accept or refuse it." : "The work you asked for has been done",
-        [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place), ("Work done", notes)],
+        [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place?.ToString()), ("Work done", notes)],
         null, link, askAnswer ? "Accept or refuse the work" : "View your request");
 
     public static EmailContent WorkOrderOverdue(string org, WorkOrderFacts w, string? link) => Layout(org,
         $"Overdue: work order {w.Number}", "This work is past its due time",
-        [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority.ToString()), ("Due", w.DueDate is { } d ? Translator.Date(d) : null), ("Where", w.Place)],
+        [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority.ToString()), ("Due", w.DueDate is { } d ? Translator.Date(d) : null), ("Where", w.Place?.ToString())],
         null, link, "Open the work order");
 
-    public static EmailContent WorkOrderCancelled(string org, WorkOrderFacts w, string? reason, string? note, string? link, bool forRequester = false) => Layout(org,
+    public static EmailContent WorkOrderCancelled(string org, WorkOrderFacts w, LocalWords? reason, string? note, string? link, bool forRequester = false) => Layout(org,
         $"Cancelled: work order {w.Number}", forRequester ? "The work you asked for was cancelled" : "This work was cancelled",
-        [("Work order", $"{w.Number} · {w.Title}"), ("Where", w.Place), ("Reason", reason), ("Note", note)], null, link,
+        [("Work order", $"{w.Number} · {w.Title}"), ("Where", w.Place?.ToString()), ("Reason", reason?.ToString()), ("Note", note)], null, link,
         forRequester ? "View your request" : "Open the work order");
 
     public static EmailContent RequestRefused(string org, RequestFacts r, string workOrderNumber, string? byName, string? reason, string? link) => Layout(org,
         $"Refused: work order {workOrderNumber}", "The requester refused the finished work. The work order was reopened.",
-        [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place), ("Refused by", byName), ("Reason", reason)],
+        [("Request", $"{r.Number} · {r.Title}"), ("Work order", workOrderNumber), ("Where", r.Place?.ToString()), ("Refused by", byName), ("Reason", reason)],
         null, link, "Open the work order");
 
     public static EmailContent RequestComment(string org, RequestFacts r, string? author, string body, string? link) => Layout(org,
         $"New comment on request {r.Number}", "A new comment on the request",
-        [("Request", $"{r.Number} · {r.Title}"), ("Where", r.Place), ("From", author), ("Comment", body)], null, link, "View the request");
+        [("Request", $"{r.Number} · {r.Title}"), ("Where", r.Place?.ToString()), ("From", author), ("Comment", body)], null, link, "View the request");
 
     public static EmailContent PoSubmitted(string org, PoFacts po, string? link) => Layout(org,
         $"Approve purchase order {po.Number} ({po.Total})", "A purchase order is waiting for your approval",
@@ -238,7 +240,7 @@ public static class EmailTemplates
     }
 
     private static (string, string?)[] WorkOrderLines(WorkOrderFacts w) =>
-        [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority.ToString()), ("Due", w.DueDate is { } d ? Translator.Date(d) : null), ("Where", w.Place)];
+        [("Work order", $"{w.Number} · {w.Title}"), ("Priority", w.Priority.ToString()), ("Due", w.DueDate is { } d ? Translator.Date(d) : null), ("Where", w.Place?.ToString())];
 
     /// <summary>Builds both bodies. Facts with no value are left out.</summary>
     public static EmailContent Layout(string org, string subject, string heading, IEnumerable<(string Label, string? Value)> facts, string? paragraph,

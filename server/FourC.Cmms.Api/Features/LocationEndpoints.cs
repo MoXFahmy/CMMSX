@@ -159,7 +159,9 @@ public static class LocationEndpoints
 {
     public sealed record LocationInput(Guid SiteId, Guid? ParentId, string Code, string Name, LocationType Type, Criticality Criticality,
         string? Description, string? NotesToTechnician, double? Latitude, double? Longitude, bool IsActive = true, string? RowVersion = null,
-        Guid? CostCentreId = null, bool? ManagesCostCentre = null);
+        Guid? CostCentreId = null, bool? ManagesCostCentre = null,
+        // 0.28.0: Arabic texts; left out = kept, blank = cleared.
+        string? NameAr = null, string? NotesToTechnicianAr = null);
 
     public sealed record LocationListItem(Guid Id, Guid SiteId, string SiteName, Guid? ParentId, string Code, string Name, LocationType Type,
         Criticality Criticality, bool IsActive, string PathName);
@@ -177,8 +179,9 @@ public static class LocationEndpoints
                 .Select(x => new { x.Key, Count = x.Count() }).ToDictionaryAsync(x => x.Key, x => x.Count, ct);
             var sites = await db.Sites.AsNoTracking().OrderBy(s => s.Name)
                 .Select(s => new { s.Id, s.Code, s.Name, s.IsActive }).ToListAsync(ct);
-            var locations = await db.Locations.AsNoTracking().OrderBy(l => l.Name)
-                .Select(l => new { l.Id, l.SiteId, l.ParentId, l.Code, l.Name, l.Type, l.Criticality, l.IsActive }).ToListAsync(ct);
+            var ar = Bilingual.Arabic;
+            var locations = await db.Locations.AsNoTracking().OrderBy(l => ar && l.NameAr != null ? l.NameAr : l.Name)
+                .Select(l => new { l.Id, l.SiteId, l.ParentId, l.Code, Name = ar && l.NameAr != null ? l.NameAr : l.Name, l.Type, l.Criticality, l.IsActive }).ToListAsync(ct);
             return new
             {
                 sites = sites.Select(s => new { s.Id, s.Code, s.Name, s.IsActive, AssetCount = siteAssetCounts.GetValueOrDefault(s.Id) }),
@@ -192,8 +195,10 @@ public static class LocationEndpoints
             if (siteId is not null) q = q.Where(l => l.SiteId == siteId);
             if (parentId is not null) q = q.Where(l => l.ParentId == parentId);
             if (activeOnly == true) q = q.Where(l => l.IsActive);
-            if (search.Clean() is { } s) q = q.Where(l => l.Name.Contains(s) || l.Code.Contains(s));
-            var paged = await q.OrderBy(l => l.Name).Select(l => new { l.Id, l.SiteId, SiteName = l.Site!.Name, l.ParentId, l.Code, l.Name, l.Type, l.Criticality, l.IsActive, l.Path })
+            if (search.Clean() is { } s) q = q.Where(l => l.Name.Contains(s) || l.NameAr!.Contains(s) || l.Code.Contains(s));
+            var ar = Bilingual.Arabic;
+            var paged = await q.OrderBy(l => ar && l.NameAr != null ? l.NameAr : l.Name)
+                .Select(l => new { l.Id, l.SiteId, SiteName = l.Site!.Name, l.ParentId, l.Code, Name = ar && l.NameAr != null ? l.NameAr : l.Name, l.Type, l.Criticality, l.IsActive, l.Path })
                 .ToPagedAsync(page, pageSize, ct);
             var names = await ResolvePathNamesAsync(db, paged.Items.Select(i => i.Path), ct);
             return new PagedResult<LocationListItem>(
@@ -206,12 +211,14 @@ public static class LocationEndpoints
             var l = await db.Locations.AsNoTracking().Include(x => x.Site).FirstOrDefaultAsync(x => x.Id == id, ct);
             if (l is null) return Results.NotFound();
             var ancestorIds = PathIds(l.Path).Where(x => x != l.Id).ToList();
-            var ancestors = await db.Locations.AsNoTracking().Where(x => ancestorIds.Contains(x.Id)).Select(x => new { x.Id, x.Code, x.Name, x.Depth }).ToListAsync(ct);
+            var ar = Bilingual.Arabic;
+            var ancestors = await db.Locations.AsNoTracking().Where(x => ancestorIds.Contains(x.Id))
+                .Select(x => new { x.Id, x.Code, Name = ar && x.NameAr != null ? x.NameAr : x.Name, x.Depth }).ToListAsync(ct);
             var subtreeAssets = await db.Assets.CountAsync(a => a.LocationId != null && db.Locations.Any(x => x.Id == a.LocationId && x.Path.StartsWith(l.Path)), ct);
             return Results.Ok(new
             {
                 l.Id, l.SiteId, Site = new { l.Site!.Id, l.Site.Code, l.Site.Name }, l.ParentId, l.Code, l.Name, l.Type, l.Criticality,
-                l.Description, l.NotesToTechnician, l.Latitude, l.Longitude, l.IsActive, l.Depth, l.CreatedAt, l.UpdatedAt, l.CostCentreId,
+                l.Description, l.NotesToTechnician, l.NameAr, l.NotesToTechnicianAr, l.Latitude, l.Longitude, l.IsActive, l.Depth, l.CreatedAt, l.UpdatedAt, l.CostCentreId,
                 Ancestors = ancestors.OrderBy(a => a.Depth).Select(a => new { a.Id, a.Code, a.Name }),
                 ChildCount = await db.Locations.CountAsync(x => x.ParentId == id, ct),
                 AssetCount = await db.Assets.CountAsync(a => a.LocationId == id, ct),
@@ -261,7 +268,7 @@ public static class LocationEndpoints
     }
 
     /// <summary>The checks that need no database (shared with the import).</summary>
-    internal static Validator LocationRules(LocationInput i, Guid? id) => new Validator().Required("code", i.Code, "Code", 100).Required("name", i.Name, "Name", 300)
+    internal static Validator LocationRules(LocationInput i, Guid? id) => new Validator().Required("code", i.Code, "Code", 100).Required("name", i.Name, "Name", 300).MaxLength("nameAr", i.NameAr, "Name (Arabic)", 300)
         .When(!Enum.IsDefined(i.Type), "type", "Choose a valid location type.")
         .When(!Enum.IsDefined(i.Criticality), "criticality", "Choose a valid criticality.")
         .When(i.ParentId is not null && i.ParentId == id, "parentId", "A location cannot be its own parent.");
@@ -323,6 +330,8 @@ public static class LocationEndpoints
     internal static void Apply(Location l, LocationInput i)
     {
         l.Type = i.Type; l.Criticality = i.Criticality; l.Description = i.Description.Clean(); l.NotesToTechnician = i.NotesToTechnician.Clean();
+        if (i.NameAr is not null) l.NameAr = i.NameAr.Clean();
+        if (i.NotesToTechnicianAr is not null) l.NotesToTechnicianAr = i.NotesToTechnicianAr.Clean();
         // Pages and sheets from before cost centres (0.20.0) leave it as it is; a new location takes what was sent.
         if (i.ManagesCostCentre == true || l.CreatedAt == default) l.CostCentreId = i.CostCentreId;
         l.Latitude = i.Latitude; l.Longitude = i.Longitude; l.IsActive = i.IsActive;
@@ -336,7 +345,10 @@ public static class LocationEndpoints
     {
         var ids = paths.Where(p => p is not null).SelectMany(p => PathIds(p!)).Distinct().ToList();
         // Names of the places above a visible one (people limited to a branch see where it sits, not what else is there).
-        var names = ids.Count == 0 ? [] : await db.Locations.AllSites().AsNoTracking().Where(l => ids.Contains(l.Id)).ToDictionaryAsync(l => l.Id, l => l.Name, ct);
+        // In the reader's language (0.28.0).
+        var ar = Bilingual.Arabic;
+        var names = ids.Count == 0 ? [] : await db.Locations.AllSites().AsNoTracking().Where(l => ids.Contains(l.Id))
+            .ToDictionaryAsync(l => l.Id, l => ar && l.NameAr != null ? l.NameAr : l.Name, ct);
         return p => p is null ? "" : string.Join(" › ", PathIds(p).Select(id => names.GetValueOrDefault(id, "?")));
     }
 }

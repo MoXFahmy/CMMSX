@@ -14,6 +14,7 @@ import { EmployeePicker } from '@/components/EmployeePicker';
 import { WoStatusBadge } from '@/components/WorkBadges';
 import { fmtDate, fmtDateTime, fmtMoney, fmtNumber, notifyError, notifySuccess, notifyWarning, toIsoDate } from '@/components/utils';
 import { CodeSelect } from '@/components/CodeSelect';
+import { pick } from '@/components/bilingual';
 
 const asStatus = (s: string) => s as WorkOrderStatus;
 
@@ -187,7 +188,7 @@ export function WorkGroupDetailPage() {
             value={status.status} onChange={(x) => setStatus({ ...status, status: x ?? 'InProgress' })} />
           {status.status === 'OnHold' && <Select label={t('wo.holdReason')} required data={HOLD_REASONS.map((h) => ({ value: h, label: t(`holdReason.${h}`) }))} value={status.holdReason}
             onChange={(x) => setStatus({ ...status, holdReason: x })} />}
-          {status.status === 'Cancelled' && (cancelReasons?.length ?? 0) > 0 && <Select label={t('wo.cancelReason')} required data={cancelReasons!.map((r) => ({ value: r.id, label: r.name }))}
+          {status.status === 'Cancelled' && (cancelReasons?.length ?? 0) > 0 && <Select label={t('wo.cancelReason')} required data={cancelReasons!.map((r) => ({ value: r.id, label: pick(r.name, r.nameAr) }))}
             value={status.cancelReasonId} onChange={(x) => setStatus({ ...status, cancelReasonId: x })} />}
           {status.status === 'Completed' && <Textarea label={t('wo.completionNotes')} autosize value={status.completionNotes} onChange={(e) => setStatus({ ...status, completionNotes: e.currentTarget.value })} />}
           <Textarea label={t('common.notes')} autosize value={status.note} onChange={(e) => setStatus({ ...status, note: e.currentTarget.value })} />

@@ -39,6 +39,7 @@ import { costLines } from './woTotals';
 import { CoveredBanner } from '@/components/CoveredBanner';
 import { BackRunningButton } from '@/pages/assets/AssetDowntime';
 import { downFor } from '@/components/downtime';
+import { pick } from '@/components/bilingual';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={2}><Text fz="xs" c="dimmed">{label}</Text><Text fz="sm" fw={500} style={{ whiteSpace: 'pre-wrap' }}>{children === undefined || children === null || children === '' ? '—' : children}</Text></Stack>;
@@ -91,7 +92,7 @@ export function WorkOrderDetailPage() {
 
   return (
     <>
-      <PageHeader crumbs={[{ label: t('wo.title'), to: '/work-orders' }, { label: w.number }]} title={w.title}
+      <PageHeader crumbs={[{ label: t('wo.title'), to: '/work-orders' }, { label: w.number }]} title={pick(w.title, w.titleAr)}
         badge={<Group gap={6}><WoStatusBadge status={w.status} /><PriorityBadge value={w.priority} />{w.isOverdue && <Badge color="red" variant="filled">{t('wo.overdueBadge')}</Badge>}</Group>}
         subtitle={<>{w.onlyWhenStopped && <><StoppedBadge show size="sm" />{' '}</>}{w.number} · {t(`workType.${w.type}`)}{w.tradeName && ` · ${w.tradeName}`}{w.status === 'OnHold' && w.holdReason && ` · ${t(`holdReason.${w.holdReason}`)}`}
           {w.request && <> · <Anchor component={Link} to={`/work-requests?open=${w.request.id}`} fz="sm">{t('wo.fromRequest', { number: w.request.number })}</Anchor></>}
@@ -180,6 +181,7 @@ export function WorkOrderDetailPage() {
                       <Group gap={8}>{w.assets.map((a) => <Anchor key={a.id} component={Link} to={`/assets/${a.id}`} fz="sm" fw={500} title={a.name}>{a.assetNumber}</Anchor>)}</Group></Group>
                   )}
                   <Field label={t('wo.description')}>{w.description}</Field>
+                  {w.safetyNotes && <Field label={t('wo.safety')}>{pick(w.safetyNotes, w.safetyNotesAr)}</Field>}
                 </Card>
                 {(w.completedAt || w.completionNotes || w.signatures.length > 0) && (
                   <Card>
@@ -534,7 +536,7 @@ function StatusNoteModal({ to, onClose, w, onDone }: { to: WorkOrderStatus; onCl
   const { me } = useAuth();
   const needsNote = !!noteRequired(me?.tenant.settings.commentRequiredFor, w.status, to);
   const { data: reasons } = useQuery({ queryKey: ['cancel-reasons'], queryFn: () => get<Lookup[]>('/cancel-reasons'), enabled: to === 'Cancelled' });
-  const active = (reasons ?? []).filter((x) => x.isActive);
+  const active = (reasons ?? []).filter((x) => x.isActive).map((x) => ({ ...x, name: pick(x.name, x.nameAr) }));
   const form = useForm({ initialValues: { cancelReasonId: null as string | null, note: '' } });
   const submit = form.onSubmit(async (v) => {
     try { await post(`/work-orders/${w.id}/status`, { status: to, note: v.note, cancelReasonId: to === 'Cancelled' ? v.cancelReasonId : null }); notifySuccess(t(`woStatus.${to}`)); onClose(); await onDone(); }
