@@ -18,9 +18,12 @@ public sealed record DiagnosisAction(string Title, string Why, List<PartSuggesti
 /// <summary>A diagnosis as kept: texts, actions with checked parts and source work orders.</summary>
 public sealed record DiagnosisAnswer(string Context, string Observed, string? ProbableCause, string? Confidence, List<DiagnosisAction> Actions, bool HistoryTooThin, string? Message);
 
-/// <summary>A diagnosis as a page shows it. <see cref="Id"/> is empty for a thin-history answer the server gave itself (not kept).</summary>
+/// <summary>
+/// A diagnosis as a page shows it. <see cref="Id"/> is empty for a thin-history answer the server gave itself (not kept). <see cref="Hidden"/> (0.29.1):
+/// the viewer can't see every work order it was built from; then no text, action, source or number is sent.
+/// </summary>
 public sealed record DiagnosisDto(Guid? Id, DateTimeOffset CreatedAt, string CreatedByName, Guid? WorkOrderId, Guid? WorkRequestId, string Context, string Observed,
-    string? ProbableCause, string? Confidence, List<DiagnosisAction> Actions, bool HistoryTooThin, string? Message, int SentCount, int Up, int Down, bool? MyVote);
+    string? ProbableCause, string? Confidence, List<DiagnosisAction> Actions, bool HistoryTooThin, string? Message, int SentCount, int Up, int Down, bool? MyVote, bool Hidden = false);
 
 public sealed record VoteInput(bool? Up);
 
@@ -88,24 +91,24 @@ public static class AiDiagnose
             .WithTags("AI assistant").RequirePermission(Core.Identity.Permissions.RequestsManage);
 
         // Earlier diagnoses: a work order lists its own and its request's, newest first.
-        api.MapGet("/work-orders/{id:guid}/diagnoses", async (Guid id, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        api.MapGet("/work-orders/{id:guid}/diagnoses", async (Guid id, CmmsDbContext db, ITenantContext ctx, HttpContext http, CancellationToken ct) =>
         {
             var wo = await db.WorkOrders.AsNoTracking().Where(w => w.Id == id).Select(w => new { w.Id, w.WorkRequestId }).FirstOrDefaultAsync(ct);
             if (wo is null) return Results.NotFound();
             var q = db.AiDiagnoses.AsNoTracking().Where(d => d.WorkOrderId == wo.Id || (wo.WorkRequestId != null && d.WorkRequestId == wo.WorkRequestId));
-            return Results.Ok(await ListAsync(db, ctx, q, ct));
+            return Results.Ok(await ListAsync(db, ctx, Access.Of(http), q, ct));
         }).WithTags("AI assistant").RequirePermission(Core.Identity.Permissions.WorkOrdersView);
-        api.MapGet("/work-requests/{id:guid}/diagnoses", async (Guid id, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        api.MapGet("/work-requests/{id:guid}/diagnoses", async (Guid id, CmmsDbContext db, ITenantContext ctx, HttpContext http, CancellationToken ct) =>
         {
             if (!await db.WorkRequests.AnyAsync(r => r.Id == id, ct)) return Results.NotFound();
-            return Results.Ok(await ListAsync(db, ctx, db.AiDiagnoses.AsNoTracking().Where(d => d.WorkRequestId == id), ct));
+            return Results.Ok(await ListAsync(db, ctx, Access.Of(http), db.AiDiagnoses.AsNoTracking().Where(d => d.WorkRequestId == id), ct));
         }).WithTags("AI assistant").RequirePermission(Core.Identity.Permissions.RequestsView);
 
         // Thumbs up or down: one per person, changeable; null takes it back. Stays in CMX.
-        api.MapPut("/ai/diagnoses/{id:guid}/vote", async (Guid id, VoteInput input, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
+        api.MapPut("/ai/diagnoses/{id:guid}/vote", async (Guid id, VoteInput input, CmmsDbContext db, ITenantContext ctx, HttpContext http, CancellationToken ct) =>
         {
             var d = await db.AiDiagnoses.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (d is null || ctx.UserId is not { } me || !await VisibleAsync(db, d, ct)) return Results.NotFound();
+            if (d is null || ctx.UserId is not { } me || !await VisibleAsync(db, d, ct) || (await HiddenAsync(db, Access.Of(http), [d], ct)).Contains(d.Id)) return Results.NotFound();
             var vote = await db.AiDiagnosisVotes.FirstOrDefaultAsync(v => v.DiagnosisId == id && v.UserId == me, ct);
             if (input.Up is null) { if (vote is not null) db.AiDiagnosisVotes.Remove(vote); }
             else if (vote is null) db.AiDiagnosisVotes.Add(new AiDiagnosisVote { TenantId = d.TenantId, DiagnosisId = id, UserId = me, Up = input.Up.Value, UpdatedAt = DateTimeOffset.UtcNow });
@@ -119,6 +122,23 @@ public static class AiDiagnose
     private static async Task<bool> VisibleAsync(CmmsDbContext db, AiDiagnosis d, CancellationToken ct) =>
         d.WorkOrderId is { } w ? await db.WorkOrders.AnyAsync(x => x.Id == w, ct)
         : d.WorkRequestId is { } r && (await db.WorkRequests.AnyAsync(x => x.Id == r, ct) || await db.WorkOrders.AnyAsync(x => x.WorkRequestId == r, ct));
+
+    /// <summary>
+    /// The diagnoses among <paramref name="rows"/> the person may not see (0.29.1): one built from a work order they can't see, or one made before
+    /// 0.29.1 (no record of its history) unless their access covers the whole organization. Uses the person's whole access (not the site switch):
+    /// a limited person's sites and branches both count. Whole-organization access sees everything.
+    /// </summary>
+    private static async Task<HashSet<Guid>> HiddenAsync(CmmsDbContext db, UserAccess? access, IReadOnlyCollection<AiDiagnosis> rows, CancellationToken ct)
+    {
+        access ??= new UserAccess([], null); // no signed-in access known: when in doubt, hide
+        if (!access.Limited) return [];
+        var wanted = rows.SelectMany(r => r.HistoryWorkOrderIds ?? []).Distinct().ToList();
+        // Every site, branches included: the check is the person's own access, applied here by hand.
+        var seen = wanted.Count == 0 ? [] : (await db.WorkOrders.AllSites().AsNoTracking().Where(w => wanted.Contains(w.Id))
+                .Select(w => new { w.Id, w.SiteId, Path = w.Location == null ? null : w.Location.Path }).ToListAsync(ct))
+            .Where(w => Access.Covers(access, w.SiteId, w.Path)).Select(w => w.Id).ToHashSet();
+        return rows.Where(r => r.HistoryWorkOrderIds is null || r.HistoryWorkOrderIds.Any(i => !seen.Contains(i))).Select(r => r.Id).ToHashSet();
+    }
 
     private static Task<Subject?> WorkOrderSubjectAsync(CmmsDbContext db, Guid id, CancellationToken ct) =>
         db.WorkOrders.AsNoTracking().Where(w => w.Id == id).Select(w => new Subject(w.Id, null, "Work order", w.Number, w.Title, w.Description,
@@ -175,7 +195,7 @@ public static class AiDiagnose
         var d = new AiDiagnosis
         {
             TenantId = db.CurrentTenantId!.Value, WorkOrderId = s.WorkOrderId, WorkRequestId = s.WorkRequestId, AssetId = assetId,
-            AnswerJson = JsonSerializer.Serialize(answer, Store), SentCount = history.Count, CreatedByName = AiText.Clip(ctx.UserName, 200),
+            AnswerJson = JsonSerializer.Serialize(answer, Store), SentCount = history.Count, HistoryWorkOrderIds = ids, CreatedByName = AiText.Clip(ctx.UserName, 200),
         };
         db.AiDiagnoses.Add(d);
         await db.SaveChangesAsync(ct);
@@ -229,9 +249,10 @@ public static class AiDiagnose
         new(d.Id, d.CreatedAt, d.CreatedByName, d.WorkOrderId, d.WorkRequestId, a.Context, a.Observed, a.ProbableCause, a.Confidence, a.Actions,
             a.HistoryTooThin, a.Message, d.SentCount, up, down, mine);
 
-    private static async Task<List<DiagnosisDto>> ListAsync(CmmsDbContext db, ITenantContext ctx, IQueryable<AiDiagnosis> q, CancellationToken ct)
+    private static async Task<List<DiagnosisDto>> ListAsync(CmmsDbContext db, ITenantContext ctx, UserAccess? access, IQueryable<AiDiagnosis> q, CancellationToken ct)
     {
         var rows = await q.OrderByDescending(d => d.CreatedAt).ToListAsync(ct);
+        var hidden = await HiddenAsync(db, access, rows, ct);
         var ids = rows.Select(r => r.Id).ToList();
         var votes = await db.AiDiagnosisVotes.AsNoTracking().Where(v => ids.Contains(v.DiagnosisId)).ToListAsync(ct);
         var answers = rows.ToDictionary(r => r.Id, r => JsonSerializer.Deserialize<DiagnosisAnswer>(r.AnswerJson, Store)
@@ -241,6 +262,9 @@ public static class AiDiagnose
         var visible = (await db.WorkOrders.AsNoTracking().Where(w => cited.Contains(w.Id)).Select(w => w.Id).ToListAsync(ct)).ToHashSet();
         return rows.Select(r =>
         {
+            if (hidden.Contains(r.Id))
+                // Nothing of it leaves the server: no text, actions, sources or numbers.
+                return new DiagnosisDto(r.Id, r.CreatedAt, "", r.WorkOrderId, r.WorkRequestId, "", "", null, null, [], false, null, 0, 0, 0, null, true);
             var a = answers[r.Id];
             a = a with { Actions = a.Actions.Select(x => x with { Sources = x.Sources.Where(s => visible.Contains(s.Id)).ToList() }).ToList() };
             var mine = votes.Where(v => v.DiagnosisId == r.Id).ToList();

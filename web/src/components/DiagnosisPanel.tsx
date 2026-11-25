@@ -10,11 +10,18 @@ import { confidenceColor, nextVote, toPlan, type Diagnosis } from './diagnosis';
 import { fmtDateTime, fmtQty, notifyError, notifySuccess } from './utils';
 
 /** One diagnosis: what is known and seen, the probable cause, ranked actions with their sources, and the thumbs. */
-export function DiagnosisView({ d, canPlan, plannedPartIds, onVote, onPlan }: {
+export function DiagnosisView({ d, canPlan, plannedPartIds, onVote, onPlan, onRun, running }: {
   d: Diagnosis; canPlan: boolean; plannedPartIds: string[];
-  onVote?: (up: boolean | null) => void; onPlan?: (action: Diagnosis['actions'][number]) => void;
+  onVote?: (up: boolean | null) => void; onPlan?: (action: Diagnosis['actions'][number]) => void; onRun?: () => void; running?: boolean;
 }) {
   const { t } = useTranslation();
+  if (d.hidden) return (
+    <Alert color="gray" variant="light">
+      <Stack gap="xs"><Text fz="sm">{t('ai.hidden')}</Text>
+        {onRun && <Group><Button size="compact-xs" variant="light" color="violet" leftSection={<IconSparkles size={14} />} loading={running} onClick={onRun}>{t('ai.runAgain')}</Button></Group>}
+      </Stack>
+    </Alert>
+  );
   if (d.historyTooThin) return <Alert color="gray" variant="light">{d.message ?? t('ai.tooThin')}</Alert>;
   return (
     <Stack gap="sm">
@@ -97,7 +104,8 @@ export function DiagnosisPanel({ kind, id, hasAsset, canRun, canPlan, plannedPar
     if (added > 0) { notifySuccess(t('ai.planned', { count: added })); await onPlanned?.(); }
   };
   const view = (d: Diagnosis) => (
-    <DiagnosisView d={d} canPlan={canPlan && kind === 'work-order'} plannedPartIds={plannedPartIds} onVote={(up) => void vote(d, up)} onPlan={(a) => void plan(a)} />
+    <DiagnosisView d={d} canPlan={canPlan && kind === 'work-order'} plannedPartIds={plannedPartIds} onVote={(up) => void vote(d, up)} onPlan={(a) => void plan(a)}
+      onRun={aiOn(status) && canRun && hasAsset ? () => void run() : undefined} running={running} />
   );
   return (
     <Card><Stack>
@@ -113,13 +121,13 @@ export function DiagnosisPanel({ kind, id, hasAsset, canRun, canPlan, plannedPar
       </Group>
       {running && <Text fz="sm" c="dimmed">{t('ai.reading')}</Text>}
       {thin && view(thin)}
-      {latest && <><Text fz="xs" c="dimmed">{latest.createdByName} · {fmtDateTime(latest.createdAt)} · {t('ai.sent', { count: latest.sentCount })}</Text>{view(latest)}</>}
+      {latest && <>{!latest.hidden && <Text fz="xs" c="dimmed">{latest.createdByName} · {fmtDateTime(latest.createdAt)} · {t('ai.sent', { count: latest.sentCount })}</Text>}{view(latest)}</>}
       {earlier.length > 0 && (
         <Accordion variant="contained">
           <Accordion.Item value="earlier">
             <Accordion.Control>{t('ai.earlier', { count: earlier.length })}</Accordion.Control>
             <Accordion.Panel><Stack>{earlier.map((d) => (
-              <Stack key={d.id} gap={4}><Text fz="xs" c="dimmed">{d.createdByName} · {fmtDateTime(d.createdAt)}</Text>{view(d)}</Stack>
+              <Stack key={d.id} gap={4}>{!d.hidden && <Text fz="xs" c="dimmed">{d.createdByName} · {fmtDateTime(d.createdAt)}</Text>}{view(d)}</Stack>
             ))}</Stack></Accordion.Panel>
           </Accordion.Item>
         </Accordion>

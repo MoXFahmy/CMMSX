@@ -42,11 +42,11 @@ public class AiDiagnosisTests(ApiFixture fx) : IClassFixture<ApiFixture>
 
     /// <summary>A completed work order written straight to the database; returns its number.</summary>
     private Task<(Guid Id, string Number)> DoneAsync(Loop.Org org, Guid asset, DateTimeOffset completed, Guid? site = null, string notes = "Replaced the seal",
-        WorkOrderStatus status = WorkOrderStatus.Completed, (Guid Part, decimal Qty)? issued = null) => DbAsync(fx, async db =>
+        WorkOrderStatus status = WorkOrderStatus.Completed, (Guid Part, decimal Qty)? issued = null, Guid? location = null) => DbAsync(fx, async db =>
     {
         var w = new WorkOrder
         {
-            TenantId = org.Tenant, Number = $"H-{Guid.NewGuid():N}"[..14].ToUpperInvariant(), Title = $"Fix {notes}", SiteId = site ?? org.Site, AssetId = asset,
+            TenantId = org.Tenant, Number = $"H-{Guid.NewGuid():N}"[..14].ToUpperInvariant(), Title = $"Fix {notes}", SiteId = site ?? org.Site, AssetId = asset, LocationId = location,
             Type = WorkType.Corrective, Status = status, CompletedAt = status == WorkOrderStatus.Completed ? completed : null, CompletionNotes = notes, CauseNotes = "Wear",
         };
         db.WorkOrders.Add(w);
@@ -222,21 +222,172 @@ public class AiDiagnosisTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Empty(fx.Ai.Asks);
     }
 
+    private static string Json(JsonElement e) => e.GetRawText();
+
+    private static HttpRequestMessage ListAt(Guid wo, Guid? site)
+    {
+        var m = new HttpRequestMessage(HttpMethod.Get, $"/api/work-orders/{wo}/diagnoses");
+        if (site is { } s) m.Headers.Add("X-Cmx-Site", s.ToString());
+        return m;
+    }
+
+    /// <summary>Other site with a completed job on a pump there, plus three at the main site: the admin's diagnosis then used work a site-limited person can't see.</summary>
+    private async Task<(Plant P, Guid S2, (Guid Id, string Number) Far, (Guid Id, string Number) Near)> WithFarHistoryAsync()
+    {
+        var p = await PlantAsync();
+        var s2 = Id(await Ok(await p.Org.Admin.PostAsJsonAsync("/api/sites", new { code = "S2", name = "Other site", isActive = true })));
+        var e = await AssetAsync(p.Org, "Pump E", p.Category, "Grundfos", "CR5", s2);
+        var far = await DoneAsync(p.Org, e, Day(25), site: s2, notes: "Far secret fix");
+        var near = await DoneAsync(p.Org, p.A, Day(1));
+        await DoneAsync(p.Org, p.A, Day(2));
+        await DoneAsync(p.Org, p.A, Day(3));
+        return (p, s2, far, near);
+    }
+
+    [SkippableFact]
+    public async Task Diagnosis_is_hidden_from_a_viewer_who_cannot_see_one_of_its_history_orders()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (p, _, far, near) = await WithFarHistoryAsync();
+        Answer(Diagnosis(Action("Replace the seal", [far.Number, near.Number])));
+        await Ok(await DiagnoseAsync(p.Org.Admin, p.Wo));
+        var local = await UserAsync(fx, p.Org.Admin, "Maintenance Manager", [p.Org.Site]);
+        var seen = Assert.Single((await Ok(await local.Client.GetAsync($"/api/work-orders/{p.Wo}/diagnoses"))).EnumerateArray());
+        Assert.True(seen.GetProperty("hidden").GetBoolean());
+        Assert.Empty(seen.GetProperty("actions").EnumerateArray());
+        var json = Json(seen);
+        foreach (var text in new[] { far.Number, near.Number, "Worn mechanical seal", "Replace the seal", "Leak at the seal", "Pump A, Grundfos CR5", "Seen before" })
+            Assert.DoesNotContain(text, json);
+        // The request's own list says the same, and a vote on it is refused.
+        var id = seen.GetProperty("id").GetGuid();
+        Assert.Equal(HttpStatusCode.NotFound, (await local.Client.PutAsJsonAsync($"/api/ai/diagnoses/{id}/vote", new { up = true })).StatusCode);
+        var admin = Assert.Single((await Ok(await p.Org.Admin.GetAsync($"/api/work-orders/{p.Wo}/diagnoses"))).EnumerateArray());
+        Assert.False(admin.GetProperty("hidden").GetBoolean());
+        Assert.Equal(2, admin.GetProperty("actions")[0].GetProperty("sources").GetArrayLength());
+    }
+
+    [SkippableFact]
+    public async Task Diagnosis_shows_to_a_viewer_who_sees_all_its_history()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var p = await PlantAsync();
+        var near = await DoneAsync(p.Org, p.A, Day(1));
+        await DoneAsync(p.Org, p.A, Day(2));
+        await DoneAsync(p.Org, p.B, Day(3));
+        Answer(Diagnosis(Action("Replace the seal", [near.Number])));
+        await Ok(await DiagnoseAsync(p.Org.Admin, p.Wo));
+        var local = await UserAsync(fx, p.Org.Admin, "Maintenance Manager", [p.Org.Site]);
+        var seen = Assert.Single((await Ok(await local.Client.GetAsync($"/api/work-orders/{p.Wo}/diagnoses"))).EnumerateArray());
+        Assert.False(seen.GetProperty("hidden").GetBoolean());
+        Assert.Equal("Worn mechanical seal", seen.GetProperty("probableCause").GetString());
+        Assert.Equal([near.Id], seen.GetProperty("actions")[0].GetProperty("sources").EnumerateArray().Select(s => s.GetProperty("id").GetGuid()));
+    }
+
+    [SkippableFact]
+    public async Task Run_again_by_a_limited_viewer_uses_only_their_access()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (p, _, far, near) = await WithFarHistoryAsync();
+        Answer(Diagnosis(Action("Replace the seal", [near.Number])));
+        await Ok(await DiagnoseAsync(p.Org.Admin, p.Wo));
+        Assert.Contains(far.Number, fx.Ai.Asks[0].Prompt);
+        var local = await UserAsync(fx, p.Org.Admin, "Maintenance Manager", [p.Org.Site]);
+        await Ok(await DiagnoseAsync(local.Client, p.Wo));
+        Assert.DoesNotContain(far.Number, fx.Ai.Asks[1].Prompt);
+        Assert.Contains(near.Number, fx.Ai.Asks[1].Prompt);
+        var list = (await Ok(await local.Client.GetAsync($"/api/work-orders/{p.Wo}/diagnoses"))).EnumerateArray().ToList();
+        Assert.Equal([false, true], list.Select(d => d.GetProperty("hidden").GetBoolean()));
+        Assert.DoesNotContain(far.Number, Json(list[0]));
+    }
+
+    [SkippableFact]
+    public async Task Old_diagnosis_without_history_shows_only_to_whole_organization_access()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var p = await PlantAsync();
+        for (var i = 1; i <= 3; i++) await DoneAsync(p.Org, p.A, Day(i));
+        Answer(Diagnosis(Action("Replace the seal", [])));
+        await Ok(await DiagnoseAsync(p.Org.Admin, p.Wo));
+        // Made before 0.29.1: nothing recorded about the history.
+        await DbAsync(fx, db => db.AiDiagnoses.IgnoreQueryFilters().Where(d => d.WorkOrderId == p.Wo).ExecuteUpdateAsync(u => u.SetProperty(d => d.HistoryWorkOrderIds, (List<Guid>?)null)));
+        async Task<bool> Hidden(HttpClient c) => Assert.Single((await Ok(await c.GetAsync($"/api/work-orders/{p.Wo}/diagnoses"))).EnumerateArray()).GetProperty("hidden").GetBoolean();
+        var whole = await UserAsync(fx, p.Org.Admin, "Maintenance Manager");
+        var site = await UserAsync(fx, p.Org.Admin, "Maintenance Manager", [p.Org.Site]);
+        var (branch, _) = await SiteAccessTests.UserAsync(fx, p.Org.Admin, "Maintenance Manager", locationIds: [p.Org.Location]);
+        Assert.False(await Hidden(p.Org.Admin));
+        Assert.False(await Hidden(whole.Client));
+        Assert.True(await Hidden(site.Client));
+        // The branch person can't see the job at all (it has no location); a visible one shows the same rule.
+        var inBranch = Id(await Ok(await p.Org.Admin.PostAsJsonAsync("/api/work-orders", new
+        {
+            title = "In the hall", type = "Corrective", priority = "High", siteId = p.Org.Site, locationId = p.Org.Location, assetId = p.A,
+        })));
+        await DbAsync(fx, db => db.AiDiagnoses.IgnoreQueryFilters().Where(d => d.WorkOrderId == p.Wo).ExecuteUpdateAsync(u => u.SetProperty(d => d.WorkOrderId, inBranch)));
+        var branchView = Assert.Single((await Ok(await branch.GetAsync($"/api/work-orders/{inBranch}/diagnoses"))).EnumerateArray());
+        Assert.True(branchView.GetProperty("hidden").GetBoolean());
+        Assert.False(Assert.Single((await Ok(await p.Org.Admin.GetAsync($"/api/work-orders/{inBranch}/diagnoses"))).EnumerateArray()).GetProperty("hidden").GetBoolean());
+    }
+
+    [SkippableFact]
+    public async Task Check_uses_whole_access_not_the_site_switch()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (p, s2, far, near) = await WithFarHistoryAsync();
+        Answer(Diagnosis(Action("Replace the seal", [far.Number, near.Number])));
+        await Ok(await DiagnoseAsync(p.Org.Admin, p.Wo));
+        // An old one too.
+        await DbAsync(fx, db => db.AiDiagnoses.IgnoreQueryFilters().Where(d => d.WorkOrderId == p.Wo).ExecuteUpdateAsync(u => u.SetProperty(d => d.HistoryWorkOrderIds, (List<Guid>?)null)));
+        await Ok(await DiagnoseAsync(p.Org.Admin, p.Wo));
+        // The admin works in the main site only (the switch), but their access is the whole organization.
+        var list = (await Ok(await p.Org.Admin.SendAsync(ListAt(p.Wo, p.Org.Site)))).EnumerateArray().ToList();
+        Assert.Equal(2, list.Count);
+        Assert.All(list, d => Assert.False(d.GetProperty("hidden").GetBoolean()));
+        // A person who may see both sites, switched to one, still sees a diagnosis built from both.
+        var both = await UserAsync(fx, p.Org.Admin, "Maintenance Manager", [p.Org.Site, s2]);
+        var seen = (await Ok(await both.Client.SendAsync(ListAt(p.Wo, p.Org.Site)))).EnumerateArray().ToList();
+        Assert.False(seen[0].GetProperty("hidden").GetBoolean());
+        Assert.True(seen[1].GetProperty("hidden").GetBoolean()); // the old one needs the whole organization
+    }
+
+    [SkippableFact]
+    public async Task A_branch_limited_viewer_needs_every_history_order_inside_their_branch()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var p = await PlantAsync();
+        var b2 = Id(await Ok(await p.Org.Admin.PostAsJsonAsync("/api/locations", new { siteId = p.Org.Site, code = "L2", name = "Annex", type = "Building", criticality = "Medium", isActive = true })));
+        var wo = Id(await Ok(await p.Org.Admin.PostAsJsonAsync("/api/work-orders", new
+        {
+            title = "In the hall", type = "Corrective", priority = "High", siteId = p.Org.Site, locationId = p.Org.Location, assetId = p.A,
+        })));
+        for (var i = 1; i <= 3; i++) await DoneAsync(p.Org, p.A, Day(i), location: p.Org.Location);
+        var (branch, _) = await SiteAccessTests.UserAsync(fx, p.Org.Admin, "Maintenance Manager", locationIds: [p.Org.Location]);
+        Answer(Diagnosis(Action("Replace the seal", [])));
+        await Ok(await DiagnoseAsync(p.Org.Admin, wo));
+        await Task.Delay(10);
+        var annex = await DoneAsync(p.Org, p.A, Day(10), location: b2, notes: "Annex secret fix");
+        await Ok(await DiagnoseAsync(p.Org.Admin, wo));
+        var list = (await Ok(await branch.GetAsync($"/api/work-orders/{wo}/diagnoses"))).EnumerateArray().ToList();
+        Assert.Equal([true, false], list.Select(d => d.GetProperty("hidden").GetBoolean()));
+        Assert.DoesNotContain(annex.Number, Json(list[0]));
+        // Run again by the branch person leaves the annex out.
+        await Ok(await DiagnoseAsync(branch, wo));
+        Assert.DoesNotContain(annex.Number, fx.Ai.Asks[^1].Prompt);
+        Assert.False((await Ok(await branch.GetAsync($"/api/work-orders/{wo}/diagnoses"))).EnumerateArray().First().GetProperty("hidden").GetBoolean());
+    }
+
     [SkippableFact]
     public async Task Listed_sources_hide_what_the_viewer_cannot_see()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
-        var p = await PlantAsync();
-        var s2 = Id(await Ok(await p.Org.Admin.PostAsJsonAsync("/api/sites", new { code = "S2", name = "Other site", isActive = true })));
-        var e = await AssetAsync(p.Org, "Pump E", p.Category, "Grundfos", "CR5", s2);
-        var far = await DoneAsync(p.Org, e, Day(25), site: s2);
-        var near = await DoneAsync(p.Org, p.A, Day(1));
-        await DoneAsync(p.Org, p.A, Day(2));
+        var (p, _, far, near) = await WithFarHistoryAsync();
         Answer(Diagnosis(Action("Replace the seal", [far.Number, near.Number])));
         var mine = await Ok(await DiagnoseAsync(p.Org.Admin, p.Wo));
         Assert.Equal(2, mine.GetProperty("actions")[0].GetProperty("sources").GetArrayLength());
+        // A site-limited person gets no part of it: the whole diagnosis used work they can't see.
         var local = await UserAsync(fx, p.Org.Admin, "Maintenance Manager", [p.Org.Site]);
         var seen = Assert.Single((await Ok(await local.Client.GetAsync($"/api/work-orders/{p.Wo}/diagnoses"))).EnumerateArray());
-        Assert.Equal([near.Id], seen.GetProperty("actions")[0].GetProperty("sources").EnumerateArray().Select(s => s.GetProperty("id").GetGuid()));
+        Assert.True(seen.GetProperty("hidden").GetBoolean());
+        Assert.DoesNotContain(far.Number, Json(seen));
+        Assert.DoesNotContain(near.Number, Json(seen));
     }
 }

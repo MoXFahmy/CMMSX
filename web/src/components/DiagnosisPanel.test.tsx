@@ -21,6 +21,15 @@ describe('diagnosis view', () => {
     expect(html).toContain('SEAL-1');
     expect(html).toMatch(/aria-label="Helpful"[\s\S]*?2/);
   });
+  it('shows the hidden message with Run again and nothing of the diagnosis', () => {
+    const html = renderHtml(<DiagnosisView d={d({ hidden: true, context: '', observed: '', probableCause: null, confidence: null, actions: [], up: 0, down: 0 })}
+      canPlan={false} plannedPartIds={[]} onRun={() => {}} />);
+    expect(html).toContain("This diagnosis used work you can&#x27;t see");
+    expect(html).toContain('Run again');
+    expect(html).not.toContain('Worn mechanical seal');
+    expect(html).not.toContain('aria-label="Helpful"');
+    expect(renderHtml(<DiagnosisView d={d({ hidden: true })} canPlan={false} plannedPartIds={[]} />)).not.toContain('Run again');
+  });
   it('says the history is too thin instead of listing actions', () => {
     const html = renderHtml(<DiagnosisView d={d({ id: null, historyTooThin: true, message: 'Only 2 completed work orders', actions: [], probableCause: null, confidence: null })}
       canPlan={false} plannedPartIds={[]} />);

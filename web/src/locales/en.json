@@ -2291,6 +2291,7 @@
     "runAgain": "Run again",
     "needsAsset": "Choose an asset first: a diagnosis works from the asset's history.",
     "reading": "Reading the asset's history… this can take up to half a minute.",
+    "hidden": "This diagnosis used work you can't see. Run it again to get one from your own access.",
     "tooThin": "Too few completed work orders on this asset and similar ones for a diagnosis.",
     "context": "What is known",
     "observed": "What was seen",

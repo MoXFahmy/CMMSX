@@ -673,6 +673,7 @@ public class CmmsDbContext(DbContextOptions<CmmsDbContext> options, ITenantConte
         {
             ConfigureTenantEntity(e);
             e.Property(x => x.CreatedByName).HasMaxLength(200);
+            e.Property(x => x.HistoryWorkOrderIds).HasConversion(NullableJsonConverter<List<Guid>>()).Metadata.SetValueComparer(NullableJsonComparer<List<Guid>>());
             e.HasIndex(x => new { x.TenantId, x.WorkOrderId });
             e.HasIndex(x => new { x.TenantId, x.WorkRequestId });
         });

@@ -44,6 +44,11 @@ public class AiDiagnosis : TenantEntity
     public string AnswerJson { get; set; } = "{}";
     /// <summary>How many past work orders were sent.</summary>
     public int SentCount { get; set; }
+    /// <summary>
+    /// Ids of the work orders given to the model (0.29.1), so the diagnosis is shown only to people who can see every one of them.
+    /// Null = made before 0.29.1: nothing is known, so only people whose access covers the whole organization see it.
+    /// </summary>
+    public List<Guid>? HistoryWorkOrderIds { get; set; }
     public string CreatedByName { get; set; } = "";
 }
 

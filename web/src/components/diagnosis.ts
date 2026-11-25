@@ -8,6 +8,8 @@ export type Diagnosis = {
   id: string | null; createdAt: string; createdByName: string; workOrderId?: string | null; workRequestId?: string | null;
   context: string; observed: string; probableCause?: string | null; confidence?: 'low' | 'medium' | 'high' | null;
   actions: DiagnosisAction[]; historyTooThin: boolean; message?: string | null; sentCount: number; up: number; down: number; myVote?: boolean | null;
+  /** The viewer can't see every work order it was built from (0.29.1): nothing of it is sent. */
+  hidden?: boolean;
 };
 
 /** Pressing the thumb already chosen takes the vote back. */
