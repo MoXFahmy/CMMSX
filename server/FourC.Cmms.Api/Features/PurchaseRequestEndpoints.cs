@@ -255,36 +255,39 @@ public static class PurchaseRequestEndpoints
         {
             var wanted = (i.Lines ?? []).DistinctBy(l => l.RequestLineId).ToList();
             if (wanted.Count == 0) throw new DomainException("Select at least one line.");
-            var ids = wanted.Select(l => l.RequestLineId).ToList();
-            var lines = await db.PurchaseRequestLines.Include(l => l.Part).Where(l => ids.Contains(l.Id)).ToDictionaryAsync(l => l.Id, ct);
-            var requestIds = lines.Values.Select(l => l.PurchaseRequestId).Distinct().ToList();
-            var requests = await db.PurchaseRequests.Include(r => r.Lines).Where(r => requestIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, ct);
-            var onOrder = await db.PurchaseOrderLines.AllSites().Where(l => l.PurchaseRequestLineId != null && ids.Contains(l.PurchaseRequestLineId.Value))
-                .Select(l => new { RequestLineId = l.PurchaseRequestLineId!.Value, Order = db.PurchaseOrders.AllSites().Where(o => o.Id == l.PurchaseOrderId).Select(o => new { o.Number, o.Status }).First() })
-                .ToListAsync(ct);
-            var live = onOrder.Where(x => x.Order.Status != PurchaseOrderStatus.Cancelled).ToDictionary(x => x.RequestLineId, x => x.Order.Number);
-            var resolved = wanted.Select(w =>
-            {
-                if (!lines.TryGetValue(w.RequestLineId, out var line) || !requests.TryGetValue(line.PurchaseRequestId, out var r)) throw new DomainException("Unknown request line.");
-                if (r.Status is not (PurchaseRequestStatus.Approved or PurchaseRequestStatus.PartlyOrdered)) throw new DomainException($"{r.Number} isn't approved.");
-                if (live.TryGetValue(line.Id, out var po)) throw new DomainException($"{r.Number} line {line.LineNumber} is already on {po}.");
-                var supplier = w.SupplierId ?? line.Part?.PreferredSupplierId ?? throw new DomainException($"Choose a supplier for {r.Number} line {line.LineNumber}.");
-                var qty = w.Quantity ?? line.Quantity;
-                if (qty <= 0) throw new DomainException($"{r.Number} line {line.LineNumber}: quantity must be more than 0.");
-                var price = w.UnitPrice ?? line.EstimatedUnitPrice ?? line.Part?.LastPurchasePrice ?? line.Part?.AverageCost ?? 0m;
-                if (price < 0) throw new DomainException($"{r.Number} line {line.LineNumber}: the price can't be below 0.");
-                return (Line: line, Request: r, SupplierId: supplier, Quantity: qty, Price: price, Typed: w.UnitPrice);
-            }).ToList();
-            var supplierIds = resolved.Select(x => x.SupplierId).Distinct().ToList();
-            var suppliers = await db.Suppliers.AsNoTracking().Where(s => supplierIds.Contains(s.Id) && s.IsActive).ToDictionaryAsync(s => s.Id, ct);
-            if (suppliers.Count != supplierIds.Count) throw new DomainException("Choose an active supplier.");
-            // The buyer also writes to each request under the version read above: two buyers ordering one line at the same moment, the second finds it
-            // changed (0.16.0-5, 0.29.1). Cancelled orders keep their links, so a unique index could not do this.
-            RequestLinks.Claim(db, requests.Values);
+            // Everything from loading the lines to the last save is one attempt: it may run again after a dropped connection, and then starts again from
+            // what is stored, with the claim marked again and the version checked (0.29.1).
             try
             {
-                var created = await db.InTransactionAsync(async tk =>
+                return await Atomic.RunAsync<IResult>(db, async tk =>
                 {
+                    db.ChangeTracker.Clear();
+                    var ids = wanted.Select(l => l.RequestLineId).ToList();
+                    var requestLines = await db.PurchaseRequestLines.Include(l => l.Part).Where(l => ids.Contains(l.Id)).ToDictionaryAsync(l => l.Id, tk);
+                    var requestIds = requestLines.Values.Select(l => l.PurchaseRequestId).Distinct().ToList();
+                    var requests = await db.PurchaseRequests.Include(r => r.Lines).Where(r => requestIds.Contains(r.Id)).ToDictionaryAsync(r => r.Id, tk);
+                    var onOrder = await db.PurchaseOrderLines.AllSites().Where(l => l.PurchaseRequestLineId != null && ids.Contains(l.PurchaseRequestLineId.Value))
+                        .Select(l => new { RequestLineId = l.PurchaseRequestLineId!.Value, Order = db.PurchaseOrders.AllSites().Where(o => o.Id == l.PurchaseOrderId).Select(o => new { o.Number, o.Status }).First() })
+                        .ToListAsync(tk);
+                    var live = onOrder.Where(x => x.Order.Status != PurchaseOrderStatus.Cancelled).ToDictionary(x => x.RequestLineId, x => x.Order.Number);
+                    var resolved = wanted.Select(w =>
+                    {
+                        if (!requestLines.TryGetValue(w.RequestLineId, out var line) || !requests.TryGetValue(line.PurchaseRequestId, out var r)) throw new DomainException("Unknown request line.");
+                        if (r.Status is not (PurchaseRequestStatus.Approved or PurchaseRequestStatus.PartlyOrdered)) throw new DomainException($"{r.Number} isn't approved.");
+                        if (live.TryGetValue(line.Id, out var po)) throw new DomainException($"{r.Number} line {line.LineNumber} is already on {po}.");
+                        var supplier = w.SupplierId ?? line.Part?.PreferredSupplierId ?? throw new DomainException($"Choose a supplier for {r.Number} line {line.LineNumber}.");
+                        var qty = w.Quantity ?? line.Quantity;
+                        if (qty <= 0) throw new DomainException($"{r.Number} line {line.LineNumber}: quantity must be more than 0.");
+                        var price = w.UnitPrice ?? line.EstimatedUnitPrice ?? line.Part?.LastPurchasePrice ?? line.Part?.AverageCost ?? 0m;
+                        if (price < 0) throw new DomainException($"{r.Number} line {line.LineNumber}: the price can't be below 0.");
+                        return (Line: line, Request: r, SupplierId: supplier, Quantity: qty, Price: price, Typed: w.UnitPrice);
+                    }).ToList();
+                    var supplierIds = resolved.Select(x => x.SupplierId).Distinct().ToList();
+                    var suppliers = await db.Suppliers.AsNoTracking().Where(s => supplierIds.Contains(s.Id) && s.IsActive).ToDictionaryAsync(s => s.Id, tk);
+                    if (suppliers.Count != supplierIds.Count) throw new DomainException("Choose an active supplier.");
+                    // The buyer also writes to each request under the version read above: two buyers ordering one line at the same moment, the second finds it
+                    // changed (0.16.0-5, 0.29.1). Cancelled orders keep their links, so a unique index could not do this.
+                    RequestLinks.Claim(db, requests.Values);
                     var list = new List<object>();
                     var ordersOf = new Dictionary<Guid, List<string>>();
                     foreach (var grp in resolved.GroupBy(x => (x.SupplierId, x.Request.SiteId)))
@@ -318,9 +321,8 @@ public static class PurchaseRequestEndpoints
                     await PurchaseRequestSync.SyncAsync(db, requestIds, tk);
                     foreach (var (rid, orders) in ordersOf) await mail.PrOrderedAsync(db, ctx, requests[rid], orders.Distinct().ToList(), tk);
                     await db.SaveChangesAsync(tk);
-                    return list;
+                    return Results.Ok(list);
                 }, ct);
-                return Results.Ok(created);
             }
             catch (DbUpdateConcurrencyException e) when (RequestLinks.IsLost(e)) { return RequestLinks.LostResult(); }
         }).RequirePermission(Permissions.PurchasingCreate);

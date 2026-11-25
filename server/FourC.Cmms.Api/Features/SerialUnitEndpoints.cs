@@ -129,8 +129,10 @@ public static class SerialUnitEndpoints
                     db.ChangeTracker.Clear();
                     // The stock lines first (0.29.1), then the part: a quantity move locks its line before it reads the part, so what is counted here is what stays
                     // (a move under way is waited for; a later one finds the part serial-tracked and is refused) and nobody holds the part while waiting for a line.
-                    // (The quantity is read so the row itself is locked, not only an index entry: a move updates the row by its key.)
-                    await db.Database.SqlQuery<decimal>($"SELECT QuantityOnHand AS Value FROM StockLevels WITH (UPDLOCK, HOLDLOCK) WHERE PartId = {id}").ToListAsync(tk);
+                    // (The quantity is read so the row itself is locked, not only an index entry: a move updates the row by its key. Only this organization's lines, by the
+                    // (tenant, part, store) index: never a scan of everyone's stock under HOLDLOCK.)
+                    var tenant = db.CurrentTenantId ?? throw new DomainException("Part not found.");
+                    await db.Database.SqlQuery<decimal>($"SELECT QuantityOnHand AS Value FROM StockLevels WITH (UPDLOCK, HOLDLOCK, INDEX(IX_StockLevels_TenantId_PartId_StoreId)) WHERE TenantId = {tenant} AND PartId = {id}").ToListAsync(tk);
                     var current = await db.Parts.FirstOrDefaultAsync(p => p.Id == id, tk) ?? throw new DomainException("Part not found.");
                     if (current.IsSerialTracked)
                     {

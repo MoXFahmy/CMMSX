@@ -337,11 +337,15 @@ public static class InventoryEndpoints
             {
                 // A serial part (0.24.0): one unit per serial number, in one receipt entry.
                 var serials = await SerialUnitEndpoints.ReceiptSerialsAsync(db, serialPart, i.Quantity, i.Serials, ct);
-                var store = await db.Stores.FirstOrDefaultAsync(s => s.Id == i.StoreId, ct) ?? throw new DomainException("Store not found.");
+                if (!await db.Stores.AnyAsync(s => s.Id == i.StoreId, ct)) throw new DomainException("Store not found.");
                 var units = await db.InTransactionAsync(async tk =>
                 {
-                    var made = await SerialUnits.ReceiveAsync(db, ctx, serialPart, store, serials, i.Date ?? Today, i.UnitCost, new StockPost(StockTransactionType.Receipt,
-                        serialPart.Id, store.Id, serials.Count, i.Date ?? Today, i.UnitCost, SupplierId: i.SupplierId, Reference: i.Reference, Notes: i.Notes), tk);
+                    // May run again after a dropped connection: the part (its average cost changes) and the store are loaded again inside (0.29.1).
+                    db.ChangeTracker.Clear();
+                    var part = await db.Parts.FirstAsync(p => p.Id == serialPart.Id, tk);
+                    var store = await db.Stores.FirstOrDefaultAsync(s => s.Id == i.StoreId, tk) ?? throw new DomainException("Store not found.");
+                    var made = await SerialUnits.ReceiveAsync(db, ctx, part, store, serials, i.Date ?? Today, i.UnitCost, new StockPost(StockTransactionType.Receipt,
+                        part.Id, store.Id, serials.Count, i.Date ?? Today, i.UnitCost, SupplierId: i.SupplierId, Reference: i.Reference, Notes: i.Notes), tk);
                     await db.SaveChangesAsync(tk);
                     return made;
                 }, ct);
@@ -413,7 +417,11 @@ public static class InventoryEndpoints
             await StockLedger.CheckAsync(db, new StockPost(StockTransactionType.TransferOut, i.PartId!.Value, i.FromStoreId!.Value, i.Quantity, i.Date ?? Today,
                 BatchNumber: i.BatchNumber.Clean()), ct);
             if (!i.ConfirmReserved && i.ToStoreId != i.FromStoreId && await ReservedConflictAsync(db, i.PartId!.Value, i.FromStoreId!.Value, i.Quantity, null, ct) is { } reserved) return reserved;
-            var (o, _) = await db.InTransactionAsync(tk => StockLedger.TransferAsync(db, ctx, i.PartId!.Value, i.FromStoreId!.Value, i.ToStoreId.Value, i.Quantity, i.Date ?? Today, i.BatchNumber.Clean(), i.Notes, tk), ct);
+            var (o, _) = await db.InTransactionAsync(tk =>
+            {
+                db.ChangeTracker.Clear(); // may run again after a dropped connection: start from what is stored (0.29.1)
+                return StockLedger.TransferAsync(db, ctx, i.PartId!.Value, i.FromStoreId!.Value, i.ToStoreId.Value, i.Quantity, i.Date ?? Today, i.BatchNumber.Clean(), i.Notes, tk);
+            }, ct);
             return Results.Ok(new { o.Id });
         }).RequirePermission(Permissions.InventoryTransact);
 
@@ -427,7 +435,10 @@ public static class InventoryEndpoints
             var date = i.Date ?? Today;
             var note = $"Stock take {date:yyyy-MM-dd}" + (i.Notes.Clean() is { } n ? $": {n}" : "");
             var adjusted = await db.InTransactionAsync(tk =>
-                PostCountAsync(db, ctx, i.StoreId, date, i.Lines.GroupBy(l => l.PartId).Select(g => (g.Key, g.Last().CountedQuantity)).ToList(), note, tk), ct);
+            {
+                db.ChangeTracker.Clear(); // may run again after a dropped connection: start from what is stored (0.29.1)
+                return PostCountAsync(db, ctx, i.StoreId, date, i.Lines.GroupBy(l => l.PartId).Select(g => (g.Key, g.Last().CountedQuantity)).ToList(), note, tk);
+            }, ct);
             return Results.Ok(new { adjusted });
         }).RequirePermission(Permissions.InventoryTransact);
 

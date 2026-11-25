@@ -186,6 +186,14 @@ public static partial class TechEndpoints
             db.ChangeTracker.Clear();
             answer = new Answer("rejected", ex.Message, (ex as Rejected)?.Code);
         }
+        catch (DbUpdateConcurrencyException)
+        {
+            // Someone else changed what this change writes to between its read and its save (a receipt of another line of the same order, 0.11.0-3): not
+            // applied. If the other copy of this same change got in first, its answer stands; otherwise the answer is the "changed by someone else" refusal (0.29.1).
+            db.ChangeTracker.Clear();
+            if (await PriorAsync(db, userId, clientId, ct) is { } earlier) return earlier;
+            answer = new Answer("rejected", "This record was changed by someone else. Reload it and try again.");
+        }
         catch (DbUpdateException)
         {
             // The same change arrived twice at the same moment: the other copy was applied.

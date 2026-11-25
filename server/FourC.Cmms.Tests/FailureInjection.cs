@@ -64,12 +64,49 @@ public sealed class FlakyOnce : Microsoft.EntityFrameworkCore.Diagnostics.DbComm
     { Check(command); return base.NonQueryExecutingAsync(command, eventData, result, ct); }
 
     /// <summary>A second host on the same database whose contexts carry <paramref name="flaky"/>, with a client signed in as the given user.</summary>
-    public static async Task<HttpClient> HostAsync(ApiFixture fx, FlakyOnce flaky, string email, string password)
+    public static async Task<HttpClient> HostAsync(ApiFixture fx, Microsoft.EntityFrameworkCore.Diagnostics.IInterceptor flaky, string email, string password)
     {
         var host = fx.Factory!.WithWebHostBuilder(b => b.ConfigureServices(s => s.ConfigureDbContext<CmmsDbContext>(o => o.AddInterceptors(flaky))));
         var c = host.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { HandleCookies = true });
         var r = await c.PostAsJsonAsync("/api/auth/login", new { email, password, rememberMe = false });
         Assert.True(r.IsSuccessStatusCode, await r.Content.ReadAsStringAsync());
         return c;
+    }
+}
+
+/// <summary>
+/// Another person's save lands first (0.29.1): just before the first command containing a marker, runs <c>touch</c> (a change to the row the
+/// command is about to update), so the command finds the row changed and the save fails the way a real race does. Once.
+/// </summary>
+public sealed class TouchOnce(Func<Task> touch) : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+{
+    private string? _marker;
+    public bool Fired { get; private set; }
+    public void Arm(string marker) { Fired = false; _marker = marker; }
+
+    private async Task CheckAsync(System.Data.Common.DbCommand command)
+    {
+        if (_marker is { } m && command.CommandText.Contains(m)) { _marker = null; Fired = true; await touch(); }
+    }
+
+    public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(System.Data.Common.DbCommand command,
+        Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken ct = default)
+    { await CheckAsync(command); return result; }
+
+    public override async ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> NonQueryExecutingAsync(System.Data.Common.DbCommand command,
+        Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken ct = default)
+    { await CheckAsync(command); return result; }
+}
+
+/// <summary>Keeps the text of every command that contains a marker (to check what the app really sends).</summary>
+public sealed class CommandRecorder(string marker) : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+{
+    public System.Collections.Concurrent.ConcurrentBag<string> Seen { get; } = [];
+
+    public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(System.Data.Common.DbCommand command,
+        Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken ct = default)
+    {
+        if (command.CommandText.Contains(marker)) Seen.Add(command.CommandText);
+        return base.ReaderExecutingAsync(command, eventData, result, ct);
     }
 }

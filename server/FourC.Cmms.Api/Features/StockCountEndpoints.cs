@@ -70,6 +70,7 @@ public static class StockCountEndpoints
         {
             var adjusted = await db.InTransactionAsync(async tk =>
             {
+                db.ChangeTracker.Clear(); // may run again after a dropped connection: the count and the stock are loaded afresh (0.29.1)
                 var c = await db.StockCounts.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, tk) ?? throw new DomainException("Count not found.");
                 if (c.Status != StockCountStatus.Open) throw new DomainException(Closed);
                 // What was on the shelf when each part was counted, plus what moved in the store since then.

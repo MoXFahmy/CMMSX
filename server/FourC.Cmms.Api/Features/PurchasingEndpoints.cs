@@ -506,7 +506,11 @@ public static class PurchasingEndpoints
         {
             var date = i.Date ?? Today;
             if (date > Today) throw new DomainException("The receipt date cannot be in the future.");
-            var received = await db.InTransactionAsync(tk => ReceiveCoreAsync(db, ctx, mail, id, i, date, tk), ct);
+            var received = await db.InTransactionAsync(tk =>
+            {
+                db.ChangeTracker.Clear(); // may run again after a dropped connection: load the order, its parts and their stock afresh (0.29.1)
+                return ReceiveCoreAsync(db, ctx, mail, id, i, date, tk);
+            }, ct);
             return Results.Ok(new { received });
         }).RequirePermission(Permissions.PurchasingReceive);
 
@@ -760,10 +764,11 @@ public static class PurchasingEndpoints
             }
         }
         // Rates are kept while the company is not a contractor (hidden), and come back when it is ticked again; a form that could not see them
-        // sends none, which must not wipe what is kept (0.17.0-2, 0.29.1). Only a company that was and is a contractor can clear its rates.
+        // sends none, which must not wipe what is kept (0.17.0-2, 0.29.1). Ticked again with rates entered, those join the kept ones (a rate for a category
+        // already kept updates it); only a company that was and is a contractor, which saw its rates, can clear them.
         if (i.Rates is { } rates && i.IsContractor && (wasContractor || rates.Count > 0))
         {
-            x.CategoryRates.RemoveAll(r => !rates.Any(n => n.CategoryId == r.ContractorCategoryId));
+            if (wasContractor) x.CategoryRates.RemoveAll(r => !rates.Any(n => n.CategoryId == r.ContractorCategoryId));
             foreach (var n in rates)
             {
                 var r = x.CategoryRates.FirstOrDefault(y => y.ContractorCategoryId == n.CategoryId);
