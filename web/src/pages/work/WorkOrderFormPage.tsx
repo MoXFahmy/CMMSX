@@ -182,7 +182,10 @@ export function WorkOrderFormPage() {
               <CostCentrePicker value={form.values.costCentreId} onChange={(v) => form.setFieldValue('costCentreId', v)} siteId={form.values.siteId}
                 description={editing ? undefined : t('costCentres.workOrderHint')} error={err('costCentreId')} />
               {form.values.assetId && <Checkbox label={t('downtime.assetIsDown')} color="red"
-                description={editing && wo?.downtime && form.values.assetId !== wo.assetId
+                // Finished work can't start a stop (nothing would end it): the box says where to report one instead (0.29.1).
+                disabled={editing && wo?.status === 'Completed' && !wo.downtime}
+                description={editing && wo?.status === 'Completed' && !wo.downtime ? t('downtime.completedHint')
+                  : editing && wo?.downtime && form.values.assetId !== wo.assetId
                   ? (wo.downtime.source === 'WorkOrder' && wo.downtime.sourceNumber === wo.number && !wo.downtime.endedAt ? t('downtime.assetMovesHint') : t('downtime.assetChangedHint'))
                   : t('downtime.assetIsDownHint')}
                 {...form.getInputProps('assetIsDown', { type: 'checkbox' })} />}

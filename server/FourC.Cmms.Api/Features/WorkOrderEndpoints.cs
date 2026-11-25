@@ -14,6 +14,9 @@ namespace FourC.Cmms.Api.Features;
 
 public static class WorkOrderEndpoints
 {
+    /// <summary>Ticking "asset down" on a completed work order (0.29.1).</summary>
+    public const string StopOnCompleted = "This work order is completed, so ticking \"The asset is down\" starts no stop. Report a stop in the asset's Downtime tab instead.";
+
     public sealed record WorkOrderInput(string Title, string? Description, WorkType Type, WorkPriority Priority, Guid SiteId, Guid? LocationId, Guid? AssetId,
         Guid? TradeId, List<Guid>? AssigneeIds, DateOnly? PlannedStart, DateOnly? DueDate, decimal? EstimatedHours, List<string>? Tasks, string? RowVersion = null,
         string? RequestedBy = null, Guid? CopyPlanFromId = null, DateTimeOffset? DueAt = null, bool? AssetIsDown = null, Guid? TeamId = null,
@@ -282,19 +285,24 @@ public static class WorkOrderEndpoints
             if (input.ManagesContract == true && input.ContractId is { } contract && await ContractEndpoints.ChoiceProblemAsync(db, contract, input.SiteId, ct) is { } problem)
                 v.Add("contractId", problem);
             if (!v.IsValid) return v.Problem();
-            var w = await CreateAsync(db, ctx, input, requestId: null, ct, mail: mail);
-            if (input.AssetIsDown == true && w.AssetId is { } downAsset)
+            // The work order, its stop and its copied plan are saved together, or none (0.29.1).
+            var w = await Atomic.RunAsync(db, async tk =>
             {
-                // "The asset is down": a stop from when the work order was raised, or the asset's open stop.
-                w.DowntimeEventId = (await Downtime.StartOrJoinAsync(db, downAsset, w.CreatedAt, w.Title, FourC.Cmms.Core.Assets.DowntimeSource.WorkOrder, w.Number, ct)).Id;
-                await db.SaveChangesAsync(ct);
-            }
-            if (input.CopyPlanFromId is { } source)
-            {
-                // Duplicate: the plan comes along (planned parts with stores re-picked, planned hours of technicians on both).
-                await Planning.CopyPlanAsync(db, source, w, ct);
-                await db.SaveChangesAsync(ct);
-            }
+                var made = await CreateAsync(db, ctx, input, requestId: null, tk, mail: mail);
+                if (input.AssetIsDown == true && made.AssetId is { } downAsset)
+                {
+                    // "The asset is down": a stop from when the work order was raised, or the asset's open stop.
+                    made.DowntimeEventId = (await Downtime.StartOrJoinAsync(db, downAsset, made.CreatedAt, made.Title, FourC.Cmms.Core.Assets.DowntimeSource.WorkOrder, made.Number, tk)).Id;
+                    await db.SaveChangesAsync(tk);
+                }
+                if (input.CopyPlanFromId is { } source)
+                {
+                    // Duplicate: the plan comes along (planned parts with stores re-picked, planned hours of technicians on both).
+                    await Planning.CopyPlanAsync(db, source, made, tk);
+                    await db.SaveChangesAsync(tk);
+                }
+                return made;
+            }, ct);
             return Results.Created($"/api/work-orders/{w.Id}", new { w.Id, w.Number });
         }).RequirePermission(Permissions.WorkOrdersCreate);
 
@@ -330,7 +338,11 @@ public static class WorkOrderEndpoints
             if (w.AssetId != assetBefore) await Downtime.FollowAssetAsync(db, w, ct); // its own stop goes with it; any other stays behind
             if (input.AssetIsDown == false) await Downtime.UntickAsync(db, w, ct);
             if (input.AssetIsDown == true && w.DowntimeEventId is null && w.AssetId is { } downAsset)
+            {
+                // Finished work: a stop started now has no completion left to end it (0.29.1).
+                if (w.Status == WorkOrderStatus.Completed) throw new DomainException(StopOnCompleted);
                 w.DowntimeEventId = (await Downtime.StartOrJoinAsync(db, downAsset, DateTimeOffset.UtcNow, w.Title, FourC.Cmms.Core.Assets.DowntimeSource.WorkOrder, w.Number, ct)).Id;
+            }
             var settings = (await db.Tenants.AsNoTracking().FirstAsync(t => t.Id == db.CurrentTenantId, ct)).Settings;
             var raisedAt = w.WorkRequestId is { } rid ? await db.WorkRequests.Where(r => r.Id == rid).Select(r => (DateTimeOffset?)r.CreatedAt).FirstOrDefaultAsync(ct) ?? w.CreatedAt : w.CreatedAt;
             Deadlines.OnUpdate(w, input.DueAt, input.DueDate, priorityBefore, settings, raisedAt);

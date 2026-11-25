@@ -254,6 +254,54 @@ public class DowntimeTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Asset_down_on_a_completed_work_order_starts_no_stop()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var wo = await NewWoAsync(o, Wo(o, o.Asset, down: false));
+        await CompleteAsync(o, wo);
+        // Ticking "asset down" on finished work would start a stop no completion can end: refused, with where to report it.
+        Assert.Contains("Report a stop in the asset's Downtime tab instead.",
+            await Refused(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset, down: true))));
+        Assert.Empty(await StopsAsync(o.Asset));
+        // Saving it without the box ticked (or from an older page that leaves it out) still works.
+        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset, down: false, title: "Fix the press, done")));
+        await Ok(await o.C.PutAsJsonAsync($"/api/work-orders/{wo}", Wo(o, o.Asset, down: null, title: "Fix the press, done again")));
+        Assert.Empty(await StopsAsync(o.Asset));
+    }
+
+    [SkippableFact]
+    public async Task Cleared_running_time_goes_back_to_all_day()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var kiln = Id(await Ok(await o.C.PostAsJsonAsync("/api/assets", new { name = "Kiln", siteId = o.Site, status = "Active", criticality = "High", warrantyType = "None", runsHoursPerDay = 16 })));
+        var detail = await Ok(await o.C.GetAsync($"/api/assets/{kiln}"));
+        Assert.Equal(16m, detail.GetProperty("runsHoursPerDay").GetDecimal());
+        // The screen says it manages the box: an empty box is "all day".
+        await Ok(await o.C.PutAsJsonAsync($"/api/assets/{kiln}", new { assetNumber = detail.GetProperty("assetNumber").GetString(), name = "Kiln", siteId = o.Site,
+            status = "Active", criticality = "High", warrantyType = "None", runsHoursPerDay = (decimal?)null, managesRunsHoursPerDay = true }));
+        Assert.Equal(24m, (await Ok(await o.C.GetAsync($"/api/assets/{kiln}"))).GetProperty("runsHoursPerDay").GetDecimal());
+    }
+
+    [SkippableFact]
+    public async Task Left_out_running_time_keeps_its_value()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await SetupAsync();
+        var kiln = Id(await Ok(await o.C.PostAsJsonAsync("/api/assets", new { name = "Kiln", siteId = o.Site, status = "Active", criticality = "High", warrantyType = "None", runsHoursPerDay = 16 })));
+        var detail = await Ok(await o.C.GetAsync($"/api/assets/{kiln}"));
+        // Older screens and the import send no flag: a null (or missing) running time keeps what is stored.
+        await Ok(await o.C.PutAsJsonAsync($"/api/assets/{kiln}", new { assetNumber = detail.GetProperty("assetNumber").GetString(), name = "Kiln", siteId = o.Site,
+            status = "Active", criticality = "High", warrantyType = "None", runsHoursPerDay = (decimal?)null }));
+        Assert.Equal(16m, (await Ok(await o.C.GetAsync($"/api/assets/{kiln}"))).GetProperty("runsHoursPerDay").GetDecimal());
+        // With the flag and a value, the value is stored.
+        await Ok(await o.C.PutAsJsonAsync($"/api/assets/{kiln}", new { assetNumber = detail.GetProperty("assetNumber").GetString(), name = "Kiln", siteId = o.Site,
+            status = "Active", criticality = "High", warrantyType = "None", runsHoursPerDay = 12, managesRunsHoursPerDay = true }));
+        Assert.Equal(12m, (await Ok(await o.C.GetAsync($"/api/assets/{kiln}"))).GetProperty("runsHoursPerDay").GetDecimal());
+    }
+
+    [SkippableFact]
     public async Task Down_assets_show_in_the_list_and_on_the_dashboard()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

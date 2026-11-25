@@ -1293,5 +1293,7 @@
  "That isn't a valid answer.": "هذه ليست إجابة صالحة.",
  "Enter a number between -99,999,999,999,999 and 99,999,999,999,999.": "أدخل رقمًا بين -99,999,999,999,999 و99,999,999,999,999.",
  "Photo for a step that was removed": "صورة لخطوة تمت إزالتها",
- "Photo for a step that was removed: {0}": "صورة لخطوة تمت إزالتها: {0}"
+ "Photo for a step that was removed: {0}": "صورة لخطوة تمت إزالتها: {0}",
+ "This work order is completed, so ticking \"The asset is down\" starts no stop. Report a stop in the asset's Downtime tab instead.": "أُنجز أمر العمل هذا، لذا لا يبدأ تحديد «الأصل متوقف» أي توقف. سجّل التوقف من تبويب التوقفات في الأصل بدلًا من ذلك.",
+ "This PM follows an asset group. Add the asset to the group instead of naming it on the PM.": "هذه الصيانة الوقائية تتبع مجموعة أصول. أضف الأصل إلى المجموعة بدلًا من ذكره في الصيانة الوقائية."
 }

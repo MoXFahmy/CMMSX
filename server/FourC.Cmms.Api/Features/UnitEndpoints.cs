@@ -43,19 +43,23 @@ public static class UnitEndpoints
             var old = unit.Symbol;
             var other = symbol == old ? null : await db.Units.FirstOrDefaultAsync(u => u.Id != id && u.Symbol == symbol, ct);
             if (other is not null && !i.Merge) return Results.Conflict(new { MergeWith = other.Id, Message = Translator.T("Another unit has this symbol. Merge the two?") });
-            if (other is not null) db.Units.Remove(unit);
-            else { unit.Symbol = symbol; unit.Name = NameOf(i.Name, symbol); unit.NameAr = i.NameAr.Clean(); unit.IsActive = i.IsActive; }
-            await db.SaveChangesAsync(ct);
-            if (symbol != old)
+            // The unit and every record that carries its symbol as text are saved together (0.29.1).
+            await Atomic.RunAsync(db, async tk =>
             {
-                var (parts, points) = await RenameAsync(db, old, symbol, ct);
-                if (parts + points > 0)
+                if (other is not null) db.Units.Remove(unit);
+                else { unit.Symbol = symbol; unit.Name = NameOf(i.Name, symbol); unit.NameAr = i.NameAr.Clean(); unit.IsActive = i.IsActive; }
+                await db.SaveChangesAsync(tk);
+                if (symbol != old)
                 {
-                    FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "Unit", other?.Id ?? unit.Id, "Updated",
-                        $"Unit renamed to {symbol}: {FourC.Cmms.Core.Auditing.AuditLog.Count(parts, "part", "parts")} and {FourC.Cmms.Core.Auditing.AuditLog.Count(points, "point or step", "points and steps")}");
-                    await db.SaveChangesAsync(ct);
+                    var (parts, points) = await RenameAsync(db, old, symbol, tk);
+                    if (parts + points > 0)
+                    {
+                        FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "Unit", other?.Id ?? unit.Id, "Updated",
+                            $"Unit renamed to {symbol}: {FourC.Cmms.Core.Auditing.AuditLog.Count(parts, "part", "parts")} and {FourC.Cmms.Core.Auditing.AuditLog.Count(points, "point or step", "points and steps")}");
+                        await db.SaveChangesAsync(tk);
+                    }
                 }
-            }
+            }, ct);
             return Results.Ok(new { Id = other?.Id ?? unit.Id });
         }).RequirePermission(Permissions.SettingsManage);
 

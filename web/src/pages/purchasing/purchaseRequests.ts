@@ -70,6 +70,16 @@ export function draftFromShortages(rows: { partId: string; storeId: string; site
   return [...bySite.entries()].map(([siteId, lines]) => ({ siteId, lines }));
 }
 
+export type ShortageRow = Parameters<typeof draftFromShortages>[0][number];
+/** A short line that can't go on a request, and why ("noSite": its store isn't in the stores list, so its site is unknown). */
+export type SkippedShortage = { row: ShortageRow; reason: 'noSite' };
+
+/** As <c>draftFromShortages</c>, but a line whose store has no known site is kept apart and named instead of dropped (0.29.1). */
+export function draftsFromShortages(rows: ShortageRow[]): { drafts: { siteId: string; lines: PrLineDraft[] }[]; skipped: SkippedShortage[] } {
+  const skipped: SkippedShortage[] = rows.filter((r) => !r.siteId).map((row) => ({ row, reason: 'noSite' as const }));
+  return { drafts: draftFromShortages(rows.filter((r) => r.siteId)), skipped };
+}
+
 const closed: PurchaseRequestStatus[] = ['Ordered', 'Closed', 'Cancelled'];
 /** Needed before today and not yet ordered, closed or cancelled. Dates are ISO days. */
 export const isLate = (neededBy: string | null | undefined, today: string, status: PurchaseRequestStatus) =>

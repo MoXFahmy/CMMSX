@@ -1404,7 +1404,7 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
         ["workPeriodDays"] = 1, ["active"] = true,
     };
 
-    protected override Task<PmSchedule?> SaveAsync(ImportContext c, ImportRow row, PmSchedule? existing, Dictionary<string, object?> v, CancellationToken ct)
+    protected override async Task<PmSchedule?> SaveAsync(ImportContext c, ImportRow row, PmSchedule? existing, Dictionary<string, object?> v, CancellationToken ct)
     {
         var type = v.GetValueOrDefault("schedule") as PmScheduleType? ?? existing?.Type;
         if (existing is null && type is null or PmScheduleType.Meter) row.Problem(Translator.T("Set up meter-based schedules on screen."));
@@ -1426,7 +1426,11 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
         var assignees = L(v, "assignees").Select(code => Ref(row, c.Employees, code, "Person")).OfType<Guid>().ToList();
         var tradeCode = S(v, "tradeCode");
         Guid? tradeId = tradeCode is not null && c.Trades.TryGetValue(tradeCode, out var known) ? known : null;
-        if (row.HasProblems || taskId is null || siteId is null || type is null) return Task.FromResult<PmSchedule?>(null);
+        var groupId = Ref(row, c.AssetGroups, S(v, "assetGroupCode"), "Asset group");
+        // A PM that follows an asset group covers its members: an asset the sheet names beside it would be dropped without a word (0.29.1).
+        // (An asset the PM already had, filled in from the stored record, is the PM moving onto the group: as before.)
+        if (row.Has("assetNumber") && groupId is not null) row.Problem(Translator.T("This PM follows an asset group. Add the asset to the group instead of naming it on the PM."));
+        if (row.HasProblems || taskId is null || siteId is null || type is null) return null;
 
         var round = existing?.Assets.OrderBy(a => a.Sequence).Select(a => a.AssetId).ToList();
         var input = new PmEndpoints.ScheduleInput(S(v, "code"), S(v, "name") ?? "", S(v, "description"), siteId.Value, locationId, assetId, tradeId,
@@ -1440,13 +1444,19 @@ internal sealed class PmScheduleImporter : RecordImporter<PmSchedule>
             // 0.12.0: the sheet doesn't hold calendars, so a PM keeps its own; its multi-asset mode follows the screen's rules.
             CalendarIds: existing?.Calendars.Select(x => x.ScheduleCalendarId).ToList(), MultiAssetMode: v.GetValueOrDefault("multiAssetMode") as MultiAssetMode?,
             CostCentreId: Ref(row, c.CostCentres, S(v, "costCentreCode"), "Cost centre"), ManagesCostCentre: true,
-            AssetGroupId: Ref(row, c.AssetGroups, S(v, "assetGroupCode"), "Asset group"), ManagesAssetGroup: true, NameAr: S(v, "nameAr"));
+            AssetGroupId: groupId, ManagesAssetGroup: true, NameAr: S(v, "nameAr"));
         var rules = PmEndpoints.PmScheduleRules(input, existing?.Id);
         if (existing is not null) rules.Merge(PmEndpoints.ScheduleChangeRules(existing, input));
-        if (!Accept(row, rules)) return Task.FromResult<PmSchedule?>(null);
+        if (!Accept(row, rules)) return null;
         if (tradeCode is not null && tradeId is null) input = input with { TradeId = c.EnsureLookup(c.Trades, tradeCode, "Trades") };
-        if (existing is not null) { PmEndpoints.UpdateSchedule(existing, input); return Task.FromResult<PmSchedule?>(null); }
-        return Task.FromResult<PmSchedule?>(PmEndpoints.CreateSchedule(c.Db, input, input.Code!.Trim()));
+        if (existing is not null)
+        {
+            // Its calendars give it dates too (0.29.1): a meter PM keeps the next date they gave it, and reactivating works them out as the screen does.
+            var calendars = existing.Calendars.Count > 0 ? await PmEndpoints.CalendarsAsync(c.Db, existing.Calendars.Select(x => x.ScheduleCalendarId), ct) : null;
+            PmEndpoints.UpdateSchedule(existing, input, calendars);
+            return null;
+        }
+        return PmEndpoints.CreateSchedule(c.Db, input, input.Code!.Trim());
     }
 }
 

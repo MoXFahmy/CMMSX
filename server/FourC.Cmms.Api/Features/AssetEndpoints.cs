@@ -26,7 +26,9 @@ public static class AssetEndpoints
         // 0.24.0: a unit's end of life; pages from before leave it as it is.
         DateOnly? EndOfLifeOn = null, bool? ManagesEndOfLife = null,
         // 0.28.0: Arabic texts; left out (older screens and apps, the import without these columns) = kept, blank = cleared.
-        string? NameAr = null, string? NotesToTechnicianAr = null);
+        string? NameAr = null, string? NotesToTechnicianAr = null,
+        // 0.29.1: the screen's empty "Runs hours a day" box means all day (24); older screens and the import leave it out and keep what is stored.
+        bool? ManagesRunsHoursPerDay = null);
 
     /// <summary>A unit's status and place change only through fit, remove and the unit actions (0.24.0).</summary>
     /// <summary>Not a spare unit: a plain asset, or a unit fitted to another asset (spares stay off the asset list and dashboard, 0.24.0).</summary>
@@ -509,8 +511,10 @@ public static class AssetEndpoints
         a.Notes = i.Notes.Clean(); a.NotesToTechnician = i.NotesToTechnician.Clean();
         if (i.NameAr is not null) a.NameAr = i.NameAr.Clean();
         if (i.NotesToTechnicianAr is not null) a.NotesToTechnicianAr = i.NotesToTechnicianAr.Clean();
-        // Left out (older screens, the import without these columns): the running time stays as it is.
+        // Left out (older screens, the import without these columns): the running time stays as it is. A screen that manages the box
+        // (0.29.1) sends it always: an empty box is all day.
         if (i.RunsHoursPerDay is { } hours) a.RunsHoursPerDay = Math.Round(hours, 2); // kept to 2 decimals, as stored
+        else if (i.ManagesRunsHoursPerDay == true) a.RunsHoursPerDay = 24m;
         if (i.RunsOn is { Count: > 0 } days) a.RunsOn = days.Distinct().OrderBy(d => d).ToList();
         if (i.OnlyWhenStopped is { } stopped) a.OnlyWhenStopped = stopped;
         if (i.ManagesEndOfLife == true) a.EndOfLifeOn = i.EndOfLifeOn;

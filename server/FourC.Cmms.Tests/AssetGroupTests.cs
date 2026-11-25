@@ -182,6 +182,26 @@ public class AssetGroupTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(2, (await MemberIdsAsync(o.Admin, g)).Count);
     }
 
+    [SkippableFact]
+    public async Task Importing_an_asset_onto_a_group_pm_is_a_row_error()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var a = await Pm12.AssetAsync(o.Admin, o.Site, "Fridge 1");
+        var na = (await Ok(await o.Admin.GetAsync($"/api/assets/{a}"))).GetProperty("assetNumber").GetString()!;
+        var task = await Pm12.TemplateAsync(o.Admin, "CHK");
+        var pm = Id(await Pm12.SaveScheduleAsync(o.Admin, Pm12.Schedule(o.Site, task, Today, a, extra: new() { ["code"] = "PM1" })));
+        await RunAsync(o.Admin, Book(
+            new Sheet("Asset groups", ["Code", "Name", "Active"], ["KITCHEN", "Kitchen equipment", "Yes"]),
+            new Sheet("Asset group members", ["Group code", "Asset number"], ["KITCHEN", na])));
+        // Naming an asset and a group on one row used to save the group and drop the asset without a word.
+        var sheet = SheetOf(await RunAsync(o.Admin, Book(new Sheet("PM schedules", ["Code", "Asset number", "Asset group code"], ["PM1", na, "KITCHEN"]))), "PmSchedules");
+        Assert.Contains("This PM follows an asset group. Add the asset to the group instead of naming it on the PM.", ProblemsOf(sheet));
+        var detail = await Ok(await o.Admin.GetAsync($"/api/pm-schedules/{pm}"));
+        Assert.Equal(JsonValueKind.Null, detail.GetProperty("assetGroupId").ValueKind);
+        Assert.Equal(a, detail.GetProperty("assetId").GetGuid());
+    }
+
     /// <summary>Review fix: new assets and their memberships in one file (members come after assets).</summary>
     [SkippableFact]
     public async Task New_assets_and_their_groups_import_together()

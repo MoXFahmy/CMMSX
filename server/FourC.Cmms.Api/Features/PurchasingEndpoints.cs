@@ -345,8 +345,12 @@ public static class PurchasingEndpoints
             if (i.RowVersion is not null) db.Entry(o).Property(x => x.RowVersion).OriginalValue = i.RowVersion.ToVersion();
             var before = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
             await ApplyPoAsync(db, o, i, ct);
-            await db.SaveChangesAsync(ct);
-            if (before.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, before, ct); await db.SaveChangesAsync(ct); }
+            // The order and the requests that follow it are saved together (0.29.1).
+            await Atomic.RunAsync(db, async tk =>
+            {
+                await db.SaveChangesAsync(tk);
+                if (before.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, before, tk); await db.SaveChangesAsync(tk); }
+            }, ct);
             return Results.Ok(new { o.Id });
         }).RequirePermission(Permissions.PurchasingCreate);
 
@@ -357,8 +361,11 @@ public static class PurchasingEndpoints
             if (o.Status != PurchaseOrderStatus.Draft) throw new DomainException("Only draft purchase orders can be deleted. Cancel it instead.");
             var requested = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
             db.PurchaseOrders.Remove(o);
-            await db.SaveChangesAsync(ct);
-            if (requested.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, requested, ct); await db.SaveChangesAsync(ct); } // their requests: back to order
+            await Atomic.RunAsync(db, async tk =>
+            {
+                await db.SaveChangesAsync(tk);
+                if (requested.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, requested, tk); await db.SaveChangesAsync(tk); } // their requests: back to order
+            }, ct);
             return Results.NoContent();
         }).RequirePermission(Permissions.PurchasingCreate);
 
@@ -433,9 +440,12 @@ public static class PurchasingEndpoints
             if (o.Lines.Any(l => l.QuantityReceived > 0)) throw new DomainException("Goods have been received on this order. Close it instead.");
             if (i.Reason.Clean() is not { } reason) return new Validator().Required("reason", i.Reason, "Reason").Problem();
             o.Status = PurchaseOrderStatus.Cancelled; o.CancelledAt = DateTimeOffset.UtcNow; o.CancelReason = reason;
-            await db.SaveChangesAsync(ct);
             var requested = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
-            if (requested.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, requested, ct); await db.SaveChangesAsync(ct); } // their requests: back to order
+            await Atomic.RunAsync(db, async tk =>
+            {
+                await db.SaveChangesAsync(tk);
+                if (requested.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, requested, tk); await db.SaveChangesAsync(tk); } // their requests: back to order
+            }, ct);
             return Results.Ok(new { o.Id, o.Status });
         }).RequirePermission(Permissions.PurchasingView);
 

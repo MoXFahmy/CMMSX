@@ -104,6 +104,25 @@ public class GroupGenerationTests(ApiFixture fx) : IClassFixture<ApiFixture>
     }
 
     [SkippableFact]
+    public async Task Making_a_group_that_fails_part_way_leaves_nothing()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var s = await SetupAsync();
+        var tag = "BOOM" + Guid.NewGuid().ToString("N")[..8];
+        var boom = Id(await Ok(await s.Org.Admin.PostAsJsonAsync("/api/assets", new { assetNumber = tag, name = "Chiller C", siteId = s.Org.Site, status = "Active", criticality = "High", warrantyType = "None" })));
+        var pm = Id(await SaveScheduleAsync(s.Org.Admin, Schedule(s.Org.Site, s.Template, Today, assets: [s.A, boom], extra: Group())));
+        // The second work order of the group cannot be saved: nothing of the group stays, neither its number.
+        await using (await FailureInjection.RefuseAsync(fx, "WorkOrders", $"[Title] NOT LIKE '%{tag}'"))
+            await s.Org.Admin.PostAsJsonAsync("/api/pm/generate", new { until = Iso(Today), scheduleIds = new[] { pm } });
+        Assert.Equal(0, await DbAsync(fx, db => db.WorkOrderGroups.IgnoreQueryFilters().CountAsync(g => g.PmScheduleId == pm)));
+        Assert.Equal(0, await DbAsync(fx, db => db.WorkOrders.IgnoreQueryFilters().CountAsync(w => w.PmScheduleId == pm)));
+        // Once it can be saved, the group comes out whole, with the number the failed try would have taken.
+        var r = (await GenerateAsync(s.Org.Admin, Today, pm)).EnumerateArray().Single();
+        Assert.Equal("GRP-00001", r.GetProperty("groupNumber").GetString());
+        Assert.Equal(2, (await ChildrenAsync(r.GetProperty("groupId").GetGuid())).Count);
+    }
+
+    [SkippableFact]
     public async Task Children_count_as_work_and_groups_do_not()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");

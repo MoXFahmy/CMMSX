@@ -189,6 +189,62 @@ public class ImportPmTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Contains("The multi-asset mode can't change after the PM has generated work.", ProblemsOf(SheetOf(again, "PmSchedules")));
     }
 
+    private static async Task<(Guid Site, Guid Task, Guid Asset)> BasicsViaApiAsync(HttpClient c, string taskCode)
+    {
+        var site = (await OkAsync(await c.PostAsJsonAsync("/api/sites", new { code = "CAI", name = "Cairo", isActive = true }))).GetProperty("id").GetGuid();
+        return (site, await Pm12.TemplateAsync(c, taskCode), await Pm12.AssetAsync(c, site, "Pump"));
+    }
+
+    [SkippableFact]
+    public async Task Import_keeps_next_due_of_a_meter_pm_with_calendars()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        var (site, task, asset) = await BasicsViaApiAsync(c, "MET");
+        var meter = await Pm12.MeterAsync(c, asset, "HRS");
+        var due = Loop.Today.AddDays(12);
+        var cal = Loop.Id(await Loop.Ok(await c.PostAsJsonAsync("/api/pm-calendars", new { code = "SHUT", name = "Shutdowns", kind = "Dates", dates = new[] { Loop.Iso(due) } })));
+        var pm = Loop.Id(await Pm12.SaveScheduleAsync(c, Pm12.Schedule(site, task, Loop.Today, asset, extra: new()
+        {
+            ["code"] = "PM-MC", ["name"] = "Hours or shutdown", ["type"] = "Meter", ["meterId"] = meter, ["meterTrigger"] = "Incremental", ["meterInterval"] = 100, ["calendarIds"] = new[] { cal },
+        })));
+        Assert.Equal(Loop.Iso(due), (await ScheduleAsync(c, "PM-MC")).GetProperty("nextDueDate").GetString());
+
+        // A sheet that renames it must not wipe the date the calendar gave it.
+        var result = await RunAsync(c, Book(new Sheet("PM schedules", ["Code", "Name", "Task code", "Site code"], ["PM-MC", "Hours or shutdown (renamed)", "MET", "CAI"])));
+        Assert.Equal(1, Count(SheetOf(result, "PmSchedules"), "changed"));
+        var after = await ScheduleAsync(c, "PM-MC");
+        Assert.Equal("Hours or shutdown (renamed)", after.GetProperty("name").GetString());
+        Assert.Equal(Loop.Iso(due), after.GetProperty("nextDueDate").GetString());
+        Assert.Equal(cal, after.GetProperty("calendarIds").EnumerateArray().Single().GetGuid());
+    }
+
+    [SkippableFact]
+    public async Task Reactivating_by_import_works_out_calendar_dates()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var c = await NewOrganizationAsync(fx);
+        var (site, task, asset) = await BasicsViaApiAsync(c, "MON");
+        // Its own rule (a day of the month, 10 days from now) and a calendar date that comes first, as on screen.
+        var ownDay = Loop.Today.AddDays(10);
+        var early = Loop.Today.AddDays(3);
+        var cal = Loop.Id(await Loop.Ok(await c.PostAsJsonAsync("/api/pm-calendars", new { code = "EARLY", name = "Early", kind = "Dates", dates = new[] { Loop.Iso(early) } })));
+        var body = Pm12.Schedule(site, task, Loop.Today, asset, extra: new()
+        {
+            ["code"] = "PM-RE", ["name"] = "Monthly or early", ["type"] = "DateOfMonth", ["dayOfMonth"] = ownDay.Day, ["calendarIds"] = new[] { cal },
+        });
+        var pm = Loop.Id(await Pm12.SaveScheduleAsync(c, body));
+        body["isActive"] = false;
+        await OkAsync(await c.PutAsJsonAsync($"/api/pm-schedules/{pm}", body));
+
+        var result = await RunAsync(c, Book(new Sheet("PM schedules", ["Code", "Name", "Task code", "Site code", "Schedule", "Day of month", "Active"],
+            ["PM-RE", "Monthly or early", "MON", "CAI", "Day of month", (decimal)ownDay.Day, "Yes"])));
+        Assert.Equal(1, Count(SheetOf(result, "PmSchedules"), "changed"));
+        var after = await ScheduleAsync(c, "PM-RE");
+        Assert.True(after.GetProperty("isActive").GetBoolean());
+        Assert.Equal(Loop.Iso(early), after.GetProperty("nextDueDate").GetString());
+    }
+
     [SkippableFact]
     public async Task Export_has_the_new_columns()
     {

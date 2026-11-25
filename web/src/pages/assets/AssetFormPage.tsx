@@ -98,7 +98,7 @@ export function AssetFormPage() {
       ...v, commissionedOn: toIsoDate(v.commissionedOn), disposedOn: toIsoDate(v.disposedOn), warrantyExpiresOn: toIsoDate(v.warrantyExpiresOn),
       purchasePrice: num(v.purchasePrice), currentValue: num(v.currentValue), salvageValue: num(v.salvageValue), expectedLifeYears: num(v.expectedLifeYears),
       downtimeCostPerHour: num(v.downtimeCostPerHour), assetNumber: v.assetNumber || null, rowVersion: asset?.rowVersion, managesCostCentre: true, managesBrand: true,
-      runsHoursPerDay: v.runsHoursPerDay === '' ? null : v.runsHoursPerDay,
+      runsHoursPerDay: v.runsHoursPerDay === '' ? null : v.runsHoursPerDay, managesRunsHoursPerDay: true, // empty = all day (24)
       endOfLifeOn: toIsoDate(v.endOfLifeOn), managesEndOfLife: isUnit ? true : undefined,
     };
     try {

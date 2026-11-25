@@ -13,7 +13,7 @@ namespace FourC.Cmms.Api.Features;
 public static class CatalogueEndpoints
 {
     public sealed record SupplierPartInput(Guid SupplierId, string? SupplierPartNumber, string? PackName, decimal PackSize, decimal? PackPrice, string? Currency,
-        decimal DiscountPercent, int? LeadTimeDays, int MinPacks, string? Notes, bool IsActive = true, bool IsPreferred = false);
+        decimal DiscountPercent, int? LeadTimeDays, int MinPacks, string? Notes, bool IsActive = true, bool? IsPreferred = null);
 
     /// <summary>A part line to fill: the pieces it needs and its current price per piece, kept when the catalogue has no price for it.</summary>
     public sealed record FillRequest(Guid PartId, decimal Pieces, decimal? PerPiece = null);
@@ -187,10 +187,14 @@ public static class CatalogueEndpoints
         return longest > 0 ? orderDate.AddDays(longest) : null;
     }
 
-    private static void Prefer(Part part, SupplierPart row, bool preferred)
+    /// <summary>
+    /// The star (0.18.0). Left out (older pages, scripts) it changes nothing; true stars this row; only an explicit false clears the
+    /// part's preferred supplier, and only when it is this row's (0.29.1).
+    /// </summary>
+    private static void Prefer(Part part, SupplierPart row, bool? preferred)
     {
-        if (preferred) part.PreferredSupplierId = row.SupplierId;
-        else if (part.PreferredSupplierId == row.SupplierId) part.PreferredSupplierId = null;
+        if (preferred == true) part.PreferredSupplierId = row.SupplierId;
+        else if (preferred == false && part.PreferredSupplierId == row.SupplierId) part.PreferredSupplierId = null;
     }
 
     /// <summary>The checks that need no database (shared with the import).</summary>

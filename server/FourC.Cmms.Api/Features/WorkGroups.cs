@@ -1,3 +1,4 @@
+using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Common;
 using FourC.Cmms.Core.Data;
 using FourC.Cmms.Core.Pm;
@@ -18,8 +19,13 @@ public static partial class WorkGroups
     /// each with its asset's template (routine visits) or <paramref name="task"/>. Hours and parts are copied to each work order or
     /// split evenly, as the PM says.
     /// </summary>
-    public static async Task<WorkOrderGroup> CreateGroupAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, PmTask task, DateOnly? due,
-        IReadOnlyList<RoundAsset> covered, IReadOnlyCollection<DayOfWeek> nonWorkingDays, CancellationToken ct, EmailOutbox? mail = null)
+    public static Task<WorkOrderGroup> CreateGroupAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, PmTask task, DateOnly? due,
+        IReadOnlyList<RoundAsset> covered, IReadOnlyCollection<DayOfWeek> nonWorkingDays, CancellationToken ct, EmailOutbox? mail = null) =>
+        // One transaction (0.29.1): the group and every work order of it are saved together, or none.
+        Atomic.RunAsync(db, tk => CreateGroupCoreAsync(db, ctx, s, task, due, covered, nonWorkingDays, tk, mail), ct);
+
+    private static async Task<WorkOrderGroup> CreateGroupCoreAsync(CmmsDbContext db, ITenantContext ctx, PmSchedule s, PmTask task, DateOnly? due,
+        IReadOnlyList<RoundAsset> covered, IReadOnlyCollection<DayOfWeek> nonWorkingDays, CancellationToken ct, EmailOutbox? mail)
     {
         var settings = await db.Tenants.AsNoTracking().Where(t => t.Id == db.CurrentTenantId).Select(t => t.Settings).FirstAsync(ct);
         var (sequence, prefix) = Numbering.For(settings, null, NumberKind.WorkGroup); // yearly when the organization wants it (0.21.0)

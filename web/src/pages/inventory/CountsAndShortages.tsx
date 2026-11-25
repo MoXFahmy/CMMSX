@@ -8,8 +8,8 @@ import { IconPlus, IconShoppingCartPlus } from '@tabler/icons-react';
 import { get, post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { confirmAction } from '@/components/confirm';
-import { draftFromShortages } from '@/pages/purchasing/purchaseRequests';
-import { fmtDate, fmtDateTime, fmtQty, notifyError, notifySuccess } from '@/components/utils';
+import { draftsFromShortages } from '@/pages/purchasing/purchaseRequests';
+import { fmtDate, fmtDateTime, fmtQty, notifyError, notifySuccess, notifyWarning } from '@/components/utils';
 
 type Store = { id: string; code: string; name: string; siteId: string };
 type Shortage = { workOrderId: string; workOrderNumber: string; dueDate?: string | null; partId: string; partNumber: string; partName: string; unitOfMeasure: string; storeId: string; storeCode: string; short: number };
@@ -38,14 +38,20 @@ export function ShortagesTab() {
     setBusy(true);
     try {
       const siteOf = new Map((stores ?? []).map((s) => [s.id, s.siteId]));
-      const drafts = draftFromShortages(selected.map((r) => ({ partId: r.partId, storeId: r.storeId, siteId: siteOf.get(r.storeId) ?? '', short: r.short, workOrderId: r.workOrderId,
-        dueDate: r.dueDate ?? null, description: r.partName, unitOfMeasure: r.unitOfMeasure }))).filter((d) => d.siteId);
+      const { drafts, skipped } = draftsFromShortages(selected.map((r) => ({ partId: r.partId, storeId: r.storeId, siteId: siteOf.get(r.storeId) ?? '', short: r.short, workOrderId: r.workOrderId,
+        dueDate: r.dueDate ?? null, description: r.partName, unitOfMeasure: r.unitOfMeasure })));
+      // Lines it can't use are named, with why; the others carry on as before (0.29.1).
+      const unused = skipped.map((x) => {
+        const line = selected.find((r) => r.partId === x.row.partId && r.storeId === x.row.storeId && r.workOrderId === x.row.workOrderId);
+        return t('pr.shortSkippedLine', { work: line?.workOrderNumber ?? '', part: `${line?.partNumber ?? ''} · ${line?.partName ?? x.row.description}`, store: line?.storeCode ?? '' });
+      });
+      if (unused.length) notifyWarning(`${t('pr.shortSkipped')} ${unused.join('; ')}`);
       const made: { id: string; number: string }[] = [];
       for (const d of drafts) made.push(await post<{ id: string; number: string }>('/purchase-requests', { siteId: d.siteId, lines: d.lines }));
-      notifySuccess(t('pr.requestsCreated', { count: made.length, numbers: made.map((m) => m.number).join(', ') }));
-      setSelected([]);
+      if (made.length) notifySuccess(t('pr.requestsCreated', { count: made.length, numbers: made.map((m) => m.number).join(', ') }));
+      setSelected(unused.length ? selected.filter((r) => skipped.some((x) => x.row.partId === r.partId && x.row.storeId === r.storeId && x.row.workOrderId === r.workOrderId)) : []);
       await qc.invalidateQueries({ queryKey: ['purchase-requests'] });
-      if (made.length === 1) navigate(`/purchasing/requests/${made[0].id}`);
+      if (made.length === 1 && !unused.length) navigate(`/purchasing/requests/${made[0].id}`);
     } catch (e) { notifyError(e); } finally { setBusy(false); }
   };
   return (

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { draftFromShortages, orderRows, isLate, orderableLines, previewGroups, proposalMode, requestStatusColor, type PurchaseRequestDetail } from './purchaseRequests';
+import { draftFromShortages, draftsFromShortages, orderRows, isLate, orderableLines, previewGroups, proposalMode, requestStatusColor, type PurchaseRequestDetail } from './purchaseRequests';
 
 const detail = (status: PurchaseRequestDetail['status'], ordered: boolean[]): PurchaseRequestDetail => ({
   id: 'r1', number: 'PR-00001', status, siteId: 's1', lines: ordered.map((o, i) => ({
@@ -41,6 +41,21 @@ describe('purchase requests', () => {
     expect(drafts[0].lines[0]).toMatchObject({ partId: 'p1', storeId: 'st1', quantity: 2, workOrderId: 'w1', neededBy: '2026-11-30' });
     expect(drafts[0].lines[1]).toMatchObject({ quantity: 1.5, workOrderId: 'w2', neededBy: null });
     expect(drafts[1].lines[0]).toMatchObject({ partId: 'p1', storeId: 'st9', quantity: 4, workOrderId: null });
+  });
+
+  it('Short_for_work_lists_lines_it_could_not_use: lines of a store with no site are named, not dropped', () => {
+    const row = (partId: string, storeId: string, siteId: string) => ({ partId, storeId, siteId, short: 1, workOrderId: 'w1', dueDate: null, description: partId, unitOfMeasure: 'EA' });
+    const { drafts, skipped } = draftsFromShortages([row('p1', 'st1', 's1'), row('p2', 'gone', ''), row('p3', 'st1', 's1'), row('p4', 'gone', '')]);
+    expect(drafts).toHaveLength(1);
+    expect(drafts[0].lines.map((l) => l.partId)).toEqual(['p1', 'p3']);
+    expect(skipped.map((x) => x.row.partId)).toEqual(['p2', 'p4']);
+    expect(skipped.every((x) => x.reason === 'noSite')).toBe(true);
+    // Everything usable: nothing to report.
+    expect(draftsFromShortages([row('p1', 'st1', 's1')]).skipped).toEqual([]);
+    // Nothing usable: no drafts, all named.
+    const none = draftsFromShortages([row('p2', 'gone', '')]);
+    expect(none.drafts).toEqual([]);
+    expect(none.skipped).toHaveLength(1);
   });
 
   it('marks requests late only while still open', () => {

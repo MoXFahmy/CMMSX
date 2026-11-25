@@ -83,6 +83,42 @@ public class CatalogueTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.True(made.GetProperty("isPreferred").GetBoolean());
     }
 
+    private static object RowWithoutPreferred(Guid supplier, string note) => new
+    {
+        supplierId = supplier, packName = "Box", packSize = 100m, packPrice = 45m, discountPercent = 0m, minPacks = 1, notes = note, isActive = true,
+    };
+
+    [SkippableFact]
+    public async Task Saving_a_row_without_preferred_keeps_the_preferred_supplier()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var skf = await SupplierAsync(o.Admin, "SKF");
+        var row = await AddRowAsync(o.Admin, o.Part, Row(skf, 100, 45, "Box", preferred: true));
+        Assert.Equal(skf, (await Ok(await o.Admin.GetAsync($"/api/parts/{o.Part}"))).GetProperty("preferredSupplierId").GetGuid());
+        // An older page (or a script) saves the row and says nothing about the star.
+        await Ok(await o.Admin.PutAsJsonAsync($"/api/parts/{o.Part}/suppliers/{row}", RowWithoutPreferred(skf, "New price list")));
+        Assert.Equal(skf, (await Ok(await o.Admin.GetAsync($"/api/parts/{o.Part}"))).GetProperty("preferredSupplierId").GetGuid());
+        Assert.True((await RowsAsync(o.Admin, o.Part)).Single(r => r.GetProperty("supplierId").GetGuid() == skf).GetProperty("isPreferred").GetBoolean());
+    }
+
+    [SkippableFact]
+    public async Task Unstarring_a_row_clears_it()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var skf = await SupplierAsync(o.Admin, "SKF");
+        var other = await SupplierAsync(o.Admin, "OTHER");
+        var row = await AddRowAsync(o.Admin, o.Part, Row(skf, 100, 45, "Box", preferred: true));
+        var otherRow = await AddRowAsync(o.Admin, o.Part, Row(other, 1, 1));
+        // Un-starring another supplier's row leaves the star where it is.
+        await Ok(await o.Admin.PutAsJsonAsync($"/api/parts/{o.Part}/suppliers/{otherRow}", Row(other, 1, 1, preferred: false)));
+        Assert.Equal(skf, (await Ok(await o.Admin.GetAsync($"/api/parts/{o.Part}"))).GetProperty("preferredSupplierId").GetGuid());
+        // Un-starring the preferred row itself clears it.
+        await Ok(await o.Admin.PutAsJsonAsync($"/api/parts/{o.Part}/suppliers/{row}", Row(skf, 100, 45, "Box", preferred: false)));
+        Assert.Equal(JsonValueKind.Null, (await Ok(await o.Admin.GetAsync($"/api/parts/{o.Part}"))).GetProperty("preferredSupplierId").ValueKind);
+    }
+
     [SkippableFact]
     public async Task Foreign_currency_supplier_row_starts_without_a_price()
     {
