@@ -61,7 +61,12 @@ jobs:
       - name: Lint the AWS templates
         run: |
           pipx install cfn-lint
-          cfn-lint infra/aws/cmms.yml deploy/aws/bootstrap.yml
+          cfn-lint infra/aws/*.yml deploy/aws/bootstrap.yml
+      - name: Check that every /cmms/ role carries the permissions boundary
+        # The script uses cfn-lint's template decoder, so it runs with the Python of cfn-lint's pipx environment.
+        run: |
+          "$(pipx environment --value PIPX_LOCAL_VENVS)/cfn-lint/bin/python" scripts/check-boundaries.py \
+            infra/aws/*.yml deploy/aws/bootstrap.yml
       - name: Check the setup scripts
         run: |
           bash -n deploy/azure/setup.sh && bash -n deploy/aws/setup.sh

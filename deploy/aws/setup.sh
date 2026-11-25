@@ -68,6 +68,16 @@ aws cloudformation deploy --stack-name "$STACK" --template-file "$TEMPLATE" \
 ROLE_ARN=$(aws cloudformation describe-stacks --stack-name "$STACK" \
   --query "Stacks[0].Outputs[?OutputKey=='DeployRoleArn'].OutputValue" --output text)
 
+cat <<'EOF'
+
+This version of the setup (CMX 0.29.0) adds:
+  - a permissions boundary (IAM policy cmms-boundary-<region>) that every role the app creates must carry;
+  - a guard that stops the deploy pipeline from deleting backups, the locked copies in Ireland or the CloudTrail logs
+    (only your own console administrator can lift the Ireland lock);
+  - permission for GitHub Actions to deploy two more stacks: cmms-edge in us-east-1 (web firewall)
+    and cmms-dr in eu-west-1 (locked backup copies).
+EOF
+
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
   gh variable set AWS_REGION --repo "$REPO" --body "$REGION"
   gh variable set AWS_DEPLOY_ROLE_ARN --repo "$REPO" --body "$ROLE_ARN"

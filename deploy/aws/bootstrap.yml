@@ -1,8 +1,9 @@
 AWSTemplateFormatVersion: "2010-09-09"
 Description: >-
   CMX - one-time setup that lets GitHub Actions deploy the app into this account and region:
-  GitHub OIDC sign-in (no stored keys), the image repository, and the role CloudFormation uses for the app stack.
-  Deploy with deploy/aws/setup.sh (see docs/DEPLOY_AWS.md).
+  GitHub OIDC sign-in (no stored keys), the image repository, the role CloudFormation uses for the app stacks
+  (cmms-app here, cmms-edge in us-east-1, cmms-dr in eu-west-1), the guard that keeps backups out of the pipeline's reach,
+  and the permissions boundary every app role carries. Deploy with deploy/aws/setup.sh (see docs/DEPLOY_AWS.md).
 
 Parameters:
   GitHubRepo:
@@ -62,7 +63,106 @@ Resources:
             "selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},
             "action":{"type":"expire"}}]}
 
-  # CloudFormation creates the app's resources with this role. It cannot change IAM outside the /cmms/ path.
+  # The backups must survive a compromised deploy pipeline (GitHub is on the internet). Two places hold the same explicit
+  # denies, so keep their "Keep..." statements in step: backup-guard on CloudFormationExecutionRole (the pipeline itself)
+  # and this boundary (every role the pipeline creates). Destructive actions only: creating the vault with its lock, the
+  # Ireland buckets with Object Lock, the trail, replication and access policies stays allowed. In Ireland those settings
+  # can't shorten what is already stored (Object Lock retention and a locked vault's recovery points outlive them).
+  # The vault lock is governance mode: the account's own console administrator (root or an IAM administrator outside
+  # the pipeline) can still lift it. Resource names are fixed by the recovery stack (cmms-dr, eu-west-1) and the app stack.
+  #
+  # As a permissions boundary it allows everything else, so an app role keeps exactly what its own policies grant, minus
+  # these denies. It also stops a role inside it from changing IAM or passing or assuming a role outside /cmms/: without
+  # that, a role given iam:* could create a role without the boundary, or strip backup-guard off the pipeline.
+  PermissionsBoundary:
+    Type: AWS::IAM::ManagedPolicy
+    Properties:
+      # Region in the name like the roles below: IAM names are account-wide, and a rebuild runs this setup in a new region.
+      ManagedPolicyName: !Sub "cmms-boundary-${AWS::Region}"
+      Path: /cmms/
+      Description: CMX app roles - everything except deleting backups, the Ireland copies, the CloudTrail logs, or changing IAM.
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: AllowInsideTheBoundary
+            Effect: Allow
+            Action: "*"
+            Resource: "*"
+          # Recovery point ARNs depend on the backed-up service (rds:...:snapshot:awsbackup:..., backup:...:recovery-point:...),
+          # so this covers all of them. Nothing in the stacks deletes or re-dates a recovery point.
+          - Sid: KeepRecoveryPoints
+            Effect: Deny
+            Action:
+              - backup:DeleteRecoveryPoint
+              - backup:UpdateRecoveryPointLifecycle
+            Resource: "*"
+          - Sid: KeepTheIrelandVault
+            Effect: Deny
+            Action:
+              - backup:DeleteBackupVault
+              - backup:DeleteBackupVaultAccessPolicy
+              - backup:DeleteBackupVaultLockConfiguration
+            Resource: !Sub "arn:${AWS::Partition}:backup:eu-west-1:${AWS::AccountId}:backup-vault:cmms-dr-vault"
+          # The database's automated backups replicated to Ireland (London's own stay with the app stack's settings).
+          # Stopping the replication isn't denied: the copies already made stay for their retention period, and
+          # CloudFormation stops it to undo a failed deploy that turned it on (denied, cmms-app would be stuck in
+          # UPDATE_ROLLBACK_FAILED).
+          - Sid: KeepTheIrelandDatabaseBackups
+            Effect: Deny
+            Action: rds:DeleteDBInstanceAutomatedBackup
+            Resource: !Sub "arn:${AWS::Partition}:rds:eu-west-1:${AWS::AccountId}:auto-backup:*"
+          # The Ireland vault and the replicated backups are encrypted with a key in Ireland; deleting it would make
+          # every copy unreadable, so it can't be scheduled for deletion (not even by deleting the cmms-dr stack).
+          - Sid: KeepTheIrelandKeys
+            Effect: Deny
+            Action: kms:ScheduleKeyDeletion
+            Resource: !Sub "arn:${AWS::Partition}:kms:eu-west-1:${AWS::AccountId}:key/*"
+          - Sid: KeepTheTrail
+            Effect: Deny
+            Action:
+              - cloudtrail:DeleteTrail
+              - cloudtrail:StopLogging
+            Resource: !Sub "arn:${AWS::Partition}:cloudtrail:*:${AWS::AccountId}:trail/*"
+          # The Ireland copies (cmms-dr-files-<account>, cmms-dr-backups-<account>) and the CloudTrail logs (cmms-trail-<account>).
+          - Sid: KeepLockedFilesAndLogs
+            Effect: Deny
+            Action:
+              - s3:BypassGovernanceRetention
+              - s3:DeleteObject
+              - s3:DeleteObjectVersion
+              - s3:DeleteBucket
+            Resource:
+              - !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
+              - !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*/*"
+              - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*"
+              - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*/*"
+          # Boundary only: a role inside it never writes IAM (service-linked roles, which only their service can use,
+          # stay possible) and never passes or assumes a role outside /cmms/ (e.g. this pipeline's own roles).
+          - Sid: NoIamChanges
+            Effect: Deny
+            Action:
+              - iam:Accept* # delegation requests: temporary access for an outside party
+              - iam:Add*
+              - iam:Associate*
+              - iam:Attach*
+              - iam:Create*
+              - iam:Delete*
+              - iam:Detach*
+              - iam:Put*
+              - iam:Remove*
+              - iam:Set*
+              - iam:Update*
+              - iam:Upload*
+            NotResource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/aws-service-role/*"
+          - Sid: OnlyAppRoles
+            Effect: Deny
+            Action:
+              - iam:PassRole
+              - sts:AssumeRole
+            NotResource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cmms/*"
+
+  # CloudFormation creates the app's resources with this role, in every region (IAM is global). It cannot change IAM
+  # outside the /cmms/ path, every role it creates there carries PermissionsBoundary, and backup-guard keeps the backups.
   CloudFormationExecutionRole:
     Type: AWS::IAM::Role
     Properties:
@@ -80,9 +180,9 @@ Resources:
           PolicyDocument:
             Version: "2012-10-17"
             Statement:
-              - Effect: Allow
+              - Sid: ManageAppRoles
+                Effect: Allow
                 Action:
-                  - iam:CreateRole
                   - iam:DeleteRole
                   - iam:GetRole
                   - iam:UpdateRole
@@ -90,17 +190,93 @@ Resources:
                   - iam:TagRole
                   - iam:UntagRole
                   - iam:ListRoleTags
-                  - iam:AttachRolePolicy
                   - iam:DetachRolePolicy
                   - iam:ListAttachedRolePolicies
-                  - iam:PutRolePolicy
                   - iam:GetRolePolicy
                   - iam:DeleteRolePolicy
                   - iam:ListRolePolicies
                   - iam:PassRole
                 Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cmms/*"
+              # A role is created, or given a boundary, only with PermissionsBoundary (CloudFormation passes it in CreateRole).
+              - Sid: CreateRolesInsideTheBoundary
+                Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:PutRolePermissionsBoundary
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cmms/*"
+                Condition:
+                  StringEquals: { "iam:PermissionsBoundary": !Ref PermissionsBoundary }
+              # Policies go to roles that carry the boundary. "IfExists" also lets them reach the two app roles made before
+              # the boundary existed (task and execution role) while the first app deploy after this setup gives them the
+              # boundary, whatever order CloudFormation writes a role's policies and boundary in. From then on every /cmms/
+              # role has it (no role is created without it and it can't be removed), so this lets nothing else through.
+              - Sid: GrantInsideTheBoundary
+                Effect: Allow
+                Action:
+                  - iam:PutRolePolicy
+                  - iam:AttachRolePolicy
+                Resource: !Sub "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/cmms/*"
+                Condition:
+                  StringEqualsIfExists: { "iam:PermissionsBoundary": !Ref PermissionsBoundary }
+              - Sid: NoRoleOutsideTheBoundary
+                Effect: Deny
+                Action:
+                  - iam:CreateRole
+                  - iam:PutRolePermissionsBoundary
+                Resource: "*"
+                Condition:
+                  StringNotEquals: { "iam:PermissionsBoundary": !Ref PermissionsBoundary }
+              - Sid: KeepTheBoundary
+                Effect: Deny
+                Action: iam:DeleteRolePermissionsBoundary
+                Resource: "*"
+        # Same denies as PermissionsBoundary's "Keep..." statements (see there); keep the two in step.
+        - PolicyName: backup-guard
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Sid: KeepRecoveryPoints
+                Effect: Deny
+                Action:
+                  - backup:DeleteRecoveryPoint
+                  - backup:UpdateRecoveryPointLifecycle
+                Resource: "*"
+              - Sid: KeepTheIrelandVault
+                Effect: Deny
+                Action:
+                  - backup:DeleteBackupVault
+                  - backup:DeleteBackupVaultAccessPolicy
+                  - backup:DeleteBackupVaultLockConfiguration
+                Resource: !Sub "arn:${AWS::Partition}:backup:eu-west-1:${AWS::AccountId}:backup-vault:cmms-dr-vault"
+              - Sid: KeepTheIrelandDatabaseBackups
+                Effect: Deny
+                Action: rds:DeleteDBInstanceAutomatedBackup
+                Resource: !Sub "arn:${AWS::Partition}:rds:eu-west-1:${AWS::AccountId}:auto-backup:*"
+              - Sid: KeepTheIrelandKeys
+                Effect: Deny
+                Action: kms:ScheduleKeyDeletion
+                Resource: !Sub "arn:${AWS::Partition}:kms:eu-west-1:${AWS::AccountId}:key/*"
+              - Sid: KeepTheTrail
+                Effect: Deny
+                Action:
+                  - cloudtrail:DeleteTrail
+                  - cloudtrail:StopLogging
+                Resource: !Sub "arn:${AWS::Partition}:cloudtrail:*:${AWS::AccountId}:trail/*"
+              - Sid: KeepLockedFilesAndLogs
+                Effect: Deny
+                Action:
+                  - s3:BypassGovernanceRetention
+                  - s3:DeleteObject
+                  - s3:DeleteObjectVersion
+                  - s3:DeleteBucket
+                Resource:
+                  - !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
+                  - !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*/*"
+                  - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*"
+                  - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*/*"
 
-  # GitHub Actions (main branch of GitHubRepo only) assumes this role: push images, deploy the app stack.
+  # GitHub Actions (main branch of GitHubRepo only) assumes this role: push images, deploy the app stacks
+  # (the app here, the edge stack in us-east-1 and the recovery stack in eu-west-1, all through CloudFormationExecutionRole).
   GitHubDeployRole:
     Type: AWS::IAM::Role
     Properties:
@@ -163,6 +339,13 @@ Resources:
                 Resource:
                   - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AppStackName}/*"
                   - !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:changeSet/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:us-east-1:${AWS::AccountId}:stack/cmms-edge/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:us-east-1:${AWS::AccountId}:changeSet/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:eu-west-1:${AWS::AccountId}:stack/cmms-dr/*"
+                  - !Sub "arn:${AWS::Partition}:cloudformation:eu-west-1:${AWS::AccountId}:changeSet/*"
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks # read this stack's outputs (BoundaryPolicyArn)
+                Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*"
               - Effect: Allow
                 Action: iam:PassRole
                 Resource: !GetAtt CloudFormationExecutionRole.Arn
@@ -180,3 +363,6 @@ Outputs:
     Value: !GetAtt Repository.RepositoryUri
   CloudFormationExecutionRoleArn:
     Value: !GetAtt CloudFormationExecutionRole.Arn
+  BoundaryPolicyArn:
+    Description: Permissions boundary every role under /cmms/ must carry (app stack parameter BoundaryPolicyArn)
+    Value: !Ref PermissionsBoundary
