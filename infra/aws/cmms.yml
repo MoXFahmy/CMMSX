@@ -323,9 +323,14 @@ Resources:
                 Action: [s3:GetObjectAttributes, s3:GetObject, s3:PutObject, s3:ListMultipartUploadParts, s3:AbortMultipartUpload]
                 Resource: !Sub "${BackupsBucket.Arn}/*"
 
-  # Native backup and restore. Adding the option or attaching the group needs no restart.
+  # Native backup and restore. Adding the option or attaching the group needs no restart. Snapshots (AWS Backup's, the
+  # final one) keep naming the group, and RDS refuses to delete a group a snapshot uses: so it stays when the stack is
+  # deleted or it is replaced (a DbMajorEngineVersion change). Removed only if the deploy that made it rolls back (no
+  # snapshot can use it yet; its name is generated, so it would not block a retry either way).
   OptionGroup:
     Type: AWS::RDS::OptionGroup
+    DeletionPolicy: RetainExceptOnCreate
+    UpdateReplacePolicy: Retain
     Properties:
       EngineName: sqlserver-ex
       MajorEngineVersion: !Ref DbMajorEngineVersion
@@ -422,10 +427,11 @@ Resources:
 
   # ---------------------------------------------------------------- Backups (0.29.0)
   # The weekly native export (.bak, restorable on any SQL Server): written by RDS as NativeBackupRole, kept 90 days, and
-  # copied to the Object Lock bucket in Ireland (deletions not copied, like the files). Kept when the stack is deleted.
+  # copied to the Object Lock bucket in Ireland (deletions not copied, like the files). Kept when the stack is deleted;
+  # removed only if the deploy that created it rolls back (still empty then), so its fixed name doesn't block the retry.
   BackupsBucket:
     Type: AWS::S3::Bucket
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BucketName: !Sub "cmms-backups-${AWS::AccountId}"
@@ -537,10 +543,11 @@ Resources:
                   StringEquals: { iam:PassedToService: rds.amazonaws.com }
 
   # London vault: nobody but the account's root user may delete a recovery point (the snapshots still expire on their
-  # lifecycle; AWS Backup does that itself). Kept when the stack is deleted, since it holds the snapshots.
+  # lifecycle; AWS Backup does that itself). Kept when the stack is deleted, since it holds the snapshots; removed only if
+  # the deploy that created it rolls back (still empty then), so its fixed name doesn't block the retry.
   BackupVault:
     Type: AWS::Backup::BackupVault
-    DeletionPolicy: Retain
+    DeletionPolicy: RetainExceptOnCreate
     UpdateReplacePolicy: Retain
     Properties:
       BackupVaultName: !Sub "${AWS::StackName}-vault"
@@ -1103,7 +1110,7 @@ Resources:
       AlarmActions: [!Ref AlertTopic]
 
   # The Express edition stops each database at 10 GB; this leaves room to move to a bigger edition. A daily value, so a
-  # missing day keeps the alarm as it is.
+  # missing day keeps the alarm as it is (DatabaseSizeNotMeasuredAlarm catches the measurement stopping).
   DatabaseSizeAlarm:
     Type: AWS::CloudWatch::Alarm
     Properties:
@@ -1117,6 +1124,25 @@ Resources:
       Threshold: 7168
       ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: ignore
+      AlarmActions: [!Ref AlertTopic]
+
+  # The size alarm's watchdog: no "DatabaseSize mb=" line for 2 days (the app measures once per UTC date, so normal gaps are
+  # about 24 hours). Both 1-day periods of the last 48 hours empty = alarm; no data at all counts as empty. Made once the
+  # service runs the new task, which measures 2 minutes after it starts.
+  DatabaseSizeNotMeasuredAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn: Service
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-database-size-not-measured"
+      AlarmDescription: No daily database size measurement (DatabaseSize mb= in the app log) for 2 days; the 7 GB alarm is blind.
+      Namespace: !Sub "CMX/${AWS::StackName}"
+      MetricName: DatabaseSizeMb
+      Statistic: SampleCount
+      Period: 86400
+      EvaluationPeriods: 2
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
       AlarmActions: [!Ref AlertTopic]
 
   SignInAttackAlarm:
