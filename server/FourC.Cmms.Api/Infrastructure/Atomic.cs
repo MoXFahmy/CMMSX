@@ -5,14 +5,15 @@ namespace FourC.Cmms.Api.Infrastructure;
 
 /// <summary>
 /// Saves that happen in more than one step (0.21.0-6, 0.29.1) as one transaction: all of it or none. Built on
-/// <see cref="CmmsDbContext.InTransactionAsync{T}"/>, so the body may run again after a dropped connection; what a failed try
+/// <see cref="CmmsDbContext.InTransactionAsync{T}"/>, so the body may run again after a dropped connection. A body that loads and changes an entity must do both inside (after
+/// <c>db.ChangeTracker.Clear()</c>), because a failed try may have saved and accepted the change in memory before the rollback. What a failed try
 /// added to the change tracker is forgotten before it leaves, so the next try (or the caller) starts clean.
 /// </summary>
 public static class Atomic
 {
     public static Task<T> RunAsync<T>(CmmsDbContext db, Func<CancellationToken, Task<T>> work, CancellationToken ct)
     {
-        // Already inside a transaction (a phone change that took a meter reading): that one covers it.
+        // Already inside a transaction (a phone change that took a meter reading): that one covers it. No detach on failure here: the outer transaction owns the cleanup.
         if (db.Database.CurrentTransaction is not null) return work(ct);
         return db.InTransactionAsync(async tk =>
         {

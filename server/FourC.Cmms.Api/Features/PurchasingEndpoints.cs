@@ -337,63 +337,67 @@ public static class PurchasingEndpoints
 
         g.MapPost("/", async (PoInput i, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
         {
-            var claims = new List<PurchaseRequest>();
-            var v = await ValidatePoAsync(i, db, ct, null, null, claims);
-            if (!v.IsValid) return v.Problem();
-            // Linked request lines: the order and the request that follows it are saved together, the request under the version read above (0.16.0-5).
-            RequestLinks.Claim(db, claims);
+            // Linked request lines: the order and the request that follows it are saved together, the request under the version read when the
+            // attempt starts (0.16.0-5). Validating and claiming are part of every attempt: a retry after a dropped connection starts again
+            // from what is stored, with the claim marked again and the version checked (0.29.1).
             try
             {
-                var o = await Atomic.RunAsync(db, async tk =>
+                return await Atomic.RunAsync<IResult>(db, async tk =>
                 {
+                    db.ChangeTracker.Clear();
+                    var claims = new List<PurchaseRequest>();
+                    var v = await ValidatePoAsync(i, db, tk, null, null, claims);
+                    if (!v.IsValid) return v.Problem();
+                    RequestLinks.Claim(db, claims);
                     var made = await CreateDraftAsync(db, ctx, i, tk);
                     if (claims.Count > 0) { await PurchaseRequestSync.SyncAsync(db, claims.Select(r => r.Id).ToList(), tk); await db.SaveChangesAsync(tk); }
-                    return made;
+                    return Results.Created($"/api/purchase-orders/{made.Id}", new { made.Id, made.Number });
                 }, ct);
-                return Results.Created($"/api/purchase-orders/{o.Id}", new { o.Id, o.Number });
             }
             catch (DbUpdateConcurrencyException e) when (RequestLinks.IsLost(e)) { return RequestLinks.LostResult(); }
         }).RequirePermission(Permissions.PurchasingCreate);
 
         g.MapPut("/{id:guid}", async (Guid id, PoInput i, CmmsDbContext db, CancellationToken ct) =>
         {
-            var o = await db.PurchaseOrders.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (o is null) return Results.NotFound();
-            if (o.Status != PurchaseOrderStatus.Draft) throw new DomainException("Only draft purchase orders can be edited. Return it to draft first.");
-            var claims = new List<PurchaseRequest>();
-            var v = await ValidatePoAsync(i, db, ct, o.SupplierId, o.Id, claims);
-            if (!v.IsValid) return v.Problem();
-            if (i.RowVersion is not null) db.Entry(o).Property(x => x.RowVersion).OriginalValue = i.RowVersion.ToVersion();
-            var before = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
-            await ApplyPoAsync(db, o, i, ct);
-            RequestLinks.Claim(db, claims);
-            // The order and the requests that follow it are saved together (0.29.1).
+            // Everything from loading the order to the last save is one attempt: a retry after a dropped connection starts again from what is stored (0.29.1).
             try
             {
-                await Atomic.RunAsync(db, async tk =>
+                return await Atomic.RunAsync<IResult>(db, async tk =>
                 {
+                    db.ChangeTracker.Clear();
+                    var o = await db.PurchaseOrders.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, tk);
+                    if (o is null) return Results.NotFound();
+                    if (o.Status != PurchaseOrderStatus.Draft) throw new DomainException("Only draft purchase orders can be edited. Return it to draft first.");
+                    var claims = new List<PurchaseRequest>();
+                    var v = await ValidatePoAsync(i, db, tk, o.SupplierId, o.Id, claims);
+                    if (!v.IsValid) return v.Problem();
+                    if (i.RowVersion is not null) db.Entry(o).Property(x => x.RowVersion).OriginalValue = i.RowVersion.ToVersion();
+                    var before = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
+                    await ApplyPoAsync(db, o, i, tk);
+                    RequestLinks.Claim(db, claims);
                     await db.SaveChangesAsync(tk);
                     if (before.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, before, tk); await db.SaveChangesAsync(tk); }
                     if (claims.Count > 0) { await PurchaseRequestSync.SyncAsync(db, claims.Select(r => r.Id).ToList(), tk); await db.SaveChangesAsync(tk); }
+                    return Results.Ok(new { o.Id });
                 }, ct);
             }
             catch (DbUpdateConcurrencyException e) when (RequestLinks.IsLost(e)) { return RequestLinks.LostResult(); }
-            return Results.Ok(new { o.Id });
         }).RequirePermission(Permissions.PurchasingCreate);
 
         g.MapDelete("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
         {
-            var o = await db.PurchaseOrders.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (o is null) return Results.NotFound();
-            if (o.Status != PurchaseOrderStatus.Draft) throw new DomainException("Only draft purchase orders can be deleted. Cancel it instead.");
-            var requested = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
-            db.PurchaseOrders.Remove(o);
-            await Atomic.RunAsync(db, async tk =>
+            return await Atomic.RunAsync<IResult>(db, async tk =>
             {
+                db.ChangeTracker.Clear(); // a retry starts again from what is stored (0.29.1)
+                var o = await db.PurchaseOrders.Include(x => x.Lines).FirstOrDefaultAsync(x => x.Id == id, tk);
+                if (o is null) return Results.NotFound();
+                if (o.Status != PurchaseOrderStatus.Draft) throw new DomainException("Only draft purchase orders can be deleted. Cancel it instead.");
+                var requested = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
+                db.PurchaseOrders.Remove(o);
                 await db.SaveChangesAsync(tk);
                 if (requested.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, requested, tk); await db.SaveChangesAsync(tk); } // their requests: back to order
+                return Results.NoContent();
             }, ct);
-            return Results.NoContent();
         }).RequirePermission(Permissions.PurchasingCreate);
 
         g.MapPost("/{id:guid}/submit", async (Guid id, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, PermissionService perms, AccessService access, CancellationToken ct) =>
@@ -460,20 +464,21 @@ public static class PurchasingEndpoints
 
         g.MapPost("/{id:guid}/cancel", async (Guid id, ReasonInput i, HttpContext http, CmmsDbContext db, PermissionService perms, CancellationToken ct) =>
         {
-            var o = await LoadAsync(db, id, ct);
-            Require(o, PurchaseOrderStatus.Draft, PurchaseOrderStatus.Submitted, PurchaseOrderStatus.Approved);
             var mine = await perms.GetAsync(UserId(http));
-            if (!mine.Contains(Permissions.PurchasingApprove) && !(o.Status == PurchaseOrderStatus.Draft && mine.Contains(Permissions.PurchasingCreate))) return Results.Forbid();
-            if (o.Lines.Any(l => l.QuantityReceived > 0)) throw new DomainException("Goods have been received on this order. Close it instead.");
-            if (i.Reason.Clean() is not { } reason) return new Validator().Required("reason", i.Reason, "Reason").Problem();
-            o.Status = PurchaseOrderStatus.Cancelled; o.CancelledAt = DateTimeOffset.UtcNow; o.CancelReason = reason;
-            var requested = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
-            await Atomic.RunAsync(db, async tk =>
+            return await Atomic.RunAsync<IResult>(db, async tk =>
             {
+                db.ChangeTracker.Clear(); // a retry starts again from what is stored (0.29.1)
+                var o = await LoadAsync(db, id, tk);
+                Require(o, PurchaseOrderStatus.Draft, PurchaseOrderStatus.Submitted, PurchaseOrderStatus.Approved);
+                if (!mine.Contains(Permissions.PurchasingApprove) && !(o.Status == PurchaseOrderStatus.Draft && mine.Contains(Permissions.PurchasingCreate))) return Results.Forbid();
+                if (o.Lines.Any(l => l.QuantityReceived > 0)) throw new DomainException("Goods have been received on this order. Close it instead.");
+                if (i.Reason.Clean() is not { } reason) return new Validator().Required("reason", i.Reason, "Reason").Problem();
+                o.Status = PurchaseOrderStatus.Cancelled; o.CancelledAt = DateTimeOffset.UtcNow; o.CancelReason = reason;
+                var requested = o.Lines.Where(l => l.PurchaseRequestLineId is not null).Select(l => l.PurchaseRequestLineId!.Value).ToList();
                 await db.SaveChangesAsync(tk);
                 if (requested.Count > 0) { await PurchaseRequestSync.SyncLinesAsync(db, requested, tk); await db.SaveChangesAsync(tk); } // their requests: back to order
+                return Results.Ok(new { o.Id, o.Status });
             }, ct);
-            return Results.Ok(new { o.Id, o.Status });
         }).RequirePermission(Permissions.PurchasingView);
 
         g.MapPost("/{id:guid}/close", async (Guid id, CmmsDbContext db, CancellationToken ct) =>

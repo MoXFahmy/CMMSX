@@ -37,15 +37,17 @@ public static class UnitEndpoints
 
         g.MapPut("/{id:guid}", async (Guid id, UnitInput i, CmmsDbContext db, CancellationToken ct) =>
         {
-            var unit = await db.Units.FirstOrDefaultAsync(u => u.Id == id, ct);
-            if (unit is null) return Results.NotFound();
             var symbol = SymbolOf(i.Symbol);
-            var old = unit.Symbol;
-            var other = symbol == old ? null : await db.Units.FirstOrDefaultAsync(u => u.Id != id && u.Symbol == symbol, ct);
-            if (other is not null && !i.Merge) return Results.Conflict(new { MergeWith = other.Id, Message = Translator.T("Another unit has this symbol. Merge the two?") });
-            // The unit and every record that carries its symbol as text are saved together (0.29.1).
-            await Atomic.RunAsync(db, async tk =>
+            // The unit and every record that carries its symbol as text are saved together; one attempt from the load on, so a retry
+            // after a dropped connection starts again from what is stored (0.29.1).
+            return await Atomic.RunAsync<IResult>(db, async tk =>
             {
+                db.ChangeTracker.Clear();
+                var unit = await db.Units.FirstOrDefaultAsync(u => u.Id == id, tk);
+                if (unit is null) return Results.NotFound();
+                var old = unit.Symbol;
+                var other = symbol == old ? null : await db.Units.FirstOrDefaultAsync(u => u.Id != id && u.Symbol == symbol, tk);
+                if (other is not null && !i.Merge) return Results.Conflict(new { MergeWith = other.Id, Message = Translator.T("Another unit has this symbol. Merge the two?") });
                 if (other is not null) db.Units.Remove(unit);
                 else { unit.Symbol = symbol; unit.Name = NameOf(i.Name, symbol); unit.NameAr = i.NameAr.Clean(); unit.IsActive = i.IsActive; }
                 await db.SaveChangesAsync(tk);
@@ -59,8 +61,8 @@ public static class UnitEndpoints
                         await db.SaveChangesAsync(tk);
                     }
                 }
+                return Results.Ok(new { Id = other?.Id ?? unit.Id });
             }, ct);
-            return Results.Ok(new { Id = other?.Id ?? unit.Id });
         }).RequirePermission(Permissions.SettingsManage);
 
         g.MapDelete("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>

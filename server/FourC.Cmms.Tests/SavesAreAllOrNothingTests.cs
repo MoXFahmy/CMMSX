@@ -220,6 +220,118 @@ public class SavesAreAllOrNothingTests(ApiFixture fx) : IClassFixture<ApiFixture
         Assert.Equal(0, await DbAsync(fx, db => db.DowntimeEvents.IgnoreQueryFilters().CountAsync(e => e.AssetId == asset && !e.IsDeleted)));
     }
 
+    // ---------------- run again after a transient failure ----------------
+    // A dropped connection on the second write makes the retry strategy run the whole body again: the first write must be made again too.
+
+    private async Task<(HttpClient Client, FlakyOnce Flaky)> SecondHostAsync(HttpClient admin)
+    {
+        var u = await UserAsync(fx, admin, "Administrator");
+        var flaky = new FlakyOnce();
+        return (await FlakyOnce.HostAsync(fx, flaky, u.Email, Password), flaky);
+    }
+
+    [SkippableFact]
+    public async Task Order_cancel_run_again_after_a_dropped_connection_is_fully_applied()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (req, po, o) = await OrderedAsync();
+        var (c, flaky) = await SecondHostAsync(o.Admin);
+        flaky.Arm("UPDATE [PurchaseRequests]");
+        await PurchaseRequestTests.Ok(await c.PostAsJsonAsync($"/api/purchase-orders/{po}/cancel", new { reason = "Supplier closed" }));
+        Assert.True(flaky.Fired);
+        Assert.Equal("Cancelled", (await PurchaseRequestTests.Ok(await o.Admin.GetAsync($"/api/purchase-orders/{po}"))).GetProperty("status").GetString());
+        Assert.Equal(PurchaseRequestStatus.Approved, await RequestStatusAsync(req));
+    }
+
+    [SkippableFact]
+    public async Task Order_delete_run_again_after_a_dropped_connection_is_fully_applied()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (req, po, o) = await OrderedAsync();
+        var (c, flaky) = await SecondHostAsync(o.Admin);
+        flaky.Arm("UPDATE [PurchaseRequests]");
+        Assert.Equal(System.Net.HttpStatusCode.NoContent, (await c.DeleteAsync($"/api/purchase-orders/{po}")).StatusCode);
+        Assert.True(flaky.Fired);
+        Assert.Equal(System.Net.HttpStatusCode.NotFound, (await o.Admin.GetAsync($"/api/purchase-orders/{po}")).StatusCode);
+        Assert.Equal(PurchaseRequestStatus.Approved, await RequestStatusAsync(req));
+    }
+
+    [SkippableFact]
+    public async Task Order_edit_run_again_after_a_dropped_connection_is_fully_applied()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (req, po, o) = await OrderedAsync();
+        var (c, flaky) = await SecondHostAsync(o.Admin);
+        var body = await PoBodyAsync(o.Admin, po, 1, "Edited");
+        flaky.Arm("UPDATE [PurchaseRequests]");
+        await PurchaseRequestTests.Ok(await c.PutAsJsonAsync($"/api/purchase-orders/{po}", body));
+        Assert.True(flaky.Fired);
+        var after = await PurchaseRequestTests.Ok(await o.Admin.GetAsync($"/api/purchase-orders/{po}"));
+        Assert.Equal("Edited", after.GetProperty("notes").GetString());
+        Assert.Equal(1, after.GetProperty("lines").GetArrayLength());
+        Assert.Equal(PurchaseRequestStatus.PartlyOrdered, await RequestStatusAsync(req));
+    }
+
+    [SkippableFact]
+    public async Task Order_save_linking_a_request_line_run_again_after_a_dropped_connection_is_fully_applied()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await PurchaseRequestTests.OrgAsync(fx);
+        var (tech, _, _) = await PurchaseRequestTests.UserAsync(fx, o.Admin, "Technician");
+        var req = await PurchaseRequestTests.RequestAsync(tech, o, PurchaseRequestTests.PartLine(o, 3));
+        await PurchaseRequestTests.Ok(await tech.PostAsync($"/api/purchase-requests/{req}/submit", null));
+        await PurchaseRequestTests.Ok(await o.Admin.PostAsync($"/api/purchase-requests/{req}/approve", null));
+        var line = (await PurchaseRequestTests.Ok(await o.Admin.GetAsync($"/api/purchase-requests/{req}"))).GetProperty("lines")[0].GetProperty("id").GetGuid();
+        var (c, flaky) = await SecondHostAsync(o.Admin);
+        // The order is saved with the claim on its request (first write); the request's new status (second write) is the one that drops.
+        flaky.Arm("UPDATE [PurchaseRequests]", skip: 1);
+        var made = await PurchaseRequestTests.Ok(await c.PostAsJsonAsync("/api/purchase-orders", new
+        {
+            siteId = o.Site, supplierId = o.Supplier, currency = "USD", exchangeRate = 1m, shippingCost = 0m,
+            lines = new[] { new { partId = (Guid?)o.Part, description = "Bearing", unitOfMeasure = "EA", quantity = 3m, unitPrice = 10m, discountPercent = 0m, storeId = (Guid?)o.Store, purchaseRequestLineId = (Guid?)line } },
+        }));
+        Assert.True(flaky.Fired);
+        var po = PurchaseRequestTests.Id(made);
+        Assert.Equal(1, await DbAsync(fx, db => db.PurchaseOrders.IgnoreQueryFilters().CountAsync(x => x.Lines.Any(l => l.PurchaseRequestLineId == line))));
+        Assert.Equal(PurchaseRequestStatus.Ordered, await RequestStatusAsync(req));
+        Assert.Equal(1, (await PurchaseRequestTests.Ok(await o.Admin.GetAsync($"/api/purchase-orders/{po}"))).GetProperty("lines").GetArrayLength());
+    }
+
+    [SkippableFact]
+    public async Task Brand_rename_run_again_after_a_dropped_connection_is_fully_applied()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await OrgAsync(fx, emailOn: false);
+        var old = "Old" + Tag(); var renamed = "New" + Tag();
+        var brand = await BrandAsync(o, old);
+        var asset = await AssetOnBrandAsync(o, brand);
+        var flaky = new FlakyOnce();
+        var c = await FlakyOnce.HostAsync(fx, flaky, o.AdminEmail, "Passw0rd!x");
+        flaky.Arm("[Manufacturer] =");
+        await Ok(await c.PutAsJsonAsync($"/api/brands/{brand}", new { name = renamed, isActive = true }));
+        Assert.True(flaky.Fired);
+        Assert.Equal(renamed, await DbAsync(fx, db => db.Brands.IgnoreQueryFilters().Where(b => b.Id == brand).Select(b => b.Name).SingleAsync()));
+        Assert.Equal(renamed, await ManufacturerAsync(asset));
+    }
+
+    [SkippableFact]
+    public async Task Unit_rename_run_again_after_a_dropped_connection_is_fully_applied()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await PurchaseRequestTests.OrgAsync(fx);
+        var u = await UserAsync(fx, o.Admin, "Administrator");
+        var old = "ZU" + Tag()[..5]; var renamed = "ZV" + Tag()[..5];
+        var unit = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/units", new { symbol = old, name = "Test unit", isActive = true })));
+        var part = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/parts", new { partNumber = "U-" + Tag(), name = "Rope", unitOfMeasure = old, standardPrice = 1, isCritical = false, isShelfItem = false, allowNegativeStock = false })));
+        var flaky = new FlakyOnce();
+        var c = await FlakyOnce.HostAsync(fx, flaky, u.Email, Password);
+        flaky.Arm("[UnitOfMeasure] =");
+        await Ok(await c.PutAsJsonAsync($"/api/units/{unit}", new { symbol = renamed, name = "Test unit", isActive = true }));
+        Assert.True(flaky.Fired);
+        Assert.Equal(renamed, await DbAsync(fx, db => db.Units.IgnoreQueryFilters().Where(x => x.Id == unit).Select(x => x.Symbol).SingleAsync()));
+        Assert.Equal(renamed, await DbAsync(fx, db => db.Parts.IgnoreQueryFilters().Where(p => p.Id == part).Select(p => p.UnitOfMeasure).SingleAsync()));
+    }
+
     // ---------------- Arabic ----------------
 
     [Theory]

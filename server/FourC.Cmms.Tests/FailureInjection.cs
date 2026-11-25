@@ -1,3 +1,4 @@
+using System.Net.Http.Json;
 using FourC.Cmms.Core.Data;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
@@ -34,5 +35,41 @@ public sealed class FailureInjection : IAsyncDisposable
         using var scope = _fx.Factory!.Services.CreateScope();
         var db = scope.ServiceProvider.GetRequiredService<CmmsDbContext>();
         await db.Database.ExecuteSqlRawAsync($"ALTER TABLE [{_table}] DROP CONSTRAINT [{_name}]");
+    }
+}
+
+/// <summary>
+/// A transient failure (what the retry strategy retries) on the first command whose text contains a marker, once; for tests that a
+/// transaction run again after a dropped connection still ends fully applied. Attach it to a second host with <see cref="HostAsync"/>.
+/// </summary>
+public sealed class FlakyOnce : Microsoft.EntityFrameworkCore.Diagnostics.DbCommandInterceptor
+{
+    private string? _marker;
+    public bool Fired { get; private set; }
+    private int _skip;
+    /// <summary>Fails the first command containing <paramref name="marker"/> after letting <paramref name="skip"/> such commands through.</summary>
+    public void Arm(string marker, int skip = 0) { Fired = false; _marker = marker; _skip = skip; }
+
+    private void Check(System.Data.Common.DbCommand command)
+    {
+        if (_marker is { } m && command.CommandText.Contains(m) && _skip-- <= 0) { _marker = null; Fired = true; throw new TimeoutException("Injected transient failure"); }
+    }
+
+    public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader>> ReaderExecutingAsync(System.Data.Common.DbCommand command,
+        Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<System.Data.Common.DbDataReader> result, CancellationToken ct = default)
+    { Check(command); return base.ReaderExecutingAsync(command, eventData, result, ct); }
+
+    public override ValueTask<Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int>> NonQueryExecutingAsync(System.Data.Common.DbCommand command,
+        Microsoft.EntityFrameworkCore.Diagnostics.CommandEventData eventData, Microsoft.EntityFrameworkCore.Diagnostics.InterceptionResult<int> result, CancellationToken ct = default)
+    { Check(command); return base.NonQueryExecutingAsync(command, eventData, result, ct); }
+
+    /// <summary>A second host on the same database whose contexts carry <paramref name="flaky"/>, with a client signed in as the given user.</summary>
+    public static async Task<HttpClient> HostAsync(ApiFixture fx, FlakyOnce flaky, string email, string password)
+    {
+        var host = fx.Factory!.WithWebHostBuilder(b => b.ConfigureServices(s => s.ConfigureDbContext<CmmsDbContext>(o => o.AddInterceptors(flaky))));
+        var c = host.CreateClient(new Microsoft.AspNetCore.Mvc.Testing.WebApplicationFactoryClientOptions { HandleCookies = true });
+        var r = await c.PostAsJsonAsync("/api/auth/login", new { email, password, rememberMe = false });
+        Assert.True(r.IsSuccessStatusCode, await r.Content.ReadAsStringAsync());
+        return c;
     }
 }

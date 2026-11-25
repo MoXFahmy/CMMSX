@@ -37,20 +37,21 @@ public static class BrandEndpoints
 
         g.MapPut("/{id:guid}", async (Guid id, BrandInput i, CmmsDbContext db, CancellationToken ct) =>
         {
-            var brand = await db.Brands.FirstOrDefaultAsync(b => b.Id == id, ct);
-            if (brand is null) return Results.NotFound();
             var name = NameOf(i.Name);
-            var other = await db.Brands.FirstOrDefaultAsync(b => b.Id != id && b.Name == name, ct);
-            if (other is not null && !i.Merge) return Results.Conflict(new { MergeWith = other.Id, Message = Translator.T("Another brand has this name. Merge the two?") });
-            if (other is not null)
+            // The whole change is one attempt (load, rename or merge, assets, log): a retry after a dropped connection starts again from what is stored (0.29.1).
+            return await Atomic.RunAsync<IResult>(db, async tk =>
             {
-                await Atomic.RunAsync(db, tk => MergeBrandAsync(db, brand, other, tk), ct); // the merge is all or nothing (0.29.1)
-                return Results.Ok(new { other.Id });
-            }
-            var renamed = brand.Name != name;
-            // The new name and every asset that carries it as text are saved together (0.29.1).
-            await Atomic.RunAsync(db, async tk =>
-            {
+                db.ChangeTracker.Clear();
+                var brand = await db.Brands.FirstOrDefaultAsync(b => b.Id == id, tk);
+                if (brand is null) return Results.NotFound();
+                var other = await db.Brands.FirstOrDefaultAsync(b => b.Id != id && b.Name == name, tk);
+                if (other is not null && !i.Merge) return Results.Conflict(new { MergeWith = other.Id, Message = Translator.T("Another brand has this name. Merge the two?") });
+                if (other is not null)
+                {
+                    await MergeBrandAsync(db, brand, other, tk);
+                    return Results.Ok(new { other.Id });
+                }
+                var renamed = brand.Name != name;
                 brand.Name = name; brand.IsActive = i.IsActive;
                 await db.SaveChangesAsync(tk);
                 var followed = await db.Assets.AllSites().Where(a => a.BrandId == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Manufacturer, name), tk);
@@ -59,8 +60,8 @@ public static class BrandEndpoints
                     FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "Brand", id, "Updated", $"Brand renamed to {name}: {FourC.Cmms.Core.Auditing.AuditLog.Count(followed, "asset", "assets")}");
                     await db.SaveChangesAsync(tk);
                 }
+                return Results.Ok(new { brand.Id });
             }, ct);
-            return Results.Ok(new { brand.Id });
         }).RequirePermission(Permissions.AssetsEdit);
 
         g.MapDelete("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
@@ -88,25 +89,23 @@ public static class BrandEndpoints
         var m = api.MapGroup("/brand-models").WithTags("Brands");
         m.MapPut("/{id:guid}", async (Guid id, BrandInput i, CmmsDbContext db, CancellationToken ct) =>
         {
-            var model = await db.BrandModels.FirstOrDefaultAsync(x => x.Id == id, ct);
-            if (model is null) return Results.NotFound();
             var name = NameOf(i.Name);
-            var other = await db.BrandModels.FirstOrDefaultAsync(x => x.Id != id && x.BrandId == model.BrandId && x.Name == name, ct);
-            if (other is not null && !i.Merge) return Results.Conflict(new { MergeWith = other.Id, Message = Translator.T("Another model of this brand has this name. Merge the two?") });
-            if (other is not null)
+            return await Atomic.RunAsync<IResult>(db, async tk => // one attempt from the load on, as for brands (0.29.1)
             {
-                await Atomic.RunAsync(db, async tk => // the assets move and the model goes together (0.29.1)
+                db.ChangeTracker.Clear();
+                var model = await db.BrandModels.FirstOrDefaultAsync(x => x.Id == id, tk);
+                if (model is null) return Results.NotFound();
+                var other = await db.BrandModels.FirstOrDefaultAsync(x => x.Id != id && x.BrandId == model.BrandId && x.Name == name, tk);
+                if (other is not null && !i.Merge) return Results.Conflict(new { MergeWith = other.Id, Message = Translator.T("Another model of this brand has this name. Merge the two?") });
+                if (other is not null)
                 {
                     var moved = await db.Assets.AllSites().Where(a => a.ModelId == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.ModelId, other.Id).SetProperty(a => a.Model, other.Name), tk);
                     db.BrandModels.Remove(model);
                     FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "BrandModel", other.Id, "Updated", $"Model merged into {other.Name}: {FourC.Cmms.Core.Auditing.AuditLog.Count(moved, "asset", "assets")}");
                     await db.SaveChangesAsync(tk);
-                }, ct);
-                return Results.Ok(new { other.Id });
-            }
-            var modelRenamed = model.Name != name;
-            await Atomic.RunAsync(db, async tk =>
-            {
+                    return Results.Ok(new { other.Id });
+                }
+                var modelRenamed = model.Name != name;
                 model.Name = name; model.IsActive = i.IsActive;
                 await db.SaveChangesAsync(tk);
                 var followers = await db.Assets.AllSites().Where(a => a.ModelId == id).ExecuteUpdateAsync(s => s.SetProperty(a => a.Model, name), tk);
@@ -115,8 +114,8 @@ public static class BrandEndpoints
                     FourC.Cmms.Core.Auditing.AuditLog.Summary(db, "BrandModel", id, "Updated", $"Model renamed to {name}: {FourC.Cmms.Core.Auditing.AuditLog.Count(followers, "asset", "assets")}");
                     await db.SaveChangesAsync(tk);
                 }
+                return Results.Ok(new { model.Id });
             }, ct);
-            return Results.Ok(new { model.Id });
         }).RequirePermission(Permissions.AssetsEdit);
 
         m.MapDelete("/{id:guid}", async (Guid id, CmmsDbContext db, CancellationToken ct) =>
