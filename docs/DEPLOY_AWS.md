@@ -96,7 +96,8 @@ Open **Actions → Deploy to AWS → Run workflow**, choose branch `main`, then 
 - It needs the repository variable `CMMS_ALERT_EMAIL` (the address that gets the alarms); without it the run stops at the first
   step and says so.
 - The **first run takes 30–40 minutes**, most of it AWS creating the SQL Server database and the CloudFront distribution.
-- Later runs take 5–10 minutes.
+- Later runs take 5–10 minutes. The workflow waits up to 3 hours for the app's stack (AWS's own wait stops at 60 minutes),
+  printing its status every 5 minutes; if it is still busy then, the run says so and CloudFormation carries on by itself.
 - When it finishes, the run's summary page shows the web address (`https://dxxxxxxxx.cloudfront.net`). It is also the
   `Url` output of the `cmms-app` stack in the CloudFormation console.
 
@@ -162,7 +163,12 @@ The workflow compares the file with what is deployed and prints a warning when t
 ### Upgrading an existing deployment to 0.29.0 (once)
 
 1. **Pick a quiet hour.** The deploy replaces the public load balancer with an internal one and points CloudFront at it. Expect
-   **about 5 to 10 minutes of errors** (503) while the app registers behind the new load balancer. Nothing happens to the database.
+   **up to about 20 minutes of errors** (503): CloudFront switches to the new load balancer first, and each edge answers 503
+   until the app's new task is healthy behind it. Nothing happens to the database. **Avoid two windows**, so that a failed
+   first deploy can still remove its new, empty backup vault and export bucket when it rolls back: do not start between
+   **00:00 and 02:00 UTC** (the daily snapshot into the new London vault starts at 01:00 UTC, and the deploy takes about 40
+   minutes), and not on a **Sunday after 02:00 UTC** (the app starts the weekly export into the new bucket as soon as the new
+   version runs).
 2. **Re-run `setup.sh`** in CloudShell, in the app's region, exactly as in step 1 above. It is safe to run again and changes only
    what 0.29.0 needs: it creates the recovery stack `cmms-dr` in Ireland (a few minutes), lets GitHub deploy `cmms-edge`, adds
    the boundary, the guard, the template bucket and the trail, and prints what it added. **Until you do this, the first deploy after merging stops at once with "Re-run

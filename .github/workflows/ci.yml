@@ -73,6 +73,9 @@ jobs:
           shellcheck -x deploy/azure/setup.sh deploy/aws/setup.sh scripts/*.sh
       - name: Test the release script
         run: bash scripts/test-release.sh
+      - name: Test the security check
+        # Canned tool output only (no Docker, no network); jq is on the runner.
+        run: bash scripts/test-security-check.sh
   security:
     # Known-vulnerable packages (NuGet, npm) and leaked secrets; scripts/security-check.sh explains the rules and the allowlist.
     runs-on: ubuntu-latest

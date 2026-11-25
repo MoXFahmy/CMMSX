@@ -49,8 +49,10 @@ parked, so this release takes the next number after 0.28.0.
   `CMMS_WAF_MODE`, `CMMS_REQUIRE_EMAIL_CONFIRMATION`, `CMMS_CREATE_GUARDDUTY_LONDON`, `CMMS_CREATE_GUARDDUTY_US_EAST`,
   `CMMS_DB_MAJOR_ENGINE_VERSION` and `CMMS_IRELAND_DB_COPY`. See docs/DEPLOY_AWS.md.
 - **One-time downtime: the load balancer switch.** The public load balancer is replaced by an internal one that only CloudFront
-  reaches (through a VPC origin). Expect about 5 to 10 minutes of errors during the first deploy of this release; pick a quiet
-  hour. The database is not touched. A failed deploy rolls back by itself.
+  reaches (through a VPC origin). Expect up to about 20 minutes of errors during the first deploy of this release; pick a quiet
+  hour, away from 01:00 UTC and Sundays after 02:00 UTC (see the runbook). The database is not touched. A failed deploy usually
+  rolls back by itself; if a rollback gets stuck, docs/SECURITY_AND_BACKUPS.md section 7 has the way out (a one-click recovery
+  run). The deploy now waits up to 3 hours for the app's stack, instead of the AWS CLI's 60 minutes.
 - **Backups.** Database point-in-time restore goes from 7 to 35 days. Daily snapshots (35 days) and monthly snapshots (12
   months) are copied to a locked vault in Ireland. The Ireland database copy defaults to RDS cross-Region automated backups
   (about 15 minutes of changes at risk; point-in-time restore works in Ireland too); `CMMS_IRELAND_DB_COPY=hourly-snapshots`

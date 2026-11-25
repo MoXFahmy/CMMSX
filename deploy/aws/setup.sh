@@ -144,6 +144,7 @@ This version of the setup (CMX 0.29.0) adds:
   - the recovery stack cmms-dr in eu-west-1 (locked backup vault, its key and the two copy buckets), deployed by this
     script and never by GitHub Actions: after a change to infra/aws/dr.yml, run this script again;
   - permission for GitHub Actions to deploy one more stack, cmms-edge in us-east-1 (web firewall), and to read cmms-dr;
+  - GitHub Actions sign-ins that last up to 4 hours (was 2), so a deploy can wait up to 3 hours for a long app update;
   - a bucket for the stacks' templates (output TemplateBucketName; old templates expire after 30 days);
   - a CloudTrail trail, cmms-trail, recording management events from every region into a locked bucket
     (output TrailBucketName), unless the account already had a multi-region trail that is logging.

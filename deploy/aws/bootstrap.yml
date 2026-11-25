@@ -558,7 +558,8 @@ Resources:
     Type: AWS::IAM::Role
     Properties:
       RoleName: !Sub "cmms-github-deploy-${AWS::Region}"
-      MaxSessionDuration: 7200
+      # 4 hours: the deploy workflow signs in again before the app's stack, whose update it waits for up to 3 hours.
+      MaxSessionDuration: 14400
       AssumeRolePolicyDocument:
         Version: "2012-10-17"
         Statement:

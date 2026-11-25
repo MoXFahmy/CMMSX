@@ -24,7 +24,8 @@
 #   SECURITY_TODAY  override today's date (YYYY-MM-DD), for testing the expiry rules
 #   SECURITY_ALLOWLIST  test hook: another allowlist file instead of .github/security-allowlist.txt
 #   SECURITY_FIXTURES  test hook (scripts/test-security-check.sh): a directory holding canned tool output instead of running the
-#                   tools: nuget.json, npm-web.json, npm-mobile.json, gitleaks-tree.json. Never set it in CI.
+#                   tools: nuget.json, npm-web.json, npm-mobile.json, gitleaks-tree.json.
+#   Either test hook set while CI or GITHUB_ACTIONS is set: the script refuses to run (one problem, exit 1).
 # Fail closed: output of a tool that is missing, empty, not JSON or not shaped as expected counts as a problem, never as clean.
 set -euo pipefail
 
@@ -48,6 +49,15 @@ else max_expiry="$(date -u -j -v+90d -f %Y-%m-%d "$today" +%F)"; fi
 problems=0
 warnings=0
 allowed_file="$work/allowed"; : >"$allowed_file"   # lines: <id> TAB <expiry>, only entries still in force
+
+# The test hooks replace the tools' output or the allowlist. In CI the gate must judge the real ones, so a CI run with either
+# hook set (a polluted environment) is refused rather than trusted. scripts/test-security-check.sh clears CI for its own runs.
+if { [ -n "${CI:-}" ] || [ -n "${GITHUB_ACTIONS:-}" ]; } && { [ -n "${SECURITY_FIXTURES:-}" ] || [ -n "${SECURITY_ALLOWLIST:-}" ]; }; then
+  echo "ERROR  SECURITY_FIXTURES or SECURITY_ALLOWLIST is set in CI: these are test hooks for scripts/test-security-check.sh and are refused here"
+  problems=$((problems + 1))
+  echo "security-check: $problems problem(s) found; unset the test hooks."
+  exit 1
+fi
 
 # --- allowlist ---------------------------------------------------------------------------------------------------------
 load_allowlist() {

@@ -15,13 +15,15 @@ TWO_ADV='{"vulnerabilities":{"foo":{"name":"foo","severity":"critical","range":"
 BAD_NPM='{"vulnerabilities":{"foo":{"name":"foo","severity":"high","range":"<2","fixAvailable":true,"via":7}}}'
 BAD_SECRETS='{"not":"a list"}'
 
-# run <name> <nuget> <web npm> <mobile npm> <tree secrets> [allowlist text]; leaves output in $tmp/out and the exit code in $code
+# run <name> <nuget> <web npm> <mobile npm> <tree secrets> [allowlist text]; leaves output in $tmp/out and the exit code in $code.
+# The check refuses its test hooks under CI, so these runs clear CI and GITHUB_ACTIONS (this script itself runs in CI).
 run() {
   local fx="$tmp/fx-$1"; mkdir -p "$fx"
   printf '%s' "$2" >"$fx/nuget.json"; printf '%s' "$3" >"$fx/npm-web.json"; printf '%s' "$4" >"$fx/npm-mobile.json"
   printf '%s' "$5" >"$fx/gitleaks-tree.json"
   printf '%s\n' "${6:-}" >"$tmp/allow-$1"
-  SECURITY_FIXTURES="$fx" SECURITY_ALLOWLIST="$tmp/allow-$1" GITLEAKS_RANGE='' bash scripts/security-check.sh >"$tmp/out" 2>&1; code=$?
+  env -u CI -u GITHUB_ACTIONS SECURITY_FIXTURES="$fx" SECURITY_ALLOWLIST="$tmp/allow-$1" GITLEAKS_RANGE='' \
+    bash scripts/security-check.sh >"$tmp/out" 2>&1; code=$?
 }
 expect() { # expect <description> <exit code wanted> [text the output must contain]
   if [ "$code" -eq "$2" ] && { [ -z "${3:-}" ] || grep -qF -- "$3" "$tmp/out"; }; then echo "ok   $1"
@@ -65,6 +67,20 @@ expect "a secret blocks" 1 "a.txt:aws-access-token:1"
 # unfixable npm findings warn without blocking
 run w1 "$OK_NUGET" '{"vulnerabilities":{"bar":{"name":"bar","severity":"high","range":"*","fixAvailable":false,"via":[{"title":"C","url":"https://github.com/advisories/GHSA-dddd-dddd-dddd","severity":"high"}]}}}' "$OK_NPM" ''
 expect "unfixable high npm finding only warns" 0 "WARNING"
+
+# the test hooks are refused in CI, whichever CI variable is set and whichever hook: a polluted environment must not pass the gate.
+# Stand-ins for dotnet, npm and docker fail at once, so a check that wrongly ran the real tools would end fast (and still fail here).
+fake="$tmp/fake-bin"; mkdir -p "$fake"
+for tool in dotnet npm docker; do printf '#!/bin/sh\nexit 1\n' >"$fake/$tool"; chmod +x "$fake/$tool"; done
+hook_run() { # hook_run <env assignments...>: the clean fixtures, under the given environment
+  env -u CI -u GITHUB_ACTIONS PATH="$fake:$PATH" GITLEAKS_RANGE='' "$@" bash scripts/security-check.sh >"$tmp/out" 2>&1; code=$?
+}
+hook_run CI=true SECURITY_FIXTURES="$tmp/fx-clean" SECURITY_ALLOWLIST="$tmp/allow-clean"
+expect "fixture and allowlist hooks refused when CI is set" 1 "test hook"
+hook_run GITHUB_ACTIONS=true SECURITY_FIXTURES="$tmp/fx-clean"
+expect "fixture hook refused when GITHUB_ACTIONS is set" 1 "test hook"
+hook_run CI=1 SECURITY_ALLOWLIST="$tmp/allow-clean"
+expect "allowlist hook alone refused when CI is set" 1 "test hook"
 
 if [ "$failures" -gt 0 ]; then echo "$failures FAILED"; exit 1; fi
 echo "all passed"

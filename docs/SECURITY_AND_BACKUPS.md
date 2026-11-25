@@ -408,7 +408,10 @@ Write down what you lifted and why. Compliance mode, which nobody can lift, is n
 ## 7. When a deploy fails
 
 Every stack is deployed through a change set that is printed in the run's log before it is applied, and CloudFormation rolls a
-failed update back by itself. The run's log lists the failed events and their reasons.
+failed update back by itself (unless the rollback gets stuck: below). The run's log lists the failed events and their reasons.
+The workflow waits up to 3 hours for each stack, printing its status every 5 minutes. If a stack is still busy after that, the
+run fails with "is still ... after 180 minutes": nothing is wrong yet, CloudFormation carries on by itself; watch the stack in
+the CloudFormation console and run the workflow again once it has finished.
 
 **A stack stuck in `UPDATE_ROLLBACK_FAILED` (`cmms-app` or `cmms-edge`).** Rolling back sometimes needs to remove the
 permissions boundary from a role that had none before 0.29.0 (the app's two task roles). The guard refuses that, so the rollback
@@ -432,8 +435,8 @@ The skipped role simply keeps its boundary. When the stack reads `UPDATE_ROLLBAC
 run **Deploy to AWS** again with `continue_rollback_stack` back on `none`.
 
 **The load balancer switch.** 0.29.0 replaces the public load balancer with an internal one and points CloudFront at it through
-a VPC origin, in one deploy. Expect **5 to 10 minutes of errors** while the app registers behind the new load balancer; pick a
-quiet hour. If the deploy fails, CloudFormation rolls back by itself and the public load balancer is back; that needs nothing
+a VPC origin, in one deploy. Expect **up to about 20 minutes of errors** (CloudFront switches first, and each edge answers 503
+until the app's new task is healthy behind the new load balancer); pick a quiet hour (section 10, step 1). If the deploy fails, CloudFormation rolls back by itself and the public load balancer is back; that needs nothing
 from you. If the deploy succeeds but the site misbehaves, do not re-run an old 0.28.x commit: its template would take the
 permissions boundary off the app's roles, which the guard refuses, and leave the stack stuck. Deploy the last good 0.29.x commit
 instead, or have a developer fix forward (to go back to a public load balancer the template has to change, keeping the boundary).
@@ -534,7 +537,13 @@ that a restore works before the day you need it.
 
 The checklist behind a release of 0.29.0. Detail is in [DEPLOY_AWS.md](DEPLOY_AWS.md).
 
-1. Pick a **quiet hour** for the deploy (5 to 10 minutes of errors while the load balancer switches).
+1. Pick a **quiet hour** for the deploy (up to about 20 minutes of errors while the load balancer switches). **Avoid two
+   windows**: not between **00:00 and 02:00 UTC** (the first daily snapshot goes into the new London vault from 01:00 UTC; the
+   first deploy takes about 40 minutes) and not on a **Sunday after 02:00 UTC** (the app starts the weekly export into the new
+   export bucket as soon as the new version runs). A failed first deploy removes its new vault and export bucket only while
+   they are empty; with something in them the rollback cannot finish and a console administrator has to empty them first.
+   (With `CMMS_IRELAND_DB_COPY` = `hourly-snapshots` a snapshot lands every hour, so no window is safe: if such a first deploy
+   fails after its first hourly snapshot, expect that console administrator step.)
 2. **Re-run `setup.sh`** in CloudShell, in the app's region (London). It also creates the recovery stack `cmms-dr` in Ireland.
    The first deploy after merging stops with "Re-run deploy/aws/setup.sh in CloudShell" until you do. Later, a change to
    `infra/aws/dr.yml` (or `deploy/aws/bootstrap.yml`) also needs `setup.sh` again; the deploy workflow never applies it.

@@ -41,7 +41,8 @@ jobs:
           github.event.workflow_run.event == 'push' &&
           github.event.workflow_run.head_repository.full_name == github.repository))
     runs-on: ubuntu-latest
-    timeout-minutes: 90
+    # Build, the edge stack, up to 3 hours waiting for the app's stack (CFN_WAIT_MINUTES) and the version check.
+    timeout-minutes: 270
     env:
       AWS_REGION: ${{ vars.AWS_REGION }}
       STACK: cmms-app
@@ -97,6 +98,7 @@ jobs:
           cat > "$RUNNER_TEMP/cfn.sh" <<'LIB'
           # shellcheck shell=bash
           CFN_POLL_SLEEP="${CFN_POLL_SLEEP:-30}"
+          CFN_WAIT_MINUTES="${CFN_WAIT_MINUTES:-180}"
 
           cfn_need_setup() {
             echo "::error::Re-run deploy/aws/setup.sh in CloudShell (it sets up the deploy role and the recovery stack cmms-dr in Ireland, which this workflow only reads), then re-run this workflow."
@@ -147,26 +149,38 @@ jobs:
             echo "Then re-run this workflow."
           }
 
-          cfn_settle() {
-            local status n=0
-            while [ "$n" -lt 120 ]; do
-              status=$(cfn_status "$1" "$2") || return 1
-              case "$status" in *_IN_PROGRESS) sleep "$CFN_POLL_SLEEP"; n=$((n + 1)) ;; *) echo "$status"; return 0 ;; esac
+          # Waits while the stack is busy (any *_IN_PROGRESS status) and prints the status it ends in. The CLI's waiter gives up
+          # after 60 minutes, which a first database with its copy to Ireland and the VPC origin can outlast; this waits up to
+          # CFN_WAIT_MINUTES (180), showing the status in the log every 5 minutes and whenever it changes. Still busy at the cap:
+          # prints that busy status (the caller says so). The stack can't be read (e.g. credentials gone): fails.
+          cfn_wait() {
+            local stack=$1 region=$2 status last="" n=0 step cap every
+            step=$(( CFN_POLL_SLEEP > 0 ? CFN_POLL_SLEEP : 1 ))
+            cap=$(( CFN_WAIT_MINUTES * 60 / step ))
+            every=$(( 300 / step )); [ "$every" -ge 1 ] || every=1
+            while :; do
+              status=$(cfn_status "$stack" "$region") || return 1
+              case "$status" in *_IN_PROGRESS) ;; *) echo "$status"; return 0 ;; esac
+              if [ "$status" != "$last" ] || [ $(( n % every )) -eq 0 ]; then
+                echo "$stack: $status ($(( n * step / 60 )) min)" >&2
+                last=$status
+              fi
+              if [ "$n" -ge "$cap" ]; then echo "$status"; return 0; fi
+              sleep "$CFN_POLL_SLEEP"; n=$((n + 1))
             done
-            echo "$status"
           }
 
           cfn_after_failure() {
             local status
             cfn_events "$1" "$2"
-            status=$(cfn_settle "$1" "$2") || status=UNKNOWN
+            status=$(cfn_wait "$1" "$2") || status=UNKNOWN
             echo "$1 ended in $status."
             if [ "$status" = UPDATE_ROLLBACK_FAILED ]; then cfn_stuck_hint "$1" "$2" "$3"; fi
           }
 
           # cfn_deploy STACK REGION TEMPLATE EXEC_ROLE RECREATE_IF_FAILED_FIRST_CREATE(yes|no) [aws deploy arguments...]
           cfn_deploy() {
-            local stack=$1 region=$2 template=$3 role=$4 recreate=$5 status kind cs log
+            local stack=$1 region=$2 template=$3 role=$4 recreate=$5 status kind cs log expected
             shift 5
             status=$(cfn_status "$stack" "$region") || return 1
             case "$status" in
@@ -178,8 +192,12 @@ jobs:
                 fi
                 echo "Removing the failed first deployment of $stack..."
                 aws cloudformation delete-stack --region "$region" --stack-name "$stack" --role-arn "$role"
-                aws cloudformation wait stack-delete-complete --region "$region" --stack-name "$stack"
-                status=NONE ;;
+                status=$(cfn_wait "$stack" "$region") || return 1
+                if [ "$status" != NONE ]; then
+                  cfn_events "$stack" "$region"
+                  echo "::error::Could not remove the failed first deployment of $stack (it is in $status). Look at its events in the CloudFormation console ($region), remove it by hand and re-run."
+                  return 1
+                fi ;;
               UPDATE_ROLLBACK_FAILED) cfn_stuck_hint "$stack" "$region" "$role"; return 1 ;;
               REVIEW_IN_PROGRESS) ;;
               *_IN_PROGRESS) echo "::error::$stack is busy ($status). Wait for it to finish, then re-run."; return 1 ;;
@@ -219,11 +237,22 @@ jobs:
               echo "::warning::$stack: these resources will be replaced (or may be): $replaced. Applying anyway."
             fi
             aws cloudformation execute-change-set --region "$region" --stack-name "$stack" --change-set-name "$cs"
-            if ! aws cloudformation wait "stack-$kind-complete" --region "$region" --stack-name "$stack"; then
-              cfn_after_failure "$stack" "$region" "$role"
-              return 1
+            # Ends like the CLI's stack-create-complete / stack-update-complete waiter: only CREATE_COMPLETE or UPDATE_COMPLETE
+            # is success; any failed, rolled-back or deleted status (or a stack that can't be read) is a failure.
+            expected=UPDATE_COMPLETE
+            if [ "$kind" = create ]; then expected=CREATE_COMPLETE; fi
+            status=$(cfn_wait "$stack" "$region") || status=UNKNOWN
+            if [ "$status" = "$expected" ]; then
+              echo "$stack: done."
+              return 0
             fi
-            echo "$stack: done."
+            case "$status" in
+              *_IN_PROGRESS)
+                echo "::error::$stack is still $status after $CFN_WAIT_MINUTES minutes. CloudFormation carries on by itself: watch the stack's events in the console ($region) and re-run this workflow once it has finished."
+                return 1 ;;
+            esac
+            cfn_after_failure "$stack" "$region" "$role"
+            return 1
           }
           LIB
 
@@ -314,6 +343,17 @@ jobs:
           web_acl=$(cfn_output "$EDGE_STACK" "$EDGE_REGION" WebAclArn)
           if [ -z "$web_acl" ]; then echo "::error::The edge stack $EDGE_STACK has no WebAclArn output."; exit 1; fi
           echo "web_acl=$web_acl" >> "$GITHUB_OUTPUT"
+
+      # Fresh credentials for the longest step: the app's stack can take hours (the wait below allows 3), longer than the first
+      # sign-in's 2 hours. 4 hours needs the setup of 0.29.0 (the deploy role's MaxSessionDuration); a run against an older
+      # setup has already stopped at "Re-run deploy/aws/setup.sh" above.
+      - name: Sign in to AWS again (for the application stack)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-duration-seconds: 14400
+          unset-current-credentials: true
 
       - name: Deploy the application (the first run takes about 30 minutes, mostly creating the database)
         id: deploy
