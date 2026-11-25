@@ -119,6 +119,20 @@ Parameters:
       How the database reaches Ireland between the daily snapshots. replication = RDS cross-Region automated backups (point in
       time restore in Ireland, about 15 minutes of changes at risk); hourly-snapshots = the fallback if RDS refuses it: an
       hourly AWS Backup snapshot copied to the Ireland vault and kept 7 days there (1-2 hours at risk).
+  AlertEmail:
+    Type: String
+    Default: ""
+    AllowedPattern: "^$|^[^@\\s]+@[^@\\s]+$"
+    Description: >-
+      Address that receives the alarms, backup failures, restore test results and GuardDuty findings (topic cmms-alerts).
+      The recipient must confirm the subscription e-mail once. Leave empty for no subscription.
+  CreateGuardDutyDetector:
+    Type: String
+    AllowedValues: ["true", "false"]
+    Default: "true"
+    Description: >-
+      Create the GuardDuty detector in this Region. Set false when the account already has one here (only one is allowed
+      per Region); then switch on S3 protection and ECS Fargate runtime monitoring on that detector by hand.
 
 Conditions:
   HasDomain: !And [!Not [!Equals [!Ref Domain, ""]], !Not [!Equals [!Ref DomainCertificateArn, ""]]]
@@ -128,6 +142,8 @@ Conditions:
   HasAi: !Not [!Equals [!Ref AnthropicSecretArn, ""]]
   CopyByReplication: !Equals [!Ref IrelandDatabaseCopy, replication]
   CopyByHourlySnapshots: !Equals [!Ref IrelandDatabaseCopy, hourly-snapshots]
+  HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
+  MakeDetector: !Equals [!Ref CreateGuardDutyDetector, "true"]
 
 Resources:
   # ---------------------------------------------------------------- Network
@@ -385,6 +401,10 @@ Resources:
             Filter: { Prefix: "" }
             DeleteMarkerReplication: { Status: Disabled }
             Destination: { Bucket: !Ref FilesCopyBucketArn }
+      # GuardDuty Malware Protection (MalwareProtectionPlan) listens to the bucket's events through EventBridge; set here
+      # too, so a later stack update keeps it on.
+      NotificationConfiguration:
+        EventBridgeConfiguration: { EventBridgeEnabled: true }
 
   FilesBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -624,7 +644,7 @@ Resources:
     UpdateReplacePolicy: Delete
     Properties:
       LogGroupName: !Sub "/ecs/${AWS::StackName}"
-      RetentionInDays: 30
+      RetentionInDays: 90
 
   Cluster:
     Type: AWS::ECS::Cluster
@@ -719,6 +739,8 @@ Resources:
           PortMappings: [{ ContainerPort: 8080, Protocol: tcp }]
           Environment:
             - { Name: ASPNETCORE_ENVIRONMENT, Value: Production }
+            # One JSON line per log entry (0.29.0): Message is the text, State its values. The metric filters read them.
+            - { Name: Logging__Console__FormatterName, Value: json }
             # TLS ends at CloudFront, which reports the original scheme in CloudFront-Forwarded-Proto.
             - { Name: ASPNETCORE_FORWARDEDHEADERS_ENABLED, Value: "true" }
             - { Name: ForwardedHeaders__ProtoHeaderName, Value: CloudFront-Forwarded-Proto }
@@ -826,6 +848,372 @@ Resources:
           ContainerPort: 8080
           TargetGroupArn: !Ref InternalTargetGroup
 
+  # ---------------------------------------------------------------- Detection (0.29.0): GuardDuty
+  # S3 protection and runtime monitoring of the Fargate task (GuardDuty adds its agent to each new task and a VPC endpoint
+  # to the VPC; turn runtime monitoring off before deleting the stack, or that endpoint keeps the VPC). The CloudTrail
+  # trail lives in the cmms-github setup stack, out of the pipeline's reach.
+  Detector:
+    Type: AWS::GuardDuty::Detector
+    Condition: MakeDetector
+    Properties:
+      Enable: true
+      FindingPublishingFrequency: FIFTEEN_MINUTES
+      Features:
+        - Name: S3_DATA_EVENTS
+          Status: ENABLED
+        - Name: RUNTIME_MONITORING
+          Status: ENABLED
+          AdditionalConfiguration:
+            - Name: ECS_FARGATE_AGENT_MANAGEMENT
+              Status: ENABLED
+
+  # GuardDuty scans each new upload in the files bucket and tags it (GuardDutyMalwareScanStatus); a malicious file becomes a
+  # finding, which reaches the alert topic (GuardDutyFindings). Alert only: the app still serves the file.
+  MalwareRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /cmms/
+      PermissionsBoundary: !Ref BoundaryPolicyArn
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Effect: Allow
+            Principal: { Service: malware-protection-plan.guardduty.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: scan-files
+          PolicyDocument:
+            Version: "2012-10-17"
+            Statement:
+              - Effect: Allow
+                Action: [events:PutRule, events:DeleteRule, events:PutTargets, events:RemoveTargets]
+                Resource: !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*"
+                Condition:
+                  StringLike: { "events:ManagedBy": malware-protection-plan.guardduty.amazonaws.com }
+              - Effect: Allow
+                Action: [events:DescribeRule, events:ListTargetsByRule]
+                Resource: !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/DO-NOT-DELETE-AmazonGuardDutyMalwareProtectionS3*"
+              - Effect: Allow
+                Action: [s3:PutObjectTagging, s3:GetObjectTagging, s3:PutObjectVersionTagging, s3:GetObjectVersionTagging]
+                Resource: !Sub "${FilesBucket.Arn}/*"
+              - Effect: Allow
+                Action: [s3:PutBucketNotification, s3:GetBucketNotification, s3:ListBucket]
+                Resource: !GetAtt FilesBucket.Arn
+              - Effect: Allow
+                Action: s3:PutObject
+                Resource: !Sub "${FilesBucket.Arn}/malware-protection-resource-validation-object"
+              - Effect: Allow
+                Action: [s3:GetObject, s3:GetObjectVersion]
+                Resource: !Sub "${FilesBucket.Arn}/*"
+
+  MalwareProtectionPlan:
+    Type: AWS::GuardDuty::MalwareProtectionPlan
+    Properties:
+      Role: !GetAtt MalwareRole.Arn
+      ProtectedResource:
+        S3Bucket:
+          BucketName: !Ref FilesBucket
+      Actions:
+        Tagging: { Status: ENABLED }
+
+  # ---------------------------------------------------------------- Alarms (0.29.0): the on-call inbox
+  AlertTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: cmms-alerts
+      DisplayName: CMX alerts
+
+  # The topic's default policy (this account's principals and CloudWatch alarms) plus EventBridge, for the backup, restore
+  # test and GuardDuty rules below.
+  AlertTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics: [!Ref AlertTopic]
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: ThisAccount
+            Effect: Allow
+            Principal: { AWS: "*" }
+            Action:
+              - sns:GetTopicAttributes
+              - sns:SetTopicAttributes
+              - sns:AddPermission
+              - sns:RemovePermission
+              - sns:DeleteTopic
+              - sns:Subscribe
+              - sns:ListSubscriptionsByTopic
+              - sns:Publish
+            Resource: !Ref AlertTopic
+            Condition:
+              StringEquals: { "AWS:SourceOwner": !Ref AWS::AccountId }
+          - Sid: EventBridgeRules
+            Effect: Allow
+            Principal: { Service: events.amazonaws.com }
+            Action: sns:Publish
+            Resource: !Ref AlertTopic
+            Condition:
+              ArnLike: { "aws:SourceArn": !Sub "arn:${AWS::Partition}:events:${AWS::Region}:${AWS::AccountId}:rule/*" }
+
+  AlertSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: HasAlertEmail
+    Properties:
+      TopicArn: !Ref AlertTopic
+      Protocol: email
+      Endpoint: !Ref AlertEmail
+
+  # The app's log lines as metrics (Logging__Console__FormatterName=json: Message holds the text, State the values).
+  SignInFailedMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.Message = "SignInFailed" }'
+      MetricTransformations:
+        - MetricNamespace: !Sub "CMX/${AWS::StackName}"
+          MetricName: SignInFailed
+          MetricValue: "1"
+          Unit: Count
+
+  # "DatabaseSize mb={Mb}", once a day: the value is State.Mb.
+  DatabaseSizeMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.Message = "DatabaseSize mb=*" }'
+      MetricTransformations:
+        - MetricNamespace: !Sub "CMX/${AWS::StackName}"
+          MetricName: DatabaseSizeMb
+          MetricValue: $.State.Mb
+          Unit: Megabytes
+
+  BackupExportErrorMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.Message = "BackupExport status=ERROR*" }'
+      MetricTransformations:
+        - MetricNamespace: !Sub "CMX/${AWS::StackName}"
+          MetricName: BackupExportError
+          MetricValue: "1"
+          Unit: Count
+
+  # 0 for every other log line, so a week in which the app ran but never exported reads as 0, not as missing data.
+  BackupExportSuccessMetric:
+    Type: AWS::Logs::MetricFilter
+    Properties:
+      LogGroupName: !Ref LogGroup
+      FilterPattern: '{ $.Message = "BackupExport status=SUCCESS*" }'
+      MetricTransformations:
+        - MetricNamespace: !Sub "CMX/${AWS::StackName}"
+          MetricName: BackupExportSuccess
+          MetricValue: "1"
+          DefaultValue: 0
+          Unit: Count
+
+  SiteErrorsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-site-errors"
+      AlarmDescription: More than 10 server errors (5xx from the load balancer or the app) in 5 minutes.
+      Metrics:
+        - Id: lb
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/ApplicationELB
+              MetricName: HTTPCode_ELB_5XX_Count
+              Dimensions:
+                - { Name: LoadBalancer, Value: !GetAtt InternalLoadBalancer.LoadBalancerFullName }
+            Period: 300
+            Stat: Sum
+        - Id: app
+          ReturnData: false
+          MetricStat:
+            Metric:
+              Namespace: AWS/ApplicationELB
+              MetricName: HTTPCode_Target_5XX_Count
+              Dimensions:
+                - { Name: LoadBalancer, Value: !GetAtt InternalLoadBalancer.LoadBalancerFullName }
+            Period: 300
+            Stat: Sum
+        - Id: errors
+          Label: Server errors
+          Expression: FILL(lb, 0) + FILL(app, 0)
+          ReturnData: true
+      EvaluationPeriods: 1
+      Threshold: 10
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # No data means the load balancer reports nothing, which counts as down. Made once the service uses the target group, so
+  # an empty group during a cutover or a first deploy isn't reported.
+  AppDownAlarm:
+    Type: AWS::CloudWatch::Alarm
+    DependsOn: Service
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-app-down"
+      AlarmDescription: No healthy app task behind the load balancer for 3 minutes.
+      Namespace: AWS/ApplicationELB
+      MetricName: HealthyHostCount
+      Dimensions:
+        - { Name: TargetGroup, Value: !GetAtt InternalTargetGroup.TargetGroupFullName }
+        - { Name: LoadBalancer, Value: !GetAtt InternalLoadBalancer.LoadBalancerFullName }
+      Statistic: Minimum
+      Period: 60
+      EvaluationPeriods: 3
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: breaching
+      AlarmActions: [!Ref AlertTopic]
+
+  DatabaseBusyAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-database-busy"
+      AlarmDescription: Database CPU above 85% for 15 minutes.
+      Namespace: AWS/RDS
+      MetricName: CPUUtilization
+      Dimensions:
+        - { Name: DBInstanceIdentifier, Value: !Ref Database }
+      Statistic: Average
+      Period: 300
+      EvaluationPeriods: 3
+      Threshold: 85
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  DatabaseDiskAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-database-disk"
+      AlarmDescription: Database free storage below 3 GB.
+      Namespace: AWS/RDS
+      MetricName: FreeStorageSpace
+      Dimensions:
+        - { Name: DBInstanceIdentifier, Value: !Ref Database }
+      Statistic: Minimum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 3221225472 # 3 GiB in bytes
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # The Express edition stops each database at 10 GB; this leaves room to move to a bigger edition. A daily value, so a
+  # missing day keeps the alarm as it is.
+  DatabaseSizeAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-database-size"
+      AlarmDescription: The database's data files reached 7 GB (7,168 MB) of the 10 GB SQL Server Express cap.
+      Namespace: !Sub "CMX/${AWS::StackName}"
+      MetricName: DatabaseSizeMb
+      Statistic: Maximum
+      Period: 86400
+      EvaluationPeriods: 1
+      Threshold: 7168
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: ignore
+      AlarmActions: [!Ref AlertTopic]
+
+  SignInAttackAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-sign-in-attack"
+      AlarmDescription: More than 50 failed sign-ins in 5 minutes (password guessing).
+      Namespace: !Sub "CMX/${AWS::StackName}"
+      MetricName: SignInFailed
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 50
+      ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # Native export failed, part 1: any "BackupExport status=ERROR" line (each failed try, Sundays, hourly until it works).
+  NativeExportErrorAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-native-export-error"
+      AlarmDescription: The weekly native database export reported an error (BackupExport status=ERROR in the app log).
+      Namespace: !Sub "CMX/${AWS::StackName}"
+      MetricName: BackupExportError
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # Native export failed, part 2: no SUCCESS line in a whole calendar week (Monday to Monday, UTC). CloudWatch can't look
+  # back 8 days (an alarm sees at most 7), and a rolling 7 days would fire whenever one Sunday's export finishes a little
+  # later than the last; each calendar week holds exactly one Sunday. A missed Sunday alarms the Monday after, at most
+  # 7 days 22 hours after the previous export, and stays in alarm until a week with an export ends.
+  NativeExportMissingAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-native-export-missing"
+      AlarmDescription: No successful weekly native database export last week (no BackupExport status=SUCCESS line).
+      Namespace: !Sub "CMX/${AWS::StackName}"
+      MetricName: BackupExportSuccess
+      Statistic: Sum
+      Period: 604800
+      EvaluationPeriods: 1
+      EvaluationWindow:
+        WallClockWindow: { Timezone: UTC }
+      Threshold: 1
+      ComparisonOperator: LessThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions: [!Ref AlertTopic]
+
+  # AWS Backup: a snapshot or its copy to Ireland that failed, was stopped or never started in its window.
+  BackupJobFailures:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: CMX - AWS Backup backup or copy job FAILED, ABORTED or EXPIRED
+      EventPattern:
+        source: [aws.backup]
+        detail-type: [Backup Job State Change, Copy Job State Change]
+        detail:
+          state: [FAILED, ABORTED, EXPIRED]
+      Targets:
+        - Id: alert-topic
+          Arn: !Ref AlertTopic
+
+  # Every result of the monthly restore test, success too: the e-mail carries the job's creation and completion times.
+  # Only restore testing jobs carry restoreTestingPlanArn (this account has one plan, RestoreTestingPlan).
+  RestoreTestResults:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: CMX - monthly restore test COMPLETED, FAILED or ABORTED
+      EventPattern:
+        source: [aws.backup]
+        detail-type: [Restore Job State Change]
+        detail:
+          status: [COMPLETED, FAILED, ABORTED]
+          restoreTestingPlanArn: [{ exists: true }]
+      Targets:
+        - Id: alert-topic
+          Arn: !Ref AlertTopic
+
+  GuardDutyFindings:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: CMX - GuardDuty findings of severity 4 (medium) or higher
+      EventPattern:
+        source: [aws.guardduty]
+        detail-type: [GuardDuty Finding]
+        detail:
+          severity: [{ numeric: [">=", 4] }]
+      Targets:
+        - Id: alert-topic
+          Arn: !Ref AlertTopic
+
   # ---------------------------------------------------------------- HTTPS front end (CloudFront)
   # Forwards everything the app needs (cookies, query strings, headers) plus CloudFront-Forwarded-Proto and the visitor's
   # address (CloudFront-Viewer-Address, for the app's per-address limits).
@@ -915,6 +1303,9 @@ Outputs:
   BackupVaultName:
     Description: London AWS Backup vault (daily and monthly snapshots; copies go to the Ireland vault)
     Value: !Ref BackupVault
+  AlertTopicArn:
+    Description: Topic cmms-alerts (alarms, backup failures, restore test results, GuardDuty findings)
+    Value: !Ref AlertTopic
   DatabaseEndpoint:
     Value: !GetAtt Database.Endpoint.Address
   DatabaseSecretArn:
