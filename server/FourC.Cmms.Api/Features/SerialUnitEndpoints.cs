@@ -114,33 +114,44 @@ public static class SerialUnitEndpoints
                 await db.SaveChangesAsync(ct);
                 return Results.Ok(new { part.Id, part.IsSerialTracked });
             }
-            part.UnitLifeMonths = i.UnitLifeMonths;
             if (!part.IsSerialTracked)
             {
                 if (part.IsShelfItem) throw new DomainException(UnitRules.SerialShelf);
-                var given = (i.Stores ?? []).ToDictionary(s => s.StoreId, s => UnitRules.CleanSerials(s.Serials ?? []));
-                // Every store holding the part, at every site: a store left without units would be stuck (its stock can't move any more).
-                var levels = await db.StockLevels.AllSites().Where(l => l.PartId == id && l.QuantityOnHand != 0).Select(l => new { l.StoreId, l.QuantityOnHand, l.Store!.Code }).ToListAsync(ct);
-                var visible = await db.Stores.Select(s => s.Id).ToListAsync(ct);
-                if (levels.Any(l => !visible.Contains(l.StoreId))) throw new DomainException("This part has stock at sites you can't see.");
-                foreach (var l in levels)
-                    if (l.QuantityOnHand != Math.Floor(l.QuantityOnHand) || given.GetValueOrDefault(l.StoreId)?.Count != (int)l.QuantityOnHand)
-                        throw new DomainException($"Enter one serial number for each piece in stock: {l.Code} has {l.QuantityOnHand:0.###}.");
-                var all = levels.SelectMany(l => given[l.StoreId]).ToList();
-                await SerialUnits.CheckNewSerialsAsync(db, part, all, all.Count, ct);
-                await db.InTransactionAsync(async tk =>
+                var stores = i.Stores ?? [];
+                if (stores.GroupBy(s => s.StoreId).Any(g => g.Count() > 1)) throw new DomainException("Each store can be listed only once.");
+                var given = stores.ToDictionary(s => s.StoreId, s => UnitRules.CleanSerials(s.Serials ?? []));
+                var switched = await db.InTransactionAsync(async tk =>
                 {
-                    part.IsSerialTracked = true;
+                    // May run again after a dropped connection: start from what is stored, not from what a failed try left in memory.
+                    db.ChangeTracker.Clear();
+                    var current = await db.Parts.FirstOrDefaultAsync(p => p.Id == id, tk) ?? throw new DomainException("Part not found.");
+                    if (current.IsSerialTracked) return current;
+                    // The part first (0.29.1): this waits for quantity moves under way and makes later ones see the part as serial-tracked and refuse,
+                    // and the stock lines are held until the units are in, so what is counted is what stays.
+                    current.UnitLifeMonths = i.UnitLifeMonths;
+                    current.IsSerialTracked = true;
+                    await db.SaveChangesAsync(tk);
+                    await db.Database.SqlQuery<Guid>($"SELECT Id AS Value FROM StockLevels WITH (UPDLOCK, HOLDLOCK) WHERE PartId = {id}").ToListAsync(tk);
+                    // Every store holding the part, at every site: a store left without units would be stuck (its stock can't move any more).
+                    var levels = await db.StockLevels.AllSites().Where(l => l.PartId == id && l.QuantityOnHand != 0).Select(l => new { l.StoreId, l.QuantityOnHand, l.Store!.Code }).ToListAsync(tk);
+                    var visible = await db.Stores.Select(s => s.Id).ToListAsync(tk);
+                    if (levels.Any(l => !visible.Contains(l.StoreId))) throw new DomainException("This part has stock at sites you can't see.");
+                    foreach (var l in levels)
+                        if (l.QuantityOnHand != Math.Floor(l.QuantityOnHand) || given.GetValueOrDefault(l.StoreId)?.Count != (int)l.QuantityOnHand)
+                            throw new DomainException($"Enter one serial number for each piece in stock: {l.Code} has {l.QuantityOnHand:0.###}.");
+                    var all = levels.SelectMany(l => given[l.StoreId]).ToList();
+                    await SerialUnits.CheckNewSerialsAsync(db, current, all, all.Count, tk);
                     foreach (var l in levels)
                     {
                         var store = await db.Stores.AllSites().FirstAsync(s => s.Id == l.StoreId, tk);
-                        await SerialUnits.RegisterInStoreAsync(db, ctx, part, store, given[l.StoreId], moveStock: false, "Serial tracking switched on", tk);
+                        await SerialUnits.RegisterInStoreAsync(db, ctx, current, store, given[l.StoreId], moveStock: false, "Serial tracking switched on", tk);
                     }
                     await db.SaveChangesAsync(tk);
-                    return true;
+                    return current;
                 }, ct);
-                return Results.Ok(new { part.Id, part.IsSerialTracked });
+                return Results.Ok(new { switched.Id, switched.IsSerialTracked });
             }
+            part.UnitLifeMonths = i.UnitLifeMonths;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { part.Id, part.IsSerialTracked });
         }).RequirePermission(Permissions.InventoryManage);

@@ -51,7 +51,16 @@ public static class BudgetEndpoints
                     if (current is null) db.Budgets.Add(new Budget { CostCentreId = row.CostCentreId, Year = i.Year, Month = m, Amount = Math.Round(amount.Value, 2) });
                     else current.Amount = Math.Round(amount.Value, 2);
                 }
-            await db.SaveChangesAsync(ct);
+            try { await db.SaveChangesAsync(ct); }
+            catch (DbUpdateException e) when (e.InnerException is Microsoft.Data.SqlClient.SqlException { Number: 2601 or 2627 })
+            {
+                // Two first saves of the same year at once: the other one added these months first (0.29.1).
+                return Results.Problem(title: Translator.T("These budgets were changed by someone else. Reload them and try again."), statusCode: 409);
+            }
+            catch (DbUpdateConcurrencyException)
+            {
+                return Results.Problem(title: Translator.T("These budgets were changed by someone else. Reload them and try again."), statusCode: 409);
+            }
             return Results.Ok(new { i.Year });
         }).RequirePermission(Permissions.SettingsManage);
     }

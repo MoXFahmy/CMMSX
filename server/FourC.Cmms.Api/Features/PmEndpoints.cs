@@ -782,6 +782,9 @@ public static class PmEndpoints
         Access.RequireLocation(db, v, i.LocationId);
         var currentTeam = id is { } sid ? await db.PmSchedules.Where(x => x.Id == sid).Select(x => x.TeamId).FirstOrDefaultAsync(ct) : null;
         await TeamEndpoints.CheckForWorkAsync(db, v, i.TeamId, i.SiteId, currentTeam, ct);
+        // A cost centre chosen now (0.20.0; checked 0.29.1): pages from before leave it alone, and one already on the PM may stay.
+        if (i.ManagesCostCentre == true || id is null)
+            await CostCentreQueries.CheckAsync(db, v, i.CostCentreId, id is { } cid ? await db.PmSchedules.Where(x => x.Id == cid).Select(x => x.CostCentreId).FirstOrDefaultAsync(ct) : null, ct);
         if (i.AssetGroupId is { } groupId)
         {
             // A PM on an asset group (0.21.0) covers its members at the PM's site; it can't also name assets.

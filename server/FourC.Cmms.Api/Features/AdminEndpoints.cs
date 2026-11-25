@@ -317,6 +317,7 @@ public static class AdminEndpoints
         // The organization's wording for the fixed lists (0.21.0): names, colours, order and hidden values.
         settings.MapPut("/lists", async (ListLabelsInput input, CmmsDbContext db, CancellationToken ct) =>
         {
+            if (Lists.Shape(input.ListLabels) is { } shape) return new Validator().When(true, "listLabels", shape).Problem();
             var labels = Lists.Clean(input.ListLabels);
             if (Lists.Problem(labels) is { } problem) return new Validator().When(true, "listLabels", problem).Problem();
             var t = await db.Tenants.FirstAsync(x => x.Id == db.CurrentTenantId, ct);
@@ -467,7 +468,10 @@ public static class DashboardEndpoints
             var recent = await assets.AsNoTracking().OrderByDescending(a => a.CreatedAt).Take(8)
                 .Select(a => new { a.Id, a.AssetNumber, Name = Bilingual.Arabic && a.NameAr != null ? a.NameAr : a.Name, a.Status, a.CreatedAt, SiteName = a.Site!.Name }).ToListAsync(ct);
             var active = new[] { FourC.Cmms.Core.Work.WorkOrderStatus.Open, FourC.Cmms.Core.Work.WorkOrderStatus.InProgress, FourC.Cmms.Core.Work.WorkOrderStatus.OnHold };
-            var since = DateTimeOffset.UtcNow.AddDays(-30);
+            // "Completed (30 days)" is the last 30 days and today by the organization's own dates, as the list its link opens counts them (0.29.1).
+            var tz = Downtime.Zone((await SlaQueries.SettingsAsync(db, ct)).TimeZone);
+            var completedFrom = Downtime.LocalDay(DateTimeOffset.UtcNow, tz).AddDays(-30);
+            var since = DowntimeMath.Midnight(completedFrom, tz);
             var woByStatus = await db.WorkOrders.GroupBy(w => w.Status).Select(x => new { Status = x.Key, Count = x.Count() }).ToListAsync(ct);
             var woByPriority = await db.WorkOrders.Where(w => active.Contains(w.Status)).GroupBy(w => w.Priority).Select(x => new { Priority = x.Key, Count = x.Count() }).ToListAsync(ct);
             var work = new
@@ -480,6 +484,7 @@ public static class DashboardEndpoints
                 // Nobody has acted yet: work orders past their start-by (late requests are on the requests' Late tab).
                 ResponseLate = await SlaQueries.LateResponse(db.WorkOrders, DateTimeOffset.UtcNow).CountAsync(ct),
                 CompletedLast30 = await db.WorkOrders.CountAsync(w => w.CompletedAt >= since, ct),
+                CompletedFrom = completedFrom.ToString("yyyy-MM-dd"), // the date the dashboard's links open the list from
                 RequestsAwaiting = await db.WorkRequests.CountAsync(r => r.Status == FourC.Cmms.Core.Work.WorkRequestStatus.New, ct),
                 ByStatus = woByStatus, ByPriority = woByPriority,
                 Urgent = await db.WorkOrders.AsNoTracking().Where(w => active.Contains(w.Status)).OrderByDescending(w => w.Priority).ThenBy(w => w.DueDate).Take(6)

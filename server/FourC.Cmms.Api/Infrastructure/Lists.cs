@@ -52,6 +52,22 @@ public static class Lists
         return Enum.GetValues(type).Cast<Enum>().FirstOrDefault(v => Names(s, v).Contains(wanted));
     }
 
+    /// <summary>
+    /// What's wrong with the shape of a payload before it is cleaned (0.29.1), or null: a list sent as nothing, a value sent as nothing, or two
+    /// lists (or two values of one list) that differ only in capital letters.
+    /// </summary>
+    public static string? Shape(Dictionary<string, Dictionary<string, ListLabel>>? labels)
+    {
+        if (labels is null) return null;
+        if (labels.Keys.GroupBy(k => k, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1)) return "A list or a value is given twice. Capital letters don't make them different.";
+        foreach (var (key, list) in labels)
+        {
+            if (list is null || list.Values.Any(l => l is null)) return "Fill in every list and every value: none can be empty.";
+            if (list.Keys.GroupBy(k => k, StringComparer.OrdinalIgnoreCase).Any(g => g.Count() > 1)) return "A list or a value is given twice. Capital letters don't make them different.";
+        }
+        return null;
+    }
+
     /// <summary>What's wrong with an organization's wording, or null.</summary>
     public static string? Problem(Dictionary<string, Dictionary<string, ListLabel>> labels)
     {

@@ -348,6 +348,7 @@ public static class WorkRequestEndpoints
         if (i.RequestTypeId is { } typeId && !await db.RequestTypes.AnyAsync(t => t.Id == typeId && t.IsActive, ct)) v.Add("requestTypeId", "Choose a request type.");
         if (await Codes.CheckAsync(db.Symptoms, i.SymptomId, null, Codes.UnknownSymptom, ct, anyState: fromPhone) is { } symptom) v.Add("symptomId", symptom);
         if (AccessWindows.Problem(i.AccessWindows) is { } windows) v.Add("accessWindows", windows);
+        await CostCentreQueries.CheckAsync(db, v, i.CostCentreId, null, ct);
         var extra = (i.ExtraRecipientIds ?? []).Distinct().ToList();
         if (extra.Count > MaxExtraRecipients) v.Add("extraRecipientIds", $"Choose at most {MaxExtraRecipients} people.");
         else if (extra.Count > 0)

@@ -310,7 +310,7 @@ export type WorkRequestDetail = {
   coveredBy?: CoveredBy | null;
 };
 export type WorkDashboard = {
-  open: number; overdue: number; completedLast30: number; requestsAwaiting: number; late: number; dueSoon: number; responseLate: number;
+  open: number; overdue: number; completedLast30: number; /** The organization's date the last 30 days start from (0.29.1). */ completedFrom?: string; requestsAwaiting: number; late: number; dueSoon: number; responseLate: number;
   byStatus: { status: WorkOrderStatus; count: number }[]; byPriority: { priority: WorkPriority; count: number }[];
   urgent: { id: string; number: string; title: string; priority: WorkPriority; status: WorkOrderStatus; dueDate?: string; assetNumber?: string }[];
 };

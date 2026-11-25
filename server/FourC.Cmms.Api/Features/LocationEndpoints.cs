@@ -321,6 +321,8 @@ public static class LocationEndpoints
         if (i.ParentId is not null && !unmoved && !await db.Locations.AnyAsync(l => l.Id == i.ParentId && l.SiteId == i.SiteId, ct))
             v.Add("parentId", "Parent location must belong to the selected site.");
         if (db.CurrentBranchPaths is not null && i.ParentId is null && !unmoved) v.Add("parentId", "Choose a parent place in your part of the site.");
+        if (i.ManagesCostCentre == true || id is null)
+            await CostCentreQueries.CheckAsync(db, v, i.CostCentreId, id is { } cid ? await db.Locations.Where(x => x.Id == cid).Select(x => x.CostCentreId).FirstOrDefaultAsync(ct) : null, ct);
         if (!string.IsNullOrWhiteSpace(i.Code) && await Unique.ClashAsync(db.Locations, l => l.SiteId == i.SiteId && l.Code == i.Code.Trim() && l.Id != id,
                 "Another location in this site already uses this code.", "This code is already used in a part of the site you can't see.", ct) is { } locationClash)
             v.Add("code", locationClash);

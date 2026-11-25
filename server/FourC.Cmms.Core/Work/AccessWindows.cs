@@ -1,7 +1,24 @@
 namespace FourC.Cmms.Core.Work;
 
 /// <summary>A time when the work may be done (a room is free, an area is open).</summary>
-public sealed record AccessWindow(DateTimeOffset Start, DateTimeOffset End, string? Note);
+public sealed record AccessWindow(
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(MissingDateConverter))] DateTimeOffset Start,
+    [property: System.Text.Json.Serialization.JsonConverter(typeof(MissingDateConverter))] DateTimeOffset End, string? Note);
+
+/// <summary>A cleared date picker sends an empty value (0.29.1): it reads as "no date" and is refused with a message, not as a broken request.</summary>
+public sealed class MissingDateConverter : System.Text.Json.Serialization.JsonConverter<DateTimeOffset>
+{
+    public override bool HandleNull => true;
+
+    public override DateTimeOffset Read(ref System.Text.Json.Utf8JsonReader reader, Type typeToConvert, System.Text.Json.JsonSerializerOptions options)
+    {
+        if (reader.TokenType == System.Text.Json.JsonTokenType.Null) return default;
+        if (reader.TokenType == System.Text.Json.JsonTokenType.String && string.IsNullOrWhiteSpace(reader.GetString())) return default;
+        return reader.GetDateTimeOffset();
+    }
+
+    public override void Write(System.Text.Json.Utf8JsonWriter writer, DateTimeOffset value, System.Text.Json.JsonSerializerOptions options) => writer.WriteStringValue(value);
+}
 
 public static class AccessWindows
 {
@@ -13,6 +30,7 @@ public static class AccessWindows
     {
         if (list is null || list.Count == 0) return null;
         if (list.Count > Max) return $"Give at most {Max} access windows.";
+        if (list.Any(w => w is null || w.Start == default || w.End == default)) return "Fill in the start and end of every access window.";
         if (list.Any(w => w.End <= w.Start)) return "An access window must end after it starts.";
         if (list.Any(w => (w.Note?.Trim().Length ?? 0) > NoteLength)) return $"An access window's note can be at most {NoteLength} characters.";
         return null;
@@ -20,7 +38,7 @@ public static class AccessWindows
 
     /// <summary>The list as stored: notes trimmed (empty ones dropped), in time order.</summary>
     public static List<AccessWindow> Clean(IReadOnlyList<AccessWindow>? list) =>
-        (list ?? []).Select(w => w with { Note = string.IsNullOrWhiteSpace(w.Note) ? null : w.Note.Trim() }).OrderBy(w => w.Start).ToList();
+        (list ?? []).Where(w => w is not null).Select(w => w with { Note = string.IsNullOrWhiteSpace(w.Note) ? null : w.Note.Trim() }).OrderBy(w => w.Start).ToList();
 
     /// <summary>True when there are no windows, or one of them overlaps <paramref name="day"/> in <paramref name="zone"/>.</summary>
     public static bool Covers(IReadOnlyList<AccessWindow>? list, DateOnly day, TimeZoneInfo zone)

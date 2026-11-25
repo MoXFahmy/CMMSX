@@ -33,8 +33,8 @@ export function useDashboard(enabled = true) {
   return useQuery({ queryKey: ['dashboard'], queryFn: () => get<Dashboard>('/dashboard'), enabled: enabled && can(P.dashboardView) });
 }
 
-/** The "completed in 30 days" counts open the list of work completed since then. */
-const since30 = () => dayjs().subtract(30, 'day').format('YYYY-MM-DD');
+/** The "completed in 30 days" counts open the list of work completed since then: the server's date (the organization's time zone), not this browser's clock. */
+const since30 = (data: Dashboard) => data.work.completedFrom ?? dayjs().subtract(30, 'day').format('YYYY-MM-DD');
 
 export function WorkSummary({ data }: { data: Dashboard }) {
   const { t } = useTranslation();
@@ -44,7 +44,7 @@ export function WorkSummary({ data }: { data: Dashboard }) {
       <Kpi label={t('dashboard.lateWork')} value={(data.work.late ?? data.work.overdue).toLocaleString()} icon={IconClockExclamation} color="red" to="/work-orders?view=overdue" />
       <Kpi label={t('dashboard.dueSoon')} value={(data.work.dueSoon ?? 0).toLocaleString()} icon={IconHourglass} color="orange" to="/work-orders?view=dueSoon" />
       <Kpi label={t('dashboard.responseLate')} value={(data.work.responseLate ?? 0).toLocaleString()} icon={IconBellRinging} color="red" to="/work-orders?view=responseLate" />
-      <Kpi label={t('dashboard.completed30')} value={data.work.completedLast30.toLocaleString()} icon={IconCircleCheck} color="teal" to={`/work-orders?tab=all&completedFrom=${since30()}`} />
+      <Kpi label={t('dashboard.completed30')} value={data.work.completedLast30.toLocaleString()} icon={IconCircleCheck} color="teal" to={`/work-orders?tab=all&completedFrom=${since30(data)}`} />
       <Kpi label={t('dashboard.requestsAwaiting')} value={data.work.requestsAwaiting.toLocaleString()} icon={IconInbox} color="grape" to="/work-requests" />
     </SimpleGrid>
   );
@@ -54,7 +54,7 @@ export function WorkBySite({ data }: { data: Dashboard }) {
   const { t } = useTranslation();
   const { terms } = useAuth();
   if ((data.bySiteWork?.length ?? 0) === 0) return null;
-  const since = since30();
+  const since = since30(data);
   return (
     <Card p={0}>
       <Title order={5} p="md" pb="xs">{t('dashboard.workBySite', { site: terms.site.toLowerCase() })}</Title>

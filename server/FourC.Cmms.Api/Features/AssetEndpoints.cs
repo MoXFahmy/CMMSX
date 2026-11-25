@@ -468,6 +468,8 @@ public static class AssetEndpoints
         if (i.LocationId is not null && !await db.Locations.AnyAsync(l => l.Id == i.LocationId && l.SiteId == i.SiteId, ct))
             v.Add("locationId", "Location must belong to the selected site.");
         if (i.CategoryId is not null && !await db.AssetCategories.AnyAsync(c => c.Id == i.CategoryId, ct)) v.Add("categoryId", "Category not found.");
+        if (i.ManagesCostCentre == true || id is null)
+            await CostCentreQueries.CheckAsync(db, v, i.CostCentreId, id is { } cid ? await db.Assets.Where(x => x.Id == cid).Select(x => x.CostCentreId).FirstOrDefaultAsync(ct) : null, ct);
         if (i.ManagesBrand == true)
         {
             var current = id is { } existing ? await db.Assets.AsNoTracking().Where(a => a.Id == existing).Select(a => new { a.BrandId, a.ModelId }).FirstOrDefaultAsync(ct) : null;

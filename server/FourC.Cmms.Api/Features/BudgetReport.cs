@@ -78,7 +78,7 @@ public static class BudgetReport
         var firstMonth = a.From.Year * 12 + a.From.Month - 1;
         var lastMonth = a.To.Year * 12 + a.To.Month - 1;
         foreach (var b in await db.Budgets.AsNoTracking().Where(b => b.Year * 12 + b.Month - 1 >= firstMonth && b.Year * 12 + b.Month - 1 <= lastMonth).ToListAsync(ct))
-            At(b.CostCentreId, b.Year, b.Month).Budget += b.Amount;
+            At(b.CostCentreId, b.Year, b.Month).Budget += b.Amount * CoveredShare(b.Year, b.Month, a.From, a.To);
 
         // The tree (every site), what the viewer may see, and each cost centre with its children.
         var tree = await db.CostCentres.AllSites().AsNoTracking().Select(c => new { c.Id, c.ParentId }).ToListAsync(ct);
@@ -164,5 +164,19 @@ public static class BudgetReport
             rows, new Chart("bar", "group", ["budget", "actual", "committed"]),
             [new("Budget", Math.Round(total.Budget, 2), "currency"), new("Actual", Math.Round(total.Actual, 2), "currency"),
              new("Committed", Math.Round(total.Committed, 2), "currency"), new("Variance", Math.Round(total.Budget - total.Actual - total.Committed, 2), "currency")]);
+    }
+
+    /// <summary>
+    /// How much of a month's budget a report range covers (0.29.1): all of it when the range holds the whole month, else the days it
+    /// covers over the month's days (a range ending on day 15 of a 30-day month counts half).
+    /// </summary>
+    internal static decimal CoveredShare(int year, int month, DateOnly from, DateOnly to)
+    {
+        var first = new DateOnly(year, month, 1);
+        var days = DateTime.DaysInMonth(year, month);
+        var last = first.AddDays(days - 1);
+        var start = from > first ? from : first;
+        var end = to < last ? to : last;
+        return end < start ? 0m : (end.DayNumber - start.DayNumber + 1) / (decimal)days;
     }
 }

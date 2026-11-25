@@ -787,9 +787,13 @@ public static class WorkOrderEndpoints
         if (f.GroupId is not null) q = q.Where(w => w.GroupId == f.GroupId);
         if (f.OnlyWhenStopped == true) q = q.Where(w => w.OnlyWhenStopped);
         if (f.CreatedFrom is { } cf) { var from = new DateTimeOffset(cf.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CreatedAt >= from); }
-        if (f.CompletedFrom is { } completedFrom) { var done = new DateTimeOffset(completedFrom.ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CompletedAt >= done); }
-        if (f.CompletedTo is { } completedTo && completedTo < DateOnly.MaxValue)
-        { var before = new DateTimeOffset(completedTo.AddDays(1).ToDateTime(TimeOnly.MinValue), TimeSpan.Zero); q = q.Where(w => w.CompletedAt < before); }
+        // Completion dates are the organization's local dates (0.29.1), as the dashboard's "Completed (30 days)" counts them.
+        if (f.CompletedFrom is not null || f.CompletedTo is { } to0 && to0 < DateOnly.MaxValue)
+        {
+            var tz = Downtime.Zone((await SlaQueries.SettingsAsync(db, ct)).TimeZone);
+            if (f.CompletedFrom is { } completedFrom) { var done = FourC.Cmms.Core.Assets.DowntimeMath.Midnight(completedFrom, tz); q = q.Where(w => w.CompletedAt >= done); }
+            if (f.CompletedTo is { } completedTo && completedTo < DateOnly.MaxValue) { var before = FourC.Cmms.Core.Assets.DowntimeMath.Midnight(completedTo.AddDays(1), tz); q = q.Where(w => w.CompletedAt < before); }
+        }
         if (f.SymptomId is { Length: > 0 } sy) q = sy == "none" ? q.Where(w => w.SymptomId == null) : Guid.TryParse(sy, out var syId) ? q.Where(w => w.SymptomId == syId) : q;
         if (f.CauseId is { Length: > 0 } ca) q = ca == "none" ? q.Where(w => w.FailureCodeId == null) : Guid.TryParse(ca, out var caId) ? q.Where(w => w.FailureCodeId == caId) : q;
         if (f.InFailureTree == true) q = ReportEndpoints.InFailureTree(q);

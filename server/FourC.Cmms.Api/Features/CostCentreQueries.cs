@@ -49,6 +49,12 @@ public static class CostCentreQueries
         return await db.CostCentres.AnyAsync(c => c.Id == id && c.IsActive, ct) ? null : "Choose an active cost centre.";
     }
 
+    /// <summary>Adds the refusal when the chosen cost centre is unknown or inactive (a cost centre already on the record may stay). Requests, PMs, assets and locations.</summary>
+    public static async Task CheckAsync(CmmsDbContext db, FourC.Cmms.Api.Infrastructure.Validator v, Guid? costCentreId, Guid? current, CancellationToken ct)
+    {
+        if (await ChoiceProblemAsync(db, costCentreId, current, ct) is { } problem) v.Add("costCentreId", problem);
+    }
+
     /// <summary>A cost centre and all its children, at every site.</summary>
     public static async Task<HashSet<Guid>> SubtreeAsync(CmmsDbContext db, Guid id, CancellationToken ct)
     {

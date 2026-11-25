@@ -1858,6 +1858,7 @@
     "note": "Note",
     "outside": "Planned outside these times",
     "onlyWhenStopped": "Only while stopped",
+    "fillDates": "Fill in when each time starts and ends.",
     "endAfterStart": "A time must end after it starts.",
     "tooMany": "Give at most 10 times.",
     "noteTooLong": "A note can be at most 200 characters.",

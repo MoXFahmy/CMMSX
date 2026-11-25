@@ -862,22 +862,26 @@ public static class ReportEndpoints
         var wos = db.WorkOrders.AsNoTracking().Where(w => w.AssetId != null && ids.Contains(w.AssetId.Value) && w.CreatedAt >= s && w.CreatedAt < e);
         var items = await wos.OrderByDescending(w => w.CreatedAt).Select(w => new
         {
-            w.Id, w.Number, Title = (Bilingual.Arabic && w.TitleAr != null ? w.TitleAr : w.Title), w.Type, w.CreatedAt, w.DowntimeHours, Asset = w.Asset!.AssetNumber,
+            w.Id, w.Number, Title = (Bilingual.Arabic && w.TitleAr != null ? w.TitleAr : w.Title), w.Type, w.CreatedAt, w.DowntimeHours, w.DowntimeEventId, w.CompletedAt, Asset = w.Asset!.AssetNumber,
             Symptom = w.Symptom == null ? null : w.Symptom.Code + " · " + (Bilingual.Arabic && w.Symptom.NameAr != null ? w.Symptom.NameAr : w.Symptom.Name), Cause = w.FailureCode == null ? null : w.FailureCode.Code + " · " + (Bilingual.Arabic && w.FailureCode.NameAr != null ? w.FailureCode.NameAr : w.FailureCode.Name),
             Remedy = w.Remedy == null ? null : w.Remedy.Code + " · " + (Bilingual.Arabic && w.Remedy.NameAr != null ? w.Remedy.NameAr : w.Remedy.Name),
         }).Take(5000).ToListAsync(ct);
         var costs = (await CostLinesAsync(db, wos, null, null, ct)).GroupBy(c => c.WoId)
             .ToDictionary(g => g.Key, g => (Hours: g.Sum(x => x.Hours), Cost: g.Sum(x => x.Total)));
+        // Work orders sharing one stop carry its hours once, on the one completed first (as the failures reports do).
+        var counted = items.Where(x => x.DowntimeEventId != null).GroupBy(x => x.DowntimeEventId)
+            .Select(g => g.OrderBy(x => x.CompletedAt ?? DateTimeOffset.MaxValue).ThenBy(x => x.CreatedAt).First().Id).ToHashSet();
+        decimal? Down(Guid id, Guid? stop, decimal? hours) => stop is null || counted.Contains(id) ? hours : 0m;
         var rows = items.Select(w => Row(("number", w.Number), ("date", w.CreatedAt), ("asset", w.Asset), ("type", Lists.Name(a.Settings, w.Type)), ("title", w.Title),
             ("symptom", w.Symptom), ("cause", w.Cause), ("remedy", w.Remedy), ("hours", R2(costs.GetValueOrDefault(w.Id).Hours)), ("cost", R2(costs.GetValueOrDefault(w.Id).Cost)),
-            ("downtime", w.DowntimeHours), ("workOrderId", w.Id))).ToList();
+            ("downtime", Down(w.Id, w.DowntimeEventId, w.DowntimeHours)), ("workOrderId", w.Id))).ToList();
         var subtitle = $"{root.AssetNumber} · {root.Name} · {Period(a)}" + (a.Components ? $" · {Translator.T("with its components")}" : "");
         return new("asset-work-history", "Asset work history", subtitle,
             [new("number", "Number"), new("date", "Raised", "date"), .. a.Components ? new[] { new Column("asset", "Asset") } : [], new("type", "Type"), new("title", "Title"),
              new("symptom", "Symptom"), new("cause", "Cause"), new("remedy", "Remedy"), new("hours", "Labour hours", "hours"), new("cost", "Cost", "currency"), new("downtime", "Downtime (h)", "hours")],
             rows, null,
             [new("Work orders", rows.Count), new("Labour hours", R2(costs.Values.Sum(c => c.Hours)), "hours"), new("Cost", R2(costs.Values.Sum(c => c.Cost)), "currency"),
-             new("Downtime (h)", R2(items.Sum(w => w.DowntimeHours ?? 0)), "hours")]);
+             new("Downtime (h)", R2(items.Sum(w => Down(w.Id, w.DowntimeEventId, w.DowntimeHours) ?? 0)), "hours")]);
     }
 
     private static async Task<ReportResult> AssetsAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)

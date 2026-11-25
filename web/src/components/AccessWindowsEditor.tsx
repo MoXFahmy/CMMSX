@@ -3,11 +3,8 @@ import { DateTimePicker } from '@mantine/dates';
 import { useTranslation } from 'react-i18next';
 import { IconClockHour4, IconHandStop, IconPlus, IconTrash } from '@tabler/icons-react';
 import type { AccessWindow } from '@/api/types';
-import { MAX_WINDOWS } from './accessWindows';
+import { MAX_WINDOWS, windowDate as iso } from './accessWindows';
 import { dateTimeFormat, fmtDateTime } from './utils';
-
-/** A picker's local "YYYY-MM-DD HH:mm:ss" (or Date) as an ISO instant. */
-const iso = (v: string | Date | null) => (v ? new Date(typeof v === 'string' ? v.replace(' ', 'T') : v).toISOString() : '');
 
 /** Tomorrow at <hour>:00, local time. */
 function tomorrowAt(hour: number) {

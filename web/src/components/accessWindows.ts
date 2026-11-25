@@ -3,9 +3,13 @@ import type { AccessWindow } from '@/api/types';
 export const MAX_WINDOWS = 10;
 export const NOTE_LENGTH = 200;
 
+/** A picker's local "YYYY-MM-DD HH:mm:ss" (or Date) as an ISO instant; a cleared picker is an empty value, never a made-up date. */
+export const windowDate = (v: string | Date | null): string => (v ? new Date(typeof v === 'string' ? v.replace(' ', 'T') : v).toISOString() : '');
+
 /** What is wrong with a list of access windows (an i18n key), or null; the same rules as the server. */
 export function windowProblem(list: AccessWindow[]): string | null {
   if (list.length > MAX_WINDOWS) return 'accessWindows.tooMany';
+  if (list.some((w) => !w.start || !w.end)) return 'accessWindows.fillDates';
   if (list.some((w) => new Date(w.end).getTime() <= new Date(w.start).getTime())) return 'accessWindows.endAfterStart';
   if (list.some((w) => (w.note?.trim().length ?? 0) > NOTE_LENGTH)) return 'accessWindows.noteTooLong';
   return null;

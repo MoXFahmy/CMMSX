@@ -17,6 +17,7 @@ import { CoveredBanner } from '@/components/CoveredBanner';
 import { type AccessWindow, type AssetDetail, type Lookup, type Paged, type RequestType, type TenantSettings, type WorkRequestDetail, type WorkRequestListItem, type WorkRequestStatus } from '@/api/types';
 import { AccessWindowsEditor, AccessWindowsList, StoppedBadge } from '@/components/AccessWindowsEditor';
 import { windowProblem } from '@/components/accessWindows';
+import { usableRecipients } from './requestForm';
 import { CodeSelect } from '@/components/CodeSelect';
 import { CostCentrePicker } from '@/components/CostCentrePicker';
 import { FeedbackPanel, RequestComments } from './RequestLoop';
@@ -131,6 +132,12 @@ export function RequestFormModal({ opened, onClose, assetId, place }: { opened: 
   const { data: types } = useQuery({ queryKey: ['request-types'], queryFn: () => get<RequestType[]>('/request-types'), enabled: opened });
   const { data: people } = useQuery({ queryKey: ['request-people', form.values.siteId], queryFn: () => get<{ id: string; name: string }[]>('/work-requests/people', { siteId: form.values.siteId! }),
     enabled: opened && !!form.values.siteId, retry: false });
+  // People the chosen site can't tell about the request leave the list (0.29.1), as soon as the site changes.
+  useEffect(() => {
+    const kept = usableRecipients(form.values.extraRecipientIds, form.values.siteId ? people : undefined);
+    if (kept.length !== form.values.extraRecipientIds.length) form.setFieldValue('extraRecipientIds', kept);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [people, form.values.siteId, form.values.extraRecipientIds]);
   const chooseType = (id: string | null) => {
     const type = (types ?? []).find((x) => x.id === id);
     form.setValues({ requestTypeId: id, ...(type?.defaultPriority ? { priority: type.defaultPriority } : {}) });

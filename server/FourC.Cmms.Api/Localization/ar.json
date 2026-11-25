@@ -1301,5 +1301,10 @@
  "{0} line {1} is already on an order you can't see.": "البند {1} من {0} موجود بالفعل في أمر لا يمكنك رؤيته.",
  "Can't remove {0}: named on open work orders {1}. Pick someone else on those lines first.": "لا يمكن إزالة {0}: مذكور في أوامر عمل مفتوحة {1}. اختر شخصًا آخر في هذه السطور أولًا.",
  "Can't remove {0}: named on open work orders {1} and {2} more you can't see. Pick someone else on those lines first.": "لا يمكن إزالة {0}: مذكور في أوامر عمل مفتوحة {1} و{2} أخرى لا يمكنك رؤيتها. اختر شخصًا آخر في هذه السطور أولًا.",
- "Can't remove {0}: named on open work orders, {1} of them you can't see. Pick someone else on those lines first.": "لا يمكن إزالة {0}: مذكور في أوامر عمل مفتوحة، {1} منها لا يمكنك رؤيتها. اختر شخصًا آخر في هذه السطور أولًا."
+ "Can't remove {0}: named on open work orders, {1} of them you can't see. Pick someone else on those lines first.": "لا يمكن إزالة {0}: مذكور في أوامر عمل مفتوحة، {1} منها لا يمكنك رؤيتها. اختر شخصًا آخر في هذه السطور أولًا.",
+ "Fill in the start and end of every access window.": "املأ بداية ونهاية كل فترة وصول.",
+ "Each store can be listed only once.": "يمكن ذكر كل مخزن مرة واحدة فقط.",
+ "These budgets were changed by someone else. Reload them and try again.": "غيّر شخص آخر هذه الميزانيات. أعد تحميلها وحاول مرة أخرى.",
+ "A list or a value is given twice. Capital letters don't make them different.": "قائمة أو قيمة مذكورة مرتين. الأحرف الكبيرة لا تجعلهما مختلفتين.",
+ "Fill in every list and every value: none can be empty.": "املأ كل قائمة وكل قيمة: لا يمكن ترك أي منها فارغًا."
 }

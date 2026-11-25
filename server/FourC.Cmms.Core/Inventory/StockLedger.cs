@@ -105,8 +105,10 @@ public static class StockLedger
             await db.SaveChangesAsync(ct);
         }
         var allowNegative = part.AllowNegativeStock || p.LegacyRef is not null;
-        var moved = await db.StockLevels.Where(l => l.Id == level.Id && (allowNegative || l.QuantityOnHand + delta >= 0))
-            .ExecuteUpdateAsync(s => s.SetProperty(l => l.QuantityOnHand, l => l.QuantityOnHand + delta), ct);
+        // A quantity move must not land on a part that was just switched to serial numbers (0.29.1): its stock would no longer equal its units.
+        var byQuantity = !p.UnitMove && p.LegacyRef is null;
+        var moved = await MoveAsync(db, part.Id, level.Id, delta, allowNegative, byQuantity, ct);
+        if (moved < 0) throw new DomainException(SerialRefusal(p.Type));
         if (moved == 0)
         {
             var onHand = await db.StockLevels.Where(l => l.Id == level.Id).Select(l => l.QuantityOnHand).FirstAsync(ct);
@@ -148,6 +150,22 @@ public static class StockLedger
                 CreatedAt = DateTimeOffset.UtcNow, CreatedById = ctx.UserId, CreatedByName = ctx.UserName,
             });
         }
+    }
+
+    /// <summary>
+    /// The one conditional UPDATE that moves a store balance. A quantity move first reads the part's serial flag holding a shared lock on the part
+    /// until the move is done (the whole transaction when the caller has one), so a switch to serial numbers, which writes the part first, waits for
+    /// moves already under way and makes later ones see the new flag. Returns the rows moved, or -1 when the part is serial-tracked now.
+    /// </summary>
+    private static Task<int> MoveAsync(CmmsDbContext db, Guid partId, Guid levelId, decimal delta, bool allowNegative, bool byQuantity, CancellationToken ct)
+    {
+        async Task<int> Work(CancellationToken token)
+        {
+            if (byQuantity && await db.Database.SqlQuery<bool>($"SELECT IsSerialTracked AS Value FROM Parts WITH (HOLDLOCK) WHERE Id = {partId}").FirstOrDefaultAsync(token)) return -1;
+            return await db.StockLevels.Where(l => l.Id == levelId && (allowNegative || l.QuantityOnHand + delta >= 0))
+                .ExecuteUpdateAsync(s => s.SetProperty(l => l.QuantityOnHand, l => l.QuantityOnHand + delta), token);
+        }
+        return db.Database.CurrentTransaction is not null ? Work(ct) : db.InTransactionAsync(Work, ct);
     }
 
     /// <summary>Moves stock between stores at the outgoing average cost; returns (out, in).</summary>
