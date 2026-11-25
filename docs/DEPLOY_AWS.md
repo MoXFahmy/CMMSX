@@ -171,9 +171,9 @@ The workflow compares the file with what is deployed and prints a warning when t
    version runs).
 2. **Re-run `setup.sh`** in CloudShell, in the app's region, exactly as in step 1 above. It is safe to run again and changes only
    what 0.29.0 needs: it creates the recovery stack `cmms-dr` in Ireland (a few minutes), lets GitHub deploy `cmms-edge`, adds
-   the boundary, the guard, the template bucket and the trail, and prints what it added. **Until you do this, the first deploy after merging stops at once with "Re-run
-   deploy/aws/setup.sh in CloudShell"; nothing is changed, run it again afterwards.** If setup finds an existing multi-region
-   CloudTrail trail that is logging, it uses that one and does not create another.
+   the boundary, the guard, the template bucket and the trail, and prints what it added. **Until you do this, the first deploy
+   after merging stops at once with "Re-run deploy/aws/setup.sh in CloudShell"; nothing is changed, run it again afterwards.**
+   If setup finds an existing multi-region CloudTrail trail that is logging, it uses that one and does not create another.
 3. **Set the repository variables** (Settings, Secrets and variables, Actions, Variables):
    - `CMMS_ALERT_EMAIL`: required.
    - Check GuardDuty in the AWS console in both the app's region and N. Virginia. If a detector already exists in one of them
