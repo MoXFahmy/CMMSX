@@ -62,7 +62,7 @@ figure holds for the default Ireland method below; with the fallback it is 1 to 
 | Continuous copy of the database | RDS cross-Region automated backups, encrypted with the Ireland key. Point-in-time restore also works in Ireland | 7 days | Ireland |
 | Daily snapshot | AWS Backup, 01:00 UTC | 35 days | London vault `cmms-app-vault`, copied to Ireland vault `cmms-dr-vault` |
 | Monthly snapshot | AWS Backup, 1st of the month, 01:00 UTC | 12 months | both vaults |
-| Weekly export | Native SQL Server backup (`.bak`) written by RDS every Sunday from 02:00 UTC, started by the app. File `native/cmms-<date>.bak` | 90 days | bucket `cmms-backups-<account>` (London), replicated to `cmms-dr-backups-<account>` (Ireland) |
+| Weekly export | Native SQL Server backup (`.bak`) written by RDS every Sunday from 02:00 UTC, started by the app. File `native/cmms-<date>.bak` | 90 days | bucket `cmms-backups-<account>-eu-west-2` (London), replicated to `cmms-dr-backups-<account>` (Ireland) |
 | Files (attachments) | S3 versioning plus replication of every new file and version to Ireland. Old versions expire after 90 days | 90 days of old versions | files bucket (London), `cmms-dr-files-<account>` (Ireland) |
 | Infrastructure | Templates and workflow in git | forever | GitHub |
 
@@ -256,12 +256,12 @@ aws s3api list-object-versions --region <region> --bucket "$B" --prefix "<key>" 
 
 ### 4.7 A native `.bak` export, into any SQL Server
 
-The newest export is in the London bucket `cmms-backups-<account>` and in `cmms-dr-backups-<account>` (Ireland), as
+The newest export is in the London bucket `cmms-backups-<account>-eu-west-2` and in `cmms-dr-backups-<account>` (Ireland), as
 `native/cmms-<date>.bak` (the Sunday's date):
 
 ```bash
-aws s3 ls "s3://cmms-backups-$ACCOUNT/native/"
-aws s3 cp "s3://cmms-backups-$ACCOUNT/native/cmms-<date>.bak" .
+aws s3 ls "s3://cmms-backups-$ACCOUNT-eu-west-2/native/"
+aws s3 cp "s3://cmms-backups-$ACCOUNT-eu-west-2/native/cmms-<date>.bak" .
 aws s3 ls "s3://cmms-dr-backups-$ACCOUNT/native/" --region eu-west-1
 ```
 
@@ -271,7 +271,7 @@ copy of the `cmms` database as it was on that Sunday; use it when you want your 
 at something without touching the live instance.
 
 To restore it into an RDS SQL Server instance that has the native-backup option (the stack's option group does), a database
-administrator runs `exec msdb.dbo.rds_restore_database @restore_db_name='cmms_recovered', @s3_arn_to_restore_from='arn:aws:s3:::cmms-backups-<account>/native/cmms-<date>.bak'`
+administrator runs `exec msdb.dbo.rds_restore_database @restore_db_name='cmms_recovered', @s3_arn_to_restore_from='arn:aws:s3:::cmms-backups-<account>-eu-west-2/native/cmms-<date>.bak'`
 and follows it with `exec msdb.dbo.rds_task_status`. The restore target must not already exist, and the Express edition's 10 GB
 cap still applies.
 
@@ -297,10 +297,7 @@ pipeline does not have.
    `CMMS_DB_MAJOR_ENGINE_VERSION` against the restored engine version.
 5. **Deploy.** Run **Deploy to AWS**. It deploys `cmms-dr` and `cmms-edge` again (no changes) and creates `cmms-app` in the new
    region with an **empty** database. The first run takes 30 to 40 minutes.
-   - The weekly-export bucket is named `cmms-backups-<account>`, with no region in the name. While the London bucket exists (it is
-     kept on purpose), the stack cannot create a second one with that name in a new region, and the deploy rolls back. Before
-     you deploy to a new region, have a developer add the region to that bucket name in `infra/aws/cmms.yml` (a one-line change
-     under `BackupsBucket`) and deploy that.
+   - The new region gets its own weekly-export bucket, `cmms-backups-<account>-<region>`; the London one is kept.
 6. **Bring the data.** Stop the new app (section 4.5, step 1). Restore the Ireland copy as a new instance **inside the new stack's
    network** (section 4.2 for the point in time, or 4.4 for a snapshot), using the subnet group, security group and option group
    of the empty instance the stack made (the commands in [section 4](#4-restore) show them). Then swap names (4.5, steps 2 to 6).
