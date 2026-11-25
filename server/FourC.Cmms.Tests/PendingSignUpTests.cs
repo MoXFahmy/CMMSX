@@ -124,6 +124,54 @@ public class PendingSignUpTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var after = await DbAsync(fx, db => db.Tenants.AsNoTracking().Where(t => tenants.Contains(t.Id))
             .Select(t => new { t.Id, t.SignUpPendingSince, t.SignUpTokenHash, t.SignUpTokenExpires }).ToListAsync());
         Assert.Equal(states.OrderBy(s => s.Id), after.OrderBy(s => s.Id));
+        // The edge one is due for any later purge (a later now): no longer pending, so the other tests' counts stay their own.
+        await DbAsync(fx, db => db.Tenants.Where(t => t.Id == edge.Tenant).ExecuteUpdateAsync(s => s.SetProperty(t => t.SignUpPendingSince, (DateTimeOffset?)null)));
+    }
+
+    [SkippableFact]
+    public async Task Signing_in_while_the_link_is_not_asked_for_releases_the_organization()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        // This server doesn't ask for the link (confirmation off): organizations left pending can be signed in to and used.
+        var now = DateTimeOffset.UtcNow;
+        var used = await OrgAsync(fx);
+        await MarkPendingAsync(used.Tenant, now.AddDays(-8), SignUpConfirmation.NewToken());
+        var renewed = await OrgAsync(fx);
+        await MarkPendingAsync(renewed.Tenant, now.AddDays(-8), SignUpConfirmation.NewToken());
+        var idle = await OrgAsync(fx);
+        await MarkPendingAsync(idle.Tenant, now.AddDays(-8), SignUpConfirmation.NewToken());
+        var logs = new CapturedLogs();
+        fx.Factory!.Services.GetRequiredService<ILoggerFactory>().AddProvider(logs);
+
+        var c = fx.Client();
+        await Ok(await c.PostAsJsonAsync("/api/auth/login", new { email = used.AdminEmail, password = "Passw0rd!x", rememberMe = false }));
+        Assert.Equal(HttpStatusCode.OK, (await c.GetAsync("/api/auth/me")).StatusCode);
+        // Signing in with a new password releases it too.
+        await Ok(await fx.Client().PostAsJsonAsync("/api/auth/renew-password",
+            new { email = renewed.AdminEmail, password = "Passw0rd!x", newPassword = "Renewed0!pass", rememberMe = false }));
+
+        var states = await DbAsync(fx, db => db.Tenants.AsNoTracking().Where(t => t.Id == used.Tenant || t.Id == renewed.Tenant || t.Id == idle.Tenant)
+            .Select(t => new { t.Id, t.SignUpPendingSince, t.SignUpTokenHash, t.SignUpTokenExpires }).ToListAsync());
+        foreach (var t in states.Where(s => s.Id != idle.Tenant))
+        {
+            Assert.Null(t.SignUpPendingSince);
+            Assert.Null(t.SignUpTokenHash);
+            Assert.Null(t.SignUpTokenExpires);
+        }
+        Assert.NotNull(states.Single(s => s.Id == idle.Tenant).SignUpPendingSince);
+        var text = logs.Text;
+        Assert.Contains($"PendingSignUpReleased {used.Tenant}", text);
+        Assert.Contains($"PendingSignUpReleased {renewed.Tenant}", text);
+        Assert.DoesNotContain(used.AdminEmail, text, StringComparison.OrdinalIgnoreCase);
+        Assert.DoesNotContain(renewed.AdminEmail, text, StringComparison.OrdinalIgnoreCase);
+
+        // The ones in use stay; the one nobody signed in to is still removed.
+        var usedRows = await RowsOfAsync(used.Tenant);
+        Assert.Equal(1, await PurgeAsync(now));
+        Assert.True(await TenantExistsAsync(used.Tenant));
+        Assert.True(await TenantExistsAsync(renewed.Tenant));
+        Assert.Equal(usedRows, await RowsOfAsync(used.Tenant));
+        Assert.False(await TenantExistsAsync(idle.Tenant));
     }
 
     [SkippableFact]

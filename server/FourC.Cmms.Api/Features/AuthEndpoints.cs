@@ -31,11 +31,22 @@ public static class AuthEndpoints
     /// <summary>
     /// Sign-up e-mail check (0.29.0): the owner of a self-signed-up organization can't sign in until the e-mailed link is used. Only
     /// the organization created by sign-up waits (its tenant row says so): existing, admin-added and imported people are never asked.
+    /// Called once the password is right. While this server doesn't ask for the link (turned off, or no e-mail), signing in releases a
+    /// pending organization instead: it is in use, so it is never removed as an unconfirmed sign-up, nor asked for a link if the setting
+    /// comes back on. The log line carries its id only (no name, no address).
     /// </summary>
-    private static async Task<IResult?> PendingGateAsync(CmmsDbContext db, AppUser user, IConfiguration config, EmailOutbox mail, CancellationToken ct) =>
-        SignUpConfirmation.Required(config, mail) && await db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.SignUpPendingSince != null, ct)
-            ? Results.Problem(title: Translator.T("Confirm your e-mail address to start using CMX."), statusCode: 403, extensions: new Dictionary<string, object?> { ["code"] = "email-unconfirmed" })
-            : null;
+    private static async Task<IResult?> PendingGateAsync(CmmsDbContext db, AppUser user, IConfiguration config, EmailOutbox mail, ILoggerFactory logs, CancellationToken ct)
+    {
+        if (!await db.Tenants.AnyAsync(t => t.Id == user.TenantId && t.SignUpPendingSince != null, ct)) return null;
+        if (SignUpConfirmation.Required(config, mail))
+            return Results.Problem(title: Translator.T("Confirm your e-mail address to start using CMX."), statusCode: 403, extensions: new Dictionary<string, object?> { ["code"] = "email-unconfirmed" });
+        var released = await db.Tenants.Where(t => t.Id == user.TenantId && t.SignUpPendingSince != null).ExecuteUpdateAsync(s => s
+            .SetProperty(t => t.SignUpPendingSince, (DateTimeOffset?)null)
+            .SetProperty(t => t.SignUpTokenHash, (string?)null)
+            .SetProperty(t => t.SignUpTokenExpires, (DateTimeOffset?)null), ct);
+        if (released > 0) logs.CreateLogger(typeof(AuthEndpoints)).LogInformation("PendingSignUpReleased {TenantId}", user.TenantId);
+        return null;
+    }
 
     /// <summary>A fresh link (the old one stops working) for a still-pending organization's owner; false when the address isn't one.</summary>
     private static async Task<bool> SendNewLinkAsync(AppUser? owner, DbContextOptions<CmmsDbContext> options, EmailOutbox mail, CancellationToken ct)
@@ -121,7 +132,7 @@ public static class AuthEndpoints
         }).AllowAnonymous().RequireRateLimiting(AbuseLimits.SignUp); // per visitor address (0.29.0)
 
         g.MapPost("/login", async (LoginRequest req, HttpContext http, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext db,
-            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, SignInGuard guard, IConfiguration config, EmailOutbox mail, CancellationToken ct) =>
+            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, SignInGuard guard, IConfiguration config, EmailOutbox mail, ILoggerFactory logs, CancellationToken ct) =>
         {
             var address = VisitorAddress.Of(http, config); // kept in memory only (0.29.0)
             if (guard.IsBlocked(address, out var retryAfter)) return AbuseLimits.Refuse(http, retryAfter);
@@ -135,7 +146,7 @@ public static class AuthEndpoints
             var result = await CheckPasswordAsync(http, users, signIn, db, user, req.Password, guard, address, ct);
             if (result.IsLockedOut) return Results.Problem(title: Translator.T("Too many failed attempts. Try again in a few minutes."), statusCode: 429);
             if (!result.Succeeded) return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
-            if (await PendingGateAsync(db, user, config, mail, ct) is { } waiting) return waiting; // right password, address not yet confirmed (not a failure)
+            if (await PendingGateAsync(db, user, config, mail, logs, ct) is { } waiting) return waiting; // right password, address not yet confirmed (not a failure)
             // The organization's password rules (0.25.0): an expired password, or one shorter than today's minimum, is renewed first.
             var rules = await PasswordRules.SettingsAsync(db, user.TenantId, ct);
             if (PasswordRules.IsExpired(user, rules, DateTimeOffset.UtcNow)) return RenewFirst("password-expired", PasswordRules.Expired);
@@ -177,7 +188,7 @@ public static class AuthEndpoints
 
         // A new password in place of an expired one, or one that no longer meets the rules; then signed in as usual (0.25.0).
         g.MapPost("/renew-password", async (RenewPasswordRequest req, HttpContext http, UserManager<AppUser> users, SignInManager<AppUser> signIn, CmmsDbContext db,
-            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, SignInGuard guard, IConfiguration config, EmailOutbox mail, CancellationToken ct) =>
+            Microsoft.Extensions.Caching.Memory.IMemoryCache cache, SignInGuard guard, IConfiguration config, EmailOutbox mail, ILoggerFactory logs, CancellationToken ct) =>
         {
             var address = VisitorAddress.Of(http, config); // kept in memory only (0.29.0)
             if (guard.IsBlocked(address, out var retryAfter)) return AbuseLimits.Refuse(http, retryAfter);
@@ -191,7 +202,7 @@ public static class AuthEndpoints
             var result = await CheckPasswordAsync(http, users, signIn, db, user, req.Password, guard, address, ct); // logged like signing in (0.26.1)
             if (result.IsLockedOut) return Results.Problem(title: Translator.T("Too many failed attempts. Try again in a few minutes."), statusCode: 429);
             if (!result.Succeeded) return Results.Problem(title: Translator.T("Invalid email or password."), statusCode: 401);
-            if (await PendingGateAsync(db, user, config, mail, ct) is { } waiting) return waiting;
+            if (await PendingGateAsync(db, user, config, mail, logs, ct) is { } waiting) return waiting;
             var v = new Validator();
             foreach (var pv in users.PasswordValidators)
                 foreach (var e in (await pv.ValidateAsync(users, user, req.NewPassword ?? "")).Errors) v.Add("newPassword", e.Description);

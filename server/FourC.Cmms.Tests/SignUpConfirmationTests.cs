@@ -74,6 +74,15 @@ public class SignUpConfirmationTests(ConfirmFixture fx) : IClassFixture<ConfirmF
         var json = JsonDocument.Parse(await r.Content.ReadAsStringAsync()).RootElement;
         Assert.Equal("email-unconfirmed", json.GetProperty("code").GetString());
         Assert.Equal(Pending, json.GetProperty("title").GetString());
+        // While the server asks for the link, signing in never releases the organization: it stays pending, link and all.
+        var (since, hash, expires) = await DbAsync(fx, async db =>
+        {
+            var t = await db.Tenants.AsNoTracking().FirstAsync(t => db.Users.IgnoreQueryFilters().Any(u => u.TenantId == t.Id && u.Email == email));
+            return (t.SignUpPendingSince, t.SignUpTokenHash, t.SignUpTokenExpires);
+        });
+        Assert.NotNull(since);
+        Assert.NotNull(hash);
+        Assert.NotNull(expires);
     }
 
     [SkippableFact]

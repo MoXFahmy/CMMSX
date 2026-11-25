@@ -26,7 +26,7 @@ public sealed class PlatformJobs(IServiceScopeFactory scopes, IConfiguration con
             while (!stop.IsCancellationRequested)
             {
                 try { await TickAsync(DateTimeOffset.UtcNow, stop); }
-                catch (Exception ex) when (ex is not OperationCanceledException) { log.LogError(ex, "Platform jobs run failed"); }
+                catch (Exception ex) when (!stop.IsCancellationRequested) { log.LogError(ex, "Platform jobs run failed"); }
                 await Task.Delay(Tick, stop);
             }
         }
