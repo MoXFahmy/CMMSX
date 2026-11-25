@@ -4,6 +4,77 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.29.0] - 2026-11-25
+
+Platform shield and automatic backups. For people using CMX: a new organization now confirms its owner's e-mail address before it
+can be used (once the operator switches this on), and a person or network that makes too many attempts is asked to wait, with a
+message saying how long. Nothing else changes for existing organizations: their people are never asked to confirm anything and
+every screen works as before. For whoever runs CMX on AWS: a web firewall, a load balancer nobody can reach directly, locked
+backup copies in a second region, automatic backup and restore checks, and alarms that e-mail a person. Company sign-in (SSO) is
+parked, so this release takes the next number after 0.28.0.
+
+### Added
+- **Confirm your e-mail (sign-up).** A new organization's owner gets an e-mail (English or Arabic, the language they signed up
+  in) with a link valid for 48 hours and cannot sign in until they click it; the link also signs them in. Trying to sign in
+  before shows "Confirm your e-mail address to start using CMX" with a "Send the link again" button. Signing up again with the
+  same address while waiting sends a new link. Organizations never confirmed within 7 days are deleted with everything in them
+  (a daily clean-up that logs each organization's id only). People an administrator adds, imported people, existing
+  organizations and service accounts are never asked. Off until `CMMS_REQUIRE_EMAIL_CONFIRMATION` is `true` on AWS (it needs SES
+  production access); elsewhere it is on when e-mail is set up (`Auth:RequireEmailConfirmation` overrides).
+- **Too-many-attempts messages.** Per visitor address: 20 wrong passwords in 15 minutes (sign-in and renew password; successful
+  sign-ins never count), 5 sign-ups an hour, 10 link resends an hour, 20 link confirmations in 15 minutes, and 30 tries at a
+  requester answer link in 15 minutes. A refused request says "Too many attempts from your network. Try again in N minutes."
+  (in Arabic too) and carries a `Retry-After` header. The numbers can be changed with `Abuse:*` settings and the whole feature
+  switched off with `Abuse:Enabled=false`. API keys keep their own limit. The address is held in memory only: no address is
+  stored in the database, the activity log or the application log.
+- **Security headers** on every response: content security policy, HSTS over HTTPS, frame protection, no content sniffing, a
+  referrer policy and a permissions policy (camera, microphone and location stay allowed for CMX itself, so the Android app's QR
+  scan, photos and dictation keep working). Downloads of uploaded files keep their stricter policy.
+- **Platform jobs.** The server now runs its own daily and weekly jobs (one server runs them): the unconfirmed sign-up clean-up,
+  a daily measurement of the database size, and, on AWS, the weekly database export.
+- **Runbook:** [docs/SECURITY_AND_BACKUPS.md](docs/SECURITY_AND_BACKUPS.md): what protects CMX, what every alarm means, how to
+  restore (a point in time, a snapshot, a file, a native export), how to rebuild in Ireland, how to lift a lock, what to do when a
+  deploy fails, and the quarterly rehearsal.
+
+### Changed
+- **AWS: two new stacks and a one-time setup re-run.** The deploy now also manages `cmms-edge` (N. Virginia: web firewall and its
+  alarm) and `cmms-dr` (Ireland: locked backup vault and copies). **Run `deploy/aws/setup.sh` once more in CloudShell before the
+  first deploy of this release**; until then the deploy stops with "Re-run deploy/aws/setup.sh in CloudShell" and changes
+  nothing. Setup now also creates a CloudTrail trail (unless the account already has a multi-region one), a permissions boundary,
+  the deploy guard and a bucket for the stacks' templates. New repository variables: `CMMS_ALERT_EMAIL` (required),
+  `CMMS_WAF_MODE`, `CMMS_REQUIRE_EMAIL_CONFIRMATION`, `CMMS_CREATE_GUARDDUTY_LONDON`, `CMMS_CREATE_GUARDDUTY_US_EAST`,
+  `CMMS_DB_MAJOR_ENGINE_VERSION` and `CMMS_IRELAND_DB_COPY`. See docs/DEPLOY_AWS.md.
+- **One-time downtime: the load balancer switch.** The public load balancer is replaced by an internal one that only CloudFront
+  reaches (through a VPC origin). Expect about 5 to 10 minutes of errors during the first deploy of this release; pick a quiet
+  hour. The database is not touched. A failed deploy rolls back by itself.
+- **Backups.** Database point-in-time restore goes from 7 to 35 days. Daily snapshots (35 days) and monthly snapshots (12
+  months) are copied to a locked vault in Ireland. The Ireland database copy defaults to RDS cross-Region automated backups
+  (about 15 minutes of changes at risk; point-in-time restore works in Ireland too); `CMMS_IRELAND_DB_COPY=hourly-snapshots`
+  switches to the fallback if RDS refuses the default (hourly snapshot copy kept 7 days; 1 to 2 hours at risk). A weekly native
+  export (`.bak`, Sundays) is kept 90 days in London and Ireland, and every file is copied to Ireland. Old file versions are now
+  kept 90 days (was 14). Once a month AWS Backup restores the latest snapshot into a temporary instance and e-mails the result.
+  Files uploaded before this release need one S3 Batch Replication job to be copied to Ireland (docs/SECURITY_AND_BACKUPS.md).
+- **Logs** are kept 90 days (was 30) and written one JSON line per entry, which the alarms read.
+
+### Security
+- **Web firewall (AWS WAF) in front of CloudFront**: known bad addresses, SQL injection and exploit patterns, and per-address
+  rate limits on sign-in and sign-up, on requester answer links and on all traffic. It starts in `count` mode (records, blocks
+  nothing); set `CMMS_WAF_MODE=block` after a day or two with no real users caught.
+- **No way around the firewall**: the load balancer has no public address.
+- **The deploy pipeline cannot delete backups.** A guard and a permissions boundary stop the deploy role, and every role it
+  creates, from deleting recovery points, the Ireland vault or its lock, the Ireland encryption key, locked file copies, or the
+  CloudTrail trail and its logs. The Ireland vault and buckets are locked in governance mode: only a console administrator (the
+  root user or an IAM administrator outside the pipeline) can lift the lock.
+- **Detection and alarms**: CloudTrail (every region, log validation, a locked bucket), GuardDuty in London (S3, the app task's
+  runtime, malware scan of every upload; alert only) and in N. Virginia, and alarms to `CMMS_ALERT_EMAIL` for site errors, app
+  down, database CPU, disk and size (7 GB of the 10 GB Express cap, plus an alarm when the size stops being measured), failed
+  sign-in bursts, failed backups and restore tests, the weekly export, GuardDuty findings and heavy firewall blocking. Each
+  recipient confirms two subscription e-mails once (London and N. Virginia).
+- **CI** stops a build on a known high or critical package flaw in NuGet or npm, or a leaked secret (gitleaks); reviewed
+  exceptions go in `.github/security-allowlist.txt` with an expiry date. The deploy scans the container image and stops on a
+  critical flaw that has a fix. The CloudFormation templates are linted, and every role under `/cmms/` is checked for the
+  boundary.
+
 ## [0.28.0] - 2026-11-25
 
 Bilingual data. Names, checklist steps and notes that technicians read can have an Arabic text beside the main one, and each person
