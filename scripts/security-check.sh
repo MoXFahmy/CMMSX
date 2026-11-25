@@ -22,6 +22,10 @@
 # pinned Docker image. Environment:
 #   GITLEAKS_RANGE  git revision range to scan the history of, e.g. "$BEFORE..$AFTER" (unset or all-zero start: skipped)
 #   SECURITY_TODAY  override today's date (YYYY-MM-DD), for testing the expiry rules
+#   SECURITY_ALLOWLIST  test hook: another allowlist file instead of .github/security-allowlist.txt
+#   SECURITY_FIXTURES  test hook (scripts/test-security-check.sh): a directory holding canned tool output instead of running the
+#                   tools: nuget.json, npm-web.json, npm-mobile.json, gitleaks-tree.json. Never set it in CI.
+# Fail closed: output of a tool that is missing, empty, not JSON or not shaped as expected counts as a problem, never as clean.
 set -euo pipefail
 
 GITLEAKS_IMAGE="zricethezav/gitleaks:v8.21.2"
@@ -30,7 +34,7 @@ NODE_IMAGE="node:22"
 
 root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$root"
-allowlist=".github/security-allowlist.txt"
+allowlist="${SECURITY_ALLOWLIST:-.github/security-allowlist.txt}"
 work="$(mktemp -d)"
 trap 'rm -rf "$work"' EXIT
 
@@ -81,6 +85,20 @@ decide() {
   fi
 }
 
+# tool_output <file> <command...>: run the tool into <file>, or copy the canned output when SECURITY_FIXTURES is set
+tool_output() {
+  local out=$1 name; shift
+  if [ -n "${SECURITY_FIXTURES:-}" ]; then
+    name="$(basename "$out")"
+    cp "$SECURITY_FIXTURES/$name" "$out" 2>/dev/null || : >"$out"
+  else "$@" >"$out" 2>"$out.err"; fi
+}
+# extract <outfile> <jq args...>: run jq into <outfile>; a jq failure is a problem (never a silent "no findings")
+extract() {
+  local out=$1; shift
+  jq -r "$@" >"$out" 2>"$out.err" || { cat "$out.err"; echo "ERROR  could not read the tool output ($out)"; problems=$((problems + 1)); return 1; }
+}
+
 # --- tool runners ------------------------------------------------------------------------------------------------------
 run_dotnet() {
   if command -v dotnet >/dev/null; then dotnet "$@"
@@ -95,53 +113,73 @@ run_npm() { # run_npm <dir> <npm args...>
 # --- 1. NuGet ----------------------------------------------------------------------------------------------------------
 check_nuget() {
   echo "== NuGet: dotnet list package --vulnerable --include-transitive"
-  run_dotnet restore server/FourC.Cmms.slnx --verbosity quiet >"$work/restore.log" 2>&1 \
-    || { cat "$work/restore.log"; echo "ERROR  dotnet restore failed"; problems=$((problems + 1)); return; }
-  run_dotnet list server/FourC.Cmms.slnx package --vulnerable --include-transitive --format json >"$work/nuget.json" 2>"$work/nuget.err" \
-    || { cat "$work/nuget.err"; echo "ERROR  dotnet list package failed"; problems=$((problems + 1)); return; }
+  if [ -z "${SECURITY_FIXTURES:-}" ]; then
+    run_dotnet restore server/FourC.Cmms.slnx --verbosity quiet >"$work/restore.log" 2>&1 \
+      || { cat "$work/restore.log"; echo "ERROR  dotnet restore failed"; problems=$((problems + 1)); return; }
+  fi
+  tool_output "$work/nuget.json" run_dotnet list server/FourC.Cmms.slnx package --vulnerable --include-transitive --format json \
+    || { cat "$work/nuget.json.err"; echo "ERROR  dotnet list package failed"; problems=$((problems + 1)); return; }
+  # a real result always lists the projects, so an empty or foreign document means the tool did not do its job
+  if ! jq -e '.projects | type == "array" and length > 0' "$work/nuget.json" >/dev/null 2>&1; then
+    head -c 600 "$work/nuget.json"; echo
+    echo "ERROR  dotnet list package gave no usable result"; problems=$((problems + 1)); return
+  fi
   if jq -e '(.problems // []) | length > 0' "$work/nuget.json" >/dev/null; then
     jq -r '.problems[] | "ERROR  dotnet: \(.text // .)"' "$work/nuget.json"; problems=$((problems + 1)); return
   fi
   local severity package version project url ghsa
   # one line per advisory: severity, package, version, project, advisory url (a package in several projects is listed once each)
-  while IFS=$'\t' read -r severity package version project url; do
-    ghsa="${url##*/}"
-    decide "$severity" yes "nuget $package $version ($project)" "$url" "$ghsa" "nuget:$package"
-  done < <(jq -r '
+  # shellcheck disable=SC2016 # jq program, not shell
+  extract "$work/nuget.tsv" '
       [.projects[]? | .path as $p | .frameworks[]? | (.topLevelPackages // [])[], (.transitivePackages // [])[]
         | . as $pk | (.vulnerabilities // [])[] | select(.severity == "High" or .severity == "Critical")
         | [.severity, $pk.id, ($pk.resolvedVersion // $pk.requestedVersion), ($p | split("/") | last), .advisoryurl]]
-      | unique[] | @tsv' "$work/nuget.json")
+      | unique[] | @tsv' "$work/nuget.json" || return 0
+  while IFS=$'\t' read -r severity package version project url; do
+    ghsa="${url##*/}"
+    decide "$severity" yes "nuget $package $version ($project)" "$url" "$ghsa" "nuget:$package"
+  done <"$work/nuget.tsv"
 }
 
 # --- 2. npm ------------------------------------------------------------------------------------------------------------
 check_npm() { # check_npm <dir>
   local dir=$1
+  local file="$work/npm-$dir.json"
   echo "== npm: npm audit --omit=dev ($dir)"
   # npm audit exits 1 when it finds anything; the JSON is what matters
-  run_npm "$dir" audit --omit=dev --audit-level=high --json >"$work/npm-$dir.json" 2>"$work/npm-$dir.err" || true
-  if ! jq -e '.vulnerabilities and (.error | not)' "$work/npm-$dir.json" >/dev/null 2>&1; then
-    cat "$work/npm-$dir.err" 2>/dev/null; head -c 600 "$work/npm-$dir.json"; echo
+  tool_output "$file" run_npm "$dir" audit --omit=dev --audit-level=high --json || true
+  if ! jq -e '(.vulnerabilities | type == "object") and (.error | not)' "$file" >/dev/null 2>&1; then
+    cat "$file.err" 2>/dev/null; head -c 600 "$file"; echo
     echo "ERROR  npm audit in $dir gave no usable result"; problems=$((problems + 1)); return
   fi
-  local severity fixable name ids
-  # one line per high/critical package: severity, fix available, package, advisory ids (GHSA ids found through the chain of "via")
-  while IFS=$'\t' read -r severity fixable name ids; do
-    # shellcheck disable=SC2086 # ids is a space-separated list on purpose
-    decide "$severity" "$fixable" "npm $dir/$name" "$(jq -r --arg n "$name" '.vulnerabilities[$n] | "range \(.range)" + (if .fixAvailable|type=="object" then ", fix: \(.fixAvailable.name)@\(.fixAvailable.version)" else "" end)' "$work/npm-$dir.json")" $ids "npm:$name"
-  done < <(jq -r '
+  local severity fixable name ghsa detail
+  # One line per high/critical advisory found in a package's chain of "via" (so a package with two advisories gives two lines,
+  # each judged on its own GHSA id); "-" stands for a package whose advisory detail is missing. "npm:<name>" allows them all.
+  # shellcheck disable=SC2016 # jq program, not shell
+  extract "$work/npm-$dir.tsv" '
       .vulnerabilities as $v
-      | def ghsas($n; $depth):
+      | def adv($n; $depth):
           if $depth > 8 or ($v[$n] == null) then []
-          else $v[$n].via | map(if type == "object" then [(.url // "" | split("/") | last)] else ghsas(.; $depth + 1) end) | add // [] end;
+          else $v[$n].via | map(if type == "object" then [.] else adv(.; $depth + 1) end) | add // [] end;
         $v | to_entries[] | select(.value.severity == "high" or .value.severity == "critical")
-        | [.value.severity, (if (.value.fixAvailable // false) == false then "no" else "yes" end), .key,
-           (ghsas(.key; 0) | map(select(length > 0)) | unique | join(" "))] | @tsv' "$work/npm-$dir.json")
+        | . as $e
+        | (adv($e.key; 0) | map(select(.severity == "high" or .severity == "critical")) | unique_by(.url // .title)) as $advs
+        | (if ($advs | length) == 0 then [{severity: $e.value.severity, url: "-", title: "no advisory detail"}] else $advs end)[]
+        | [.severity, (if ($e.value.fixAvailable // false) == false then "no" else "yes" end), $e.key,
+           ((.url // "-") | split("/") | last | if . == "" then "-" else . end),
+           ((.title // "") | gsub("[\t\n]"; " ")) + ", range " + ($e.value.range // "?")
+             + (if ($e.value.fixAvailable | type) == "object" then ", fix: \($e.value.fixAvailable.name)@\($e.value.fixAvailable.version)" else "" end)]
+        | @tsv' "$file" || return 0
+  while IFS=$'\t' read -r severity fixable name ghsa detail; do
+    if [ "$ghsa" = "-" ]; then decide "$severity" "$fixable" "npm $dir/$name" "$detail" "npm:$name"
+    else decide "$severity" "$fixable" "npm $dir/$name" "$detail" "$ghsa" "npm:$name"; fi
+  done <"$work/npm-$dir.tsv"
 }
 
 # --- 3. secrets --------------------------------------------------------------------------------------------------------
 gitleaks() { # gitleaks <report name> <extra args...>; findings -> $work/<report name>.json
   local report=$1; shift
+  if [ -n "${SECURITY_FIXTURES:-}" ]; then cp "$SECURITY_FIXTURES/gitleaks-$report.json" "$work/$report.json" 2>/dev/null || : >"$work/$report.json"; return 0; fi
   # run as the caller so git accepts the checkout's owner; .gitleaks.toml (if present) is picked up from the source root
   docker run --rm --user "$(id -u):$(id -g)" -v "$root":/src:ro -v "$work":/out -e HOME=/tmp "$GITLEAKS_IMAGE" \
     detect --source /src --config /src/.gitleaks.toml --redact --no-banner --exit-code 0 \
@@ -150,14 +188,17 @@ gitleaks() { # gitleaks <report name> <extra args...>; findings -> $work/<report
 }
 report_secrets() { # report_secrets <report name> <where>
   local rule fingerprint file line
+  # gitleaks writes no report when it finds nothing; a report that is not a list of findings is unreadable
   [ -s "$work/$1.json" ] || return 0
+  # shellcheck disable=SC2016 # jq program, not shell
+  extract "$work/$1.tsv" '.[] | [.RuleID, (.Fingerprint | sub("^/src/"; "")), (.File | sub("^/src/"; "")), .StartLine] | @tsv' "$work/$1.json" || return 0
   while IFS=$'\t' read -r rule fingerprint file line; do
     decide secret yes "$2 $file:$line" "$rule" "$fingerprint"
-  done < <(jq -r '.[]? | [.RuleID, (.Fingerprint | sub("^/src/"; "")), (.File | sub("^/src/"; "")), .StartLine] | @tsv' "$work/$1.json")
+  done <"$work/$1.tsv"
 }
 check_secrets() {
   echo "== secrets: gitleaks ($GITLEAKS_IMAGE) over the working tree"
-  gitleaks tree --no-git && report_secrets tree "tree"
+  if gitleaks tree --no-git; then report_secrets tree "tree"; fi
   local range="${GITLEAKS_RANGE:-}"
   case "$range" in
     ''|0000000*) echo "== secrets: git history skipped (no GITLEAKS_RANGE, or a brand-new branch)"; return ;;
@@ -167,7 +208,7 @@ check_secrets() {
     echo "== secrets: git history skipped (${range%%..*} is not in this clone)"; return
   fi
   echo "== secrets: gitleaks over the git history of $range"
-  gitleaks history --log-opts="$range" && report_secrets history "history"
+  if gitleaks history --log-opts="$range"; then report_secrets history "history"; fi
 }
 
 load_allowlist
