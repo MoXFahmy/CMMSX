@@ -97,6 +97,43 @@ public class SecurityHeaderTests(ApiFixture fx) : IClassFixture<ApiFixture>
         AssertHeaders(plain, "http", SecurityHeaders.ContentSecurityPolicy);
     }
 
+    [SkippableFact]
+    public async Task Api_docs_page_lets_its_own_scripts_run()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var org = await OrgAsync(fx);
+        // The API reference (Scalar) starts itself with an inline script: the page's policy names a nonce made for this
+        // response, every script tag on the page carries it, and the rest of the policy is the global one.
+        var r = await org.Admin.GetAsync("/api/docs/");
+        Assert.Equal(HttpStatusCode.OK, r.StatusCode);
+        var policy = Assert.Single(r.Headers.GetValues("Content-Security-Policy"));
+        var m = System.Text.RegularExpressions.Regex.Match(policy, @"script-src 'self' 'nonce-([A-Za-z0-9_\-]{22,})';");
+        Assert.True(m.Success, $"no script nonce in the docs page's policy: {policy}");
+        var nonce = m.Groups[1].Value;
+        Assert.Equal(SecurityHeaders.ContentSecurityPolicy, policy.Replace($" 'nonce-{nonce}'", ""));
+        var html = await r.Content.ReadAsStringAsync();
+        var scripts = System.Text.RegularExpressions.Regex.Matches(html, "<script[^>]*>");
+        Assert.NotEmpty(scripts);
+        Assert.All(scripts, s => Assert.Contains($"nonce=\"{nonce}\"", s.Value));
+        Assert.Contains("\"withDefaultFonts\":false", html); // no fonts from scalar.com, which font-src 'self' would refuse
+        Assert.Equal("nosniff", Assert.Single(r.Headers.GetValues("X-Content-Type-Options")));
+
+        // A new nonce for every response; everything else keeps the global policy.
+        var again = Assert.Single((await org.Admin.GetAsync("/api/docs/")).Headers.GetValues("Content-Security-Policy"));
+        Assert.NotEqual(policy, again);
+        AssertHeaders(await org.Admin.GetAsync("/api/health"), "/api/health after the docs", SecurityHeaders.ContentSecurityPolicy);
+    }
+
+    [Fact]
+    public void Nonce_policy_differs_from_the_global_one_only_in_script_src()
+    {
+        var policy = SecurityHeaders.ContentSecurityPolicyWithScriptNonce("abcDEF123-_");
+        Assert.Equal(SecurityHeaders.ContentSecurityPolicy.Replace("script-src 'self';", "script-src 'self' 'nonce-abcDEF123-_';"), policy);
+        Assert.NotEqual(SecurityHeaders.ContentSecurityPolicy, policy);
+        Assert.NotEqual(SecurityHeaders.NewNonce(), SecurityHeaders.NewNonce());
+        Assert.Matches("^[A-Za-z0-9_-]{22,}$", SecurityHeaders.NewNonce());
+    }
+
     [Fact]
     public void The_policy_is_the_specified_one()
     {

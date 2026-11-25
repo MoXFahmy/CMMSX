@@ -172,7 +172,15 @@ app.UseAuthorization();
 
 // Signed in or with a key (0.26.0): the description isn't public.
 app.MapOpenApi().RequireAuthorization();
-app.MapScalarApiReference("/api/docs").RequireAuthorization();
+// The page starts Scalar with an inline script, which the global policy (script-src 'self') refuses: the page gets the same
+// policy plus a nonce made for this response, carried by its script tags. Scalar's default fonts come from scalar.com, which
+// font-src 'self' refuses too, so they are off (the page uses the system's fonts).
+app.MapScalarApiReference("/api/docs", (ScalarOptions options, HttpContext http) =>
+{
+    var nonce = SecurityHeaders.NewNonce();
+    options.WithNonce(nonce).DisableDefaultFonts();
+    http.Response.Headers.ContentSecurityPolicy = SecurityHeaders.ContentSecurityPolicyWithScriptNonce(nonce);
+}).RequireAuthorization();
 
 var api = app.MapGroup("/api");
 var version = app.Configuration["App:Version"] is { Length: > 0 } v ? v : "dev";
