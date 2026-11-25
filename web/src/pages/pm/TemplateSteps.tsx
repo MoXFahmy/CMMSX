@@ -38,6 +38,8 @@ export function TemplateSteps({ value, onChange, editable, error, selfId }: {
           <Group gap={6} wrap="nowrap">
             <Text fz="sm" c="dimmed" w={24} ta="right">{i + 1}.</Text>
             <TextInput style={{ flex: 1 }} size="xs" value={s.description} disabled={!editable} onChange={(e) => set(i, { description: e.currentTarget.value })} />
+            <TextInput style={{ flex: 1 }} size="xs" dir="rtl" placeholder={t('bilingual.stepAr')} aria-label={t('bilingual.stepAr')} value={s.descriptionAr ?? ''} disabled={!editable}
+              onChange={(e) => set(i, { descriptionAr: e.currentTarget.value })} />
             <Badge size="sm" variant="light">{t(`steps.types.${s.type}`)}</Badge>
             {s.beforeStart && <IconShieldCheck size={16} color="var(--mantine-color-orange-6)" aria-label={t('steps.beforeStart')} />}
             {s.photoRequired && <IconCamera size={16} aria-label={t('steps.photoRequired')} />}

@@ -25,6 +25,7 @@ import { apiQuery, WO_TABS } from '@/components/list/apiQueries';
 import { BulkBar, FilterChips, ListTools, listText, rangeText, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 import { listItems } from '@/components/listLabels';
 import { groupData, useAssetGroups } from '@/components/ReferencePickers';
+import { pick } from '@/components/bilingual';
 
 /** Filters behind "More filters"; they live in the address like the others. */
 const EXTRA_FILTERS = ['locationId', 'assetId', 'assetGroupId', 'assigneeId', 'teamId', 'createdFrom', 'createdTo', 'dueFrom', 'dueTo', 'source', 'completedFrom', 'cancelReasonId', 'onlyWhenStopped', 'groupId',
@@ -207,7 +208,7 @@ export function WorkOrdersPage() {
             <Select label={t('teams.team')} placeholder={t('common.all')} data={teamOptions(teams, p('teamId'))} value={p('teamId') || null} onChange={(v) => set({ teamId: v })} clearable searchable />
             <Select label={t('wo.source')} placeholder={t('common.all')} value={p('source') || null} onChange={(v) => set({ source: v })} clearable
               data={[{ value: 'pm', label: t('wo.sourcePm') }, { value: 'request', label: t('wo.sourceRequest') }, { value: 'direct', label: t('wo.sourceDirect') }]} />
-            <Select label={t('wo.cancelReason')} placeholder={t('common.all')} data={(cancelReasons ?? []).map((x) => ({ value: x.id, label: x.name }))}
+            <Select label={t('wo.cancelReason')} placeholder={t('common.all')} data={(cancelReasons ?? []).map((x) => ({ value: x.id, label: pick(x.name, x.nameAr) }))}
               value={p('cancelReasonId') || null} onChange={(v) => set({ cancelReasonId: v })} clearable />
             <Select label={t('codes.symptom')} placeholder={t('common.all')} data={codeFilter(symptoms)} value={p('symptomId') || null} onChange={(v) => set({ symptomId: v })} clearable searchable />
             <Select label={t('codes.cause')} placeholder={t('common.all')} data={codeFilter(causes)} value={p('causeId') || null} onChange={(v) => set({ causeId: v })} clearable searchable />

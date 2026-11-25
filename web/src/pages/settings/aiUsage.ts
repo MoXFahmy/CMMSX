@@ -1,6 +1,6 @@
 import type { TFunction } from 'i18next';
 
-export type AiFeature = 'Report' | 'Diagnosis';
+export type AiFeature = 'Report' | 'Diagnosis' | 'Translation';
 export type AiResult = 'Pending' | 'Answered' | 'Refused' | 'Failed' | 'OverLimit';
 
 /** Settings › AI usage (0.15.0). Actions count answered and refused calls; cost sums every call's estimate. */

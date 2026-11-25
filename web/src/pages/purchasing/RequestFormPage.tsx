@@ -114,7 +114,7 @@ export function RequestFormPage() {
                     <PartPicker placeholder={t('pr.nonStock')} value={l.partId} initial={l.part} withStock={false} onChange={(pid, p) => {
                       form.setFieldValue(`lines.${i}.partId`, pid); form.setFieldValue(`lines.${i}.part`, p ? { id: p.id, partNumber: p.partNumber, name: p.name } : null);
                       if (p) {
-                        form.setFieldValue(`lines.${i}.description`, p.name); form.setFieldValue(`lines.${i}.unitOfMeasure`, p.unitOfMeasure);
+                        form.setFieldValue(`lines.${i}.description`, p.mainName ?? p.name); form.setFieldValue(`lines.${i}.unitOfMeasure`, p.unitOfMeasure);
                         if (!form.getValues().lines[i].storeId && siteStores.length) form.setFieldValue(`lines.${i}.storeId`, siteStores[0].id);
                       }
                     }} />

@@ -20,10 +20,12 @@ type PartRow = { partId: string; label: string; unit: string; quantity: number |
 type F = {
   code: string; name: string; title: string; workType: string; priority: string | null; tradeId: string | null; estimatedHours: number | ''; expectedStopHours: number | '';
   description: string; safetyNotes: string; steps: StepDetail[]; parts: PartRow[]; recipientIds: string[]; isActive: boolean;
+  /** 0.28.0: the Arabic texts, as stored (blank clears). */
+  nameAr: string; titleAr: string; safetyNotesAr: string;
 };
 const blank: F = {
   code: '', name: '', title: '', workType: 'Preventive', priority: null, tradeId: null, estimatedHours: '', expectedStopHours: '', description: '', safetyNotes: '', steps: [],
-  parts: [], recipientIds: [], isActive: true,
+  parts: [], recipientIds: [], isActive: true, nameAr: '', titleAr: '', safetyNotesAr: '',
 };
 const num = (x: number | '') => (x === '' ? null : x);
 
@@ -45,7 +47,7 @@ export function TemplatePage() {
   useEffect(() => {
     if (!x) return;
     const saved: F = {
-      code: x.code, name: x.name, title: x.title ?? '', workType: x.workType ?? 'Preventive', priority: x.priority ?? null, tradeId: x.tradeId ?? null,
+      code: x.code, name: x.name, nameAr: x.nameAr ?? '', titleAr: x.titleAr ?? '', safetyNotesAr: x.safetyNotesAr ?? '', title: x.title ?? '', workType: x.workType ?? 'Preventive', priority: x.priority ?? null, tradeId: x.tradeId ?? null,
       estimatedHours: x.estimatedHours ?? '', expectedStopHours: x.expectedStopHours ?? '', description: x.description ?? '', safetyNotes: x.safetyNotes ?? '',
       steps: x.stepDetails ?? x.steps.map((d) => ({ description: d, type: 'Check', photoRequired: false, beforeStart: false, followUp: 'Default' })),
       parts: x.parts.map((p) => ({ partId: p.partId, label: `${p.partNumber} · ${p.partName}`, unit: p.unitOfMeasure, quantity: p.quantity, unitCost: p.unitCost })),
@@ -90,8 +92,10 @@ export function TemplatePage() {
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 <TextInput label={t('pm.taskCode')} required disabled={editing} {...form.getInputProps('code')} />
                 <TextInput label={t('common.name')} required style={{ gridColumn: 'span 2' }} {...form.getInputProps('name')} />
+                <TextInput label={t('bilingual.nameAr')} dir="rtl" maxLength={300} style={{ gridColumn: 'span 2' }} {...form.getInputProps('nameAr')} />
               </SimpleGrid>
               <TextInput label={t('pm12.woTitle')} description={t('pm12.woTitleHint')} {...form.getInputProps('title')} />
+              <TextInput label={t('bilingual.titleAr')} dir="rtl" maxLength={300} {...form.getInputProps('titleAr')} />
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 <Select label={t('workType.label')} data={listItems('workType', t, form.values.workType)} {...form.getInputProps('workType')} />
                 <Select label={t('priority.label')} clearable placeholder={t('pm12.priorityFromPm')} data={listItems('priority', t, form.values.priority)} {...form.getInputProps('priority')} />
@@ -101,6 +105,7 @@ export function TemplatePage() {
               </SimpleGrid>
               <Textarea label={t('common.description')} autosize minRows={2} {...form.getInputProps('description')} />
               <Textarea label={t('pm.safetyNotes')} autosize minRows={2} {...form.getInputProps('safetyNotes')} />
+              <Textarea label={t('bilingual.safetyAr')} dir="rtl" autosize minRows={2} {...form.getInputProps('safetyNotesAr')} />
               <MultiSelect label={t('pm12.recipients')} description={t('pm12.templateRecipientsHint')} searchable clearable maxValues={20}
                 data={(people ?? []).map((p) => ({ value: p.id, label: p.fullName }))} value={v.recipientIds} onChange={(r) => form.setFieldValue('recipientIds', r)} error={form.errors.recipientIds} />
               <Checkbox label={t('common.active')} {...form.getInputProps('isActive', { type: 'checkbox' })} />

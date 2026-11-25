@@ -28,7 +28,7 @@ import { listItems } from '@/components/listLabels';
 import { groupData, useAssetGroups } from '@/components/ReferencePickers';
 
 export type V = {
-  code: string; name: string; description: string; siteId: string | null; locationId: string | null; assetId: string | null; tradeId: string | null; teamId: string | null; priority: string;
+  code: string; name: string; /** 0.28.0, as stored (blank clears) */ nameAr: string; description: string; siteId: string | null; locationId: string | null; assetId: string | null; tradeId: string | null; teamId: string | null; priority: string;
   assigneeIds: string[]; pmTaskId: string | null; extraTasks: { pmTaskId: string | null; everyNth: number | '' }[]; type: string; basis: string; frequency: number | '';
   unit: string; weekOfMonth: string | null; dayOfWeek: string | null; dayOfMonth: number | ''; workPeriodDays: number | ''; wholeMonth: boolean; leadDays: number | '';
   startDate: Date | null; nextDueDate: Date | null; meterId: string | null; meterTrigger: string; meterInterval: number | ''; nextDueReading: number | '';
@@ -50,7 +50,7 @@ export type V = {
 };
 type Target = 'asset' | 'location' | 'several' | 'group';
 const blank: V = {
-  code: '', name: '', description: '', siteId: null, locationId: null, assetId: null, tradeId: null, teamId: null, priority: 'Medium', assigneeIds: [], pmTaskId: null, extraTasks: [],
+  code: '', name: '', nameAr: '', description: '', siteId: null, locationId: null, assetId: null, tradeId: null, teamId: null, priority: 'Medium', assigneeIds: [], pmTaskId: null, extraTasks: [],
   type: 'FixedInterval', basis: 'Scheduled', frequency: 1, unit: 'Month', weekOfMonth: '1', dayOfWeek: 'Monday', dayOfMonth: 1, workPeriodDays: 1, wholeMonth: false, leadDays: 7,
   startDate: new Date(), nextDueDate: null, meterId: null, meterTrigger: 'Incremental', meterInterval: '', nextDueReading: '', lowerLimit: '', upperLimit: '', lowerTaskId: null,
   upperTaskId: null, timeBased: false, isActive: true, target: 'asset', roundAssets: [], onlyWhenStopped: null,
@@ -103,7 +103,7 @@ export function PmScheduleFormPage() {
     if (s) {
       const saved: V = {
         ...blank,
-        code: s.code, name: s.name, description: s.description ?? '', siteId: s.siteId, locationId: s.locationId ?? null, assetId: s.assetId ?? null, tradeId: s.tradeId ?? null, teamId: s.teamId ?? null,
+        code: s.code, name: s.name, nameAr: s.nameAr ?? '', description: s.description ?? '', siteId: s.siteId, locationId: s.locationId ?? null, assetId: s.assetId ?? null, tradeId: s.tradeId ?? null, teamId: s.teamId ?? null,
         priority: s.priority, assigneeIds: s.assigneeIds, pmTaskId: s.pmTaskId, extraTasks: s.extraTasks.map((x) => ({ pmTaskId: x.pmTaskId, everyNth: x.everyNth })), type: s.type,
         basis: s.basis, frequency: s.frequency, unit: s.unit, weekOfMonth: s.weekOfMonth ? String(s.weekOfMonth) : '1', dayOfWeek: s.dayOfWeek ?? 'Monday', dayOfMonth: s.dayOfMonth ?? 1,
         workPeriodDays: s.workPeriodDays, wholeMonth: s.wholeMonth, leadDays: s.leadDays, startDate: d(s.startDate), nextDueDate: d(s.nextDueDate), meterId: s.meterId ?? null,
@@ -179,6 +179,7 @@ export function PmScheduleFormPage() {
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 <TextInput label={t('pm.code')} placeholder={t('pm.autoPlaceholder')} {...form.getInputProps('code')} />
                 <TextInput label={t('common.name')} required style={{ gridColumn: 'span 2' }} {...form.getInputProps('name')} />
+                <TextInput label={t('bilingual.nameAr')} dir="rtl" maxLength={300} style={{ gridColumn: 'span 2' }} {...form.getInputProps('nameAr')} />
               </SimpleGrid>
               <SimpleGrid cols={{ base: 1, sm: 3 }}>
                 <Select label={t('pm.task')} required searchable data={taskOpts} {...form.getInputProps('pmTaskId')} />

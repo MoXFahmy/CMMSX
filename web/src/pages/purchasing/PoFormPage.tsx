@@ -218,7 +218,7 @@ export function PoFormPage() {
                   <Table.Td>{l.unitId ? <Badge variant="light" color="orange" leftSection={<IconTool size={12} />}>{t('units.repairOf', { serial: l.unitLabel ?? '' })}</Badge>
                   : <PartPicker placeholder={t('po.nonStock')} value={l.partId} initial={l.part} withStock={false} onChange={(pid, p) => {
                     form.setFieldValue(`lines.${i}.partId`, pid); form.setFieldValue(`lines.${i}.part`, p ? { id: p.id, partNumber: p.partNumber, name: p.name } : null);
-                    if (p) { form.setFieldValue(`lines.${i}.description`, p.name); form.setFieldValue(`lines.${i}.unitOfMeasure`, p.unitOfMeasure); form.setFieldValue(`lines.${i}.unitPrice`, p.lastPurchasePrice ?? p.averageCost);
+                    if (p) { form.setFieldValue(`lines.${i}.description`, p.mainName ?? p.name); form.setFieldValue(`lines.${i}.unitOfMeasure`, p.unitOfMeasure); form.setFieldValue(`lines.${i}.unitPrice`, p.lastPurchasePrice ?? p.averageCost);
                       form.setFieldValue(`lines.${i}.partUnit`, p.unitOfMeasure); form.setFieldValue(`lines.${i}.packSize`, 1); form.setFieldValue(`lines.${i}.supplierPartNumber`, '');
                       if (!form.getValues().lines[i].storeId && siteStores.length) form.setFieldValue(`lines.${i}.storeId`, siteStores[0].id);
                       if (!form.getValues().siteId && siteStores.length) form.setFieldValue('siteId', siteStores[0].siteId);

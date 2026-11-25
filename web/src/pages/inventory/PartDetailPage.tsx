@@ -16,6 +16,7 @@ import { fmtDate, fmtPrice, fmtQty, notifyError } from '@/components/utils';
 import { TransactionsTable } from './InventoryPage';
 import { PartSuppliers } from './PartSuppliers';
 import { PartUnits, SerialTrackingModal } from './PartUnits';
+import { pick } from '@/components/bilingual';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={0}><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{label}</Text><Text fz="sm" component="div">{children ?? '—'}</Text></Stack>;
@@ -49,7 +50,7 @@ export function PartDetailPage() {
 
   return (
     <>
-      <PageHeader crumbs={[{ label: t('inv.title'), to: '/inventory' }, { label: p.partNumber }]} title={p.name}
+      <PageHeader crumbs={[{ label: t('inv.title'), to: '/inventory' }, { label: p.partNumber }]} title={pick(p.name, p.nameAr)}
         badge={<Group gap={6}>{p.isCritical && <Badge color="red">{t('inv.critical')}</Badge>}{p.isShelfItem && <Badge color="grape" variant="light">{t('inv.shelfLife')}</Badge>}{serial && <Badge color="indigo" variant="light">{t('units.serialTracked')}</Badge>}
           {!p.isActive && <Badge color="gray">{t('common.inactive')}</Badge>}{low && <Badge color="orange" variant="light">{t('inv.atReorder')}</Badge>}</Group>}
         subtitle={<>{p.partNumber}{p.groupName && ` · ${p.groupName}`}{p.manufacturer && ` · ${p.manufacturer}`}{p.manufacturerPartNumber && ` ${p.manufacturerPartNumber}`}</>}

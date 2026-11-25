@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next';
 import { get } from '@/api/client';
 import type { Lookup } from '@/api/types';
 import { codeOptions, type CodePairs } from './codes';
+import { pick } from './bilingual';
 
 type Code = { id: string; code: string; name: string };
 
@@ -20,7 +21,8 @@ export function CodeSelect({ path, label, value, onChange, current, pairing, pai
   const { t } = useTranslation();
   const { data: codes } = useQuery({ queryKey: ['codes', path], queryFn: () => get<Lookup[]>(path) });
   const { data: pairs } = useQuery({ queryKey: ['code-pairs'], queryFn: () => get<CodePairs>('/code-pairs'), enabled: !!pairing, staleTime: 5 * 60_000, retry: false });
-  const offered: Code[] = (codes ?? []).filter((c) => c.isActive || c.id === value);
+  // Names in the reader's language (0.28.0); the list itself is the raw one Settings edits.
+  const offered: Code[] = (codes ?? []).filter((c) => c.isActive || c.id === value).map((c) => ({ ...c, name: pick(c.name, c.nameAr) }));
   if (current && !offered.some((c) => c.id === current.id)) offered.push(current);
   return <Select label={label} clearable searchable value={value} onChange={onChange} data={codeOptions(offered, pairing ? pairs?.[pairing] ?? [] : [], pairedWith, t)} {...rest} />;
 }

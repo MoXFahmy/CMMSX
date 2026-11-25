@@ -6,6 +6,7 @@ import { printedStep } from '@/components/measure';
 import { fmtDate, fmtDateTime, fmtQty } from '@/components/utils';
 import { blocksInOrder, layoutText, pairRows, shows, type PrintBlock, type PrintLayout } from './layouts';
 import { FooterText, PlainText, TermsBlock, type PrintContext } from './PrintTexts';
+import { pick } from '@/components/bilingual';
 
 /** Blank rows for the technician to fill in by hand. */
 const BLANK_ROWS = 4;
@@ -94,7 +95,10 @@ export function JobCardBody({ w, layout, orgName, terms, logoUrl, language, asse
         const shown = details.filter(([key]) => has('details', key));
         return shown.length > 0 && <SimpleGrid cols={4} spacing="sm" mb="md">{shown.map(([, label, value]) => field(label, value))}</SimpleGrid>;
       }
-      case 'description': return w.description && <Text fz="sm" mb="md" style={{ whiteSpace: 'pre-wrap' }}>{w.description}</Text>;
+      // 0.28.0: the safety notes print with the description, in the reader's language.
+      case 'description': return (w.description || w.safetyNotes) && <>
+        {w.description && <Text fz="sm" mb="md" style={{ whiteSpace: 'pre-wrap' }}>{w.description}</Text>}
+        {w.safetyNotes && <Text fz="sm" mb="md" style={{ whiteSpace: 'pre-wrap' }}><b>{t('wo.safety')}:</b> {pick(w.safetyNotes, w.safetyNotesAr)}</Text>}</>;
       case 'technician-notes': return (w.asset?.notesToTechnician || w.locationNotesToTechnician) && (
         <Stack gap={2} mb="md" p="xs" style={{ border: '1px solid #000' }}>
           <Text fz="xs" fw={700} tt="uppercase">{t('wo.notesForTech')}</Text>
@@ -123,7 +127,7 @@ export function JobCardBody({ w, layout, orgName, terms, logoUrl, language, asse
                   {g.title && <Table.Tr><Table.Td colSpan={5} fw={700} bg="var(--mantine-color-gray-1)">{g.title}</Table.Td></Table.Tr>}
                   {g.tasks.map((x, i) => (
                     <Table.Tr key={x.id}>
-                      <Table.Td>{i + 1}</Table.Td><Table.Td>{x.description}</Table.Td>
+                      <Table.Td>{i + 1}</Table.Td><Table.Td>{pick(x.description, x.descriptionAr)}</Table.Td>
                       <Table.Td ta="center" fz="lg">{printedStep(x, t).mark}</Table.Td>
                       <Table.Td>{printedStep(x, t).result}</Table.Td><Table.Td>{x.remarks ?? ''}</Table.Td>
                     </Table.Tr>
@@ -214,7 +218,7 @@ export function JobCardBody({ w, layout, orgName, terms, logoUrl, language, asse
           </Stack>
         </Group>
       )}
-      <Title order={4} mb="sm">{has('header', 'title') ? w.title : `${w.number} · ${w.title}`}</Title>
+      <Title order={4} mb="sm">{has('header', 'title') ? pick(w.title, w.titleAr) : `${w.number} · ${pick(w.title, w.titleAr)}`}</Title>
       {layoutText(layout, 'header', language) && <div style={{ marginBottom: 12 }}><PlainText text={layoutText(layout, 'header', language)} /></div>}
       {pairRows(rest, [['labour', 'parts']]).map((row) => row.length === 2
         ? <SimpleGrid key={row.map((x) => x.key).join('+')} cols={2} spacing="md" mb="md">{row[0].key === 'labour' ? <>{labour}{partsTable}</> : <>{partsTable}{labour}</>}</SimpleGrid>

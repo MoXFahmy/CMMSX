@@ -32,6 +32,7 @@ import { FittedUnitsCard, MakeUnitModal, UnitCard } from './AssetUnits';
 import { UnitStateBadge } from '@/pages/inventory/PartUnits';
 import { AssetCosts } from './AssetCosts';
 import { AssetContracts } from './AssetContracts';
+import { pick, pickNote } from '@/components/bilingual';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return (
@@ -84,7 +85,7 @@ export function AssetDetailPage() {
     <>
       <PageHeader
         crumbs={[{ label: terms.assets, to: '/assets' }, ...(a.parentAsset ? [{ label: a.parentAsset.assetNumber, to: `/assets/${a.parentAsset.id}` }] : []), { label: a.assetNumber }]}
-        title={<>{a.name}</>} badge={<Group gap={6}><StatusBadge status={a.status} />{a.unitState && <UnitStateBadge state={a.unitState} />}<CriticalityBadge value={a.criticality} /><StoppedBadge show={a.onlyWhenStopped} />
+        title={<>{pick(a.name, a.nameAr)}</>} badge={<Group gap={6}><StatusBadge status={a.status} />{a.unitState && <UnitStateBadge state={a.unitState} />}<CriticalityBadge value={a.criticality} /><StoppedBadge show={a.onlyWhenStopped} />
           {a.downSince && <Badge color="red" variant="filled" style={{ cursor: 'pointer' }} onClick={() => setTab('downtime')}>{t('downtime.down')}</Badge>}</Group>}
         subtitle={<>{a.assetNumber}{a.category && <> · {a.category.name}</>}{a.legacyRef && <> · <Badge size="xs" variant="outline" color="gray">4CSQL</Badge></>}</>}
         actions={<>
@@ -146,7 +147,7 @@ export function AssetDetailPage() {
                 <FittedUnitsCard assetId={a.id} />
                 {(a.notesToTechnician || a.notes) && (
                   <Card>
-                    {a.notesToTechnician && <Alert variant="light" color="yellow" icon={<IconInfoCircle size={18} />} title={t('assets.notesToTechnician')} mb={a.notes ? 'md' : 0}>{a.notesToTechnician}</Alert>}
+                    {a.notesToTechnician && <Alert variant="light" color="yellow" icon={<IconInfoCircle size={18} />} title={t('assets.notesToTechnician')} mb={a.notes ? 'md' : 0}>{pickNote(a.notesToTechnician, a.notesToTechnicianAr)}</Alert>}
                     {a.notes && <Field label={t('common.notes')}>{a.notes}</Field>}
                   </Card>
                 )}

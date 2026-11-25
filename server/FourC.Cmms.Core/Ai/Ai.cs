@@ -3,7 +3,8 @@ using FourC.Cmms.Core.Common;
 namespace FourC.Cmms.Core.Ai;
 
 /// <summary>What an AI action was for (0.15.0).</summary>
-public enum AiFeature { Report, Diagnosis }
+/// <remarks>Translation (0.28.0): drafts of missing Arabic texts.</remarks>
+public enum AiFeature { Report, Diagnosis, Translation }
 
 /// <summary>
 /// How an AI call ended. Answered and Refused reached Claude and count against the month's allowance; Pending holds a place while

@@ -32,6 +32,7 @@ import { PriorityBadge, WrStatusBadge } from '@/components/WorkBadges';
 import { dateTimeFormat, fmtDate, fmtDateTime, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { FilterChips, ListTools, useListColumns, useListParams, type FilterDef, type ListColumn } from '@/components/list';
 import { listDefault, listItems } from '@/components/listLabels';
+import { pick } from '@/components/bilingual';
 
 export function WorkRequestsPage() {
   const { t } = useTranslation();
@@ -153,7 +154,7 @@ export function RequestFormModal({ opened, onClose, assetId, place }: { opened: 
     <Modal opened={opened} onClose={onClose} title={t('wr.new')} size="lg">
       <form onSubmit={submit}><Stack>
         {(types ?? []).some((x) => x.isActive) && (
-          <Select label={t('requestTypes.label')} clearable data={(types ?? []).filter((x) => x.isActive).map((x) => ({ value: x.id, label: x.name }))}
+          <Select label={t('requestTypes.label')} clearable data={(types ?? []).filter((x) => x.isActive).map((x) => ({ value: x.id, label: pick(x.name, x.nameAr) }))}
             value={form.values.requestTypeId} onChange={chooseType} error={form.errors.requestTypeId} />
         )}
         <TextInput label={t('wr.whatsWrong')} required data-autofocus {...form.getInputProps('title')} />

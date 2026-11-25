@@ -621,7 +621,8 @@
     "completedSince": "Completed since",
     "cancelReason": "Cancel reason",
     "completedUntil": "Completed until",
-    "unassigned": "Unassigned"
+    "unassigned": "Unassigned",
+    "safety": "Safety"
   },
   "wr": {
     "title": "Work requests",
@@ -2258,7 +2259,8 @@
     "dates": "Dates",
     "features": {
       "Report": "Report",
-      "Diagnosis": "Diagnosis"
+      "Diagnosis": "Diagnosis",
+      "Translation": "Arabic drafts"
     },
     "results": {
       "Pending": "Waiting",
@@ -3367,5 +3369,24 @@
       "Revoked": "Revoked",
       "AccountInactive": "Account inactive"
     }
+  },
+  "bilingual": {
+    "fill": "Fill in missing Arabic",
+    "review": "Check the Arabic drafts",
+    "main": "Text",
+    "arabic": "Arabic",
+    "keep": "Keep",
+    "save": "Save",
+    "saveNext": "Save and draft the next batch",
+    "none": "Every text here has its Arabic.",
+    "couldNot": "Couldn't draft: {{n}}",
+    "remaining": "Still without Arabic after these: {{n}}",
+    "saved": "Arabic texts saved: {{n}}",
+    "nameAr": "Name (Arabic)",
+    "titleAr": "Title (Arabic)",
+    "notesAr": "Notes to technician (Arabic)",
+    "safetyAr": "Safety notes (Arabic)",
+    "stepAr": "Step (Arabic)",
+    "descriptionAr": "Description (Arabic)"
   }
 }
