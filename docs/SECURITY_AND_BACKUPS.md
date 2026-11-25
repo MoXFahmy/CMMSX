@@ -427,12 +427,12 @@ cannot finish. The run says so and prints the exact stack and resources. Two way
    ```
    (`cmms-edge` is in `us-east-1`; the execution role is the one of the app's region.)
 
+The skipped role simply keeps its boundary. When the stack reads `UPDATE_ROLLBACK_COMPLETE`, fix the cause the log named and
+run **Deploy to AWS** again with `continue_rollback_stack` back on `none`.
+
 The recovery stack `cmms-dr` is not deployed by the workflow and the pipeline may not touch it, so it never gets stuck there. If
 `setup.sh` leaves it in a failed state, a console administrator handles it in the CloudFormation console (Ireland), as for any
 stack, then re-runs `setup.sh`.
-
-The skipped role simply keeps its boundary. When the stack reads `UPDATE_ROLLBACK_COMPLETE`, fix the cause the log named and
-run **Deploy to AWS** again with `continue_rollback_stack` back on `none`.
 
 **The load balancer switch.** 0.29.0 replaces the public load balancer with an internal one and points CloudFront at it through
 a VPC origin, in one deploy. Expect **up to about 20 minutes of errors** (CloudFront switches first, and each edge answers 503
