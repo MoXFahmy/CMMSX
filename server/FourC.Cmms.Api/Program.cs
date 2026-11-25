@@ -112,6 +112,9 @@ services.AddHostedService(sp => sp.GetRequiredService<PushSenderService>());
 services.AddHostedService(sp => sp.GetRequiredService<OverdueNotifier>());
 services.AddSingleton<ContractNotifier>();
 services.AddHostedService(sp => sp.GetRequiredService<ContractNotifier>());
+// The platform's own daily jobs (0.29.0: unconfirmed sign-ups removed after 7 days); a singleton so tests can run them.
+services.AddSingleton<PlatformJobs>();
+services.AddHostedService(sp => sp.GetRequiredService<PlatformJobs>());
 services.AddExceptionHandler<ApiExceptionHandler>();
 services.AddProblemDetails();
 services.ConfigureHttpJsonOptions(o =>

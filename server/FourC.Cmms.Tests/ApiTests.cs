@@ -35,6 +35,7 @@ public class ApiFixture : IAsyncLifetime
             b.UseSetting("Abuse:Enabled", "false"); // per-address limits (0.29.0) are off in every test but AbuseLimitTests (set before Configure, so it can turn them on)
             b.UseSetting("Auth:RequireEmailConfirmation", "false"); // sign-up waits for an e-mail link (0.29.0) only in SignUpConfirmationTests
             b.UseSetting("Email:AllowedOrganizations", "*"); // sign-up is open in tests; the operator allows every organization (set before Configure, so a fixture can narrow it)
+            b.UseSetting("Platform:JobsAutoRun", "false"); // the platform jobs (0.29.0: unconfirmed sign-ups, backups) run only when a test calls them
             Configure(b);
             b.UseSetting("ConnectionStrings:Cmms", cs);
             b.UseSetting("Storage:Path", Path.Combine(Path.GetTempPath(), _db));
