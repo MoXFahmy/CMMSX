@@ -48,6 +48,23 @@ if [ "$CREATE_PROVIDER" != "true" ] && [ "$CREATE_PROVIDER" != "false" ]; then
   fi
 fi
 
+# One multi-region CloudTrail trail is enough (a second one of the same events costs $2 per 100,000 events). Keep the
+# choice made on an earlier run; otherwise create cmms-trail unless another multi-region trail is already logging.
+CREATE_TRAIL=$(aws cloudformation describe-stacks --stack-name "$STACK" \
+  --query "Stacks[0].Parameters[?ParameterKey=='CreateTrail'].ParameterValue" --output text 2>/dev/null || true)
+if [ "$CREATE_TRAIL" != "true" ] && [ "$CREATE_TRAIL" != "false" ]; then
+  CREATE_TRAIL=true
+  read -r -a TRAILS <<< "$(aws cloudtrail describe-trails \
+    --query "trailList[?IsMultiRegionTrail && Name!='cmms-trail'].TrailARN" --output text 2>/dev/null || true)"
+  for TRAIL in "${TRAILS[@]}"; do
+    if [ "$(aws cloudtrail get-trail-status --name "$TRAIL" --query IsLogging --output text 2>/dev/null || true)" = "True" ]; then
+      echo "Found CloudTrail trail $TRAIL (multi-region, logging): using it instead of creating cmms-trail."
+      CREATE_TRAIL=false
+      break
+    fi
+  done
+fi
+
 # GitHub signs its tokens with a subject that includes the owner's and repository's numeric ids
 # (repo:owner@123/name@456:ref:refs/heads/main); look them up so the role accepts exactly this repository.
 IDS=$(curl -fsSL "https://api.github.com/repos/$REPO" 2>/dev/null | jq -r '"\(.owner.id) \(.id)"' 2>/dev/null || true)
@@ -63,7 +80,8 @@ echo "Creating the GitHub deployment role and image repository (stack $STACK, ab
 aws cloudformation deploy --stack-name "$STACK" --template-file "$TEMPLATE" \
   --capabilities CAPABILITY_NAMED_IAM --no-fail-on-empty-changeset \
   --tags application=4c-cmms \
-  --parameter-overrides GitHubRepo="$REPO" CreateOidcProvider="$CREATE_PROVIDER" GitHubOwnerId="$OWNER_ID" GitHubRepoId="$REPO_ID"
+  --parameter-overrides GitHubRepo="$REPO" CreateOidcProvider="$CREATE_PROVIDER" GitHubOwnerId="$OWNER_ID" GitHubRepoId="$REPO_ID" \
+    CreateTrail="$CREATE_TRAIL"
 
 ROLE_ARN=$(aws cloudformation describe-stacks --stack-name "$STACK" \
   --query "Stacks[0].Outputs[?OutputKey=='DeployRoleArn'].OutputValue" --output text)
@@ -76,7 +94,9 @@ This version of the setup (CMX 0.29.0) adds:
     (only your own console administrator can lift the Ireland lock);
   - permission for GitHub Actions to deploy two more stacks: cmms-edge in us-east-1 (web firewall)
     and cmms-dr in eu-west-1 (locked backup copies);
-  - a bucket for the stacks' templates (output TemplateBucketName; old templates expire after 30 days).
+  - a bucket for the stacks' templates (output TemplateBucketName; old templates expire after 30 days);
+  - a CloudTrail trail, cmms-trail, recording management events from every region into a locked bucket
+    (output TrailBucketName), unless the account already had a multi-region trail that is logging.
 EOF
 
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
