@@ -397,6 +397,7 @@ Resources:
       # Every new file and version is copied to the Object Lock bucket in Ireland (cmms-dr). Deletions are not: a delete
       # marker stays here, so a file deleted in London (by mistake or by an attacker) is still current in Ireland. Files
       # uploaded before replication was set up need one S3 Batch Replication job (see docs/SECURITY_AND_BACKUPS.md).
+      # Replication metrics give the failed-copy count that FilesReplicationFailedAlarm watches.
       ReplicationConfiguration:
         Role: !GetAtt ReplicationRole.Arn
         Rules:
@@ -405,7 +406,9 @@ Resources:
             Priority: 1
             Filter: { Prefix: "" }
             DeleteMarkerReplication: { Status: Disabled }
-            Destination: { Bucket: !Ref FilesCopyBucketArn }
+            Destination:
+              Bucket: !Ref FilesCopyBucketArn
+              Metrics: { Status: Enabled }
       # GuardDuty Malware Protection (MalwareProtectionPlan) listens to the bucket's events through EventBridge; set here
       # too, so a later stack update keeps it on.
       NotificationConfiguration:
@@ -453,6 +456,7 @@ Resources:
             ExpirationInDays: 90
             NoncurrentVersionExpiration: { NoncurrentDays: 7 }
             AbortIncompleteMultipartUpload: { DaysAfterInitiation: 7 }
+      # Replication metrics give the failed-copy count that ExportsReplicationFailedAlarm watches.
       ReplicationConfiguration:
         Role: !GetAtt ReplicationRole.Arn
         Rules:
@@ -461,7 +465,9 @@ Resources:
             Priority: 1
             Filter: { Prefix: "" }
             DeleteMarkerReplication: { Status: Disabled }
-            Destination: { Bucket: !Ref BackupsCopyBucketArn }
+            Destination:
+              Bucket: !Ref BackupsCopyBucketArn
+              Metrics: { Status: Enabled }
 
   BackupsBucketPolicy:
     Type: AWS::S3::BucketPolicy
@@ -1197,6 +1203,47 @@ Resources:
       TreatMissingData: notBreaching
       AlarmActions: [!Ref AlertTopic]
 
+  # A file, or a weekly export, that S3 failed to copy to Ireland (replication metrics, published in the source bucket's
+  # region). Any failed operation in 5 minutes fires. Missing data keeps the state (AWS's advice for replication metrics):
+  # no data means nothing was replicated, so the alarm stays on until a copy succeeds again, and an e-mail goes out once.
+  FilesReplicationFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-files-replication-failed"
+      AlarmDescription: S3 failed to copy one or more uploaded files to the Ireland bucket (OperationsFailedReplication).
+      Namespace: AWS/S3
+      MetricName: OperationsFailedReplication
+      Dimensions:
+        - { Name: SourceBucket, Value: !Ref FilesBucket }
+        - { Name: DestinationBucket, Value: !Select [5, !Split [":", !Ref FilesCopyBucketArn]] }
+        - { Name: RuleId, Value: to-ireland }
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: ignore
+      AlarmActions: [!Ref AlertTopic]
+
+  ExportsReplicationFailedAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub "${AWS::StackName}-exports-replication-failed"
+      AlarmDescription: S3 failed to copy the weekly database export to the Ireland bucket (OperationsFailedReplication).
+      Namespace: AWS/S3
+      MetricName: OperationsFailedReplication
+      Dimensions:
+        - { Name: SourceBucket, Value: !Ref BackupsBucket }
+        - { Name: DestinationBucket, Value: !Select [5, !Split [":", !Ref BackupsCopyBucketArn]] }
+        - { Name: RuleId, Value: to-ireland }
+      Statistic: Sum
+      Period: 300
+      EvaluationPeriods: 1
+      Threshold: 1
+      ComparisonOperator: GreaterThanOrEqualToThreshold
+      TreatMissingData: ignore
+      AlarmActions: [!Ref AlertTopic]
+
   # AWS Backup: a snapshot or its copy to Ireland that failed, was stopped or never started in its window.
   BackupJobFailures:
     Type: AWS::Events::Rule
@@ -1262,7 +1309,8 @@ Resources:
     DependsOn: InternetGatewayAttachment
     Properties:
       VpcOriginEndpointConfig:
-        Name: !Sub "${AWS::StackName}-app"
+        # CloudFront is global: the region keeps a rebuild in another region from colliding with the old stack's name.
+        Name: !Sub "${AWS::StackName}-${AWS::Region}-app"
         Arn: !Ref InternalLoadBalancer
         HTTPPort: 80
         OriginProtocolPolicy: http-only

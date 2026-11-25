@@ -72,7 +72,8 @@ parked, so this release takes the next number after 0.28.0.
 - **Detection and alarms**: CloudTrail (every region, log validation, a locked bucket), GuardDuty in London (S3, the app task's
   runtime, malware scan of every upload; alert only) and in N. Virginia, and alarms to `CMMS_ALERT_EMAIL` for site errors, app
   down, database CPU, disk and size (7 GB of the 10 GB Express cap, plus an alarm when the size stops being measured), failed
-  sign-in bursts, failed backups and restore tests, the weekly export, GuardDuty findings and heavy firewall blocking. Each
+  sign-in bursts, failed backups and restore tests, the weekly export, files or exports that fail to copy to Ireland, GuardDuty
+  findings and heavy firewall blocking. Each
   recipient confirms two subscription e-mails once (London and N. Virginia).
 - **CI** stops a build on a known high or critical package flaw in NuGet or npm, or a leaked secret (gitleaks); reviewed
   exceptions go in `.github/security-allowlist.txt` with an expiry date. The deploy scans the container image and stops on a

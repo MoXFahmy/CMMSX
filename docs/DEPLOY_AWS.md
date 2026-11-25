@@ -30,9 +30,10 @@ In the region you choose:
 have free-tier credits that cover part of this. Deleting the stacks stops the charges (see the end of this page).
 
 From 0.29.0 two more stacks and some account-wide services are added (see *Security and backups* below), about **$30–50 a
-month** more. The parts add up to about $22–42 at today's database size: the web firewall (~$12), GuardDuty (~$3–10),
+month** more. The parts add up to about $25–45 at today's database size: the web firewall (~$12), GuardDuty (~$3–10),
 snapshots and copies in a second region (~$3–8), the continuous database copy (~$2–5), file and export replication (~$1–3),
-CloudTrail and alarms (~$1–4). The headline leaves room for growth and data transfer. VPC origins, private subnets, Object
+the replication metrics behind the two "copy to Ireland failed" alarms (~$3: S3 bills them as CloudWatch custom metrics,
+four per replication rule), CloudTrail and the other alarms (~$1–4). The headline leaves room for growth and data transfer. VPC origins, private subnets, Object
 Lock and the e-mail topics cost nothing. The restore test costs well under $1 a month. All in, expect **about $90–125 a month**.
 
 SQL Server Express is free to license and supports databases up to 10 GB, which is plenty for evaluation. For production,

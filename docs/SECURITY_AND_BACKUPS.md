@@ -118,6 +118,8 @@ raw JSON: look for `state`, `status`, `severity`, `type` and `title`. Alarm name
 | `cmms-app-sign-in-attack` | More than 50 failed sign-ins in 5 minutes | Someone is guessing passwords (or a shift of people forgot a changed password; wrong passwords, locked accounts and unknown e-mails all count). The per-address limit already turns an address away after 20 wrong tries in 15 minutes. To see the addresses: N. Virginia console, *WAF & Shield*, web ACL `cmms-edge-webacl`, *Sampled requests*. If it is a real attack and the firewall is still in `count`, switch to `block`. |
 | `cmms-app-native-export-error` | An export reported `BackupExport status=ERROR` | Sundays only. Read the log line in `/ecs/cmms-app` for the reason. The app tries again every hour that Sunday until it works (or gives up after 3 hours of waiting on one try). Common causes: the option group or its role was changed, the bucket is missing. Fix, then wait for the next try, or restart the service to try at once (an export is due on a Sunday from 02:00 UTC until one has succeeded). On any other day the next Sunday tries again. |
 | `cmms-app-native-export-missing` | No successful export in the last calendar week (Monday to Sunday, UTC); fires **the Monday after a missed Sunday** | The week was missed, so the newest `.bak` is more than a week old. Fix the cause as above. The alarm stays on until a week that contains a successful export has ended, so it can still show on the next Monday after you fixed it. The other layers (snapshots, point-in-time) were not affected. |
+| `cmms-app-files-replication-failed` | S3 failed to copy one or more uploaded files to Ireland (`cmms-dr-files-<account>`) in 5 minutes | The London copy is fine; the Ireland copy of those files is missing. S3 console, the files bucket (output `FilesBucketName`), *Metrics*, *Replication metrics* shows when. Usual causes: the Ireland bucket was changed or removed by hand, or the replication role (`cmms-app-ReplicationRole-…`) was changed. Fix the cause, then copy the failed files once with an S3 Batch Replication job limited to objects whose replication status is *Failed* (as in [section 8](#8-one-time-steps-after-the-first-deploy), step 1). The alarm stays on until a file copies successfully again (the next upload). |
+| `cmms-app-exports-replication-failed` | S3 failed to copy the weekly export (`native/cmms-<date>.bak`) to Ireland (`cmms-dr-backups-<account>`) | The London export is fine; Ireland lacks that week's copy. Same causes and fix as above, on the export bucket (output `BackupsBucketName`). The alarm stays on until the next export copies, a week later, unless you copy the failed one with Batch Replication. |
 | `cmms-waf-blocking` (N. Virginia, topic `cmms-edge-alerts`) | More than 1,000 requests blocked in 5 minutes | An attack, or a rule catching real users. Check *Sampled requests* on the web ACL. If real users are caught, go back to `count` ([DEPLOY_AWS.md](DEPLOY_AWS.md#move-the-web-firewall-to-block)). In `count` mode nothing is blocked, so this alarm cannot fire; look at the counted requests instead. |
 
 ### E-mails that are not alarms
@@ -329,8 +331,13 @@ pipeline does not have.
 4. **Variables for a rebuild into Ireland itself.** RDS cannot copy automated backups into the region they are already in, so set
    `CMMS_IRELAND_DB_COPY` to `hourly-snapshots` for that deploy. (Rebuilding in a third region keeps `replication`.) Check
    `CMMS_DB_MAJOR_ENGINE_VERSION` against the restored engine version.
-5. **Deploy.** Run **Deploy to AWS**. It reads `cmms-dr`, deploys `cmms-edge` again (no changes) and creates `cmms-app` in the new
-   region with an **empty** database. The first run takes 30 to 40 minutes.
+5. **Deploy.** If you use your own domain (`CMMS_DOMAIN`), first **free it from the old distribution**: CloudFront refuses a second
+   distribution with the same name, and the old London distribution still holds it (CloudFront is global, so this works while
+   London is down). CloudFront console, *Distributions*, the one whose description is `CMX (cmms-app, eu-west-2)`, *Edit*,
+   remove the domain from *Alternate domain names*, *Save*, and wait until it shows *Deployed*. If you cannot edit it, empty
+   `CMMS_DOMAIN` for this deploy and set it back in step 7, once the old distribution no longer holds the name. Then run
+   **Deploy to AWS**. It reads `cmms-dr`, deploys `cmms-edge` again (no changes) and creates `cmms-app` in the new region with an
+   **empty** database. The first run takes 30 to 40 minutes.
    - The new region gets its own weekly-export bucket, `cmms-backups-<account>-<region>`; the London one is kept.
 6. **Bring the data.** Stop the new app (section 4.5, step 1). Restore the Ireland copy as a new instance **inside the new stack's
    network** (section 4.2 for the point in time, or 4.4 for a snapshot), using the subnet group, security group and option group
@@ -361,7 +368,7 @@ pipeline does not have.
    ```
 7. **Point the name at it.** Take the new distribution's address from the `cmms-app` stack output `DistributionDomain`. If you use
    your own domain (`CMMS_DOMAIN`), change its CNAME at your DNS host to that address (the certificate is the same one, in
-   N. Virginia). The old `dxxxxxxxx.cloudfront.net` address stops working with the old stack, so the Android app and printed QR
+   N. Virginia); if you emptied `CMMS_DOMAIN` in step 5, set it back and run **Deploy to AWS** again. The old `dxxxxxxxx.cloudfront.net` address stops working with the old stack, so the Android app and printed QR
    labels that use it need the domain; technicians send waiting changes before and sign in again after.
 8. **Check** `https://<address>/api/health`, sign in, open the newest records and a few attachments. Run the CMX alarms test
    (section 9, step 1) so you know alarms reach the inbox from the new region, and confirm the two subscription e-mails again if
