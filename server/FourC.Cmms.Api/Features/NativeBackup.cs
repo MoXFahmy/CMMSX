@@ -58,7 +58,8 @@ public static class NativeBackup
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            log.LogError(ex, "BackupExport status=ERROR {Info}", ex.Message);
+            // The type only: a connection failure's message can carry the server's address.
+            log.LogError("BackupExport status=ERROR the export failed with {Error}", ex.GetType().Name);
             return false;
         }
     }

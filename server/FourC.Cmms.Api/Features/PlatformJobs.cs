@@ -85,7 +85,8 @@ public sealed class PlatformJobs(IServiceScopeFactory scopes, IConfiguration con
         }
         catch (Exception ex) when (ex is not OperationCanceledException || !ct.IsCancellationRequested)
         {
-            log.LogError(ex, "Platform job failed: {Job}", job);
+            // The type only: a database failure's message can carry the server's address.
+            log.LogError("Platform job failed: {Job} ({Error})", job, ex.GetType().Name);
             return false;
         }
     }
