@@ -46,15 +46,31 @@ if [ -z "$SP_ID" ]; then
   SP_ID=$(az ad sp create --id "$CLIENT_ID" --query id -o tsv)
 fi
 
-# GitHub may sign in only from workflows running on this repository's main branch.
-SUBJECT="repo:${REPO}:ref:refs/heads/main"
-if [ -z "$(az ad app federated-credential list --id "$CLIENT_ID" --query "[?subject=='$SUBJECT'].name" -o tsv)" ]; then
-  az ad app federated-credential create --id "$CLIENT_ID" -o none --parameters "{
-    \"name\": \"github-main\",
-    \"issuer\": \"https://token.actions.githubusercontent.com\",
-    \"subject\": \"$SUBJECT\",
-    \"audiences\": [\"api://AzureADTokenExchange\"]
-  }"
+# GitHub may sign in only from workflows running on this repository's main branch. GitHub signs its tokens with a subject
+# that includes the owner's and repository's numeric ids (repo:owner@123/name@456:ref:refs/heads/main); look them up so the
+# sign-in also accepts exactly this repository. An Azure credential holds one subject, so there are two: the name-only one
+# and the one with ids.
+IDS=$(curl -fsSL "https://api.github.com/repos/$REPO" 2>/dev/null | jq -r '"\(.owner.id) \(.id)"' 2>/dev/null || true)
+OWNER_ID=${IDS%% *}
+REPO_ID=${IDS##* }
+if [[ ! "$OWNER_ID" =~ ^[0-9]+$ || ! "$REPO_ID" =~ ^[0-9]+$ ]]; then
+  echo "Note: could not look up $REPO on api.github.com (private repository?); only the name-only token subject will be accepted." >&2
+  OWNER_ID=""
+  REPO_ID=""
+fi
+federate() { # name, subject
+  if [ -z "$(az ad app federated-credential list --id "$CLIENT_ID" --query "[?subject=='$2'].name" -o tsv)" ]; then
+    az ad app federated-credential create --id "$CLIENT_ID" -o none --parameters "{
+      \"name\": \"$1\",
+      \"issuer\": \"https://token.actions.githubusercontent.com\",
+      \"subject\": \"$2\",
+      \"audiences\": [\"api://AzureADTokenExchange\"]
+    }"
+  fi
+}
+federate github-main "repo:${REPO}:ref:refs/heads/main"
+if [ -n "$OWNER_ID" ]; then
+  federate github-main-ids "repo:${REPO%%/*}@${OWNER_ID}/${REPO#*/}@${REPO_ID}:ref:refs/heads/main"
 fi
 
 echo "4/5 Allowing it to manage resource group $RESOURCE_GROUP only..."

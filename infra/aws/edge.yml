@@ -40,6 +40,13 @@ Parameters:
     MaxValue: 2000000000
     Description: Requests per 5 minutes per address, all paths, above which requests are blocked.
 
+  DistributionId:
+    Type: String
+    Default: ""
+    Description: >-
+      The app stack's CloudFront distribution id (the workflow passes it). Empty on a first-ever deploy, when there is no
+      distribution yet: the error alarm is then skipped.
+
 Mappings:
   Names:
     WebAcl:
@@ -49,6 +56,7 @@ Conditions:
   CountOnly: !Equals [!Ref WafMode, count]
   HasAlertEmail: !Not [!Equals [!Ref AlertEmail, ""]]
   MakeDetector: !Equals [!Ref CreateGuardDutyDetector, "true"]
+  HasDistribution: !Not [!Equals [!Ref DistributionId, ""]]
 
 Resources:
   # Attached to the CloudFront distribution by the app stack (WebACLId). Sampled requests and CloudWatch metrics only;
@@ -284,6 +292,30 @@ Resources:
       EvaluationPeriods: 1
       Threshold: 1000
       ComparisonOperator: GreaterThanThreshold
+      TreatMissingData: notBreaching
+      AlarmActions:
+        - !Ref AlertTopic
+
+  # CloudFront publishes its metrics in us-east-1, with Region=Global. Missing data (no traffic) is not an error.
+  CloudFrontErrors:
+    Type: AWS::CloudWatch::Alarm
+    Condition: HasDistribution
+    Properties:
+      AlarmName: cmms-cloudfront-errors
+      AlarmDescription: The share of CMX requests answered with a 5xx error stayed at 5 percent or more for 3 of the last 5 minutes (the app or the origin is failing).
+      Namespace: AWS/CloudFront
+      MetricName: 5xxErrorRate
+      Dimensions:
+        - Name: DistributionId
+          Value: !Ref DistributionId
+        - Name: Region
+          Value: Global
+      Statistic: Average
+      Period: 60
+      EvaluationPeriods: 5
+      DatapointsToAlarm: 3
+      Threshold: 5
+      ComparisonOperator: GreaterThanOrEqualToThreshold
       TreatMissingData: notBreaching
       AlarmActions:
         - !Ref AlertTopic

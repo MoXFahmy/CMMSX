@@ -981,7 +981,7 @@ Resources:
     Type: AWS::Logs::MetricFilter
     Properties:
       LogGroupName: !Ref LogGroup
-      FilterPattern: '{ $.Message = "SignInFailed" }'
+      FilterPattern: '{ $.Message = "SignInFailed" || $.Message = "SignInRefused" }'
       MetricTransformations:
         - MetricNamespace: !Sub "CMX/${AWS::StackName}"
           MetricName: SignInFailed
@@ -1363,6 +1363,9 @@ Outputs:
   DistributionDomain:
     Description: The CloudFront address; with your own Domain, its DNS CNAME points here
     Value: !GetAtt Distribution.DomainName
+  DistributionId:
+    Description: The CloudFront distribution id; the deploy passes it to the edge stack for its error alarm
+    Value: !Ref Distribution
   ClusterName:
     Value: !Ref Cluster
   ServiceName:

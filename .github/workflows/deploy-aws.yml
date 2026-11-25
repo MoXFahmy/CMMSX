@@ -329,11 +329,16 @@ jobs:
         run: |
           set -euo pipefail
           source "$RUNNER_TEMP/cfn.sh"
+          # The app stack's distribution id, for the edge stack's error alarm. Empty (the alarm is skipped) on a first-ever
+          # deploy, and until the app stack has been deployed once with the DistributionId output (0.29.1 adds it).
+          dist_id=$(cfn_output "$STACK" "$AWS_REGION" DistributionId)
+          if [ -z "$dist_id" ]; then echo "No distribution id yet: the CloudFront error alarm is skipped this time."; fi
           cfn_deploy "$EDGE_STACK" "$EDGE_REGION" infra/aws/edge.yml "$EXEC_ROLE" yes \
             --parameter-overrides \
               WafMode="$WAF_MODE" \
               AlertEmail="$ALERT_EMAIL" \
-              CreateGuardDutyDetector="$CREATE_GUARDDUTY_US_EAST"
+              CreateGuardDutyDetector="$CREATE_GUARDDUTY_US_EAST" \
+              DistributionId="$dist_id"
 
       - name: Read the edge stack's outputs
         id: outputs

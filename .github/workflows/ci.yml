@@ -77,6 +77,7 @@ jobs:
         # Canned tool output only (no Docker, no network); jq is on the runner.
         run: bash scripts/test-security-check.sh
   security:
+    timeout-minutes: 20
     # Known-vulnerable packages (NuGet, npm) and leaked secrets; scripts/security-check.sh explains the rules and the allowlist.
     runs-on: ubuntu-latest
     env:

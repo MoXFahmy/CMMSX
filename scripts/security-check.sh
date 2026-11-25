@@ -189,7 +189,7 @@ check_npm() { # check_npm <dir>
 # --- 3. secrets --------------------------------------------------------------------------------------------------------
 gitleaks() { # gitleaks <report name> <extra args...>; findings -> $work/<report name>.json
   local report=$1; shift
-  if [ -n "${SECURITY_FIXTURES:-}" ]; then cp "$SECURITY_FIXTURES/gitleaks-$report.json" "$work/$report.json" 2>/dev/null || : >"$work/$report.json"; return 0; fi
+  if [ -n "${SECURITY_FIXTURES:-}" ]; then cp "$SECURITY_FIXTURES/gitleaks-$report.json" "$work/$report.json" 2>/dev/null || :; return 0; fi
   # run as the caller so git accepts the checkout's owner; .gitleaks.toml (if present) is picked up from the source root
   docker run --rm --user "$(id -u):$(id -g)" -v "$root":/src:ro -v "$work":/out -e HOME=/tmp "$GITLEAKS_IMAGE" \
     detect --source /src --config /src/.gitleaks.toml --redact --no-banner --exit-code 0 \
@@ -198,10 +198,11 @@ gitleaks() { # gitleaks <report name> <extra args...>; findings -> $work/<report
 }
 report_secrets() { # report_secrets <report name> <where>
   local rule fingerprint file line
-  # gitleaks writes no report when it finds nothing; a report that is not a list of findings is unreadable
-  [ -s "$work/$1.json" ] || return 0
+  # gitleaks v8.21.2 writes "[]" when it finds nothing (checked on a clean tree and on a clean history), so a missing or empty
+  # report means the run did not finish properly; and anything that is not a list of findings (such as "{}") is unreadable.
+  if [ ! -s "$work/$1.json" ]; then echo "ERROR  gitleaks wrote no report ($1): no usable result"; problems=$((problems + 1)); return 0; fi
   # shellcheck disable=SC2016 # jq program, not shell
-  extract "$work/$1.tsv" '.[] | [.RuleID, (.Fingerprint | sub("^/src/"; "")), (.File | sub("^/src/"; "")), .StartLine] | @tsv' "$work/$1.json" || return 0
+  extract "$work/$1.tsv" 'if type != "array" then error("the report is not a list of findings") else .[] | [.RuleID, (.Fingerprint | sub("^/src/"; "")), (.File | sub("^/src/"; "")), .StartLine] | @tsv end' "$work/$1.json" || return 0
   while IFS=$'\t' read -r rule fingerprint file line; do
     decide secret yes "$2 $file:$line" "$rule" "$fingerprint"
   done <"$work/$1.tsv"

@@ -126,13 +126,47 @@ public class AbuseLimitTests(AbuseFixture fx) : IClassFixture<AbuseFixture>
         Assert.DoesNotContain(log.Lines, l => l.Contains("203.0.113.60") || l.Contains(email, StringComparison.OrdinalIgnoreCase));
     }
 
-    [Fact]
-    public void The_alarm_filter_counts_that_line()
+    /// <summary>The line the guard logs when it turns an attempt away (0.29.1): the alarm counts it with <see cref="SignInFailedLine"/>.</summary>
+    private const string SignInRefusedLine = "SignInRefused";
+
+    [SkippableFact]
+    public async Task Refused_sign_in_logs_SignInRefused_without_address_or_email()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (_, email) = await OrgAsync();
+        var c = From("203.0.113.61");
+        for (var i = 0; i < 3; i++) Assert.Equal(HttpStatusCode.Unauthorized, (await SignIn(c, email, "wrong-password")).StatusCode);
+        var log = new ListLogger();
+        fx.Factory!.Services.GetRequiredService<ILoggerFactory>().AddProvider(new ListLoggerProvider(log));
+
+        Assert.Equal(HttpStatusCode.TooManyRequests, (await SignIn(c, email, "Passw0rd!x")).StatusCode);
+
+        Assert.Contains(log.Lines, l => l == $"Warning {SignInRefusedLine} ");
+        Assert.DoesNotContain(log.Lines, l => l.Contains("203.0.113.61") || l.Contains(email, StringComparison.OrdinalIgnoreCase));
+    }
+
+    private static string Template(string name)
     {
         var dir = new DirectoryInfo(AppContext.BaseDirectory);
         while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "infra", "aws", "cmms.yml"))) dir = dir.Parent;
         Assert.True(dir is not null, "infra/aws/cmms.yml not found above the test's folder");
-        var template = File.ReadAllText(Path.Combine(dir!.FullName, "infra", "aws", "cmms.yml"));
-        Assert.Contains($"FilterPattern: '{{ $.Message = \"{SignInFailedLine}\" }}'", template);
+        return File.ReadAllText(Path.Combine(dir!.FullName, "infra", "aws", name));
+    }
+
+    [Fact]
+    public void Metric_filter_counts_both_sign_in_messages()
+    {
+        Assert.Contains($"FilterPattern: '{{ $.Message = \"{SignInFailedLine}\" || $.Message = \"{SignInRefusedLine}\" }}'", Template("cmms.yml"));
+    }
+
+    [Fact]
+    public void The_edge_stack_alarms_on_cloudfront_errors_only_when_there_is_a_distribution()
+    {
+        var edge = Template("edge.yml");
+        Assert.Contains("DistributionId:", edge);
+        Assert.Contains("AlarmName: cmms-cloudfront-errors", edge);
+        Assert.Contains("5xxErrorRate", edge);
+        Assert.Contains("Condition: HasDistribution", edge);
+        Assert.Matches(@"(?m)^  DistributionId:\r?\n(    .*\r?\n)*?    Value: !Ref Distribution\r?$", Template("cmms.yml"));
     }
 }

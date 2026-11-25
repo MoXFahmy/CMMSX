@@ -74,8 +74,9 @@ public sealed class SignInGuard(IMemoryCache cache, IConfiguration config, ILogg
             tries.At.RemoveAll(t => t <= now - Window);
             if (tries.At.Count < Limit) return false;
             retryAfter = tries.At[0] + Window - now;
-            return true;
         }
+        log.LogWarning("SignInRefused"); // counted with SignInFailed by the alarm, so an attack that is being turned away keeps it up; no address, no e-mail
+        return true;
     }
 
     public void Failed(string address)
