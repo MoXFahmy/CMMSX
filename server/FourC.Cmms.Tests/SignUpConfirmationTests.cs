@@ -9,6 +9,7 @@ using FourC.Cmms.Core.Identity;
 using FourC.Cmms.Core.Services;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.AspNetCore.Mvc.Testing;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using static FourC.Cmms.Tests.Loop;
@@ -238,7 +239,7 @@ public class SignUpConfirmationTests(ConfirmFixture fx) : IClassFixture<ConfirmF
     }
 
     [SkippableFact]
-    public async Task Setting_unset_means_on_when_e_mail_is_available_and_off_otherwise()
+    public async Task Setting_unset_means_on_when_e_mail_is_available_and_never_without_it()
     {
         Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
         bool Required(Action<IWebHostBuilder> set)
@@ -249,8 +250,45 @@ public class SignUpConfirmationTests(ConfirmFixture fx) : IClassFixture<ConfirmF
         }
         Assert.True(Required(b => b.UseSetting("Auth:RequireEmailConfirmation", ""))); // e-mail is set up in tests
         Assert.False(Required(b => { b.UseSetting("Auth:RequireEmailConfirmation", ""); b.UseSetting("Email:Provider", ""); }));
-        Assert.True(Required(b => { b.UseSetting("Auth:RequireEmailConfirmation", "true"); b.UseSetting("Email:Provider", ""); })); // explicit wins
+        // Explicitly on but nothing can send the link: off, or every new owner would be locked out and purged after 7 days.
+        Assert.False(Required(b => { b.UseSetting("Auth:RequireEmailConfirmation", "true"); b.UseSetting("Email:Provider", ""); }));
+        Assert.True(Required(b => b.UseSetting("Auth:RequireEmailConfirmation", "true")));
         Assert.False(Required(b => b.UseSetting("Auth:RequireEmailConfirmation", "false")));
+    }
+
+    [SkippableFact]
+    public async Task Explicitly_on_without_a_mailer_warns_at_startup_and_lets_owners_in()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        static (WebApplicationFactory<Program> App, ListLogger Log) Start(WebApplicationFactory<Program> from, bool mailer)
+        {
+            var log = new ListLogger();
+            var f = from.WithWebHostBuilder(b =>
+            {
+                b.UseSetting("Auth:RequireEmailConfirmation", "true");
+                if (!mailer) b.UseSetting("Email:Provider", "");
+                b.ConfigureServices(s => s.AddSingleton<Microsoft.Extensions.Logging.ILoggerProvider>(new ListLoggerProvider(log)));
+            });
+            _ = f.Services; // starts the app
+            return (f, log);
+        }
+        const string Warning = "Auth:RequireEmailConfirmation is true, but this server cannot send e-mail";
+
+        var (without, log) = Start(fx.Factory!, mailer: false);
+        await using (without)
+        {
+            Assert.Contains(log.Lines, l => l.StartsWith("Warning " + Warning));
+            // A new owner can sign in at once: nothing waits for a link that can't be sent.
+            var c = without.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
+            var email = Addr("owner");
+            await Ok(await Register(c, email));
+            var login = await c.PostAsJsonAsync("/api/auth/login", new { email, password = "Passw0rd!x", rememberMe = false });
+            Assert.Equal(HttpStatusCode.OK, login.StatusCode);
+        }
+
+        var (with, quiet) = Start(fx.Factory!, mailer: true);
+        await using (with)
+            Assert.DoesNotContain(quiet.Lines, l => l.Contains(Warning));
     }
 
     [SkippableFact]

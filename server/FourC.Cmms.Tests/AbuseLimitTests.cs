@@ -1,6 +1,8 @@
 using System.Net;
 using System.Net.Http.Json;
 using Microsoft.AspNetCore.Hosting;
+using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Logging;
 using static FourC.Cmms.Tests.ApiKeyTests;
 using static FourC.Cmms.Tests.Loop;
 using static FourC.Cmms.Tests.ServiceAccountTests;
@@ -103,5 +105,34 @@ public class AbuseLimitTests(AbuseFixture fx) : IClassFixture<AbuseFixture>
         var c = From("203.0.113.50");
         for (var i = 0; i < 3; i++) Assert.Equal(HttpStatusCode.NotFound, (await c.GetAsync("/api/public/feedback/not-a-real-token")).StatusCode);
         Assert.Equal(HttpStatusCode.TooManyRequests, (await c.GetAsync("/api/public/feedback/not-a-real-token")).StatusCode);
+    }
+
+    /// <summary>The text the sign-in attack alarm counts: infra/aws/cmms.yml, SignInFailedMetric, <c>{ $.Message = "SignInFailed" }</c>.</summary>
+    private const string SignInFailedLine = "SignInFailed";
+
+    [SkippableFact]
+    public async Task Wrong_password_logs_exactly_the_line_the_alarm_counts()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var (_, email) = await OrgAsync();
+        var log = new ListLogger();
+        fx.Factory!.Services.GetRequiredService<ILoggerFactory>().AddProvider(new ListLoggerProvider(log));
+
+        Assert.Equal(HttpStatusCode.Unauthorized, (await SignIn(From("203.0.113.60"), email, "wrong-password")).StatusCode);
+
+        // The JSON log's Message is the whole formatted text, and the metric filter wants it equal, not containing.
+        Assert.Contains(log.Lines, l => l == $"Warning {SignInFailedLine} ");
+        // No address and no e-mail address anywhere in what was logged.
+        Assert.DoesNotContain(log.Lines, l => l.Contains("203.0.113.60") || l.Contains(email, StringComparison.OrdinalIgnoreCase));
+    }
+
+    [Fact]
+    public void The_alarm_filter_counts_that_line()
+    {
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        while (dir is not null && !File.Exists(Path.Combine(dir.FullName, "infra", "aws", "cmms.yml"))) dir = dir.Parent;
+        Assert.True(dir is not null, "infra/aws/cmms.yml not found above the test's folder");
+        var template = File.ReadAllText(Path.Combine(dir!.FullName, "infra", "aws", "cmms.yml"));
+        Assert.Contains($"FilterPattern: '{{ $.Message = \"{SignInFailedLine}\" }}'", template);
     }
 }

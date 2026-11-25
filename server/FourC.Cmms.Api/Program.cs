@@ -138,6 +138,11 @@ services.AddOpenApi(o => o.AddDocumentTransformer((doc, _, _) =>
 
 var app = builder.Build();
 
+// E-mail confirmation asked for, but nothing can send the link (0.29.0): it stays off, and the operator hears why.
+if (SignUpConfirmation.StartupWarning(app.Configuration,
+        app.Services.GetRequiredService<Microsoft.Extensions.Options.IOptions<EmailOptions>>().Value.Available) is { } confirmationWarning)
+    app.Logger.LogWarning("{Warning}", confirmationWarning);
+
 if (app.Configuration.GetValue("Database:MigrateOnStartup", true))
 {
     using var scope = app.Services.CreateScope();

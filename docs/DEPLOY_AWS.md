@@ -210,7 +210,9 @@ aws sesv2 get-account --region <region> --query ProductionAccessEnabled
 
 `true` means go ahead (see *Sending e-mail* below if it is `false`). Then set `CMMS_REQUIRE_EMAIL_CONFIRMATION` to `true` and run
 the workflow. Test with a new sign-up using an address you own. With it on while SES is still in the sandbox, people could
-sign up, never get the e-mail, and lose their organization after 7 days: leave it off until production access is granted.
+sign up, never get the e-mail, and lose their organization after 7 days: leave it off until production access is granted. If
+e-mail is not set up at all (`CMMS_MAIL_DOMAIN` empty), the setting has no effect: the app logs a warning when it starts
+(*"Auth:RequireEmailConfirmation is true, but this server cannot send e-mail"*) and lets new owners in without a link.
 
 ## Sending e-mail
 

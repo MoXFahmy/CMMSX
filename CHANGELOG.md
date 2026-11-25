@@ -20,8 +20,10 @@ parked, so this release takes the next number after 0.28.0.
   same address while waiting sends a new link. Organizations never confirmed within 7 days are deleted with everything in them
   (a daily clean-up that logs each organization's id only). People an administrator adds, imported people, existing
   organizations and service accounts are never asked. Off until `CMMS_REQUIRE_EMAIL_CONFIRMATION` is `true` on AWS (it needs SES
-  production access); elsewhere it is on when e-mail is set up (`Auth:RequireEmailConfirmation` overrides).
-- **Too-many-attempts messages.** Per visitor address: 20 wrong passwords in 15 minutes (sign-in and renew password; successful
+  production access); elsewhere it is on when e-mail is set up (`Auth:RequireEmailConfirmation=false` turns it off). It is never
+  on while the server cannot send e-mail, even when the setting says `true` (the server then logs a warning at start), so no
+  owner waits for a link that cannot come.
+- **Too-many-attempts messages.** Per visitor address (an IPv6 address counts by its /64 network): 20 wrong passwords in 15 minutes (sign-in and renew password; successful
   sign-ins never count), 5 sign-ups an hour, 10 link resends an hour, 20 link confirmations in 15 minutes, and 30 tries at a
   requester answer link in 15 minutes. A refused request says "Too many attempts from your network. Try again in N minutes."
   (in Arabic too) and carries a `Retry-After` header. The numbers can be changed with `Abuse:*` settings and the whole feature
