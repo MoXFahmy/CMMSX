@@ -4,6 +4,39 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.28.0] - 2026-11-25
+
+Bilingual data. Names, checklist steps and notes that technicians read can have an Arabic text beside the main one, and each person
+sees their own language on the screens, the phone, prints and labels, reports, e-mails and phone notifications. Where there is no
+Arabic text, everyone sees the main text. Arabic texts are typed on the forms, filled in from Excel, or drafted by the AI assistant
+for someone to check.
+
+### Added
+- **Arabic texts** beside the main text of assets and locations (name and notes to technician), parts, asset categories, symptoms,
+  causes, remedies, request types, cancel reasons, work templates (name, title, safety notes and each step), PM schedules and work
+  orders (title, steps, safety notes). Each form shows the Arabic field next to the main one.
+- **Each person's language everywhere:** lists, pickers, the asset, location and part pages, the work order page and job card,
+  reports and their exports, labels, the phone, e-mails and phone notifications show the Arabic text to people reading in Arabic
+  (their own choice, else the organization's language). Search finds a record by either text, and lists sort by the text shown.
+- **Work orders from templates and PMs** copy the Arabic title, steps and safety notes; follow-up work gets an Arabic title too.
+  Duplicating a work order keeps them. Changing a template later doesn't change existing work orders.
+- **Safety notes** have their own place on work orders made from now on (both languages), shown as a Safety section on the work
+  order page, the phone's job and the job card, and in assignment e-mails. Older work orders keep them in their description.
+- **Excel:** Arabic columns ("Name (Arabic)", "Title (Arabic)", "Safety notes (Arabic)", "Description (Arabic)", "Notes to technician
+  (Arabic)") right after their main column on the Locations, Categories, Symptoms, Causes, Remedies, Assets, Parts, Work templates,
+  PM steps and PM schedules sheets, filled in the current-data download. A blank cell keeps what is there.
+- **Fill in missing Arabic** on the assets, locations, parts, work templates and PM schedules lists and on the Settings lists: the AI
+  assistant drafts a batch of missing Arabic texts (50 names, 100 steps or 20 notes), someone checks, edits or unticks them and
+  saves, then drafts the next batch. Each press is one use of the month's AI allowance (shown as "Arabic drafts" in Settings › AI
+  usage). Saving never overwrites an Arabic text someone else saved meanwhile. Needs the permission that edits that list.
+- **API:** answers that show names follow the request's `Accept-Language`; a record's own detail and the Settings lists give both
+  texts as stored. Leaving an Arabic field out keeps it; an empty string clears it. See docs/API.md.
+
+### Changed
+- Purchase orders, purchase requests, the re-order proposal, shortages and supplier papers keep the part's main name, whoever reads
+  them.
+- A follow-up's main title is worded in the organization's language, whoever answered the step.
+
 ## [0.26.1] - 2026-11-24
 
 A fix release: 21 issues left by the reviews of 0.24.0–0.26.0, and three older places where people could see records outside their
