@@ -75,7 +75,8 @@ This version of the setup (CMX 0.29.0) adds:
   - a guard that stops the deploy pipeline from deleting backups, the locked copies in Ireland or the CloudTrail logs
     (only your own console administrator can lift the Ireland lock);
   - permission for GitHub Actions to deploy two more stacks: cmms-edge in us-east-1 (web firewall)
-    and cmms-dr in eu-west-1 (locked backup copies).
+    and cmms-dr in eu-west-1 (locked backup copies);
+  - a bucket for the stacks' templates (output TemplateBucketName; old templates expire after 30 days).
 EOF
 
 if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then

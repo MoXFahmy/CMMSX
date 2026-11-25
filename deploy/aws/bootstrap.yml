@@ -63,11 +63,52 @@ Resources:
             "selection":{"tagStatus":"any","countType":"imageCountMoreThan","countNumber":30},
             "action":{"type":"expire"}}]}
 
+  # CloudFormation takes templates over 51,200 bytes only from S3: the workflow deploys with --s3-bucket <this bucket>.
+  TemplateBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "cmms-templates-${AWS::AccountId}-${AWS::Region}"
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-old-templates
+            Status: Enabled
+            ExpirationInDays: 30
+            AbortIncompleteMultipartUpload: { DaysAfterInitiation: 1 }
+
+  TemplateBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref TemplateBucket
+      PolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+          - Sid: HttpsOnly
+            Effect: Deny
+            Principal: "*"
+            Action: s3:*
+            Resource:
+              - !GetAtt TemplateBucket.Arn
+              - !Sub "${TemplateBucket.Arn}/*"
+            Condition:
+              Bool: { "aws:SecureTransport": "false" }
+
   # The backups must survive a compromised deploy pipeline (GitHub is on the internet). Two places hold the same explicit
   # denies, so keep their "Keep..." statements in step: backup-guard on CloudFormationExecutionRole (the pipeline itself)
   # and this boundary (every role the pipeline creates). Destructive actions only: creating the vault with its lock, the
   # Ireland buckets with Object Lock, the trail, replication and access policies stays allowed. In Ireland those settings
-  # can't shorten what is already stored (Object Lock retention and a locked vault's recovery points outlive them).
+  # can't shorten what is already stored (Object Lock retention and a locked vault's recovery points outlive them), and
+  # the Ireland buckets never get a bucket policy (same-account replication needs none), so nobody can open them to
+  # another account whose principals these denies don't reach.
   # The vault lock is governance mode: the account's own console administrator (root or an IAM administrator outside
   # the pipeline) can still lift it. Resource names are fixed by the recovery stack (cmms-dr, eu-west-1) and the app stack.
   #
@@ -136,6 +177,13 @@ Resources:
               - !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*/*"
               - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*"
               - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*/*"
+          # Ireland buckets only: the trail bucket needs its policy (CloudTrail writes through it).
+          - Sid: KeepTheIrelandBucketsClosed
+            Effect: Deny
+            Action:
+              - s3:PutBucketPolicy
+              - s3:DeleteBucketPolicy
+            Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
           # Boundary only: a role inside it never writes IAM (service-linked roles, which only their service can use,
           # stay possible) and never passes or assumes a role outside /cmms/ (e.g. this pipeline's own roles).
           - Sid: NoIamChanges
@@ -274,6 +322,12 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*/*"
                   - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*"
                   - !Sub "arn:${AWS::Partition}:s3:::cmms-trail-*/*"
+              - Sid: KeepTheIrelandBucketsClosed
+                Effect: Deny
+                Action:
+                  - s3:PutBucketPolicy
+                  - s3:DeleteBucketPolicy
+                Resource: !Sub "arn:${AWS::Partition}:s3:::cmms-dr-*"
 
   # GitHub Actions (main branch of GitHubRepo only) assumes this role: push images, deploy the app stacks
   # (the app here, the edge stack in us-east-1 and the recovery stack in eu-west-1, all through CloudFormationExecutionRole).
@@ -343,8 +397,15 @@ Resources:
                   - !Sub "arn:${AWS::Partition}:cloudformation:us-east-1:${AWS::AccountId}:changeSet/*"
                   - !Sub "arn:${AWS::Partition}:cloudformation:eu-west-1:${AWS::AccountId}:stack/cmms-dr/*"
                   - !Sub "arn:${AWS::Partition}:cloudformation:eu-west-1:${AWS::AccountId}:changeSet/*"
+              # aws cloudformation deploy --s3-bucket: HeadObject (skips an unchanged template; GetObject covers it) and
+              # PutObject; CloudFormation then reads the template URL as this role. It never lists the bucket.
               - Effect: Allow
-                Action: cloudformation:DescribeStacks # read this stack's outputs (BoundaryPolicyArn)
+                Action:
+                  - s3:GetObject
+                  - s3:PutObject
+                Resource: !Sub "${TemplateBucket.Arn}/*"
+              - Effect: Allow
+                Action: cloudformation:DescribeStacks # read this stack's outputs (BoundaryPolicyArn, TemplateBucketName)
                 Resource: !Sub "arn:${AWS::Partition}:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${AWS::StackName}/*"
               - Effect: Allow
                 Action: iam:PassRole
@@ -366,3 +427,6 @@ Outputs:
   BoundaryPolicyArn:
     Description: Permissions boundary every role under /cmms/ must carry (app stack parameter BoundaryPolicyArn)
     Value: !Ref PermissionsBoundary
+  TemplateBucketName:
+    Description: Bucket for aws cloudformation deploy --s3-bucket (templates over 51,200 bytes)
+    Value: !Ref TemplateBucket
