@@ -63,10 +63,32 @@ public class ApiFixture : IAsyncLifetime
         if (Factory is null) return;
         await Factory.DisposeAsync();
         SqlConnection.ClearAllPools();
-        await using var c = new SqlConnection(_server);
-        await c.OpenAsync();
-        await using var cmd = new SqlCommand($"ALTER DATABASE [{_db}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{_db}]", c);
-        await cmd.ExecuteNonQueryAsync();
+        // Dropping the class's own database is clean-up (0.29.2): on a slow server (CI under load) it is retried with longer waits,
+        // and a database that still can't be dropped is left behind with a warning instead of failing a run whose tests all passed.
+        var cs = new SqlConnectionStringBuilder(_server) { ConnectTimeout = 60 }.ConnectionString;
+        for (var attempt = 1; ; attempt++)
+        {
+            try
+            {
+                await using var c = new SqlConnection(cs);
+                await c.OpenAsync();
+                await using var cmd = new SqlCommand(
+                    $"IF DB_ID(N'{_db}') IS NOT NULL BEGIN ALTER DATABASE [{_db}] SET SINGLE_USER WITH ROLLBACK IMMEDIATE; DROP DATABASE [{_db}]; END", c)
+                    { CommandTimeout = 120 };
+                await cmd.ExecuteNonQueryAsync();
+                return;
+            }
+            catch (SqlException) when (attempt < 3)
+            {
+                SqlConnection.ClearAllPools();
+                await Task.Delay(TimeSpan.FromSeconds(5 * attempt));
+            }
+            catch (SqlException e)
+            {
+                Console.Error.WriteLine($"Test database {_db} was left behind after 3 tries: {e.Message}");
+                return;
+            }
+        }
     }
 
     public HttpClient Client() => Factory!.CreateClient(new WebApplicationFactoryClientOptions { HandleCookies = true });
