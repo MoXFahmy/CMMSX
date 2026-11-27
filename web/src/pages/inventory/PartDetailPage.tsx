@@ -98,9 +98,9 @@ export function PartDetailPage() {
             <Table.ScrollContainer minWidth={720}>
               <Table verticalSpacing="sm" highlightOnHover>
                 <Table.Thead><Table.Tr>
-                  <Table.Th>{t('inv.store')}</Table.Th><Table.Th>{t('inv.bin')}</Table.Th><Table.Th ta="right">{t('inv.onHand')}</Table.Th>
-                  <Table.Th ta="right">{t('plan.reserved')}</Table.Th><Table.Th ta="right">{t('plan.available')}</Table.Th>
-                  <Table.Th ta="right">{t('inv.min')}</Table.Th><Table.Th ta="right">{t('inv.reorderAt')}</Table.Th><Table.Th ta="right">{t('inv.max')}</Table.Th><Table.Th ta="right">{t('inv.reorderQty')}</Table.Th><Table.Th w={160} />
+                  <Table.Th>{t('inv.store')}</Table.Th><Table.Th>{t('inv.bin')}</Table.Th><Table.Th ta="end">{t('inv.onHand')}</Table.Th>
+                  <Table.Th ta="end">{t('plan.reserved')}</Table.Th><Table.Th ta="end">{t('plan.available')}</Table.Th>
+                  <Table.Th ta="end">{t('inv.min')}</Table.Th><Table.Th ta="end">{t('inv.reorderAt')}</Table.Th><Table.Th ta="end">{t('inv.max')}</Table.Th><Table.Th ta="end">{t('inv.reorderQty')}</Table.Th><Table.Th w={160} />
                 </Table.Tr></Table.Thead>
                 <Table.Tbody>
                   {p.levels.length === 0 && <Table.Tr><Table.Td colSpan={10}><Text c="dimmed" ta="center" py="md">{t('inv.noLevels')}</Text></Table.Td></Table.Tr>}
@@ -111,12 +111,12 @@ export function PartDetailPage() {
                       <Table.Tr key={l.id}>
                         <Table.Td><Text fz="sm" fw={600}>{l.storeCode}</Text><Text fz="xs" c="dimmed">{l.storeName}</Text></Table.Td>
                         <Table.Td>{l.bin ?? '—'}</Table.Td>
-                        <Table.Td ta="right"><Text fz="sm" fw={600} c={l.quantityOnHand <= 0 ? 'red' : atReorder ? 'orange' : undefined}>{fmtQty(l.quantityOnHand)}</Text>
+                        <Table.Td ta="end"><Text fz="sm" fw={600} c={l.quantityOnHand <= 0 ? 'red' : atReorder ? 'orange' : undefined}>{fmtQty(l.quantityOnHand)}</Text>
                           {l.maxLevel > 0 && <Tooltip label={`${Math.round(pct)}% of max`}><Progress value={pct} size={4} mt={4} color={atReorder ? 'orange' : 'teal'} /></Tooltip>}</Table.Td>
-                        <Table.Td ta="right">{l.reserved > 0 ? fmtQty(l.reserved) : '—'}</Table.Td>
-                        <Table.Td ta="right"><Text fz="sm" c={l.available < 0 ? 'red' : undefined}>{fmtQty(l.available)}</Text></Table.Td>
-                        <Table.Td ta="right">{fmtQty(l.minLevel)}</Table.Td><Table.Td ta="right">{fmtQty(l.reorderLevel)}</Table.Td><Table.Td ta="right">{fmtQty(l.maxLevel)}</Table.Td><Table.Td ta="right">{fmtQty(l.reorderQuantity)}</Table.Td>
-                        <Table.Td ta="right">{can(P.inventoryTransact) && <Group gap={4} justify="flex-end" wrap="nowrap">
+                        <Table.Td ta="end">{l.reserved > 0 ? fmtQty(l.reserved) : '—'}</Table.Td>
+                        <Table.Td ta="end"><Text fz="sm" c={l.available < 0 ? 'red' : undefined}>{fmtQty(l.available)}</Text></Table.Td>
+                        <Table.Td ta="end">{fmtQty(l.minLevel)}</Table.Td><Table.Td ta="end">{fmtQty(l.reorderLevel)}</Table.Td><Table.Td ta="end">{fmtQty(l.maxLevel)}</Table.Td><Table.Td ta="end">{fmtQty(l.reorderQuantity)}</Table.Td>
+                        <Table.Td ta="end">{can(P.inventoryTransact) && <Group gap={4} justify="flex-end" wrap="nowrap">
                           {!serial && <Button size="compact-xs" variant="light" onClick={() => setTx({ kind: 'issue', storeId: l.storeId })}>{t('inv.issueShort')}</Button>}
                           <Button size="compact-xs" variant="default" onClick={() => setTx({ kind: 'receive', storeId: l.storeId })}>{t('inv.receiveShort')}</Button></Group>}</Table.Td>
                       </Table.Tr>
@@ -131,14 +131,14 @@ export function PartDetailPage() {
               <Text fw={600} p="md" pb={0}>{t('inv.reservedFor')}</Text>
               <Table.ScrollContainer minWidth={560}>
                 <Table verticalSpacing={6} mt="xs">
-                  <Table.Thead><Table.Tr><Table.Th>{t('inv.workOrder')}</Table.Th><Table.Th>{t('inv.store')}</Table.Th><Table.Th ta="right">{t('plan.reserved')}</Table.Th>
-                    <Table.Th ta="right">{t('plan.short')}</Table.Th><Table.Th>{t('wo.dueDate')}</Table.Th></Table.Tr></Table.Thead>
+                  <Table.Thead><Table.Tr><Table.Th>{t('inv.workOrder')}</Table.Th><Table.Th>{t('inv.store')}</Table.Th><Table.Th ta="end">{t('plan.reserved')}</Table.Th>
+                    <Table.Th ta="end">{t('plan.short')}</Table.Th><Table.Th>{t('wo.dueDate')}</Table.Th></Table.Tr></Table.Thead>
                   <Table.Tbody>
                     {p.reservedFor.map((r) => (
                       <Table.Tr key={`${r.workOrderId}-${r.storeCode}`}>
                         <Table.Td><Anchor component={Link} to={`/work-orders/${r.workOrderId}`} fz="sm" fw={600}>{r.workOrderNumber}</Anchor><Text fz="xs" c="dimmed" lineClamp={1}>{r.title}</Text></Table.Td>
-                        <Table.Td>{r.storeCode}</Table.Td><Table.Td ta="right">{fmtQty(r.reserved)}</Table.Td>
-                        <Table.Td ta="right">{r.short > 0 ? <Text fz="sm" fw={600} c="red">{fmtQty(r.short)}</Text> : '—'}</Table.Td>
+                        <Table.Td>{r.storeCode}</Table.Td><Table.Td ta="end">{fmtQty(r.reserved)}</Table.Td>
+                        <Table.Td ta="end">{r.short > 0 ? <Text fz="sm" fw={600} c="red">{fmtQty(r.short)}</Text> : '—'}</Table.Td>
                         <Table.Td>{r.dueDate ? fmtDate(r.dueDate) : '—'}</Table.Td>
                       </Table.Tr>
                     ))}
@@ -151,13 +151,13 @@ export function PartDetailPage() {
             <Card p={0} mt="md">
               <Title order={5} p="md">{t('inv.batches')}</Title>
               <Table verticalSpacing="xs">
-                <Table.Thead><Table.Tr><Table.Th>{t('inv.batch')}</Table.Th><Table.Th>{t('inv.store')}</Table.Th><Table.Th ta="right">{t('inv.quantity')}</Table.Th><Table.Th>{t('inv.expiry')}</Table.Th></Table.Tr></Table.Thead>
+                <Table.Thead><Table.Tr><Table.Th>{t('inv.batch')}</Table.Th><Table.Th>{t('inv.store')}</Table.Th><Table.Th ta="end">{t('inv.quantity')}</Table.Th><Table.Th>{t('inv.expiry')}</Table.Th></Table.Tr></Table.Thead>
                 <Table.Tbody>
                   {p.batches.length === 0 && <Table.Tr><Table.Td colSpan={4}><Text c="dimmed" fz="sm">{t('common.noRecords')}</Text></Table.Td></Table.Tr>}
                   {p.batches.map((b) => {
                     const expired = b.expiry && b.expiry < new Date().toISOString().slice(0, 10);
                     return <Table.Tr key={`${b.storeId}-${b.batchNumber}`}><Table.Td fw={600}>{b.batchNumber}</Table.Td><Table.Td>{p.levels.find((l) => l.storeId === b.storeId)?.storeCode}</Table.Td>
-                      <Table.Td ta="right">{fmtQty(b.quantity)}</Table.Td><Table.Td c={expired ? 'red' : undefined}>{fmtDate(b.expiry)}{expired && ` · ${t('inv.expired')}`}</Table.Td></Table.Tr>;
+                      <Table.Td ta="end">{fmtQty(b.quantity)}</Table.Td><Table.Td c={expired ? 'red' : undefined}>{fmtDate(b.expiry)}{expired && ` · ${t('inv.expired')}`}</Table.Td></Table.Tr>;
                   })}
                 </Table.Tbody>
               </Table>

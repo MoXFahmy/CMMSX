@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Anchor, Badge, Button, Card, Group, Modal, NumberInput, Stack, Table, Text, Textarea, Title } from '@mantine/core';
 import { LineChart } from '@mantine/charts';
+import { useChartAxes } from '@/components/chartDirection';
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -14,6 +15,7 @@ import { fmtDate, fmtDateTime, notifyError, notifySuccess } from '@/components/u
 /** An asset's measurements (0.13.0): a chart per measurement point with its levels, the latest readings, and Add reading. */
 export function AssetMeasurements({ assetId }: { assetId: string }) {
   const { t } = useTranslation();
+  const axes = useChartAxes();
   const { can } = useAuth();
   const qc = useQueryClient();
   const key = ['asset-measurements', assetId];
@@ -45,14 +47,14 @@ export function AssetMeasurements({ assetId }: { assetId: string }) {
               {can(P.metersRecord) && p.isActive && <Button size="xs" variant="light" leftSection={<IconPlus size={14} />} onClick={() => setAdding(p)}>{t('measurements.add')}</Button>}
             </Group>
             {series.length > 1
-              ? <LineChart h={220} data={series} dataKey="date" series={[{ name: 'value', label: p.unit ?? t('checklist.value'), color: 'blue.6' }]} referenceLines={levels} curveType="linear" withDots />
+              ? <LineChart h={220} data={series} dataKey="date" {...axes} series={[{ name: 'value', label: p.unit ?? t('checklist.value'), color: 'blue.6' }]} referenceLines={levels} curveType="linear" withDots />
               : <Text fz="sm" c="dimmed">{t('measurements.needTwo')}</Text>}
             {p.readings.length > 0 && (
               <Table verticalSpacing={4} fz="sm"><Table.Tbody>
                 {[...p.readings].reverse().slice(0, 8).map((r) => (
                   <Table.Tr key={r.id}>
                     <Table.Td>{fmtDateTime(r.readAt)}</Table.Td>
-                    <Table.Td ta="right">{r.value} {p.unit ?? ''}</Table.Td>
+                    <Table.Td ta="end">{r.value} {p.unit ?? ''}</Table.Td>
                     <Table.Td>{r.level !== 'Normal' && <Badge size="xs" color={levelColor(r.level)}>{t(`checklist.levels.${r.level}`)}</Badge>}</Table.Td>
                     <Table.Td>{r.workOrderId && <Anchor component={Link} to={`/work-orders/${r.workOrderId}`} fz="xs">{t('measurements.onWork')}</Anchor>}</Table.Td>
                     <Table.Td>{(r.followUpWorkOrderId || r.followUpRequestId) && (

@@ -109,7 +109,7 @@ export function WorkGroupDetailPage() {
               <Table.Thead><Table.Tr>
                 <Table.Th w={36}><Checkbox checked={all} indeterminate={picked.length > 0 && !all} onChange={() => setPicked(all ? [] : g.children.map((c) => c.id))} aria-label={t('groups.pickAll')} /></Table.Th>
                 <Table.Th>{t('wo.number')}</Table.Th><Table.Th>{terms.asset}</Table.Th><Table.Th>{t('wo.assignees')}</Table.Th><Table.Th>{t('wo.tasks')}</Table.Th>
-                <Table.Th ta="right">{t('wo.hours')}</Table.Th><Table.Th ta="right">{t('wo.cost')}</Table.Th><Table.Th>{t('common.status')}</Table.Th>
+                <Table.Th ta="end">{t('wo.hours')}</Table.Th><Table.Th ta="end">{t('wo.cost')}</Table.Th><Table.Th>{t('common.status')}</Table.Th>
               </Table.Tr></Table.Thead>
               <Table.Tbody>
                 {g.children.map((c) => (
@@ -119,8 +119,8 @@ export function WorkGroupDetailPage() {
                     <Table.Td><Text fz="sm">{c.assetNumber}</Text><Text fz="xs" c="dimmed">{c.assetName}</Text></Table.Td>
                     <Table.Td><Text fz="sm" c={c.assignees.length ? undefined : 'dimmed'}>{c.assignees.map((a) => a.fullName).join(', ') || t('wo.noAssignees')}</Text></Table.Td>
                     <Table.Td><Text fz="sm">{c.stepsDone} / {c.stepsTotal}</Text></Table.Td>
-                    <Table.Td ta="right"><Text fz="sm">{fmtNumber(c.laborHours)}</Text></Table.Td>
-                    <Table.Td ta="right"><Text fz="sm">{fmtMoney(c.cost, currency)}</Text></Table.Td>
+                    <Table.Td ta="end"><Text fz="sm">{fmtNumber(c.laborHours)}</Text></Table.Td>
+                    <Table.Td ta="end"><Text fz="sm">{fmtMoney(c.cost, currency)}</Text></Table.Td>
                     <Table.Td><WoStatusBadge status={c.status} /></Table.Td>
                   </Table.Tr>
                 ))}
@@ -143,12 +143,12 @@ export function WorkGroupDetailPage() {
             <Card p={0}>
               <Title order={5} p="md" pb="xs">{t('wo.totals')}</Title>
               <Table verticalSpacing={6}><Table.Tbody>
-                <Table.Tr><Table.Td>{t('wo.laborHours')}</Table.Td><Table.Td ta="right">{fmtNumber(g.totals.laborHours)}</Table.Td></Table.Tr>
-                <Table.Tr><Table.Td>{t('wo.laborCost')}</Table.Td><Table.Td ta="right">{fmtMoney(g.totals.laborCost, currency)}</Table.Td></Table.Tr>
-                <Table.Tr><Table.Td>{t('wo.partsCost')}</Table.Td><Table.Td ta="right">{fmtMoney(g.totals.partsCost, currency)}</Table.Td></Table.Tr>
-                <Table.Tr><Table.Td>{t('wo.otherCost')}</Table.Td><Table.Td ta="right">{fmtMoney(g.totals.otherCost, currency)}</Table.Td></Table.Tr>
-                {(g.totals.contractorCost ?? 0) > 0 && <Table.Tr><Table.Td>{t('contractors.cost')}</Table.Td><Table.Td ta="right">{fmtMoney(g.totals.contractorCost ?? 0, currency)}</Table.Td></Table.Tr>}
-                <Table.Tr><Table.Td fw={700}>{t('wo.totalCost')}</Table.Td><Table.Td ta="right" fw={700}>{fmtMoney(g.totals.totalCost, currency)}</Table.Td></Table.Tr>
+                <Table.Tr><Table.Td>{t('wo.laborHours')}</Table.Td><Table.Td ta="end">{fmtNumber(g.totals.laborHours)}</Table.Td></Table.Tr>
+                <Table.Tr><Table.Td>{t('wo.laborCost')}</Table.Td><Table.Td ta="end">{fmtMoney(g.totals.laborCost, currency)}</Table.Td></Table.Tr>
+                <Table.Tr><Table.Td>{t('wo.partsCost')}</Table.Td><Table.Td ta="end">{fmtMoney(g.totals.partsCost, currency)}</Table.Td></Table.Tr>
+                <Table.Tr><Table.Td>{t('wo.otherCost')}</Table.Td><Table.Td ta="end">{fmtMoney(g.totals.otherCost, currency)}</Table.Td></Table.Tr>
+                {(g.totals.contractorCost ?? 0) > 0 && <Table.Tr><Table.Td>{t('contractors.cost')}</Table.Td><Table.Td ta="end">{fmtMoney(g.totals.contractorCost ?? 0, currency)}</Table.Td></Table.Tr>}
+                <Table.Tr><Table.Td fw={700}>{t('wo.totalCost')}</Table.Td><Table.Td ta="end" fw={700}>{fmtMoney(g.totals.totalCost, currency)}</Table.Td></Table.Tr>
               </Table.Tbody></Table>
             </Card>
             <Card><Stack gap="xs">

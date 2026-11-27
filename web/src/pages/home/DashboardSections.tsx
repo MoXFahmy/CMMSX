@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { Box, Button, Card, Grid, Group, Loader, SimpleGrid, Stack, Table, Text, ThemeIcon, Title, Center, Anchor } from '@mantine/core';
 import { DonutChart, BarChart } from '@mantine/charts';
+import { useChartAxes } from '@/components/chartDirection';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { Link } from 'react-router';
 import dayjs from 'dayjs';
@@ -143,10 +144,11 @@ export function AssetsByStatus({ data }: { data: Dashboard }) {
 export function AssetsByCategory({ data }: { data: Dashboard }) {
   const { t } = useTranslation();
   const { terms } = useAuth();
+  const axes = useChartAxes({ yAxisProps: { width: 170, interval: 0 } });
   return (
     <Card h="100%">
       <Title order={5} mb="md">{t('dashboard.byCategory')}</Title>
-      <BarChart h={Math.max(160, data.byCategory.length * 30 + 40)} data={data.byCategory.map((c) => ({ name: c.name, count: c.count }))} dataKey="name" orientation="vertical" yAxisProps={{ width: 170, interval: 0 }}
+      <BarChart h={Math.max(160, data.byCategory.length * 30 + 40)} data={data.byCategory.map((c) => ({ name: c.name, count: c.count }))} dataKey="name" orientation="vertical" {...axes}
         series={[{ name: 'count', label: terms.assets, color: 'brand.6' }]} gridAxis="none" />
     </Card>
   );
@@ -160,7 +162,7 @@ export function AssetsBySite({ data }: { data: Dashboard }) {
       <Table verticalSpacing={6}>
         <Table.Tbody>
           {data.bySite.map((s) => (
-            <Table.Tr key={s.siteId}><Table.Td><Anchor component={Link} to={`/assets?siteId=${s.siteId}`} fz="sm">{s.name}</Anchor></Table.Td><Table.Td ta="right" fw={600}>{s.count}</Table.Td></Table.Tr>
+            <Table.Tr key={s.siteId}><Table.Td><Anchor component={Link} to={`/assets?siteId=${s.siteId}`} fz="sm">{s.name}</Anchor></Table.Td><Table.Td ta="end" fw={600}>{s.count}</Table.Td></Table.Tr>
           ))}
         </Table.Tbody>
       </Table>

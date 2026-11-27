@@ -28,3 +28,7 @@ a.kpi-card:hover { box-shadow: var(--mantine-shadow-sm); transform: translateY(-
 [dir='rtl'] .mirror-rtl { transform: scaleX(-1); }
 /* Shortened text takes its direction from what it says, so an English name in an Arabic screen is cut at its end, not its start. */
 [dir='rtl'] [data-line-clamp], [dir='rtl'] [data-truncate] { unicode-bidi: plaintext; }
+
+/* Table columns that were set to "right" / "left" follow the reading direction. Not in a layer, so it beats the layered data-table CSS. */
+.mantine-datatable-text-align-right { text-align: end; }
+.mantine-datatable-text-align-left { text-align: start; }

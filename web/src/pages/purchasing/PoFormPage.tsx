@@ -209,7 +209,7 @@ export function PoFormPage() {
           <Table verticalSpacing={6}>
             <Table.Thead><Table.Tr>
               <Table.Th w={36}>#</Table.Th><Table.Th w={250}>{t('inv.part')}</Table.Th><Table.Th>{t('common.description')}</Table.Th><Table.Th w={90}>{t('inv.quantity')}</Table.Th><Table.Th w={80}>{t('inv.unit')}</Table.Th>
-              <Table.Th w={115}>{t('po.unitPrice')}</Table.Th><Table.Th w={80}>{t('po.discount')}</Table.Th><Table.Th w={150}>{t('po.deliverTo')}</Table.Th><Table.Th w={110} ta="right">{t('po.lineTotal')}</Table.Th><Table.Th w={36} />
+              <Table.Th w={115}>{t('po.unitPrice')}</Table.Th><Table.Th w={80}>{t('po.discount')}</Table.Th><Table.Th w={150}>{t('po.deliverTo')}</Table.Th><Table.Th w={110} ta="end">{t('po.lineTotal')}</Table.Th><Table.Th w={36} />
             </Table.Tr></Table.Thead>
             <Table.Tbody>
               {v.lines.map((l, i) => (
@@ -236,7 +236,7 @@ export function PoFormPage() {
                     {l.notCatalogue && <Text fz="xs" c="orange" mt={2}>{t('catalogue.notCataloguePrice')}</Text>}</Table.Td>
                   <Table.Td><NumberInput min={0} max={100} suffix="%" aria-label={t('po.discount')} {...form.getInputProps(`lines.${i}.discountPercent`)} /></Table.Td>
                   <Table.Td><WorkOrderPicker placeholder={t('po.forWorkOrder')} value={l.workOrderId} initial={l.workOrder} onChange={(x) => form.setFieldValue(`lines.${i}.workOrderId`, x)} /></Table.Td>
-                  <Table.Td ta="right" pt={12}><Text fz="sm" fw={600}>{fmtPrice(lineTotal(l), cur)}</Text></Table.Td>
+                  <Table.Td ta="end" pt={12}><Text fz="sm" fw={600}>{fmtPrice(lineTotal(l), cur)}</Text></Table.Td>
                   <Table.Td pt={8}><ActionIcon variant="subtle" color="red" aria-label={t('common.delete')} disabled={v.lines.length === 1} onClick={() => form.removeListItem('lines', i)}><IconTrash size={14} /></ActionIcon></Table.Td>
                 </Table.Tr>
               ))}
@@ -251,7 +251,7 @@ export function PoFormPage() {
             <Group justify="space-between" wrap="nowrap"><Group gap={6} wrap="nowrap"><Text fz="sm">{t('po.tax')}</Text><NumberInput size="xs" w={80} min={0} max={100} suffix="%" aria-label={t('po.tax')} {...form.getInputProps('taxPercent')} /></Group><Text fz="sm">{fmtPrice(tax, cur)}</Text></Group>
             <Group justify="space-between" wrap="nowrap"><Text fz="sm">{t('po.shipping')}</Text><NumberInput size="xs" w={120} min={0} decimalScale={2} aria-label={t('po.shipping')} {...form.getInputProps('shippingCost')} /></Group>
             <Group justify="space-between" pt={6} style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}><Text fw={700}>{t('po.total')}</Text><Text fw={700}>{fmtPrice(total, cur)}</Text></Group>
-            {cur.toUpperCase() !== base && <Text fz="xs" c="dimmed" ta="right">≈ {fmtPrice(total * n(v.exchangeRate || 1), base)}</Text>}
+            {cur.toUpperCase() !== base && <Text fz="xs" c="dimmed" ta="end">≈ {fmtPrice(total * n(v.exchangeRate || 1), base)}</Text>}
           </Stack>
         </Group>
       </Card>

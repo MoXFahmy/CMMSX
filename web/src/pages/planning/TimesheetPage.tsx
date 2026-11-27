@@ -77,16 +77,16 @@ function Day({ date, employeeId, others, set }: { date: string; employeeId: stri
         <Card p={0}>
           <ScrollArea type="auto">
             <Table verticalSpacing={6} miw={640}>
-              <Table.Thead><Table.Tr><Table.Th>{t('timesheet.workOrder')}</Table.Th><Table.Th ta="right">{t('timesheet.hours')}</Table.Th>
-                <Table.Th ta="right">{t('timesheet.overtime')}</Table.Th><Table.Th>{t('common.notes')}</Table.Th><Table.Th w={110} /></Table.Tr></Table.Thead>
+              <Table.Thead><Table.Tr><Table.Th>{t('timesheet.workOrder')}</Table.Th><Table.Th ta="end">{t('timesheet.hours')}</Table.Th>
+                <Table.Th ta="end">{t('timesheet.overtime')}</Table.Th><Table.Th>{t('common.notes')}</Table.Th><Table.Th w={110} /></Table.Tr></Table.Thead>
               <Table.Tbody>
                 {data.rows.length === 0 && <Table.Tr><Table.Td colSpan={5}><Text c="dimmed" fz="sm">{t('timesheet.nothing')}</Text></Table.Td></Table.Tr>}
                 {data.rows.map((r) => (r.entries.length === 0 ? [undefined] : r.entries).map((e, i) => (
                   <Table.Tr key={`${r.workOrderId}-${e?.id ?? 'none'}`}>
                     <Table.Td>{i === 0 && <><Anchor component={Link} to={`/work-orders/${r.workOrderId}`} fz="sm" fw={600}>{r.number}</Anchor>
                       <Text fz="xs" c="dimmed" lineClamp={1}>{r.title}</Text>{r.closed && <Badge size="xs" color="gray">{t('timesheet.closed')}</Badge>}</>}</Table.Td>
-                    <Table.Td ta="right">{e ? fmtQty(e.hours) : '—'}</Table.Td>
-                    <Table.Td ta="right">{e?.overtimeHours ? fmtQty(e.overtimeHours) : ''}</Table.Td>
+                    <Table.Td ta="end">{e ? fmtQty(e.hours) : '—'}</Table.Td>
+                    <Table.Td ta="end">{e?.overtimeHours ? fmtQty(e.overtimeHours) : ''}</Table.Td>
                     <Table.Td><Text fz="sm" lineClamp={1}>{e?.notes}</Text></Table.Td>
                     <Table.Td>{canLog && !r.closed && (
                       <Group gap={2} justify="flex-end" wrap="nowrap">
@@ -104,7 +104,7 @@ function Day({ date, employeeId, others, set }: { date: string; employeeId: stri
                 <Table.Th>{t('timesheet.total')}{data.available && (
                   <Text fz="xs" c="dimmed" fw={400}>{t('timesheet.available', { hours: fmtQty(data.available.available) })}
                     {data.available.slots.length > 0 && ` · ${data.available.slots.map((s) => (s.hours ? `${s.name} ${s.hours} h` : s.name)).join(', ')}`}</Text>)}</Table.Th>
-                <Table.Th ta="right">{fmtQty(totals.hours)}</Table.Th><Table.Th ta="right">{totals.overtimeHours ? fmtQty(totals.overtimeHours) : ''}</Table.Th><Table.Th /><Table.Th />
+                <Table.Th ta="end">{fmtQty(totals.hours)}</Table.Th><Table.Th ta="end">{totals.overtimeHours ? fmtQty(totals.overtimeHours) : ''}</Table.Th><Table.Th /><Table.Th />
               </Table.Tr></Table.Tfoot>
             </Table>
           </ScrollArea>
@@ -180,7 +180,7 @@ function Week({ date, set }: { date: string; set: (p: Record<string, string | nu
           <ScrollArea type="auto">
             <Table verticalSpacing={6} miw={760}>
               <Table.Thead><Table.Tr><Table.Th>{t('availability.person')}</Table.Th>
-                {data.days.map((d) => <Table.Th key={d} ta="center">{dayjs(d).format('ddd D')}</Table.Th>)}<Table.Th ta="right">{t('timesheet.total')}</Table.Th></Table.Tr></Table.Thead>
+                {data.days.map((d) => <Table.Th key={d} ta="center">{dayjs(d).format('ddd D')}</Table.Th>)}<Table.Th ta="end">{t('timesheet.total')}</Table.Th></Table.Tr></Table.Thead>
               <Table.Tbody>
                 {data.people.map((p) => (
                   <Table.Tr key={p.id}>
@@ -191,7 +191,7 @@ function Week({ date, set }: { date: string; set: (p: Record<string, string | nu
                           {fmtQty(c.hours + c.overtimeHours)}<Text span fz="xs" c="dimmed"> / {fmtQty(c.available)}</Text></Text>
                       </Table.Td>
                     ))}
-                    <Table.Td ta="right">{fmtQty(p.days.reduce((a, c) => a + c.hours + c.overtimeHours, 0))}</Table.Td>
+                    <Table.Td ta="end">{fmtQty(p.days.reduce((a, c) => a + c.hours + c.overtimeHours, 0))}</Table.Td>
                   </Table.Tr>
                 ))}
               </Table.Tbody>

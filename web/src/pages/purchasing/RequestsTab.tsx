@@ -113,7 +113,7 @@ function RequestList() {
           {can(P.purchasingRequest) && <Checkbox label={t('pr.mine')} checked={mine} onChange={(e) => { setMine(e.currentTarget.checked); setPage(1); }} />}
           {can(P.purchasingApproveRequests) && <Checkbox label={t('pr.waitingForMe')} checked={waiting} onChange={(e) => { setWaiting(e.currentTarget.checked); setPage(1); }} />}
           <Menu position="bottom-end">
-            <Menu.Target><ActionIcon variant="default" size="lg" ml="auto" aria-label={t('list.export')}><IconDownload size={16} /></ActionIcon></Menu.Target>
+            <Menu.Target><ActionIcon variant="default" size="lg" ms="auto" aria-label={t('list.export')}><IconDownload size={16} /></ActionIcon></Menu.Target>
             <Menu.Dropdown>
               <Menu.Item component="a" href={exportUrl('/purchase-requests/export', query, columns, 'xlsx')} download>{t('list.exportXlsx')}</Menu.Item>
               <Menu.Item component="a" href={exportUrl('/purchase-requests/export', query, columns, 'csv')} download>{t('list.exportCsv')}</Menu.Item>

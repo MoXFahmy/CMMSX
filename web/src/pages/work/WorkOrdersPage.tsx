@@ -192,7 +192,7 @@ export function WorkOrdersPage() {
           {filtersActive && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')}
             onClick={() => lp.replaceAll(new URLSearchParams(Object.entries({ tab: tab !== 'active' ? tab : '', view: view !== 'everyone' ? view : '' }).filter(([, v]) => v)).toString())}>
             <IconFilterOff size={16} /></ActionIcon></Tooltip>}
-          <Group gap={6} ml="auto">
+          <Group gap={6} ms="auto">
             <ListTools list="work-orders" lp={lp} cols={cols} exportPath="/work-orders/export" exportQuery={listQuery} total={data?.total} />
           </Group>
         </Group>

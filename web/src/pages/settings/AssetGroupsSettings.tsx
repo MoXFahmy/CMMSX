@@ -48,7 +48,7 @@ export function AssetGroupsSettings({ editable }: { editable: boolean }) {
       </Group>
       <Table.ScrollContainer minWidth={520}>
         <Table striped>
-          <Table.Thead><Table.Tr><Table.Th>{t('common.code')}</Table.Th><Table.Th>{t('common.name')}</Table.Th><Table.Th>{terms.site}</Table.Th><Table.Th ta="right">{t('assetGroups.members')}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
+          <Table.Thead><Table.Tr><Table.Th>{t('common.code')}</Table.Th><Table.Th>{t('common.name')}</Table.Th><Table.Th>{terms.site}</Table.Th><Table.Th ta="end">{t('assetGroups.members')}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
           <Table.Tbody>
             {(data ?? []).length === 0 && <Table.Tr><Table.Td colSpan={5}><Text fz="sm" c="dimmed">{t('assetGroups.none')}</Text></Table.Td></Table.Tr>}
             {(data ?? []).map((g) => (
@@ -56,7 +56,7 @@ export function AssetGroupsSettings({ editable }: { editable: boolean }) {
                 <Table.Td><Text fz="sm" fw={600}>{g.code}</Text></Table.Td>
                 <Table.Td><Group gap={6}><Text fz="sm">{g.name}</Text>{!g.isActive && <Badge size="xs" color="gray">{t('common.inactive')}</Badge>}</Group></Table.Td>
                 <Table.Td><Text fz="sm" c={g.siteName ? undefined : 'dimmed'}>{g.siteName ?? t('costCentres.allSites')}</Text></Table.Td>
-                <Table.Td ta="right">{g.memberCount}</Table.Td>
+                <Table.Td ta="end">{g.memberCount}</Table.Td>
                 <Table.Td><Group gap={4} justify="flex-end" wrap="nowrap">
                   <ActionIcon variant="subtle" aria-label={t('assetGroups.members')} onClick={() => setMembers(g)}><IconUsersGroup size={16} /></ActionIcon>
                   {editable && <>

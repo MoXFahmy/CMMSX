@@ -62,7 +62,7 @@ export function ContractsPage() {
           <Select placeholder={terms.site} clearable w={180} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={params.get('site')} onChange={(v) => set('site', v)} />
           <Checkbox label={t('contracts.needingAttention')} checked={attention} onChange={(e) => set('attention', e.currentTarget.checked ? 'true' : null)} />
           <Menu position="bottom-end">
-            <Menu.Target><Button variant="default" size="xs" ml="auto" leftSection={<IconDownload size={14} />}>{t('list.export')}</Button></Menu.Target>
+            <Menu.Target><Button variant="default" size="xs" ms="auto" leftSection={<IconDownload size={14} />}>{t('list.export')}</Button></Menu.Target>
             <Menu.Dropdown>
               <Menu.Item component="a" href={exportUrl('/contracts/export', query, columns, 'xlsx')} download>{t('list.exportXlsx')}</Menu.Item>
               <Menu.Item component="a" href={exportUrl('/contracts/export', query, columns, 'csv')} download>{t('list.exportCsv')}</Menu.Item>

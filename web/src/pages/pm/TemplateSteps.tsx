@@ -36,7 +36,7 @@ export function TemplateSteps({ value, onChange, editable, error, selfId }: {
       {value.map((s, i) => (
         <Stack key={i} gap={4} p={6} style={{ border: '1px solid var(--mantine-color-default-border)', borderRadius: 6 }}>
           <Group gap={6} wrap="nowrap">
-            <Text fz="sm" c="dimmed" w={24} ta="right">{i + 1}.</Text>
+            <Text fz="sm" c="dimmed" w={24} ta="end">{i + 1}.</Text>
             <TextInput style={{ flex: 1 }} size="xs" value={s.description} disabled={!editable} onChange={(e) => set(i, { description: e.currentTarget.value })} />
             <TextInput style={{ flex: 1 }} size="xs" dir="rtl" placeholder={t('bilingual.stepAr')} aria-label={t('bilingual.stepAr')} value={s.descriptionAr ?? ''} disabled={!editable}
               onChange={(e) => set(i, { descriptionAr: e.currentTarget.value })} />
@@ -52,7 +52,7 @@ export function TemplateSteps({ value, onChange, editable, error, selfId }: {
             </>}
           </Group>
           {open === i && (
-            <Stack gap={6} pl={30}>
+            <Stack gap={6} ps={30}>
               <Group gap="xs" align="flex-end" wrap="wrap">
                 <Select w={150} size="xs" label={t('steps.type')} disabled={!editable} data={STEP_TYPES.map((x) => ({ value: x, label: t(`steps.types.${x}`) }))} value={s.type}
                   onChange={(x) => set(i, { type: (x ?? 'Check') as StepDetail['type'], measurementPointId: x === 'Number' ? s.measurementPointId : null })} />

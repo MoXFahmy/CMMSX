@@ -64,8 +64,8 @@ export function PlannedPartsCard({ w, canPlan, canIssue, onChange, onIssue, curr
         <Table verticalSpacing="sm">
           <Table.Thead>
             <Table.Tr>
-              <Table.Th>{t('inv.part')}</Table.Th><Table.Th>{t('inv.store')}</Table.Th><Table.Th ta="right">{t('plan.planned')}</Table.Th><Table.Th ta="right">{t('plan.issued')}</Table.Th>
-              <Table.Th ta="right">{t('plan.reserved')}</Table.Th><Table.Th ta="right">{t('plan.short')}</Table.Th><Table.Th ta="right">{t('plan.plannedCost')}</Table.Th><Table.Th w={110} />
+              <Table.Th>{t('inv.part')}</Table.Th><Table.Th>{t('inv.store')}</Table.Th><Table.Th ta="end">{t('plan.planned')}</Table.Th><Table.Th ta="end">{t('plan.issued')}</Table.Th>
+              <Table.Th ta="end">{t('plan.reserved')}</Table.Th><Table.Th ta="end">{t('plan.short')}</Table.Th><Table.Th ta="end">{t('plan.plannedCost')}</Table.Th><Table.Th w={110} />
             </Table.Tr>
           </Table.Thead>
           <Table.Tbody>
@@ -77,12 +77,12 @@ export function PlannedPartsCard({ w, canPlan, canIssue, onChange, onIssue, curr
                   <Text fz="xs" c="dimmed">{p.partName}{p.notes ? ` · ${p.notes}` : ''}</Text>
                 </Table.Td>
                 <Table.Td>{p.storeCode ?? <Text fz="sm" c="orange">{t('plan.chooseStore')}</Text>}</Table.Td>
-                <Table.Td ta="right">{fmtQty(p.quantity)} {p.unitOfMeasure}</Table.Td>
-                <Table.Td ta="right">{fmtQty(p.issued)}</Table.Td>
-                <Table.Td ta="right">{fmtQty(p.reserved)}</Table.Td>
-                <Table.Td ta="right">{p.short > 0 ? <Text fz="sm" fw={600} c="red">{fmtQty(p.short)}</Text> : '—'}</Table.Td>
-                <Table.Td ta="right">{fmtPrice(p.plannedCost, currency)}</Table.Td>
-                <Table.Td ta="right">
+                <Table.Td ta="end">{fmtQty(p.quantity)} {p.unitOfMeasure}</Table.Td>
+                <Table.Td ta="end">{fmtQty(p.issued)}</Table.Td>
+                <Table.Td ta="end">{fmtQty(p.reserved)}</Table.Td>
+                <Table.Td ta="end">{p.short > 0 ? <Text fz="sm" fw={600} c="red">{fmtQty(p.short)}</Text> : '—'}</Table.Td>
+                <Table.Td ta="end">{fmtPrice(p.plannedCost, currency)}</Table.Td>
+                <Table.Td ta="end">
                   <Group gap={2} justify="flex-end" wrap="nowrap">
                     {canIssue && p.reserved > 0 && (
                       <Tooltip label={t('plan.issueThis')}><ActionIcon variant="subtle" size="sm" aria-label={t('plan.issueThis')} onClick={() => onIssue(p)}><IconPackageExport size={14} /></ActionIcon></Tooltip>
@@ -158,9 +158,9 @@ export function PlannedHoursCard({ w, canPlan, onChange, currency }: { w: WorkOr
                 {canPlan
                   ? <NumberInput size="xs" min={0} max={10000} step={0.5} decimalScale={2} suffix=" h" value={hours[a.employeeId] ?? ''} aria-label={t('plan.hours')}
                       onChange={(x) => setHours((h) => ({ ...h, [a.employeeId]: x }))} />
-                  : <Text fz="sm" ta="right">{a.plannedHours != null ? hoursText(a.plannedHours) : '—'}</Text>}
+                  : <Text fz="sm" ta="end">{a.plannedHours != null ? hoursText(a.plannedHours) : '—'}</Text>}
               </Table.Td>
-              <Table.Td ta="right" c="dimmed" fz="sm">{a.hourlyRate != null ? `${fmtMoney(a.hourlyRate, currency)}/${t('unit.h')}` : '—'}</Table.Td>
+              <Table.Td ta="end" c="dimmed" fz="sm">{a.hourlyRate != null ? `${fmtMoney(a.hourlyRate, currency)}/${t('unit.h')}` : '—'}</Table.Td>
             </Table.Tr>
           ))}
         </Table.Tbody>
@@ -187,16 +187,16 @@ export function PlanVsActualCard({ w, currency }: { w: WorkOrderDetail; currency
       <Title order={5} p="md">{t('plan.vsActual')}</Title>
       <Table.ScrollContainer minWidth={420}>
         <Table verticalSpacing={6}>
-          <Table.Thead><Table.Tr><Table.Th /><Table.Th ta="right">{t('plan.planned')}</Table.Th><Table.Th ta="right">{t('plan.actual')}</Table.Th><Table.Th ta="right">{t('plan.difference')}</Table.Th></Table.Tr></Table.Thead>
+          <Table.Thead><Table.Tr><Table.Th /><Table.Th ta="end">{t('plan.planned')}</Table.Th><Table.Th ta="end">{t('plan.actual')}</Table.Th><Table.Th ta="end">{t('plan.difference')}</Table.Th></Table.Tr></Table.Thead>
           <Table.Tbody>
             {rows.map((r) => {
               const diff = r.planned === null ? null : r.actual - r.planned;
               return (
                 <Table.Tr key={r.label}>
                   <Table.Td fw={r.bold ? 700 : undefined}>{r.label}</Table.Td>
-                  <Table.Td ta="right" fw={r.bold ? 700 : undefined}>{r.planned === null ? '—' : r.fmt(r.planned)}</Table.Td>
-                  <Table.Td ta="right" fw={r.bold ? 700 : undefined}>{r.fmt(r.actual)}</Table.Td>
-                  <Table.Td ta="right" c={diff !== null && diff > 0 ? 'red' : undefined}>{diff === null ? '—' : `${diff > 0 ? '+' : ''}${r.fmt(diff)}`}</Table.Td>
+                  <Table.Td ta="end" fw={r.bold ? 700 : undefined}>{r.planned === null ? '—' : r.fmt(r.planned)}</Table.Td>
+                  <Table.Td ta="end" fw={r.bold ? 700 : undefined}>{r.fmt(r.actual)}</Table.Td>
+                  <Table.Td ta="end" c={diff !== null && diff > 0 ? 'red' : undefined}>{diff === null ? '—' : `${diff > 0 ? '+' : ''}${r.fmt(diff)}`}</Table.Td>
                 </Table.Tr>
               );
             })}

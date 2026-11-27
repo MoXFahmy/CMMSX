@@ -42,14 +42,14 @@ export function ContractorCategoriesSettings({ editable }: { editable: boolean }
         {editable && <Button size="xs" leftSection={<IconPlus size={14} />} onClick={() => open(null)}>{t('contractorCategories.new')}</Button>}
       </Group>
       <Table striped>
-        <Table.Thead><Table.Tr><Table.Th>{t('common.code')}</Table.Th><Table.Th>{t('common.name')}</Table.Th><Table.Th ta="right">{t('contractorCategories.defaultRate')}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
+        <Table.Thead><Table.Tr><Table.Th>{t('common.code')}</Table.Th><Table.Th>{t('common.name')}</Table.Th><Table.Th ta="end">{t('contractorCategories.defaultRate')}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
         <Table.Tbody>
           {(data ?? []).length === 0 && <Table.Tr><Table.Td colSpan={4}><Text fz="sm" c="dimmed">{t('contractorCategories.none')}</Text></Table.Td></Table.Tr>}
           {(data ?? []).map((c) => (
             <Table.Tr key={c.id}>
               <Table.Td><Text fz="sm" fw={600}>{c.code}</Text></Table.Td>
               <Table.Td><Group gap={6}><Text fz="sm">{c.name}</Text>{!c.isActive && <Badge size="xs" color="gray">{t('common.inactive')}</Badge>}</Group></Table.Td>
-              <Table.Td ta="right">{fmtPrice(c.defaultRate, currency)}</Table.Td>
+              <Table.Td ta="end">{fmtPrice(c.defaultRate, currency)}</Table.Td>
               <Table.Td>{editable && <Group gap={4} justify="flex-end" wrap="nowrap">
                 <ActionIcon variant="subtle" aria-label={t('common.edit')} onClick={() => open(c)}><IconEdit size={16} /></ActionIcon>
                 <ActionIcon variant="subtle" color="red" aria-label={t('common.delete')} onClick={() => confirmDelete(c.name, async () => {

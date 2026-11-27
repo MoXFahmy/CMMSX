@@ -112,8 +112,8 @@ export function PoDetailPage() {
                 <Table.ScrollContainer minWidth={760}>
                   <Table verticalSpacing="sm" styles={{ th: { whiteSpace: 'nowrap' } }}>
                     <Table.Thead><Table.Tr>
-                      <Table.Th w={36}>#</Table.Th><Table.Th>{t('common.description')}</Table.Th><Table.Th>{t('po.deliverTo')}</Table.Th><Table.Th ta="right">{t('inv.quantity')}</Table.Th>
-                      <Table.Th ta="right">{t('po.unitPrice')}</Table.Th><Table.Th ta="right">{t('po.discount')}</Table.Th><Table.Th ta="right">{t('po.lineTotal')}</Table.Th><Table.Th w={150}>{t('po.received')}</Table.Th>
+                      <Table.Th w={36}>#</Table.Th><Table.Th>{t('common.description')}</Table.Th><Table.Th>{t('po.deliverTo')}</Table.Th><Table.Th ta="end">{t('inv.quantity')}</Table.Th>
+                      <Table.Th ta="end">{t('po.unitPrice')}</Table.Th><Table.Th ta="end">{t('po.discount')}</Table.Th><Table.Th ta="end">{t('po.lineTotal')}</Table.Th><Table.Th w={150}>{t('po.received')}</Table.Th>
                     </Table.Tr></Table.Thead>
                     <Table.Tbody>
                       {o.lines.map((l) => (
@@ -126,12 +126,12 @@ export function PoDetailPage() {
                           <Table.Td><Stack gap={0}>{l.storeCode && <Text fz="sm">{t('po.intoStore')} {l.storeCode}</Text>}
                             {l.workOrderId && <Anchor component={Link} to={`/work-orders/${l.workOrderId}`} fz="sm">{l.workOrderNumber}</Anchor>}
                             {!l.storeCode && !l.workOrderId && <Text fz="sm" c="dimmed">{t('po.expense')}</Text>}</Stack></Table.Td>
-                          <Table.Td ta="right">{fmtQty(l.quantity)} {l.unitOfMeasure}
+                          <Table.Td ta="end">{fmtQty(l.quantity)} {l.unitOfMeasure}
                             {(l.packSize ?? 1) !== 1 && <Text fz="xs" c="dimmed">= {fmtQty(piecesOf(l.quantity, l.packSize))} {l.partUnit ?? ''}</Text>}
                             {l.supplierPartNumber && <Text fz="xs" c="dimmed">{t('catalogue.theirNumber', { number: l.supplierPartNumber })}</Text>}</Table.Td>
-                          <Table.Td ta="right">{fmtPrice(l.unitPrice, o.currency)}</Table.Td>
-                          <Table.Td ta="right">{l.discountPercent ? `${l.discountPercent}%` : '—'}</Table.Td>
-                          <Table.Td ta="right" fw={600}>{fmtPrice(l.lineTotal, o.currency)}</Table.Td>
+                          <Table.Td ta="end">{fmtPrice(l.unitPrice, o.currency)}</Table.Td>
+                          <Table.Td ta="end">{l.discountPercent ? `${l.discountPercent}%` : '—'}</Table.Td>
+                          <Table.Td ta="end" fw={600}>{fmtPrice(l.lineTotal, o.currency)}</Table.Td>
                           <Table.Td>{o.status === 'Draft' || o.status === 'Submitted' ? <Text fz="sm" c="dimmed">—</Text> : <>
                             <Progress value={l.quantity ? Math.min(100, (l.quantityReceived / l.quantity) * 100) : 0} size="sm" color={l.outstanding <= 0 ? 'teal' : 'blue'} />
                             <Text fz="xs" c="dimmed" mt={2}>{fmtQty(l.quantityReceived)} / {fmtQty(l.quantity)}{l.outstanding > 0 && ` · ${t('po.outstandingQty', { qty: fmtQty(l.outstanding) })}`}</Text></>}</Table.Td>
@@ -146,7 +146,7 @@ export function PoDetailPage() {
                     <Group justify="space-between"><Text fz="sm">{t('po.tax')} ({o.taxPercent}%)</Text><Text fz="sm">{fmtPrice(o.totals.tax, o.currency)}</Text></Group>
                     <Group justify="space-between"><Text fz="sm">{t('po.shipping')}</Text><Text fz="sm">{fmtPrice(o.totals.shippingCost, o.currency)}</Text></Group>
                     <Group justify="space-between" pt={6} style={{ borderTop: '1px solid var(--mantine-color-default-border)' }}><Text fw={700}>{t('po.total')}</Text><Text fw={700}>{fmtPrice(o.totals.total, o.currency)}</Text></Group>
-                    {o.currency !== base && <Text fz="xs" c="dimmed" ta="right">≈ {fmtPrice(o.totals.totalInBase, base)} @ {o.exchangeRate}</Text>}
+                    {o.currency !== base && <Text fz="xs" c="dimmed" ta="end">≈ {fmtPrice(o.totals.totalInBase, base)} @ {o.exchangeRate}</Text>}
                   </Stack>
                 </Group>
               </Card>
@@ -155,11 +155,11 @@ export function PoDetailPage() {
             <Tabs.Panel value="receipts">
               <Card p={0}>
                 <Table verticalSpacing="xs">
-                  <Table.Thead><Table.Tr><Table.Th>{t('inv.date')}</Table.Th><Table.Th>{t('inv.part')}</Table.Th><Table.Th>{t('inv.store')}</Table.Th><Table.Th ta="right">{t('inv.quantity')}</Table.Th><Table.Th ta="right">{t('inv.unitCost')}</Table.Th><Table.Th>{t('inv.reference')}</Table.Th><Table.Th>{t('inv.by')}</Table.Th></Table.Tr></Table.Thead>
+                  <Table.Thead><Table.Tr><Table.Th>{t('inv.date')}</Table.Th><Table.Th>{t('inv.part')}</Table.Th><Table.Th>{t('inv.store')}</Table.Th><Table.Th ta="end">{t('inv.quantity')}</Table.Th><Table.Th ta="end">{t('inv.unitCost')}</Table.Th><Table.Th>{t('inv.reference')}</Table.Th><Table.Th>{t('inv.by')}</Table.Th></Table.Tr></Table.Thead>
                   <Table.Tbody>
                     {o.receipts.length === 0 && <Table.Tr><Table.Td colSpan={7}><Text c="dimmed" ta="center" py="md" fz="sm">{t('po.noReceipts')}</Text></Table.Td></Table.Tr>}
                     {o.receipts.map((r) => <Table.Tr key={r.id}><Table.Td>{fmtDate(r.date)}</Table.Td><Table.Td>{r.partNumber}{r.batchNumber && <Text span fz="xs" c="dimmed"> · {r.batchNumber}</Text>}</Table.Td><Table.Td>{r.storeCode}</Table.Td>
-                      <Table.Td ta="right">{fmtQty(r.quantity)}</Table.Td><Table.Td ta="right">{fmtPrice(r.unitCost, base)}</Table.Td><Table.Td>{r.reference}</Table.Td><Table.Td c="dimmed">{r.createdByName}</Table.Td></Table.Tr>)}
+                      <Table.Td ta="end">{fmtQty(r.quantity)}</Table.Td><Table.Td ta="end">{fmtPrice(r.unitCost, base)}</Table.Td><Table.Td>{r.reference}</Table.Td><Table.Td c="dimmed">{r.createdByName}</Table.Td></Table.Tr>)}
                   </Table.Tbody>
                 </Table>
                 <Text fz="xs" c="dimmed" p="md">{t('po.receiptsHint')}</Text>
@@ -246,12 +246,12 @@ function ReceiveModal({ o, onClose, onDone }: { o: PoDetail; onClose: () => void
         </Group>
         <Table.ScrollContainer minWidth={760}>
           <Table verticalSpacing={6}>
-            <Table.Thead><Table.Tr><Table.Th>{t('common.description')}</Table.Th><Table.Th ta="right">{t('po.outstanding')}</Table.Th><Table.Th w={120}>{t('po.receiveNow')}</Table.Th><Table.Th w={170}>{t('po.deliverTo')}</Table.Th><Table.Th w={210}>{t('inv.batch')}</Table.Th></Table.Tr></Table.Thead>
+            <Table.Thead><Table.Tr><Table.Th>{t('common.description')}</Table.Th><Table.Th ta="end">{t('po.outstanding')}</Table.Th><Table.Th w={120}>{t('po.receiveNow')}</Table.Th><Table.Th w={170}>{t('po.deliverTo')}</Table.Th><Table.Th w={210}>{t('inv.batch')}</Table.Th></Table.Tr></Table.Thead>
             <Table.Tbody>
               {open.map((l) => (<Fragment key={l.id}>
                 <Table.Tr>
                   <Table.Td><Text fz="sm" fw={500}>{l.partNumber ?? l.description}</Text>{l.partNumber && <Text fz="xs" c="dimmed">{l.description}</Text>}</Table.Td>
-                  <Table.Td ta="right">{fmtQty(l.outstanding)} {l.unitOfMeasure}
+                  <Table.Td ta="end">{fmtQty(l.outstanding)} {l.unitOfMeasure}
                     {(l.packSize ?? 1) !== 1 && <Text fz="xs" c="dimmed">{t('catalogue.receivesPieces', { pieces: fmtQty(piecesOf(rows[l.id].qty === '' ? 0 : rows[l.id].qty as number, l.packSize)), unit: l.partUnit ?? '' })}</Text>}</Table.Td>
                   <Table.Td><NumberInput size="xs" min={0} max={l.outstanding} decimalScale={3} value={rows[l.id].qty} onChange={(v) => set(l.id, { qty: v === '' ? '' : Number(v) })} aria-label={`${t('po.receiveNow')} ${l.lineNumber}`} /></Table.Td>
                   <Table.Td>{l.partId || l.unitId

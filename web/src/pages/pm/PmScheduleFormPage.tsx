@@ -312,9 +312,9 @@ export function PmScheduleFormPage() {
               <Card p={0}>
                 <Title order={5} p="md" pb="xs">{t('pm.visitCost')}</Title>
                 <Table verticalSpacing={6}><Table.Tbody>
-                  <Table.Tr><Table.Td>{t('plan.parts')}</Table.Td><Table.Td ta="right">{fmtMoney(s.visitCost.parts, currency)}</Table.Td></Table.Tr>
-                  <Table.Tr><Table.Td>{t('plan.laborCost')}</Table.Td><Table.Td ta="right">{fmtMoney(s.visitCost.labour, currency)}</Table.Td></Table.Tr>
-                  <Table.Tr><Table.Td fw={700}>{t('plan.total')}</Table.Td><Table.Td ta="right" fw={700}>{fmtMoney(s.visitCost.total, currency)}</Table.Td></Table.Tr>
+                  <Table.Tr><Table.Td>{t('plan.parts')}</Table.Td><Table.Td ta="end">{fmtMoney(s.visitCost.parts, currency)}</Table.Td></Table.Tr>
+                  <Table.Tr><Table.Td>{t('plan.laborCost')}</Table.Td><Table.Td ta="end">{fmtMoney(s.visitCost.labour, currency)}</Table.Td></Table.Tr>
+                  <Table.Tr><Table.Td fw={700}>{t('plan.total')}</Table.Td><Table.Td ta="end" fw={700}>{fmtMoney(s.visitCost.total, currency)}</Table.Td></Table.Tr>
                 </Table.Tbody></Table>
                 <Text fz="xs" c="dimmed" px="md" pb="md">{t('pm.visitCostHint')}</Text>
               </Card>

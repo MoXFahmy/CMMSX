@@ -250,9 +250,9 @@ export function WorkOrderDetailPage() {
                 <Card>
                   <Text fw={600} mb="sm">{t('wo.totals')}</Text>
                   <Table verticalSpacing={4}><Table.Tbody>
-                    <Table.Tr><Table.Td>{t('wo.laborHours')}</Table.Td><Table.Td ta="right">{w.totals.laborHours}</Table.Td></Table.Tr>
-                    {costLines(w.totals).map((l) => <Table.Tr key={l.key}><Table.Td>{t(l.key)}</Table.Td><Table.Td ta="right">{fmtMoney(l.value, currency)}</Table.Td></Table.Tr>)}
-                    <Table.Tr><Table.Td fw={700}>{t('wo.totalCost')}</Table.Td><Table.Td ta="right" fw={700}>{fmtMoney(w.totals.totalCost, currency)}</Table.Td></Table.Tr>
+                    <Table.Tr><Table.Td>{t('wo.laborHours')}</Table.Td><Table.Td ta="end">{w.totals.laborHours}</Table.Td></Table.Tr>
+                    {costLines(w.totals).map((l) => <Table.Tr key={l.key}><Table.Td>{t(l.key)}</Table.Td><Table.Td ta="end">{fmtMoney(l.value, currency)}</Table.Td></Table.Tr>)}
+                    <Table.Tr><Table.Td fw={700}>{t('wo.totalCost')}</Table.Td><Table.Td ta="end" fw={700}>{fmtMoney(w.totals.totalCost, currency)}</Table.Td></Table.Tr>
                   </Table.Tbody></Table>
                 </Card>
               </Stack>
@@ -296,12 +296,12 @@ function LaborPanel({ w, canExec, onChange, currency }: { w: WorkOrderDetail; ca
         {canExec && <Button size="xs" leftSection={<IconPlus size={14} />} onClick={open}>{t('wo.logLabor')}</Button>}</Group>
       <Table.ScrollContainer minWidth={640}>
         <Table verticalSpacing="sm" highlightOnHover>
-          <Table.Thead><Table.Tr><Table.Th>{t('wo.date')}</Table.Th><Table.Th>{t('wo.who')}</Table.Th><Table.Th ta="right">{t('wo.hours')}</Table.Th><Table.Th ta="right">{t('wo.overtime')}</Table.Th><Table.Th ta="right">{t('wo.cost')}</Table.Th><Table.Th>{t('common.notes')}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
+          <Table.Thead><Table.Tr><Table.Th>{t('wo.date')}</Table.Th><Table.Th>{t('wo.who')}</Table.Th><Table.Th ta="end">{t('wo.hours')}</Table.Th><Table.Th ta="end">{t('wo.overtime')}</Table.Th><Table.Th ta="end">{t('wo.cost')}</Table.Th><Table.Th>{t('common.notes')}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
           <Table.Tbody>
             {w.labor.length === 0 && <Table.Tr><Table.Td colSpan={7}><Text c="dimmed" fz="sm" ta="center">{t('common.noRecords')}</Text></Table.Td></Table.Tr>}
             {w.labor.map((l) => (
-              <Table.Tr key={l.id}><Table.Td>{fmtDate(l.workDate)}</Table.Td><Table.Td>{l.employeeName}{l.companyName && <Badge size="xs" variant="light" color="grape" ms={6}>{l.companyName}</Badge>}</Table.Td><Table.Td ta="right">{l.hours}</Table.Td><Table.Td ta="right">{l.overtimeHours || '—'}</Table.Td>
-                <Table.Td ta="right">{fmtMoney(l.cost, currency)}</Table.Td><Table.Td><Text fz="sm" lineClamp={2}>{l.notes}</Text></Table.Td>
+              <Table.Tr key={l.id}><Table.Td>{fmtDate(l.workDate)}</Table.Td><Table.Td>{l.employeeName}{l.companyName && <Badge size="xs" variant="light" color="grape" ms={6}>{l.companyName}</Badge>}</Table.Td><Table.Td ta="end">{l.hours}</Table.Td><Table.Td ta="end">{l.overtimeHours || '—'}</Table.Td>
+                <Table.Td ta="end">{fmtMoney(l.cost, currency)}</Table.Td><Table.Td><Text fz="sm" lineClamp={2}>{l.notes}</Text></Table.Td>
                 <Table.Td>{canExec && <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('common.delete')} onClick={() => confirmDelete(`${l.employeeName} · ${hoursText(l.hours)}`, async () => { try { await del(`/work-orders/${w.id}/labor/${l.id}`); await onChange(); } catch (e) { notifyError(e); } })}><IconTrash size={14} /></ActionIcon>}</Table.Td></Table.Tr>
             ))}
           </Table.Tbody>
@@ -351,14 +351,14 @@ function WoPartsPanel({ w, canPlan, canIssue, canOrder, onChange, currency }: { 
         </Group>
         <Table.ScrollContainer minWidth={640}>
           <Table verticalSpacing="sm">
-            <Table.Thead><Table.Tr><Table.Th>{t('inv.part')}</Table.Th><Table.Th ta="right">{t('wo.netIssued')}</Table.Th><Table.Th ta="right">{t('wo.total')}</Table.Th><Table.Th w={110} /></Table.Tr></Table.Thead>
+            <Table.Thead><Table.Tr><Table.Th>{t('inv.part')}</Table.Th><Table.Th ta="end">{t('wo.netIssued')}</Table.Th><Table.Th ta="end">{t('wo.total')}</Table.Th><Table.Th w={110} /></Table.Tr></Table.Thead>
             <Table.Tbody>
               {net.length === 0 && <Table.Tr><Table.Td colSpan={4}><Text c="dimmed" ta="center" py="md" fz="sm">{t('wo.noParts')}</Text></Table.Td></Table.Tr>}
               {net.map((n) => (
                 <Table.Tr key={n.partId}>
                   <Table.Td><Anchor component={Link} to={`/inventory/parts/${n.partId}`} fz="sm" fw={600}>{n.partNumber}</Anchor><Text fz="xs" c="dimmed">{n.partName}</Text></Table.Td>
-                  <Table.Td ta="right">{fmtQty(n.qty)} {n.unit}</Table.Td><Table.Td ta="right">{fmtPrice(n.cost, currency)}</Table.Td>
-                  <Table.Td ta="right">{canIssue && n.qty > 0 && <Button size="compact-xs" variant="subtle" onClick={() => open('return', { id: n.partId, partNumber: n.partNumber, name: n.partName })}>{t('inv.tx.return')}</Button>}</Table.Td>
+                  <Table.Td ta="end">{fmtQty(n.qty)} {n.unit}</Table.Td><Table.Td ta="end">{fmtPrice(n.cost, currency)}</Table.Td>
+                  <Table.Td ta="end">{canIssue && n.qty > 0 && <Button size="compact-xs" variant="subtle" onClick={() => open('return', { id: n.partId, partNumber: n.partNumber, name: n.partName })}>{t('inv.tx.return')}</Button>}</Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>
@@ -371,7 +371,7 @@ function WoPartsPanel({ w, canPlan, canIssue, canOrder, onChange, currency }: { 
           <Table verticalSpacing={6} mt="xs">
             <Table.Tbody>
               {w.parts.map((p) => <Table.Tr key={p.id}><Table.Td>{fmtDate(p.date)}</Table.Td><Table.Td><TxTypeBadge type={p.type} /></Table.Td><Table.Td>{p.partNumber}</Table.Td><Table.Td>{p.storeCode}</Table.Td>
-                <Table.Td ta="right">{fmtQty(p.quantity)}</Table.Td><Table.Td ta="right">{fmtPrice(p.unitCost, currency)}</Table.Td><Table.Td c="dimmed" fz="sm">{p.createdByName}{p.notes && ` · ${p.notes}`}</Table.Td></Table.Tr>)}
+                <Table.Td ta="end">{fmtQty(p.quantity)}</Table.Td><Table.Td ta="end">{fmtPrice(p.unitCost, currency)}</Table.Td><Table.Td c="dimmed" fz="sm">{p.createdByName}{p.notes && ` · ${p.notes}`}</Table.Td></Table.Tr>)}
             </Table.Tbody>
           </Table>
         </Card>
@@ -393,10 +393,10 @@ function CostsPanel({ w, canExec, onChange, currency }: { w: WorkOrderDetail; ca
       <Group justify="space-between" p="md"><Title order={5}>{t('wo.costs')} · {fmtMoney(w.totals.otherCost, currency)}</Title></Group>
       <Table.ScrollContainer minWidth={600}>
         <Table verticalSpacing="sm">
-          <Table.Thead><Table.Tr><Table.Th>{t('common.description')}</Table.Th><Table.Th>{t('wo.vendor')}</Table.Th><Table.Th>{t('wo.reference')}</Table.Th><Table.Th ta="right">{t('wo.qty')}</Table.Th><Table.Th ta="right">{t('wo.unitCost')}</Table.Th><Table.Th ta="right">{t('wo.total')}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
+          <Table.Thead><Table.Tr><Table.Th>{t('common.description')}</Table.Th><Table.Th>{t('wo.vendor')}</Table.Th><Table.Th>{t('wo.reference')}</Table.Th><Table.Th ta="end">{t('wo.qty')}</Table.Th><Table.Th ta="end">{t('wo.unitCost')}</Table.Th><Table.Th ta="end">{t('wo.total')}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
           <Table.Tbody>
             {w.costs.map((c) => (
-              <Table.Tr key={c.id}><Table.Td>{c.description}</Table.Td><Table.Td>{c.vendor}</Table.Td><Table.Td>{c.reference}</Table.Td><Table.Td ta="right">{c.quantity}</Table.Td><Table.Td ta="right">{fmtMoney(c.unitCost, currency)}</Table.Td><Table.Td ta="right">{fmtMoney(c.total, currency)}</Table.Td>
+              <Table.Tr key={c.id}><Table.Td>{c.description}</Table.Td><Table.Td>{c.vendor}</Table.Td><Table.Td>{c.reference}</Table.Td><Table.Td ta="end">{c.quantity}</Table.Td><Table.Td ta="end">{fmtMoney(c.unitCost, currency)}</Table.Td><Table.Td ta="end">{fmtMoney(c.total, currency)}</Table.Td>
                 <Table.Td>{canExec && <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('common.delete')} onClick={async () => { try { await del(`/work-orders/${w.id}/costs/${c.id}`); await onChange(); } catch (e) { notifyError(e); } }}><IconTrash size={14} /></ActionIcon>}</Table.Td></Table.Tr>
             ))}
           </Table.Tbody>

@@ -1,5 +1,6 @@
 import { Anchor, Badge, Button, Card, Group, Progress, Select, SimpleGrid, Stack, Table, Text, Title } from '@mantine/core';
 import { BarChart } from '@mantine/charts';
+import { useChartAxes } from '@/components/chartDirection';
 import { DatePickerInput } from '@mantine/dates';
 import { IconDownload } from '@tabler/icons-react';
 import { useQuery } from '@tanstack/react-query';
@@ -19,6 +20,7 @@ const RESULT_COLOR: Record<AiCallRow['result'], string> = { Pending: 'gray', Ans
 /** Settings › AI usage (0.15.0): this month against the limit, the last twelve months, by feature and person, and every call. */
 export function AiUsageSettings() {
   const { t } = useTranslation();
+  const axes = useChartAxes();
   const { data: u } = useQuery({ queryKey: ['ai-usage'], queryFn: () => get<AiUsageSummary>('/ai/usage') });
   const [feature, setFeature] = useState<string | null>(null);
   const [result, setResult] = useState<string | null>(null);
@@ -60,14 +62,14 @@ export function AiUsageSettings() {
         <Card><Stack gap="xs">
           <Title order={5}>{t('ai.byFeature')}</Title>
           <Table><Table.Tbody>{u.byFeature.map((f) => (
-            <Table.Tr key={f.feature}><Table.Td>{t(`ai.features.${f.feature}`)}</Table.Td><Table.Td ta="right">{f.actions}</Table.Td><Table.Td ta="right">{fmtUsd(f.cost)}</Table.Td></Table.Tr>
+            <Table.Tr key={f.feature}><Table.Td>{t(`ai.features.${f.feature}`)}</Table.Td><Table.Td ta="end">{f.actions}</Table.Td><Table.Td ta="end">{fmtUsd(f.cost)}</Table.Td></Table.Tr>
           ))}</Table.Tbody></Table>
           {u.byFeature.length === 0 && <Text c="dimmed" fz="sm">{t('common.noRecords')}</Text>}
         </Stack></Card>
       </SimpleGrid>
       <Card><Stack gap="xs">
         <Title order={5}>{t('ai.lastYear')}</Title>
-        <BarChart h={220} dataKey="label" gridAxis="y"
+        <BarChart h={220} dataKey="label" gridAxis="y" {...axes}
           data={u.months.map((m) => ({ label: dayjs(`${m.month}-01`).format('MMM YY'), actions: m.actions, cost: Number(m.cost.toFixed(4)) }))}
           series={[{ name: 'actions', label: t('ai.actions'), color: 'brand.6' }]}
           tooltipProps={{ content: ({ payload }) => payload?.[0] ? (
@@ -77,7 +79,7 @@ export function AiUsageSettings() {
       <Card><Stack gap="xs">
         <Title order={5}>{t('ai.byPerson')}</Title>
         <Table><Table.Tbody>{u.byPerson.map((p) => (
-          <Table.Tr key={`${p.userId}-${p.name}`}><Table.Td>{p.name}</Table.Td><Table.Td ta="right">{p.actions}</Table.Td><Table.Td ta="right">{fmtUsd(p.cost)}</Table.Td></Table.Tr>
+          <Table.Tr key={`${p.userId}-${p.name}`}><Table.Td>{p.name}</Table.Td><Table.Td ta="end">{p.actions}</Table.Td><Table.Td ta="end">{fmtUsd(p.cost)}</Table.Td></Table.Tr>
         ))}</Table.Tbody></Table>
         {u.byPerson.length === 0 && <Text c="dimmed" fz="sm">{t('common.noRecords')}</Text>}
       </Stack></Card>

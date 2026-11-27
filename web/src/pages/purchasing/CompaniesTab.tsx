@@ -76,7 +76,7 @@ export function CompaniesTab() {
           data={[{ value: 'all', label: t('companies.all') }, { value: 'supplier', label: t('companies.role.supplier') }, { value: 'contractor', label: t('companies.role.contractor') },
             { value: 'manufacturer', label: t('companies.role.manufacturer') }]} />
         <Checkbox label={t('common.showInactive')} checked={inactive} onChange={(e) => setInactive(e.currentTarget.checked)} />
-        {manage && <Button size="xs" ml="auto" leftSection={<IconPlus size={14} />} onClick={() => open(null)}>{t('companies.new')}</Button>}
+        {manage && <Button size="xs" ms="auto" leftSection={<IconPlus size={14} />} onClick={() => open(null)}>{t('companies.new')}</Button>}
       </Group>
       <DataTable<SupplierItem> minHeight={200} withTableBorder={false} striped highlightOnHover verticalSpacing="xs" fetching={isFetching} records={rows} noRecordsText={t('companies.none')}
         totalRecords={data?.total ?? 0} recordsPerPage={25} page={page} onPageChange={setPage}

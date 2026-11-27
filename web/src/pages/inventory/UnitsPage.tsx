@@ -39,7 +39,7 @@ export function UnitsPage() {
         <Table.ScrollContainer minWidth={760}>
           <Table verticalSpacing="sm" highlightOnHover>
             <Table.Thead><Table.Tr><Table.Th>{t('units.serial')}</Table.Th><Table.Th>{t('inv.part')}</Table.Th><Table.Th>{t('common.status')}</Table.Th>
-              <Table.Th>{t('units.where')}</Table.Th><Table.Th>{t('units.endOfLife')}</Table.Th><Table.Th ta="right">{t('units.repairs')}</Table.Th></Table.Tr></Table.Thead>
+              <Table.Th>{t('units.where')}</Table.Th><Table.Th>{t('units.endOfLife')}</Table.Th><Table.Th ta="end">{t('units.repairs')}</Table.Th></Table.Tr></Table.Thead>
             <Table.Tbody>
               {!isLoading && (rows ?? []).length === 0 && <Table.Tr><Table.Td colSpan={6}><Text c="dimmed" ta="center" py="md">{t('units.none')}</Text></Table.Td></Table.Tr>}
               {(rows ?? []).map((r) => (
@@ -50,7 +50,7 @@ export function UnitsPage() {
                   <Table.Td>{r.state === 'Fitted' && r.fittedToId ? <Anchor component={Link} to={`/assets/${r.fittedToId}`} fz="sm">{r.fittedToNumber} · {r.fittedToName}</Anchor>
                     : <Text fz="sm">{r.storeName ?? '—'}</Text>}<Text fz="xs" c="dimmed">{r.siteName}</Text></Table.Td>
                   <Table.Td>{fmtDate(r.endOfLifeOn)}</Table.Td>
-                  <Table.Td ta="right">{r.repairCount > 0 ? `${r.repairCount} · ${fmtPrice(r.repairCost, currency)}` : '—'}</Table.Td>
+                  <Table.Td ta="end">{r.repairCount > 0 ? `${r.repairCount} · ${fmtPrice(r.repairCost, currency)}` : '—'}</Table.Td>
                 </Table.Tr>
               ))}
             </Table.Tbody>

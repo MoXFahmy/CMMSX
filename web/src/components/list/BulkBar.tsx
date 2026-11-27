@@ -15,7 +15,7 @@ export function BulkBar({ count, onClear, children }: { count: number; onClear: 
   return (
     <Card p="xs" mb="sm" bg="var(--mantine-color-brand-light)">
       <Group gap="xs">
-        <Text fz="sm" fw={600} ml="xs">{t('common.selected', { count })}</Text>
+        <Text fz="sm" fw={600} ms="xs">{t('common.selected', { count })}</Text>
         {count > BULK_MAX ? <Text fz="sm" c="red">{t('list.tooMany', { max: BULK_MAX })}</Text> : children}
         <Button size="xs" variant="subtle" onClick={onClear}>{t('list.clearSelection')}</Button>
       </Group>

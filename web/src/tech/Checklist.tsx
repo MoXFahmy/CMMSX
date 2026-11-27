@@ -91,7 +91,7 @@ function PhoneStep({ s, locked, bundle, meters: allMeters, job, photos, onChange
         <Text fz="sm" style={{ flex: 1 }}>{s.description}</Text>
         {s.followUpNumber && <Badge size="xs" color="orange">{t('checklist.followUp', { number: s.followUpNumber })}</Badge>}
       </Group>
-      <Stack gap={4} mt={4} pl={22}>
+      <Stack gap={4} mt={4} ps={22}>
         {type === 'Check' && (s.type === undefined
           ? <Checkbox label={t('checklist.ok')} checked={s.isDone} disabled={locked} onChange={(e) => onChange({ isDone: e.currentTarget.checked })} />
           : <AnswerButtons value={st.answer} disabled={locked} fullWidth onChange={onChange} />)}

@@ -94,7 +94,7 @@ export function WorkRequestsPage() {
         <Group gap="xs" align="center" wrap="wrap">
           <TextInput placeholder={t('wr.searchPlaceholder')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 260 }} />
           <Select placeholder={terms.site} data={(h?.sites ?? []).map((s) => ({ value: s.id, label: s.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v })} clearable searchable w={{ base: '100%', xs: 200 }} />
-          <Group gap={6} ml="auto">
+          <Group gap={6} ms="auto">
             <ListTools list="work-requests" lp={lp} cols={cols} exportPath="/work-requests/export" exportQuery={listQuery} total={data?.total} />
           </Group>
         </Group>

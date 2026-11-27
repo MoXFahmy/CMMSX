@@ -163,14 +163,14 @@ export function PrintLayoutEditor({ initial, onClose }: { initial: PrintLayout; 
                           )}
                         </Group>
                         {b.shown && fields.length > 0 && (
-                          <Group gap="sm" mt={6} ml="lg">
+                          <Group gap="sm" mt={6} ms="lg">
                             {fields.map((f) => (
                               <Checkbox key={f.key} size="xs" label={f.label} checked={b.fields.includes(f.key) || fixed.includes(`${b.key}.${f.key}`)} disabled={fixed.includes(`${b.key}.${f.key}`)}
                                 onChange={() => setL(toggleField(l, b.key, f.key))} />
                             ))}
                           </Group>
                         )}
-                        {b.shown && b.key === ASSET_FIELDS_BLOCK && fields.length === 0 && <Text fz="xs" c="dimmed" ml="lg">{t('print.noAssetFields')}</Text>}
+                        {b.shown && b.key === ASSET_FIELDS_BLOCK && fields.length === 0 && <Text fz="xs" c="dimmed" ms="lg">{t('print.noAssetFields')}</Text>}
                       </Card>
                     );
                   })}

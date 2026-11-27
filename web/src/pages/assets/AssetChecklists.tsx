@@ -40,7 +40,7 @@ export function ChecklistsCard({ assetId, categoryId, canEdit }: { assetId?: str
             <Table.Tr key={r.id}>
               <Table.Td><Anchor component={Link} to={`/pm/templates/${r.pmTaskId}`} fz="sm">{r.code} · {r.name}</Anchor></Table.Td>
               <Table.Td><Text fz="xs" c="dimmed">{t('checklists.steps', { count: r.stepCount })}</Text></Table.Td>
-              <Table.Td w={120} ta="right">
+              <Table.Td w={120} ta="end">
                 {own(r) ? canEdit && <ActionIcon variant="subtle" color="red" aria-label={t('common.delete')} onClick={() => remove(r.id)}><IconTrash size={16} /></ActionIcon>
                   : <Badge size="xs" variant="light" color="gray">{t('checklists.fromCategory')}</Badge>}
               </Table.Td>

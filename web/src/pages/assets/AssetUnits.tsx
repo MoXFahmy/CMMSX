@@ -52,7 +52,7 @@ export function UnitCard({ a }: { a: AssetDetail }) {
                     {m.cost != null && <> · {fmtPrice(m.cost, currency)}</>}
                   </Text>
                   {m.note && <Text fz="xs">{m.note}</Text>}</Table.Td>
-                <Table.Td ta="right"><Text fz="xs" c="dimmed">{m.byName}</Text></Table.Td>
+                <Table.Td ta="end"><Text fz="xs" c="dimmed">{m.byName}</Text></Table.Td>
               </Table.Tr>
             ))}
           </Table.Tbody>

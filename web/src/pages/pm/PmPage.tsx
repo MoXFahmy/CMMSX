@@ -102,7 +102,7 @@ function SchedulesTab() {
           <TextInput placeholder={t('common.search')} leftSection={<IconSearch size={16} />} value={lp.search} onChange={(e) => lp.setSearch(e.currentTarget.value)} w={{ base: '100%', sm: 260 }} />
           <Select placeholder={terms.site} data={(h?.sites ?? []).map((x) => ({ value: x.id, label: x.name }))} value={p('siteId') || null} onChange={(v) => set({ siteId: v })} clearable w={{ base: '100%', xs: 200 }} />
           <Switch label={t('pm.active')} checked={p('showInactive') !== 'true'} onChange={(e) => set({ showInactive: e.currentTarget.checked ? null : 'true' })} />
-          <Group gap={6} ml="auto">
+          <Group gap={6} ms="auto">
             <ListTools list="pm-schedules" lp={lp} cols={cols} exportPath="/pm-schedules/export" exportQuery={listQuery} total={data?.total} />
           </Group>
         </Group>
@@ -238,8 +238,8 @@ function ForecastTab() {
                 <Table.Td><Text fz="sm" lineClamp={1}>{x.name}</Text></Table.Td>
                 <Table.Td visibleFrom="sm"><Text fz="sm" c="dimmed" lineClamp={1}>{x.taskName}</Text></Table.Td>
                 <Table.Td visibleFrom="md"><Text fz="sm" c="dimmed">{x.assetNumber ?? x.siteName}</Text></Table.Td>
-                <Table.Td w={110} ta="right"><Text fz="sm" c="dimmed">{x.cost ? fmtMoney(x.cost, currency) : '—'}</Text></Table.Td>
-                {canGenerate && <Table.Td w={130} ta="right">{x.isNext && (
+                <Table.Td w={110} ta="end"><Text fz="sm" c="dimmed">{x.cost ? fmtMoney(x.cost, currency) : '—'}</Text></Table.Td>
+                {canGenerate && <Table.Td w={130} ta="end">{x.isNext && (
                   <Button size="compact-xs" variant="light" onClick={() => generateNow(x.id, x.date, () => Promise.all([
                     qc.invalidateQueries({ queryKey: ['pm-forecast'] }), qc.invalidateQueries({ queryKey: ['work-orders'] })]))}>{t('pm.generateNow')}</Button>
                 )}</Table.Td>}
@@ -342,7 +342,7 @@ function ReadingDrawer({ meter, onClose }: { meter: MeterItem | null; onClose: (
         <Title order={6} mt="md">{t('pm.readings')}</Title>
         <Table verticalSpacing={4}><Table.Tbody>
           {(data ?? []).map((r) => (
-            <Table.Tr key={r.id}><Table.Td>{fmtDateTime(r.readAt)}</Table.Td><Table.Td ta="right" fw={500}>{fmtNumber(r.value)} {meter.unit}</Table.Td><Table.Td><Text fz="xs" c="dimmed">{r.byName}{r.note && ` · ${r.note}`}</Text></Table.Td></Table.Tr>
+            <Table.Tr key={r.id}><Table.Td>{fmtDateTime(r.readAt)}</Table.Td><Table.Td ta="end" fw={500}>{fmtNumber(r.value)} {meter.unit}</Table.Td><Table.Td><Text fz="xs" c="dimmed">{r.byName}{r.note && ` · ${r.note}`}</Text></Table.Td></Table.Tr>
           ))}
         </Table.Tbody></Table>
       </Stack>}

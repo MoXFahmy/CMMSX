@@ -35,7 +35,7 @@ export function OccurrencesDrawer({ scheduleId, opened, onClose }: { scheduleId:
                   <Table.Td><Text fz="sm">{fmtDate(d.date)}</Text></Table.Td>
                   <Table.Td><Text fz="sm" c="dimmed">{fmtDate(d.dueDate)}</Text></Table.Td>
                   <Table.Td><Text fz="sm">{d.templateName}</Text></Table.Td>
-                  <Table.Td ta="right">
+                  <Table.Td ta="end">
                     {d.status === 'Generated'
                       ? (d.workOrderId ? <Anchor component={Link} to={`/work-orders/${d.workOrderId}`} fz="sm">{d.workOrderNumber}</Anchor>
                         : d.groupId ? <Anchor component={Link} to={`/work-groups/${d.groupId}`} fz="sm">{d.groupNumber}</Anchor> : <Badge variant="light">{t('pm12.generated')}</Badge>)

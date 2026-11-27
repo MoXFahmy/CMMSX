@@ -71,8 +71,8 @@ export function RequestDetailPage() {
             <Table.ScrollContainer minWidth={820}>
               <Table verticalSpacing="sm" styles={{ th: { whiteSpace: 'nowrap' } }}>
                 <Table.Thead><Table.Tr>
-                  <Table.Th w={36}>#</Table.Th><Table.Th>{t('pr.description')}</Table.Th><Table.Th>{t('pr.store')}</Table.Th><Table.Th ta="right">{t('pr.quantity')}</Table.Th>
-                  <Table.Th>{t('pr.neededBy')}</Table.Th><Table.Th ta="right">{t('pr.estimatedPrice')}</Table.Th><Table.Th>{t('pr.ordered')}</Table.Th>
+                  <Table.Th w={36}>#</Table.Th><Table.Th>{t('pr.description')}</Table.Th><Table.Th>{t('pr.store')}</Table.Th><Table.Th ta="end">{t('pr.quantity')}</Table.Th>
+                  <Table.Th>{t('pr.neededBy')}</Table.Th><Table.Th ta="end">{t('pr.estimatedPrice')}</Table.Th><Table.Th>{t('pr.ordered')}</Table.Th>
                 </Table.Tr></Table.Thead>
                 <Table.Tbody>
                   {r.lines.map((l) => (
@@ -84,9 +84,9 @@ export function RequestDetailPage() {
                         {!l.workOrder && l.asset && <Text fz="xs" c="dimmed">{l.asset.assetNumber} · {l.asset.name}</Text>}
                         {l.reason && <Text fz="xs" c="dimmed">{l.reason}</Text>}</Table.Td>
                       <Table.Td>{l.store ? <Text fz="sm">{l.store.code}</Text> : <Text fz="sm" c="dimmed">—</Text>}</Table.Td>
-                      <Table.Td ta="right">{fmtQty(l.quantity)} {l.unitOfMeasure}</Table.Td>
+                      <Table.Td ta="end">{fmtQty(l.quantity)} {l.unitOfMeasure}</Table.Td>
                       <Table.Td>{fmtDate(l.neededBy ?? r.neededBy)}</Table.Td>
-                      <Table.Td ta="right">{l.estimatedUnitPrice == null ? '—' : fmtPrice(l.estimatedUnitPrice, currency)}</Table.Td>
+                      <Table.Td ta="end">{l.estimatedUnitPrice == null ? '—' : fmtPrice(l.estimatedUnitPrice, currency)}</Table.Td>
                       <Table.Td>{l.order
                         ? <Stack gap={0}><Anchor component={Link} to={`/purchasing/orders/${l.order.id}`} fz="sm">{l.order.number}</Anchor>
                           <Text fz="xs" c="dimmed">{t('pr.received')} {fmtQty(l.received)} / {fmtQty(l.ordered)}</Text></Stack>
@@ -96,7 +96,7 @@ export function RequestDetailPage() {
                 </Table.Tbody>
               </Table>
             </Table.ScrollContainer>
-            {estimate > 0 && <Text ta="right" p="md" fz="sm" fw={600}>{t('pr.estimate')}: {fmtPrice(estimate, currency)}</Text>}
+            {estimate > 0 && <Text ta="end" p="md" fz="sm" fw={600}>{t('pr.estimate')}: {fmtPrice(estimate, currency)}</Text>}
           </Card>
           {r.notes && <Card mt="md"><Text fz="xs" c="dimmed" tt="uppercase" fw={600}>{t('pr.notes')}</Text><Text fz="sm" style={{ whiteSpace: 'pre-wrap' }}>{r.notes}</Text></Card>}
           <Card mt="md">

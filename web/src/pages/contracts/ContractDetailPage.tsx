@@ -79,11 +79,11 @@ export function ContractDetailPage() {
             <Card p={0}>
               <Title order={5} p="md" pb="xs">{t('contracts.periods')}</Title>
               <Table striped>
-                <Table.Thead><Table.Tr><Table.Th>#</Table.Th><Table.Th>{t('contracts.start')}</Table.Th><Table.Th>{t('contracts.end')}</Table.Th><Table.Th ta="right">{t('contracts.value')}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
+                <Table.Thead><Table.Tr><Table.Th>#</Table.Th><Table.Th>{t('contracts.start')}</Table.Th><Table.Th>{t('contracts.end')}</Table.Th><Table.Th ta="end">{t('contracts.value')}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
                 <Table.Tbody>
                   {c.periods.map((p) => (
                     <Table.Tr key={p.id}><Table.Td>{p.number}</Table.Td><Table.Td>{fmtDate(p.startDate)}</Table.Td><Table.Td>{fmtDate(p.endDate)}</Table.Td>
-                      <Table.Td ta="right">{fmtPrice(p.value, currency)}</Table.Td><Table.Td>{p.isRenewal && <Badge size="xs" variant="light">{t('contracts.renewal')}</Badge>}</Table.Td></Table.Tr>
+                      <Table.Td ta="end">{fmtPrice(p.value, currency)}</Table.Td><Table.Td>{p.isRenewal && <Badge size="xs" variant="light">{t('contracts.renewal')}</Badge>}</Table.Td></Table.Tr>
                   ))}
                 </Table.Tbody>
               </Table>
@@ -96,7 +96,7 @@ export function ContractDetailPage() {
                     {c.amendments.map((a) => (
                       <Table.Tr key={a.id}><Table.Td w={120}>{fmtDate(a.date)}</Table.Td><Table.Td><Text fz="sm" style={{ whiteSpace: 'pre-wrap' }}>{a.description}</Text>
                         {a.createdByName && <Text fz="xs" c="dimmed">{a.createdByName}</Text>}</Table.Td>
-                        <Table.Td ta="right">{a.newValue != null ? fmtPrice(a.newValue, currency) : ''}</Table.Td></Table.Tr>
+                        <Table.Td ta="end">{a.newValue != null ? fmtPrice(a.newValue, currency) : ''}</Table.Td></Table.Tr>
                     ))}
                   </Table.Tbody>
                 </Table>
@@ -113,7 +113,7 @@ export function ContractDetailPage() {
                   <Table.Tbody>
                     {c.assets.map((a) => (
                       <Table.Tr key={a.assetId}><Table.Td><Anchor component={Link} to={`/assets/${a.assetId}`} fz="sm">{a.assetNumber}</Anchor><Text fz="xs" c="dimmed">{a.name} · {a.siteName}</Text></Table.Td>
-                        <Table.Td ta="right">{a.yearlyCost != null ? `${fmtPrice(a.yearlyCost, currency)} / ${t('contracts.per.Year')}` : ''}</Table.Td></Table.Tr>
+                        <Table.Td ta="end">{a.yearlyCost != null ? `${fmtPrice(a.yearlyCost, currency)} / ${t('contracts.per.Year')}` : ''}</Table.Td></Table.Tr>
                     ))}
                   </Table.Tbody>
                 </Table>

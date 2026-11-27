@@ -55,13 +55,13 @@ export function BrandsSettings({ editable }: { editable: boolean }) {
       <Grid>
         <Grid.Col span={{ base: 12, md: 6 }}>
           <Table striped highlightOnHover>
-            <Table.Thead><Table.Tr><Table.Th>{t('brands.brand')}</Table.Th><Table.Th ta="right">{t('brands.models')}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
+            <Table.Thead><Table.Tr><Table.Th>{t('brands.brand')}</Table.Th><Table.Th ta="end">{t('brands.models')}</Table.Th><Table.Th /></Table.Tr></Table.Thead>
             <Table.Tbody>
               {(data ?? []).length === 0 && <Table.Tr><Table.Td colSpan={3}><Text fz="sm" c="dimmed">{t('brands.none')}</Text></Table.Td></Table.Tr>}
               {(data ?? []).map((b) => (
                 <Table.Tr key={b.id} onClick={() => setChosen(b.id)} style={{ cursor: 'pointer' }} bg={b.id === brand?.id ? 'var(--mantine-primary-color-light)' : undefined}>
                   <Table.Td><Group gap={6}><Text fz="sm" fw={600}>{b.name}</Text>{!b.isActive && <Badge size="xs" color="gray">{t('common.inactive')}</Badge>}</Group></Table.Td>
-                  <Table.Td ta="right">{b.models.length}</Table.Td>
+                  <Table.Td ta="end">{b.models.length}</Table.Td>
                   <Table.Td>{editable && <Group gap={4} justify="flex-end" wrap="nowrap">
                     <ActionIcon variant="subtle" aria-label={t('common.edit')} onClick={(e) => { e.stopPropagation(); open({ kind: 'brand', id: b.id, name: b.name, isActive: b.isActive }); }}><IconEdit size={16} /></ActionIcon>
                     <ActionIcon variant="subtle" color="red" aria-label={t('common.delete')} onClick={(e) => { e.stopPropagation(); confirmDelete(b.name, async () => {

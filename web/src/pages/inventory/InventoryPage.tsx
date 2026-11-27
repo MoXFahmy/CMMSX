@@ -137,7 +137,7 @@ function PartsTab() {
           <Checkbox label={t('inv.criticalOnly')} checked={!!p('critical')} onChange={(e) => set({ critical: e.currentTarget.checked ? 'true' : null })} />
           <Checkbox label={t('common.showInactive')} checked={!!p('inactive')} onChange={(e) => set({ inactive: e.currentTarget.checked ? '1' : null })} />
           {filtersActive && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')} onClick={() => lp.replaceAll('')}><IconFilterOff size={16} /></ActionIcon></Tooltip>}
-          <Group gap={6} ml="auto">
+          <Group gap={6} ms="auto">
             <ListTools list="parts" lp={lp} cols={cols} exportPath="/parts/export" exportQuery={listQuery} total={data?.total} />
           </Group>
         </Group>
@@ -272,7 +272,7 @@ export function TransactionsTable({ partId, workOrderId, purchaseOrderId, compac
           <Select placeholder={t('common.type')} data={(['Receipt', 'Issue', 'Return', 'Adjustment', 'TransferOut', 'TransferIn'] as const).map((x) => ({ value: x, label: t(`txType.${x}`) }))}
             value={type} onChange={(v) => { setType(v as StockTransactionType | null); setPage(1); }} clearable w={170} />
           <DatePickerInput type="range" placeholder={t('inv.dateRange')} value={range} onChange={(v) => { setRange(v as [string | null, string | null]); setPage(1); }} clearable w={250} valueFormat="DD MMM YYYY" />
-          <Button variant="default" leftSection={<IconDownload size={16} />} onClick={exportCsv} ml="auto">{t('common.export')}</Button>
+          <Button variant="default" leftSection={<IconDownload size={16} />} onClick={exportCsv} ms="auto">{t('common.export')}</Button>
         </Group>
       )}
       <DataTable<StockTransactionItem>
@@ -332,7 +332,7 @@ function StockTakeTab() {
       <Group p="md" gap="xs" wrap="wrap" className="no-print">
         <Select placeholder={t('inv.chooseStore')} data={(stores ?? []).filter((s) => s.isActive).map((s) => ({ value: s.id, label: `${s.code} · ${s.name}` }))} value={storeId} onChange={setStoreId} w={260} />
         <TextInput placeholder={t('inv.filterRows')} leftSection={<IconSearch size={16} />} value={filter} onChange={(e) => setFilter(e.currentTarget.value)} w={220} disabled={!storeId} />
-        <Group ml="auto" gap="xs">
+        <Group ms="auto" gap="xs">
           <Button variant="default" onClick={printSheet} disabled={!data?.length}>{t('inv.printSheet')}</Button>
           <Button leftSection={<IconClipboardCheck size={16} />} disabled={!changed.length} loading={saving} onClick={postCount}>{t('inv.postCount', { count: changed.length })}</Button>
         </Group>

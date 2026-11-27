@@ -179,7 +179,7 @@ function Row({ label, rowKey, days, cells, capacity, hours, day, addAway, canEdi
   const navigate = useNavigate();
   return (
     <>
-      <Group gap={4} wrap="nowrap" justify="space-between" py={6} pr="xs" style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>
+      <Group gap={4} wrap="nowrap" justify="space-between" py={6} pe="xs" style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>
         <Text fz="sm" fw={500} lineClamp={2}>{label}</Text>
         {addAway && <Tooltip label={t('availability.addAway')}><ActionIcon size="xs" variant="subtle" aria-label={t('availability.addAway')} onClick={() => navigate(addAway)}><IconPlus size={12} /></ActionIcon></Tooltip>}
       </Group>
@@ -203,13 +203,13 @@ function Cell({ id, items, rowKey, capacity, hours, day, canEdit, takeAs, onChan
   const tint = away?.color && /^#[0-9a-f]{6}$/i.test(away.color) ? `${away.color}26` : undefined;
   return (
     <Stack ref={setNodeRef} gap={4} p={4} mih={64}
-      style={{ borderBottom: '1px solid var(--mantine-color-default-border)', borderLeft: '1px solid var(--mantine-color-default-border)',
+      style={{ borderBottom: '1px solid var(--mantine-color-default-border)', borderInlineStart: '1px solid var(--mantine-color-default-border)',
         background: isOver ? 'var(--mantine-color-brand-light)' : over ? 'var(--mantine-color-red-light)' : tint }}>
       {day && day.slots.length > 0 && (
         <Text fz={10} fw={600} lineClamp={1} title={day.slots.map((x) => x.name).join(', ')}>{day.slots.map((x) => (x.hours ? `${x.name} ${x.hours} h` : x.name)).join(' · ')}</Text>
       )}
       {capacity !== undefined && ((hours ?? 0) > 0 || (day?.slots.length ?? 0) > 0) && (
-        <Text fz={10} c={over ? 'red' : 'dimmed'} fw={over ? 700 : undefined} ta="right">{t('planning.load', { hours: Math.round((hours ?? 0) * 10) / 10, capacity })}</Text>
+        <Text fz={10} c={over ? 'red' : 'dimmed'} fw={over ? 700 : undefined} ta="end">{t('planning.load', { hours: Math.round((hours ?? 0) * 10) / 10, capacity })}</Text>
       )}
       {items.map((x) => (isPm(x)
         ? <PmCard key={`pm-${x.id}-${x.date}`} pm={x} canGenerate={canGenerate} onGenerated={onGenerated} />
@@ -227,7 +227,7 @@ function JobCard({ job, row, canEdit, canTake = false, onChanged, showStop = fal
     <Paper ref={setNodeRef} {...listeners} {...attributes} withBorder p={4} radius="sm" shadow={isDragging ? 'md' : undefined}
       onClick={() => { if (Date.now() - lastDragEnd > 300) navigate(`/work-orders/${job.id}`); }}
       // touch-action: a finger on a card drags it instead of scrolling the page (tablets).
-      style={{ borderLeft: `3px solid var(--mantine-color-${priorityColors[job.priority]}-6)`, cursor: canEdit ? 'grab' : 'pointer', opacity: isDragging ? 0.8 : 1,
+      style={{ borderInlineStart: `3px solid var(--mantine-color-${priorityColors[job.priority]}-6)`, cursor: canEdit ? 'grab' : 'pointer', opacity: isDragging ? 0.8 : 1,
         touchAction: canEdit ? 'none' : undefined,
         transform: transform ? `translate(${transform.x}px, ${transform.y}px)` : undefined, zIndex: isDragging ? 10 : undefined, background: 'var(--mantine-color-body)' }}>
       <Group justify="space-between" gap={4} wrap="nowrap">
@@ -285,7 +285,7 @@ function Tray({ title, hint, jobs, canEdit }: { title: string; hint: string; job
           {jobs.map((j) => (
             <Box key={j.id}>
               <JobCard job={j} row={TRAY} canEdit={canEdit} />
-              {j.day && <Text fz={10} c="dimmed" pl={4}>{t('planning.wasPlanned', { date: dayjs(j.day).format('D MMM') })}</Text>}
+              {j.day && <Text fz={10} c="dimmed" ps={4}>{t('planning.wasPlanned', { date: dayjs(j.day).format('D MMM') })}</Text>}
             </Box>
           ))}
         </Stack>

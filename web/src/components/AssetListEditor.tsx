@@ -20,7 +20,7 @@ export function AssetListEditor({ value, onChange, siteId, error }: { value: Ass
       {value.length === 0 && <Text fz="sm" c="dimmed">{t('pm.noAssets')}</Text>}
       {value.map((a, i) => (
         <Group key={a.id} gap="xs" wrap="nowrap">
-          <Text fz="sm" c="dimmed" w={28} ta="right">{i + 1}.</Text>
+          <Text fz="sm" c="dimmed" w={28} ta="end">{i + 1}.</Text>
           <Text fz="sm" style={{ flex: 1, minWidth: 0 }} truncate>{a.assetNumber} · {a.name}</Text>
           <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('pm.moveUp')} disabled={i === 0} onClick={() => move(i, -1)}><IconArrowUp size={14} /></ActionIcon>
           <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('pm.moveDown')} disabled={i === value.length - 1} onClick={() => move(i, 1)}><IconArrowDown size={14} /></ActionIcon>

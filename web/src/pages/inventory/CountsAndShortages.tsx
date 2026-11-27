@@ -145,16 +145,16 @@ function CountDrawer({ id, onClose }: { id: string | null; onClose: () => void }
           <Card p={0}>
             <Table striped verticalSpacing={6}>
               <Table.Thead><Table.Tr>
-                <Table.Th>{t('inv.part')}</Table.Th><Table.Th>{t('invPhone.bin')}</Table.Th><Table.Th ta="right">{t('invPhone.expected')}</Table.Th>
-                <Table.Th ta="right">{t('invPhone.counted')}</Table.Th><Table.Th ta="right">{t('invPhone.difference')}</Table.Th><Table.Th>{t('invPhone.countedBy')}</Table.Th>
+                <Table.Th>{t('inv.part')}</Table.Th><Table.Th>{t('invPhone.bin')}</Table.Th><Table.Th ta="end">{t('invPhone.expected')}</Table.Th>
+                <Table.Th ta="end">{t('invPhone.counted')}</Table.Th><Table.Th ta="end">{t('invPhone.difference')}</Table.Th><Table.Th>{t('invPhone.countedBy')}</Table.Th>
               </Table.Tr></Table.Thead>
               <Table.Tbody>
                 {c.lines.length === 0 && <Table.Tr><Table.Td colSpan={6}><Text c="dimmed" ta="center" py="md">{t('invPhone.nothingCounted')}</Text></Table.Td></Table.Tr>}
                 {c.lines.map((l) => (
                   <Table.Tr key={l.partId}>
                     <Table.Td><Text fz="sm">{l.partNumber} · {l.partName}</Text></Table.Td><Table.Td>{l.bin ?? '—'}</Table.Td>
-                    <Table.Td ta="right">{fmtQty(l.expected)}</Table.Td><Table.Td ta="right">{fmtQty(l.counted)}{l.movedSince !== 0 && <Text fz="xs" c="dimmed">{t('invPhone.movedSince', { qty: `${l.movedSince > 0 ? '+' : ''}${fmtQty(l.movedSince)}` })}</Text>}</Table.Td>
-                    <Table.Td ta="right"><Text fz="sm" c={l.difference < 0 ? 'red' : l.difference > 0 ? 'teal' : undefined}>{l.difference > 0 ? '+' : ''}{fmtQty(l.difference)}</Text></Table.Td>
+                    <Table.Td ta="end">{fmtQty(l.expected)}</Table.Td><Table.Td ta="end">{fmtQty(l.counted)}{l.movedSince !== 0 && <Text fz="xs" c="dimmed">{t('invPhone.movedSince', { qty: `${l.movedSince > 0 ? '+' : ''}${fmtQty(l.movedSince)}` })}</Text>}</Table.Td>
+                    <Table.Td ta="end"><Text fz="sm" c={l.difference < 0 ? 'red' : l.difference > 0 ? 'teal' : undefined}>{l.difference > 0 ? '+' : ''}{fmtQty(l.difference)}</Text></Table.Td>
                     <Table.Td><Text fz="xs" c="dimmed">{l.countedByName} · {fmtDateTime(l.countedAt)}</Text></Table.Td>
                   </Table.Tr>
                 ))}

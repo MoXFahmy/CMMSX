@@ -102,7 +102,7 @@ function OrdersTab() {
           <Checkbox label={t('po.overdueOnly')} checked={!!p('overdue')} onChange={(e) => set({ overdue: e.currentTarget.checked ? 'true' : null })} />
           {filtersActive && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')}
             onClick={() => lp.replaceAll(view !== 'open' ? `view=${view}` : '')}><IconFilterOff size={16} /></ActionIcon></Tooltip>}
-          <Group gap={6} ml="auto">
+          <Group gap={6} ms="auto">
             <ListTools list="purchase-orders" lp={lp} cols={cols} exportPath="/purchase-orders/export" exportQuery={listQuery} total={data?.total} />
           </Group>
         </Group>

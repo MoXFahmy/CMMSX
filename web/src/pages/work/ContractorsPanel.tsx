@@ -73,16 +73,16 @@ export function ContractorsPanel({ w, canPlan, canExec, onChange, currency }: { 
         <Table verticalSpacing="sm" highlightOnHover>
           <Table.Thead><Table.Tr>
             <Table.Th>{t('contracts.company')}</Table.Th><Table.Th>{t('companies.category')}</Table.Th><Table.Th>{t('contractors.person')}</Table.Th>
-            <Table.Th ta="right">{t('contractors.planned')}</Table.Th><Table.Th ta="right">{t('contractors.done')}</Table.Th><Table.Th>{t('wo.date')}</Table.Th>
-            <Table.Th ta="right">{t('contractors.rate')}</Table.Th><Table.Th ta="right">{t('wo.cost')}</Table.Th><Table.Th />
+            <Table.Th ta="end">{t('contractors.planned')}</Table.Th><Table.Th ta="end">{t('contractors.done')}</Table.Th><Table.Th>{t('wo.date')}</Table.Th>
+            <Table.Th ta="end">{t('contractors.rate')}</Table.Th><Table.Th ta="end">{t('wo.cost')}</Table.Th><Table.Th />
           </Table.Tr></Table.Thead>
           <Table.Tbody>
             {lines.length === 0 && <Table.Tr><Table.Td colSpan={9}><Text c="dimmed" fz="sm" ta="center">{t('contractors.none')}</Text></Table.Td></Table.Tr>}
             {lines.map((l) => (
               <Table.Tr key={l.id}>
                 <Table.Td>{l.companyName}</Table.Td><Table.Td>{l.categoryName ?? '—'}</Table.Td><Table.Td>{l.personName ?? '—'}</Table.Td>
-                <Table.Td ta="right">{l.plannedHours || '—'}</Table.Td><Table.Td ta="right">{l.hoursDone || '—'}</Table.Td><Table.Td>{fmtDate(l.doneOn)}</Table.Td>
-                <Table.Td ta="right">{fmtMoney(l.rate, currency)}</Table.Td><Table.Td ta="right">{fmtMoney(l.cost, currency)}</Table.Td>
+                <Table.Td ta="end">{l.plannedHours || '—'}</Table.Td><Table.Td ta="end">{l.hoursDone || '—'}</Table.Td><Table.Td>{fmtDate(l.doneOn)}</Table.Td>
+                <Table.Td ta="end">{fmtMoney(l.rate, currency)}</Table.Td><Table.Td ta="end">{fmtMoney(l.cost, currency)}</Table.Td>
                 <Table.Td><Group gap={2} wrap="nowrap" justify="flex-end">
                   {(canPlan || canExec) && <ActionIcon variant="subtle" size="sm" aria-label={t('common.edit')} onClick={() => open(l)}><IconEdit size={14} /></ActionIcon>}
                   {canPlan && <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('common.delete')}
@@ -93,8 +93,8 @@ export function ContractorsPanel({ w, canPlan, canExec, onChange, currency }: { 
             {lines.length > 0 && (
               <Table.Tr fw={700}>
                 <Table.Td colSpan={3}>{t('plan.total')}</Table.Td>
-                <Table.Td ta="right">{lines.reduce((a, l) => a + l.plannedHours, 0)}</Table.Td><Table.Td ta="right">{lines.reduce((a, l) => a + l.hoursDone, 0)}</Table.Td><Table.Td />
-                <Table.Td /><Table.Td ta="right">{fmtMoney(lines.reduce((a, l) => a + l.cost, 0), currency)}</Table.Td><Table.Td />
+                <Table.Td ta="end">{lines.reduce((a, l) => a + l.plannedHours, 0)}</Table.Td><Table.Td ta="end">{lines.reduce((a, l) => a + l.hoursDone, 0)}</Table.Td><Table.Td />
+                <Table.Td /><Table.Td ta="end">{fmtMoney(lines.reduce((a, l) => a + l.cost, 0), currency)}</Table.Td><Table.Td />
               </Table.Tr>
             )}
           </Table.Tbody>

@@ -71,8 +71,8 @@ export function PartSuppliers({ partId, unit }: { partId: string; unit: string }
       <Table.ScrollContainer minWidth={820}>
         <Table striped verticalSpacing="xs">
           <Table.Thead><Table.Tr>
-            <Table.Th w={36} /><Table.Th>{t('catalogue.supplier')}</Table.Th><Table.Th>{t('catalogue.pack')}</Table.Th><Table.Th ta="right">{t('catalogue.price')}</Table.Th>
-            <Table.Th ta="right">{t('catalogue.discount')}</Table.Th><Table.Th ta="right">{t('catalogue.leadTime')}</Table.Th><Table.Th ta="right">{t('catalogue.minPacks')}</Table.Th>
+            <Table.Th w={36} /><Table.Th>{t('catalogue.supplier')}</Table.Th><Table.Th>{t('catalogue.pack')}</Table.Th><Table.Th ta="end">{t('catalogue.price')}</Table.Th>
+            <Table.Th ta="end">{t('catalogue.discount')}</Table.Th><Table.Th ta="end">{t('catalogue.leadTime')}</Table.Th><Table.Th ta="end">{t('catalogue.minPacks')}</Table.Th>
             <Table.Th>{t('catalogue.lastPaid')}</Table.Th><Table.Th />
           </Table.Tr></Table.Thead>
           <Table.Tbody>
@@ -91,10 +91,10 @@ export function PartSuppliers({ partId, unit }: { partId: string; unit: string }
                   {r.supplierPartNumber && <Text fz="xs" c="dimmed">{r.supplierPartNumber}</Text>}
                 </Table.Td>
                 <Table.Td><Text fz="sm">{r.packName}</Text>{r.packSize !== 1 && <Text fz="xs" c="dimmed">{t('catalogue.piecesPerPack', { count: r.packSize, unit })}</Text>}</Table.Td>
-                <Table.Td ta="right">{r.packPrice != null ? fmtPrice(r.packPrice, r.currency) : '—'}</Table.Td>
-                <Table.Td ta="right">{r.discountPercent ? `${r.discountPercent}%` : '—'}</Table.Td>
-                <Table.Td ta="right">{r.leadTimeDays != null ? t('catalogue.days', { count: r.leadTimeDays }) : '—'}</Table.Td>
-                <Table.Td ta="right">{r.minPacks}</Table.Td>
+                <Table.Td ta="end">{r.packPrice != null ? fmtPrice(r.packPrice, r.currency) : '—'}</Table.Td>
+                <Table.Td ta="end">{r.discountPercent ? `${r.discountPercent}%` : '—'}</Table.Td>
+                <Table.Td ta="end">{r.leadTimeDays != null ? t('catalogue.days', { count: r.leadTimeDays }) : '—'}</Table.Td>
+                <Table.Td ta="end">{r.minPacks}</Table.Td>
                 <Table.Td>
                   {r.lastPaidPrice != null ? <Group gap={4} wrap="nowrap">
                     <Text fz="sm">{fmtPrice(r.lastPaidPrice, r.lastPaidCurrency ?? r.currency)}{r.lastPaidDiscount ? ` −${r.lastPaidDiscount}%` : ''}</Text>

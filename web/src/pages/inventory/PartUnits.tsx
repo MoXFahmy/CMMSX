@@ -206,7 +206,7 @@ export function PartUnits({ part }: { part: PartDetail }) {
             <Table.Th w={36}><Checkbox aria-label={t('units.selectAll')} checked={shown.length > 0 && selected.length === shown.length}
               onChange={(e) => setSelected(e.currentTarget.checked ? shown.map((r) => r.id) : [])} /></Table.Th>
             <Table.Th>{t('units.serial')}</Table.Th><Table.Th>{t('common.status')}</Table.Th><Table.Th>{t('units.where')}</Table.Th>
-            <Table.Th>{t('units.endOfLife')}</Table.Th><Table.Th ta="right">{t('units.repairs')}</Table.Th><Table.Th w={48} />
+            <Table.Th>{t('units.endOfLife')}</Table.Th><Table.Th ta="end">{t('units.repairs')}</Table.Th><Table.Th w={48} />
           </Table.Tr></Table.Thead>
           <Table.Tbody>
             {!isLoading && shown.length === 0 && <Table.Tr><Table.Td colSpan={7}><Text c="dimmed" ta="center" py="md">{t('units.none')}</Text></Table.Td></Table.Tr>}
@@ -222,7 +222,7 @@ export function PartUnits({ part }: { part: PartDetail }) {
                     ? <Anchor component={Link} to={`/assets/${r.fittedToId}`} fz="sm">{r.fittedToNumber} · {r.fittedToName}</Anchor>
                     : <Text fz="sm">{r.storeName ?? '—'}</Text>}<Text fz="xs" c="dimmed">{r.siteName}</Text></Table.Td>
                   <Table.Td><Text fz="sm" c={ending ? (r.endOfLifeOn! < today ? 'red' : 'orange') : undefined}>{fmtDate(r.endOfLifeOn)}</Text></Table.Td>
-                  <Table.Td ta="right">{r.repairCount > 0 ? <Text fz="sm">{r.repairCount} · {fmtPrice(r.repairCost, currency)}</Text> : '—'}</Table.Td>
+                  <Table.Td ta="end">{r.repairCount > 0 ? <Text fz="sm">{r.repairCount} · {fmtPrice(r.repairCost, currency)}</Text> : '—'}</Table.Td>
                   <Table.Td>{transact && actionsFor(r.state).length > 0 && <Menu position="bottom-end">
                     <Menu.Target><ActionIcon variant="subtle" aria-label={t('common.actions')}><IconDots size={16} /></ActionIcon></Menu.Target>
                     <Menu.Dropdown>{actionsFor(r.state).map((a) =>

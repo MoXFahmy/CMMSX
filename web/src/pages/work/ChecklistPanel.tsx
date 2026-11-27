@@ -142,7 +142,7 @@ function StepRow({ w, x, canExec, canEdit, locked, onChange }: { w: WorkOrderDet
           {canExec && (canEdit || !(x.beforeStart || x.photoRequired)) && <ActionIcon variant="subtle" color="gray" size="sm" aria-label={t('common.delete')} onClick={async () => { try { await del(`/work-orders/${w.id}/tasks/${x.id}`); await onChange(); } catch (e) { notifyError(e); } }}><IconTrash size={14} /></ActionIcon>}
         </Group>
       </Group>
-      <Group gap="xs" pl={24} wrap="wrap" align="center">
+      <Group gap="xs" ps={24} wrap="wrap" align="center">
         {x.type === 'Check' && <AnswerButtons value={x.answer} disabled={!editable || busy} onChange={(c) => void send(c)} />}
         {(x.type === 'Number' || x.type === 'Meter') && (
           <>

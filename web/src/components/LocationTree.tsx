@@ -48,7 +48,7 @@ function TreeRow({ node, depth, expanded, toggle, selected, onSelect, forceOpen 
   const total = subtreeCount(node);
   return (
     <>
-      <Group gap={4} wrap="nowrap" className="tree-node" data-selected={selected === node.id} pl={depth * 16 + 4} pr={6} py={4}
+      <Group gap={4} wrap="nowrap" className="tree-node" data-selected={selected === node.id} ps={depth * 16 + 4} pe={6} py={4}
         onClick={() => onSelect(node)} style={{ cursor: 'pointer', opacity: node.isActive ? 1 : 0.55 }}>
         <ActionIcon variant="subtle" color="gray" size="sm" onClick={(e) => { e.stopPropagation(); toggle(node.id); }}
           style={{ visibility: node.children.length ? 'visible' : 'hidden', transform: open ? 'rotate(90deg)' : dir === 'rtl' ? 'scaleX(-1)' : undefined, transition: 'transform 120ms' }}

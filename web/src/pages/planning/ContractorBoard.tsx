@@ -71,7 +71,7 @@ export function ContractorBoard({ from, to, days, siteId, companyId, categoryId,
                 {data.companies.length === 0 && <Text fz="sm" c="dimmed" p="sm" style={{ gridColumn: `1 / span ${days.length + 1}` }}>{t('planning.noVisits')}</Text>}
                 {data.companies.map((c) => (
                   <Box key={c.id} style={{ display: 'contents' }}>
-                    <Text fz="sm" fw={500} py={6} pr="xs" lineClamp={2} style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>{c.name}</Text>
+                    <Text fz="sm" fw={500} py={6} pe="xs" lineClamp={2} style={{ borderBottom: '1px solid var(--mantine-color-default-border)' }}>{c.name}</Text>
                     {days.map((d) => (
                       <VisitCell key={d} id={`${c.id}|${d}`} visits={cells.get(c.id)?.get(d) ?? []} canEdit={canEdit} onOpen={setRecording} />
                     ))}
@@ -96,7 +96,7 @@ function VisitCell({ id, visits, canEdit, onOpen }: { id: string; visits: Visit[
   const { setNodeRef, isOver } = useDroppable({ id, disabled: !canEdit });
   return (
     <Stack ref={setNodeRef} gap={4} p={4} mih={64}
-      style={{ borderBottom: '1px solid var(--mantine-color-default-border)', borderLeft: '1px solid var(--mantine-color-default-border)',
+      style={{ borderBottom: '1px solid var(--mantine-color-default-border)', borderInlineStart: '1px solid var(--mantine-color-default-border)',
         background: isOver ? 'var(--mantine-color-brand-light)' : undefined }}>
       {visits.map((v) => <VisitCard key={v.lineId} visit={v} canEdit={canEdit} onOpen={onOpen} />)}
     </Stack>

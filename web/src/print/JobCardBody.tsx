@@ -64,9 +64,9 @@ export function JobCardBody({ w, layout, orgName, terms, logoUrl, language, asse
     <div>
       <Title order={5} mb={6}>{t('wo.labor')}</Title>
       <Table withTableBorder withColumnBorders verticalSpacing={4}>
-        <Table.Thead><Table.Tr><Table.Th>{t('wo.date')}</Table.Th><Table.Th>{t('wo.who')}</Table.Th><Table.Th ta="right">{t('wo.hours')}</Table.Th><Table.Th ta="right">{t('wo.overtime')}</Table.Th></Table.Tr></Table.Thead>
+        <Table.Thead><Table.Tr><Table.Th>{t('wo.date')}</Table.Th><Table.Th>{t('wo.who')}</Table.Th><Table.Th ta="end">{t('wo.hours')}</Table.Th><Table.Th ta="end">{t('wo.overtime')}</Table.Th></Table.Tr></Table.Thead>
         <Table.Tbody>
-          {w.labor.map((l) => <Table.Tr key={l.id}><Table.Td>{fmtDate(l.workDate)}</Table.Td><Table.Td>{l.employeeName}</Table.Td><Table.Td ta="right">{fmtQty(l.hours)}</Table.Td><Table.Td ta="right">{l.overtimeHours ? fmtQty(l.overtimeHours) : ''}</Table.Td></Table.Tr>)}
+          {w.labor.map((l) => <Table.Tr key={l.id}><Table.Td>{fmtDate(l.workDate)}</Table.Td><Table.Td>{l.employeeName}</Table.Td><Table.Td ta="end">{fmtQty(l.hours)}</Table.Td><Table.Td ta="end">{l.overtimeHours ? fmtQty(l.overtimeHours) : ''}</Table.Td></Table.Tr>)}
           {blanks(4)}
         </Table.Tbody>
       </Table>
@@ -76,12 +76,12 @@ export function JobCardBody({ w, layout, orgName, terms, logoUrl, language, asse
     <div>
       <Title order={5} mb={6}>{t('wo.parts')}</Title>
       <Table withTableBorder withColumnBorders verticalSpacing={4}>
-        <Table.Thead><Table.Tr><Table.Th>{t('jobCard.part')}</Table.Th><Table.Th ta="right">{t('plan.planned')}</Table.Th><Table.Th ta="right">{t('plan.used')}</Table.Th></Table.Tr></Table.Thead>
+        <Table.Thead><Table.Tr><Table.Th>{t('jobCard.part')}</Table.Th><Table.Th ta="end">{t('plan.planned')}</Table.Th><Table.Th ta="end">{t('plan.used')}</Table.Th></Table.Tr></Table.Thead>
         <Table.Tbody>
           {/* Planned parts first, with room to write what was used; then parts issued without a plan. */}
-          {w.plannedParts.map((p) => <Table.Tr key={p.id}><Table.Td>{p.partNumber} · {p.partName}</Table.Td><Table.Td ta="right">{fmtQty(p.quantity)} {p.unitOfMeasure}</Table.Td><Table.Td /></Table.Tr>)}
+          {w.plannedParts.map((p) => <Table.Tr key={p.id}><Table.Td>{p.partNumber} · {p.partName}</Table.Td><Table.Td ta="end">{fmtQty(p.quantity)} {p.unitOfMeasure}</Table.Td><Table.Td /></Table.Tr>)}
           {parts.filter((p) => !w.plannedParts.some((x) => x.partId === p.id)).map((p) => (
-            <Table.Tr key={p.id}><Table.Td>{p.label}</Table.Td><Table.Td ta="right">—</Table.Td><Table.Td ta="right">{fmtQty(p.qty)} {p.unit}</Table.Td></Table.Tr>
+            <Table.Tr key={p.id}><Table.Td>{p.label}</Table.Td><Table.Td ta="end">—</Table.Td><Table.Td ta="end">{fmtQty(p.qty)} {p.unit}</Table.Td></Table.Tr>
           ))}
           {blanks(3)}
         </Table.Tbody>
@@ -144,10 +144,10 @@ export function JobCardBody({ w, layout, orgName, terms, logoUrl, language, asse
           <Title order={5} mb={6}>{t('contractors.title')}</Title>
           <Table withTableBorder withColumnBorders verticalSpacing={4}>
             <Table.Thead><Table.Tr><Table.Th>{t('contracts.company')}</Table.Th><Table.Th>{t('companies.category')}</Table.Th><Table.Th>{t('contractors.person')}</Table.Th>
-              <Table.Th ta="right">{t('contractors.planned')}</Table.Th><Table.Th ta="right">{t('contractors.done')}</Table.Th><Table.Th>{t('wo.date')}</Table.Th></Table.Tr></Table.Thead>
+              <Table.Th ta="end">{t('contractors.planned')}</Table.Th><Table.Th ta="end">{t('contractors.done')}</Table.Th><Table.Th>{t('wo.date')}</Table.Th></Table.Tr></Table.Thead>
             <Table.Tbody>
               {w.contractors.map((l) => <Table.Tr key={l.id}><Table.Td>{l.companyName}</Table.Td><Table.Td>{l.categoryName ?? ''}</Table.Td><Table.Td>{l.personName ?? ''}</Table.Td>
-                <Table.Td ta="right">{l.plannedHours ? fmtQty(l.plannedHours) : ''}</Table.Td><Table.Td ta="right">{l.hoursDone ? fmtQty(l.hoursDone) : ''}</Table.Td><Table.Td>{l.doneOn ? fmtDate(l.doneOn) : ''}</Table.Td></Table.Tr>)}
+                <Table.Td ta="end">{l.plannedHours ? fmtQty(l.plannedHours) : ''}</Table.Td><Table.Td ta="end">{l.hoursDone ? fmtQty(l.hoursDone) : ''}</Table.Td><Table.Td>{l.doneOn ? fmtDate(l.doneOn) : ''}</Table.Td></Table.Tr>)}
             </Table.Tbody>
           </Table>
         </div>

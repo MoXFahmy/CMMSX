@@ -39,14 +39,14 @@ export function MyApprovalsPage() {
           <Title order={5} p="md">{t('myApprovals.orders')}</Title>
           <Table.ScrollContainer minWidth={760}>
             <Table verticalSpacing="sm">
-              <Table.Thead><Table.Tr><Table.Th>{t('po.number')}</Table.Th><Table.Th>{t('po.supplier')}</Table.Th><Table.Th ta="right">{t('po.total')}</Table.Th>
+              <Table.Thead><Table.Tr><Table.Th>{t('po.number')}</Table.Th><Table.Th>{t('po.supplier')}</Table.Th><Table.Th ta="end">{t('po.total')}</Table.Th>
                 <Table.Th>{t('approvals.level')}</Table.Th><Table.Th>{t('myApprovals.signedBefore')}</Table.Th><Table.Th>{t('myApprovals.next')}</Table.Th><Table.Th w={220} /></Table.Tr></Table.Thead>
               <Table.Tbody>
                 {data.orders.map((o) => (
                   <Table.Tr key={o.id}>
                     <Table.Td><Anchor component={Link} to={`/purchasing/orders/${o.id}`} fw={600} fz="sm">{o.number}</Anchor><Text fz="xs" c="dimmed">{fmtDateTime(o.submittedAt)}</Text></Table.Td>
                     <Table.Td><Text fz="sm">{o.supplierName}</Text><Text fz="xs" c="dimmed">{o.siteName}</Text></Table.Td>
-                    <Table.Td ta="right"><Text fz="sm">{fmtPrice(o.total, o.currency)}</Text>{o.currency !== base && <Text fz="xs" c="dimmed">≈ {fmtPrice(o.totalInBase, base)}</Text>}</Table.Td>
+                    <Table.Td ta="end"><Text fz="sm">{fmtPrice(o.total, o.currency)}</Text>{o.currency !== base && <Text fz="xs" c="dimmed">≈ {fmtPrice(o.totalInBase, base)}</Text>}</Table.Td>
                     <Table.Td>{o.levelName ?? <Text fz="sm" c="dimmed">{t('myApprovals.yourLimit')}</Text>}</Table.Td>
                     <Table.Td><Text fz="sm">{o.signedBefore.join(', ') || '—'}</Text></Table.Td>
                     <Table.Td><Text fz="sm">{o.next.join(', ') || '—'}</Text></Table.Td>
@@ -65,15 +65,15 @@ export function MyApprovalsPage() {
           <Table.ScrollContainer minWidth={700}>
             <Table verticalSpacing="sm">
               <Table.Thead><Table.Tr><Table.Th>{t('pr.number')}</Table.Th><Table.Th>{t('pr.requestedBy')}</Table.Th><Table.Th>{t('pr.neededBy')}</Table.Th>
-                <Table.Th ta="right">{t('pr.lines')}</Table.Th><Table.Th ta="right">{t('pr.estimate')}</Table.Th><Table.Th w={220} /></Table.Tr></Table.Thead>
+                <Table.Th ta="end">{t('pr.lines')}</Table.Th><Table.Th ta="end">{t('pr.estimate')}</Table.Th><Table.Th w={220} /></Table.Tr></Table.Thead>
               <Table.Tbody>
                 {data.requests.map((r) => (
                   <Table.Tr key={r.id}>
                     <Table.Td><Anchor component={Link} to={`/purchasing/requests/${r.id}`} fw={600} fz="sm">{r.number}</Anchor><Text fz="xs" c="dimmed">{fmtDateTime(r.submittedAt)}</Text></Table.Td>
                     <Table.Td><Text fz="sm">{r.requestedByName}</Text><Text fz="xs" c="dimmed">{r.siteName}</Text></Table.Td>
                     <Table.Td>{fmtDate(r.neededBy)}</Table.Td>
-                    <Table.Td ta="right">{r.lines}</Table.Td>
-                    <Table.Td ta="right">{r.estimatedTotal == null ? '—' : fmtPrice(r.estimatedTotal, base)}</Table.Td>
+                    <Table.Td ta="end">{r.lines}</Table.Td>
+                    <Table.Td ta="end">{r.estimatedTotal == null ? '—' : fmtPrice(r.estimatedTotal, base)}</Table.Td>
                     <Table.Td><Group gap={6} justify="flex-end" wrap="nowrap">
                       <Button size="xs" color="teal" leftSection={<IconCheck size={14} />} onClick={() => act(`/purchase-requests/${r.id}/approve`, t('pr.approved'))}>{t('pr.approve')}</Button>
                       <Button size="xs" variant="default" leftSection={<IconArrowBackUp size={14} />} onClick={() => setRejecting({ path: `/purchase-requests/${r.id}/reject`, number: r.number, text: '' })}>{t('pr.reject')}</Button>

@@ -60,7 +60,7 @@ export function PurchasingSettings() {
           <Table verticalSpacing="sm">
             <Table.Thead><Table.Tr>
               <Table.Th>{t('approvals.set')}</Table.Th><Table.Th>{t('approvals.orderType')}</Table.Th><Table.Th>{t('approvals.name')}</Table.Th>
-              <Table.Th ta="right">{t('approvals.minAmount')}</Table.Th><Table.Th>{t('approvals.rule')}</Table.Th><Table.Th>{t('approvals.approvers')}</Table.Th><Table.Th w={80} />
+              <Table.Th ta="end">{t('approvals.minAmount')}</Table.Th><Table.Th>{t('approvals.rule')}</Table.Th><Table.Th>{t('approvals.approvers')}</Table.Th><Table.Th w={80} />
             </Table.Tr></Table.Thead>
             <Table.Tbody>
               {rows.length === 0 && <Table.Tr><Table.Td colSpan={7}><Text c="dimmed" ta="center" fz="sm" py="md">{t('approvals.none')}</Text></Table.Td></Table.Tr>}
@@ -69,7 +69,7 @@ export function PurchasingSettings() {
                   <Table.Td>{l.siteName ?? t('approvals.organization')}</Table.Td>
                   <Table.Td>{l.orderTypeName ?? t('approvals.allTypes')}</Table.Td>
                   <Table.Td fw={600}>{l.name}</Table.Td>
-                  <Table.Td ta="right">{fmt(l.minAmount)}</Table.Td>
+                  <Table.Td ta="end">{fmt(l.minAmount)}</Table.Td>
                   <Table.Td>{t(`approvals.rule${l.rule}`)}</Table.Td>
                   <Table.Td><Group gap={4}>{l.approvers.map((a) => a.ok
                     ? <Badge key={a.id} variant="light" radius="sm" style={{ textTransform: 'none' }}>{a.name}</Badge>

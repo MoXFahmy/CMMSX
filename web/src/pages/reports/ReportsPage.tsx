@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
 import { useMediaQuery } from '@mantine/hooks';
-import { Anchor, Badge, Button, Card, Center, Group, Loader, NumberInput, Select, SimpleGrid, Stack, Switch, Text, TextInput, ThemeIcon, Title, Alert } from '@mantine/core';
+import { Anchor, Badge, Button, Card, Center, Group, Loader, NumberInput, Select, SimpleGrid, Stack, Switch, Text, TextInput, ThemeIcon, Title, Alert, useDirection } from '@mantine/core';
 import { DatePickerInput } from '@mantine/dates';
 import { BarChart, DonutChart } from '@mantine/charts';
+import { useChartAxes } from '@/components/chartDirection';
 import { useQuery } from '@tanstack/react-query';
 import { Link, useParams, useSearchParams } from 'react-router';
 import { useTranslation } from 'react-i18next';
@@ -125,11 +126,15 @@ export function ReportViewPage() {
   const narrow = useMediaQuery('(max-width: 48em)');
   const axisW = narrow ? 110 : 240;
   const clip = (v: string) => { const max = narrow ? 14 : 34; return v.length > max ? `${v.slice(0, max - 1)}…` : v; };
+  const { dir } = useDirection();
   // Single-line category labels (Recharts would otherwise wrap long names onto several lines).
   const AxisTick = ({ x, y, payload }: { x: number; y: number; payload: { value: unknown } }) => (
-    <text x={x} y={y} dy={4} textAnchor="end" fontSize={12} fill="var(--mantine-color-dimmed)"><title>{String(payload.value)}</title>{clip(String(payload.value))}</text>
+    <text x={x} y={y} dy={4} textAnchor={dir === 'rtl' ? 'start' : 'end'} fontSize={12} fill="var(--mantine-color-dimmed)"><title>{String(payload.value)}</title>{clip(String(payload.value))}</text>
   );
   const chartRows = treeRows(data?.rows ?? []).slice(0, data?.chart?.type === 'donut' ? 10 : 15);
+  const monthAxis = data?.chart?.x === 'month' || (data?.chart?.x === 'group' && q.groupBy === 'month');
+  const horizontalBars = chartRows.length > 6 && !monthAxis;
+  const axes = useChartAxes({ yAxisProps: horizontalBars ? { width: axisW, interval: 0, tick: AxisTick } : undefined });
   const label = (k: string) => data?.columns.find((c) => c.key === k)?.label ?? k;
   const chartFmt = (v: number) => (data?.columns.find((c) => data.chart?.series.includes(c.key))?.type === 'currency' ? fmtPrice(v, currency, 0) : fmtNumber(v));
 
@@ -189,7 +194,7 @@ export function ReportViewPage() {
                 : <BarChart h={Math.min(420, Math.max(220, chartRows.length * (data.chart.x === 'month' || data.chart.x === 'group' && q.groupBy === 'month' ? 0 : 28) + 60))} data={chartRows}
                     dataKey={data.chart.x} type={data.chart.stacked ? 'stacked' : 'default'} withLegend={data.chart.series.length > 1} valueFormatter={chartFmt}
                     orientation={chartRows.length > 6 && !(data.chart.x === 'month' || (data.chart.x === 'group' && q.groupBy === 'month')) ? 'vertical' : 'horizontal'}
-                    yAxisProps={chartRows.length > 6 && !(data.chart.x === 'month' || (data.chart.x === 'group' && q.groupBy === 'month')) ? { width: axisW, interval: 0, tick: AxisTick } : undefined}
+                    {...axes}
                     series={data.chart.series.map((s, i) => ({ name: s, label: label(s), color: PALETTE[i % PALETTE.length] }))} />}
             </Card>
           )}
@@ -215,7 +220,7 @@ export function ReportViewPage() {
               }))}
             />
           </Card>
-          <Text fz="xs" c="dimmed" ta="right">{t('rep.generated', { date: dayjs().format('DD MMM YYYY HH:mm') })} · {t('common.recordsCount', { count: data.rows.length })}</Text>
+          <Text fz="xs" c="dimmed" ta="end">{t('rep.generated', { date: dayjs().format('DD MMM YYYY HH:mm') })} · {t('common.recordsCount', { count: data.rows.length })}</Text>
         </Stack>
       )}
     </>

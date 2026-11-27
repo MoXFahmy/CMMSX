@@ -36,16 +36,16 @@ export function PoBody({ o, layout, orgName, logoUrl, language }: PrintContext &
     </Stack></Card>
   );
 
-  type Column = { key: string; title: string; right?: boolean; cell: (l: PoDetail['lines'][number]) => ReactNode };
+  type Column = { key: string; title: string; end?: boolean; cell: (l: PoDetail['lines'][number]) => ReactNode };
   const allColumns: Column[] = [
     { key: 'lineNumber', title: '#', cell: (l) => l.lineNumber },
     { key: 'partNumber', title: t('inv.partNumber'), cell: (l) => l.partNumber ?? '' },
     { key: 'description', title: t('common.description'), cell: (l) => <>{l.description}{has('lines', 'supplierPartNumber') && l.supplierPartNumber && <Text fz="xs">{t('catalogue.yourNumber', { number: l.supplierPartNumber })}</Text>}</> },
-    { key: 'quantity', title: t('inv.quantity'), right: true, cell: (l) => fmtQty(l.quantity) },
+    { key: 'quantity', title: t('inv.quantity'), end: true, cell: (l) => fmtQty(l.quantity) },
     { key: 'unit', title: t('inv.unit'), cell: (l) => l.unitOfMeasure },
-    { key: 'unitPrice', title: t('po.unitPrice'), right: true, cell: (l) => fmtPrice(poUnitPrice(l, discountShown), o.currency) },
-    { key: 'discount', title: t('po.discount'), right: true, cell: (l) => (l.discountPercent ? `${l.discountPercent}%` : '') },
-    { key: 'lineTotal', title: t('po.lineTotal'), right: true, cell: (l) => fmtPrice(l.lineTotal, o.currency) },
+    { key: 'unitPrice', title: t('po.unitPrice'), end: true, cell: (l) => fmtPrice(poUnitPrice(l, discountShown), o.currency) },
+    { key: 'discount', title: t('po.discount'), end: true, cell: (l) => (l.discountPercent ? `${l.discountPercent}%` : '') },
+    { key: 'lineTotal', title: t('po.lineTotal'), end: true, cell: (l) => fmtPrice(l.lineTotal, o.currency) },
   ];
   const columns = allColumns.filter((c) => has('lines', c.key));
 
@@ -55,8 +55,8 @@ export function PoBody({ o, layout, orgName, logoUrl, language }: PrintContext &
       case 'details': return <div style={{ marginBottom: 20 }}>{details}</div>;
       case 'lines': return (
         <Table withTableBorder withColumnBorders verticalSpacing={6}>
-          <Table.Thead><Table.Tr>{columns.map((c) => <Table.Th key={c.key} w={c.key === 'lineNumber' ? 36 : undefined} ta={c.right ? 'right' : undefined}>{c.title}</Table.Th>)}</Table.Tr></Table.Thead>
-          <Table.Tbody>{o.lines.map((l) => <Table.Tr key={l.id}>{columns.map((c) => <Table.Td key={c.key} ta={c.right ? 'right' : undefined}>{c.cell(l)}</Table.Td>)}</Table.Tr>)}</Table.Tbody>
+          <Table.Thead><Table.Tr>{columns.map((c) => <Table.Th key={c.key} w={c.key === 'lineNumber' ? 36 : undefined} ta={c.end ? 'end' : undefined}>{c.title}</Table.Th>)}</Table.Tr></Table.Thead>
+          <Table.Tbody>{o.lines.map((l) => <Table.Tr key={l.id}>{columns.map((c) => <Table.Td key={c.key} ta={c.end ? 'end' : undefined}>{c.cell(l)}</Table.Td>)}</Table.Tr>)}</Table.Tbody>
         </Table>
       );
       case 'totals': return (

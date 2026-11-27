@@ -84,8 +84,8 @@ export function BudgetsPage() {
               <Table.Thead>
                 <Table.Tr>
                   <Table.Th miw={200}>{t('costCentres.one')}</Table.Th>
-                  {MONTHS.map((m) => <Table.Th key={m} ta="right">{dayjs().month(m).format('MMM')}</Table.Th>)}
-                  <Table.Th ta="right">{t('common.total')}</Table.Th>
+                  {MONTHS.map((m) => <Table.Th key={m} ta="end">{dayjs().month(m).format('MMM')}</Table.Th>)}
+                  <Table.Th ta="end">{t('common.total')}</Table.Th>
                 </Table.Tr>
               </Table.Thead>
               <Table.Tbody>
@@ -98,14 +98,14 @@ export function BudgetsPage() {
                         {!r.isActive && <Badge size="xs" color="gray">{t('common.inactive')}</Badge>}
                       </Group></Table.Td>
                       {MONTHS.map((m) => (
-                        <Table.Td key={m} ta="right">
+                        <Table.Td key={m} ta="end">
                           {editable
                             ? <NumberInput size="xs" w={92} hideControls min={0} decimalScale={2} thousandSeparator aria-label={`${r.name} ${dayjs().month(m).format('MMMM')}`}
                                 value={months[m] || ''} onChange={(v) => setMonth(r.costCentreId, r.months, m, Number(v) || 0)} styles={{ input: { textAlign: 'end' } }} />
                             : <Text fz="sm">{months[m] ? fmtPrice(months[m], currency, 0) : '—'}</Text>}
                         </Table.Td>
                       ))}
-                      <Table.Td ta="right">
+                      <Table.Td ta="end">
                         {editable
                           ? <TotalCell total={sum(months)} label={`${r.name} ${t('common.total')}`} onSpread={(v) => setTotal(r.costCentreId, v)} />
                           : <Text fz="sm" fw={600}>{fmtPrice(sum(months), currency, 0)}</Text>}
@@ -117,8 +117,8 @@ export function BudgetsPage() {
               <Table.Tfoot>
                 <Table.Tr>
                   <Table.Th>{t('common.total')}</Table.Th>
-                  {totals.map((v, m) => <Table.Th key={m} ta="right">{fmtPrice(v, currency, 0)}</Table.Th>)}
-                  <Table.Th ta="right">{fmtPrice(sum(totals), currency, 0)}</Table.Th>
+                  {totals.map((v, m) => <Table.Th key={m} ta="end">{fmtPrice(v, currency, 0)}</Table.Th>)}
+                  <Table.Th ta="end">{fmtPrice(sum(totals), currency, 0)}</Table.Th>
                 </Table.Tr>
               </Table.Tfoot>
             </Table>

@@ -91,7 +91,7 @@ export function WorkOrderUnits({ w, canAct }: { w: WorkOrderDetail; canAct: bool
                     <Table.Td><Text fz="sm">{u.partNumber}</Text><Text fz="xs" c="dimmed">{u.partName}</Text></Table.Td>
                     <Table.Td>{assetName(u.fittedToId)}</Table.Td>
                     <Table.Td>{fmtDate(u.since)}</Table.Td>
-                    <Table.Td ta="right">{canAct && <Button size="compact-xs" variant="default" onClick={() => setRemoving(u)}>{t('units.action.remove')}</Button>}</Table.Td>
+                    <Table.Td ta="end">{canAct && <Button size="compact-xs" variant="default" onClick={() => setRemoving(u)}>{t('units.action.remove')}</Button>}</Table.Td>
                   </Table.Tr>
                 ))}
               </Table.Tbody>

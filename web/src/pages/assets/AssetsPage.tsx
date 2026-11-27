@@ -143,7 +143,7 @@ export function AssetsPage() {
           <Switch label={t('assets.topLevelOnly')} checked={p('topLevelOnly') === 'true'} onChange={(e) => set({ topLevelOnly: e.currentTarget.checked ? 'true' : null })} mb={8} />
           <Switch label={t('downtime.downNow')} color="red" checked={p('downNow') === 'true'} onChange={(e) => set({ downNow: e.currentTarget.checked ? 'true' : null })} mb={8} />
           <Switch label={t('units.showSpares')} checked={p('spareUnits') === 'true'} onChange={(e) => set({ spareUnits: e.currentTarget.checked ? 'true' : null })} mb={8} />
-          <Group gap={6} ml="auto">
+          <Group gap={6} ms="auto">
             {activeFilters > 0 && <Tooltip label={t('common.clear')}><ActionIcon variant="default" size="lg" aria-label={t('common.clear')} onClick={() => lp.replaceAll('')}><IconFilterOff size={16} /></ActionIcon></Tooltip>}
             <ListTools list="assets" lp={lp} cols={cols} exportPath="/assets/export" exportQuery={filters} total={data?.total} />
           </Group>
