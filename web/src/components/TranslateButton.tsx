@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { Button, Checkbox, Group, Modal, ScrollArea, Stack, Table, Text, TextInput } from '@mantine/core';
 import { IconLanguage } from '@tabler/icons-react';
 import { useQueryClient } from '@tanstack/react-query';
@@ -7,7 +7,7 @@ import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { aiOn, useAiStatus } from './aiStatus';
 import { notifyError, notifySuccess } from './utils';
-import { draftState, passedIds, toRows, toSaveBody, type ReviewRow, type TranslationDraft, type TranslationList } from './translations';
+import { draftState, nextStep, primaryAction, toRows, type ReviewRow, type TranslationDraft, type TranslationList } from './translations';
 
 /** The permission that edits each list's texts (the server checks the same). */
 const EDIT: Record<TranslationList, string> = {
@@ -16,11 +16,16 @@ const EDIT: Record<TranslationList, string> = {
   templates: P.pmManage, 'pm-schedules': P.pmManage,
 };
 
+/** The review's main button text for each action. */
+const PRIMARY = { save: 'bilingual.save', saveNext: 'bilingual.saveNext', skip: 'bilingual.skipAndGo' } as const;
+
 /**
  * "Fill in missing Arabic" (0.28.0): the AI drafts a batch of the list's missing Arabic texts; the person checks, edits, unticks and saves.
  * Shown to people who can edit the list, when the AI assistant is on. <c>refresh</c>: the query keys to reload after saving.
  * 0.29.2: while the window is open it remembers the texts the person unticked and the ones the assistant couldn't draft, and doesn't
  * ask for them again (no charge twice); closing it forgets them. A batch that drafts nothing offers Try again / Skip these and go on / Close.
+ * After a save or a skip it always asks for the next batch, so a field's last batch goes on to the list's next field; a batch with no
+ * row kept is skipped, not stuck behind a disabled Save. An answer that arrives after the window was closed is ignored.
  */
 export function TranslateButton({ list, refresh = [] }: { list: TranslationList; refresh?: unknown[][] }) {
   const { t } = useTranslation();
@@ -32,36 +37,44 @@ export function TranslateButton({ list, refresh = [] }: { list: TranslationList;
   const [draft, setDraft] = useState<TranslationDraft | null>(null);
   const [rows, setRows] = useState<ReviewRow[]>([]);
   const [passed, setPassed] = useState<string[]>([]);
+  // Bumped on every close: an answer to a request sent before it belongs to a window that is gone and must not reopen it.
+  const session = useRef(0);
   if (!aiOn(ai) || !can(EDIT[list])) return null;
 
   /** Closing forgets what was passed: opening the window again offers everything. */
-  const close = () => { setOpen(false); setPassed([]); setDraft(null); setRows([]); };
+  const close = () => { session.current++; setOpen(false); setPassed([]); setDraft(null); setRows([]); };
   /** The next batch, leaving out <c>skip</c> (texts the person passed on while this window has been open). */
   const next = async (skip: string[] = []) => {
+    const mine = session.current;
     setBusy(true);
     try {
-      setPassed(skip);
       const d = await post<TranslationDraft>('/translations/draft', { list, skip });
-      setDraft(d); setRows(toRows(d)); setOpen(true);
       void qc.invalidateQueries({ queryKey: ['ai-status'] });
+      if (session.current !== mine) return;
+      setPassed(skip); setDraft(d); setRows(toRows(d)); setOpen(true);
     } catch (e) { notifyError(e); } finally { setBusy(false); }
   };
 
-  const save = async () => {
-    if (!draft?.field) return;
+  /** Save (or skip) this batch, then go on to the next one. */
+  const goOn = async () => {
+    const step = nextStep(list, draft, rows, passed);
+    if (step.kind === 'close') { close(); return; }
+    const mine = session.current;
     setBusy(true);
     try {
-      const r = await post<{ saved: number; skipped: number }>('/translations/save', toSaveBody(list, draft.field, rows));
-      notifySuccess(t('bilingual.saved', { n: r.saved }));
-      for (const key of refresh) void qc.invalidateQueries({ queryKey: key });
-      const left = [...new Set([...passed, ...passedIds(rows), ...draft.couldNotIds])];
-      if (draft.remaining > 0) await next(left); else close();
+      if (step.save) {
+        const r = await post<{ saved: number; skipped: number }>('/translations/save', step.save);
+        notifySuccess(t('bilingual.saved', { n: r.saved }));
+        for (const key of refresh) void qc.invalidateQueries({ queryKey: key });
+      }
+      if (session.current === mine) await next(step.skip);
     } catch (e) { notifyError(e); } finally { setBusy(false); }
   };
 
   const state = draft ? draftState(draft) : 'done';
-  // Left out so far: the earlier passes plus this batch's unticked rows.
-  const leftOut = new Set([...passed, ...passedIds(rows), ...(draft?.couldNotIds ?? [])]).size;
+  // Left out so far: the earlier passes plus this batch's unticked or blank rows and the ones not drafted.
+  const after = nextStep(list, draft, rows, passed);
+  const leftOut = after.kind === 'next' ? after.skip.length : passed.length;
   const change = (id: string, patch: Partial<ReviewRow>) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
   return (
@@ -81,7 +94,7 @@ export function TranslateButton({ list, refresh = [] }: { list: TranslationList;
             <Group justify="flex-end">
               <Button variant="default" onClick={close}>{t('bilingual.close')}</Button>
               <Button variant="default" loading={busy} onClick={() => void next(passed)}>{t('bilingual.tryAgain')}</Button>
-              <Button loading={busy} onClick={() => void (draft.remaining > 0 ? next([...new Set([...passed, ...draft.couldNotIds])]) : close())}>{t('bilingual.skipAndGo')}</Button>
+              <Button loading={busy} onClick={() => void goOn()}>{t('bilingual.skipAndGo')}</Button>
             </Group>
           </Stack>
         ) : (
@@ -108,9 +121,7 @@ export function TranslateButton({ list, refresh = [] }: { list: TranslationList;
               </Stack>
               <Group>
                 <Button variant="default" onClick={close}>{t('common.cancel')}</Button>
-                <Button loading={busy} onClick={() => void save()} disabled={!rows.some((r) => r.keep && r.ar.trim())}>
-                  {draft && draft.remaining > 0 ? t('bilingual.saveNext') : t('bilingual.save')}
-                </Button>
+                <Button loading={busy} onClick={() => void goOn()}>{t(PRIMARY[primaryAction(rows, draft)])}</Button>
               </Group>
             </Group>
           </Stack>

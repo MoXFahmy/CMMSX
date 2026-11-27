@@ -243,6 +243,30 @@ public class AiTranslateTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(1, r.GetProperty("skippedLeft").GetInt32());
     }
 
+    /// <summary>I1 (0.29.2 final review): skipping a field's last texts goes on to the list's next field, so the window never stops at the first.</summary>
+    [SkippableFact]
+    public async Task Skipping_every_asset_name_moves_on_to_the_notes()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await AiOrgAsync();
+        var a = await AssetAsync(o.Admin, o.Site, name: "Pump A", nameAr: null);
+        var b = await AssetAsync(o.Admin, o.Site, name: "Pump B", nameAr: "المضخة ب", notes: "Isolate first");
+        Echo();
+        var first = await Ok(await DraftAsync(o.Admin, "assets"));
+        Assert.Equal("name", S(first, "field"));
+        Assert.Equal(0, first.GetProperty("remaining").GetInt32()); // the name field's last batch
+        // The person unticks it: the window passes it back as skipped and gets the notes.
+        var next = await Ok(await DraftSkipAsync(o.Admin, "assets", [a]));
+        Assert.Equal("notesToTechnician", S(next, "field"));
+        Assert.Equal(b, next.GetProperty("items").EnumerateArray().Single().GetProperty("id").GetGuid());
+        Assert.Equal(1, next.GetProperty("skippedLeft").GetInt32());
+        // Skipping the notes too: nothing is left, and the AI is not asked again.
+        var asks = fx.Ai.Asks.Count;
+        var done = await Ok(await DraftSkipAsync(o.Admin, "assets", [a, b]));
+        Assert.Equal(JsonValueKind.Null, done.GetProperty("field").ValueKind);
+        Assert.Equal(asks, fx.Ai.Asks.Count);
+    }
+
     [SkippableFact]
     public async Task A_batch_that_drafts_nothing_names_its_texts()
     {
