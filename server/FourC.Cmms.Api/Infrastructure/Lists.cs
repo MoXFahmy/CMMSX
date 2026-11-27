@@ -89,11 +89,17 @@ public static class Lists
                 if (!list.TryGetValue(v.ToString(), out var own)) continue;
                 var mine = new[] { own.Name, own.NameAr }.Where(x => !string.IsNullOrWhiteSpace(x)).Select(x => Normal(x!)).ToList();
                 foreach (var other in values.Where(o => !o.Equals(v)))
-                    if (Names(probe, other).Intersect(mine).Any()) return $"This name is already used by {BuiltIn(other, "en")}.";
+                    if (Names(probe, other).Intersect(mine).Any()) return $"This name is already used by {Shown(probe, other)}.";
             }
         }
         return null;
     }
+
+    /// <summary>
+    /// The value a name clashes with, as the reader knows it (0.29.2): an Arabic reader by its Arabic name (the organization's, else the
+    /// built-in one), an English reader by the built-in words as before.
+    /// </summary>
+    private static string Shown(TenantSettings probe, Enum value) => Translator.CurrentLanguage == "ar" ? Name(probe, value, "ar") : BuiltIn(value, "en");
 
     /// <summary>Trimmed names under the exact list and value names (any case is accepted); rows that say nothing are dropped.</summary>
     public static Dictionary<string, Dictionary<string, ListLabel>> Clean(Dictionary<string, Dictionary<string, ListLabel>>? labels) =>

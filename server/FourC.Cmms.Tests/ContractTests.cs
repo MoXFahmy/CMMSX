@@ -70,6 +70,35 @@ public class ContractTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal([id], list.Select(x => x.GetProperty("id").GetGuid()));
     }
 
+    /// <summary>0.29.2 (0.17.0-10): a covered asset added to a contract that already exists is saved with the old row kept, and a second edit still works.</summary>
+    [SkippableFact]
+    public async Task Adding_an_asset_to_an_existing_contract()
+    {
+        Skip.IfNot(fx.Enabled);
+        var w = await WorldAsync(fx);
+        async Task<Guid> AssetAsync(string name) =>
+            Id(await Ok(await w.O.Admin.PostAsJsonAsync("/api/assets", new { name, siteId = w.O.Site, status = "Active", criticality = "Medium", warrantyType = "None" })));
+        var a2 = await AssetAsync("Lift A2");
+        var a3 = await AssetAsync("Lift A3");
+        var id = await ContractAsync(w.O.Admin, Body(w.C, Today, Today.AddDays(300), assets: [w.A1]));
+        Task<Dictionary<Guid, Guid>> RowsAsync() => Loop.DbAsync(fx, db => db.ContractAssets.IgnoreQueryFilters().Where(x => x.ContractId == id).ToDictionaryAsync(x => x.AssetId, x => x.Id));
+        HashSet<Guid> Shown(JsonElement k) => k.GetProperty("assets").EnumerateArray().Select(a => a.GetProperty("assetId").GetGuid()).ToHashSet();
+        var first = await RowsAsync();
+
+        await Ok(await w.O.Admin.PutAsJsonAsync($"/api/contracts/{id}", WithVersion(Body(w.C, Today, Today.AddDays(300), assets: [w.A1, a2]), await GetAsync(w.O.Admin, id))));
+        var second = await RowsAsync();
+        Assert.Equal(2, second.Count);
+        Assert.Equal(first[w.A1], second[w.A1]);
+        Assert.Equal(new HashSet<Guid> { w.A1, a2 }, Shown(await GetAsync(w.O.Admin, id)));
+
+        await Ok(await w.O.Admin.PutAsJsonAsync($"/api/contracts/{id}", WithVersion(Body(w.C, Today, Today.AddDays(300), assets: [w.A1, a2, a3]), await GetAsync(w.O.Admin, id))));
+        var third = await RowsAsync();
+        Assert.Equal(3, third.Count);
+        Assert.Equal(second[w.A1], third[w.A1]);
+        Assert.Equal(second[a2], third[a2]);
+        Assert.Equal(new HashSet<Guid> { w.A1, a2, a3 }, Shown(await GetAsync(w.O.Admin, id)));
+    }
+
     [SkippableFact]
     public async Task Only_active_contractor_companies_can_be_chosen()
     {

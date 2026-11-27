@@ -48,6 +48,23 @@ public static class Numbering
             var max = (await existingWithPrefix(prefix)).Select(n => long.TryParse(n[prefix.Length..], out var v) ? v : 0).DefaultIfEmpty(0).Max();
             await db.SetSequenceAtLeastAsync(sequence, max + 1, ct);
         }
-        throw new DomainException($"Could not generate a unique number for {sequence}. Check the numbering settings.");
+        throw new DomainException(NoNumberMessage(sequence));
     }
+
+    /// <summary>What <see cref="NextAsync"/> says when it finds no free number: the kind of document, never the sequence's key (0.29.2).</summary>
+    public static string NoNumberMessage(string sequence) => $"Could not generate a unique {KindWords(sequence)} number. Check the numbering settings.";
+
+    /// <summary>The kind of document a sequence numbers, in words the server translates: "WorkOrder:&lt;site&gt;:2026" is "work order".</summary>
+    public static string KindWords(string sequence) => sequence.Split(':')[0] switch
+    {
+        "Asset" => "asset",
+        "WorkOrder" => "work order",
+        "WorkRequest" => "work request",
+        "PurchaseOrder" => "purchase order",
+        "WorkGroup" => "work order group",
+        "PurchaseRequest" => "purchase request",
+        "Contract" => "contract",
+        "PmSchedule" => "PM schedule",
+        _ => "document",
+    };
 }

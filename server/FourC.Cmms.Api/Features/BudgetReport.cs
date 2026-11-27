@@ -134,7 +134,7 @@ public static class BudgetReport
             {
                 int y = m / 12, mo = m % 12 + 1;
                 var f = Sum(k => k.Y == y && k.M == mo && (k.Cc is { } id ? scope.Contains(id) : withNone));
-                rows.Add(RowOf(new DateOnly(y, mo, 1).ToString("MMM yyyy", System.Globalization.CultureInfo.InvariantCulture), null, f));
+                rows.Add(RowOf(MonthLabel(y, mo), null, f)); // the reader's months (0.29.2)
                 total.Add(f);
             }
         }
@@ -157,7 +157,7 @@ public static class BudgetReport
             }
         }
 
-        return new ReportResult("budget-vs-actual", "Budget against actual", $"{a.From:d MMM yyyy} – {a.To:d MMM yyyy}",
+        return new ReportResult("budget-vs-actual", "Budget against actual", Period(a),
             [new(a.GroupBy == "month" ? "group" : "group", a.GroupBy == "month" ? "Month" : "Cost centre"), new("budget", "Budget", "currency"), new("committed", "Committed", "currency"),
              new("labor", "Labour", "currency"), new("parts", "Parts", "currency"), new("contractor", "Contractor", "currency"), new("other", "Other", "currency"),
              new("directIssues", "Direct issues", "currency"), new("actual", "Actual", "currency"), new("variance", "Variance", "currency")],

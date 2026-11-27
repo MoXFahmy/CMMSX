@@ -31,8 +31,11 @@ public static partial class Translator
         public void Dispose() => CultureInfo.CurrentUICulture = before;
     }
 
-    /// <summary>Dates in the current language: Arabic month names with the digits 0-9, else "21 Nov 2026".</summary>
-    public static string Date(DateOnly d) => d.ToString("d MMM yyyy", CurrentLanguage == "ar" ? CultureInfo.GetCultureInfo("ar-EG") : CultureInfo.InvariantCulture);
+    /// <summary>
+    /// Dates in the current language: Arabic month names with the digits 0-9, else "21 Nov 2026". A date inside a sentence is formatted
+    /// here before the sentence goes to <see cref="T"/> (an interpolated <c>{day:d MMM}</c> would always be English).
+    /// </summary>
+    public static string Date(DateOnly d, string format = "d MMM yyyy") => d.ToString(format, CurrentLanguage == "ar" ? CultureInfo.GetCultureInfo("ar-EG") : CultureInfo.InvariantCulture);
 
     public static string T(string? english, string? language = null)
     {

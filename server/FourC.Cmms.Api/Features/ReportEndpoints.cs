@@ -158,7 +158,9 @@ public static class ReportEndpoints
     private static DateTimeOffset End(DateOnly d) => Start(d.AddDays(1));
     /// <summary>Month names in the person's language (Arabic months with the digits 0-9), else as before.</summary>
     private static CultureInfo Dates => Translator.CurrentLanguage == "ar" ? CultureInfo.GetCultureInfo("ar-EG") : CultureInfo.InvariantCulture;
-    private static string Period(ReportArgs a) => $"{a.From.ToString("d MMM yyyy", Dates)} – {a.To.ToString("d MMM yyyy", Dates)}";
+    internal static string Period(ReportArgs a) => $"{a.From.ToString("d MMM yyyy", Dates)} – {a.To.ToString("d MMM yyyy", Dates)}";
+    /// <summary>The "As of" subtitle of a report on today's figures, the date in the person's language (0.29.2); <paramref name="tail"/> follows after " · ".</summary>
+    internal static string AsOf(DateOnly today, string? tail = null) => $"As of {today.ToString("d MMM yyyy", Dates)}" + (tail is null ? "" : $" · {tail}");
 
     /// <summary>A report's name, description and choices in the person's language.</summary>
     private static ReportDef Localized(ReportDef d) => d with
@@ -190,7 +192,7 @@ public static class ReportEndpoints
     {
         for (var d = new DateOnly(a.From.Year, a.From.Month, 1); d <= a.To; d = d.AddMonths(1)) yield return (d.Year, d.Month);
     }
-    private static string MonthLabel(int y, int m) => new DateOnly(y, m, 1).ToString("MMM yyyy", Dates);
+    internal static string MonthLabel(int y, int m) => new DateOnly(y, m, 1).ToString("MMM yyyy", Dates);
     private static bool IsFailure(WorkOrder w) => w.Type == WorkType.Breakdown || w.AssetWasDown;
 
     private static IQueryable<WorkOrder> Wo(CmmsDbContext db, ReportArgs a)
@@ -215,7 +217,7 @@ public static class ReportEndpoints
                 ("d31_90", xs.Count(w => Bucket(w.CreatedAt) == "d31_90")), ("d90", xs.Count(w => Bucket(w.CreatedAt) == "d90")),
                 ("onHold", xs.Count(w => w.Status == WorkOrderStatus.OnHold)), ("overdue", xs.Count(w => w.DueAt < now)), ("total", xs.Count));
         }).ToList();
-        return new("wo-backlog", "Work order backlog", $"As of {Today:d MMM yyyy}",
+        return new("wo-backlog", "Work order backlog", AsOf(Today),
             [new("priority", "Priority"), new("d0_7", "0–7 days", "number"), new("d8_30", "8–30 days", "number"), new("d31_90", "31–90 days", "number"), new("d90", "Over 90 days", "number"),
              new("onHold", "On hold", "number"), new("overdue", "Overdue", "number"), new("total", "Total", "number")],
             rows, new Chart("bar", "priority", ["d0_7", "d8_30", "d31_90", "d90"], true),
@@ -898,7 +900,7 @@ public static class ReportEndpoints
             ("inactive", g.Count(x => x.Status is FourC.Cmms.Core.Assets.AssetStatus.Inactive or FourC.Cmms.Core.Assets.AssetStatus.InStorage)),
             ("disposed", g.Count(x => x.Status == FourC.Cmms.Core.Assets.AssetStatus.Disposed)), ("total", g.Count()),
             ("purchaseValue", R2(g.Sum(x => x.PurchasePrice ?? 0))), ("currentValue", R2(g.Sum(x => x.CurrentValue ?? 0))))).ToList();
-        return new("assets-by-category", "Asset register summary", $"As of {Today:d MMM yyyy}",
+        return new("assets-by-category", "Asset register summary", AsOf(Today),
             // Statuses as the organization names them (0.21.0).
             [new("category", "Category"), new("active", Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.Active), "number"),
              new("underRepair", Lists.Name(a.Settings, FourC.Cmms.Core.Assets.AssetStatus.UnderRepair), "number"),
@@ -921,7 +923,7 @@ public static class ReportEndpoints
         var rows = (a.GroupBy == "group" ? xs.GroupBy(x => x.Group ?? "Ungrouped") : xs.GroupBy(x => x.Store)).Select(g => Row(("group", g.Key), ("parts", g.Select(x => x.PartId).Distinct().Count()),
             ("quantity", g.Sum(x => x.QuantityOnHand)), ("value", R2(g.Sum(x => x.Value))), ("share", Pct(g.Sum(x => x.Value), total)), ("critical", g.Count(x => x.IsCritical))))
             .OrderByDescending(r => (decimal)r["value"]!).ToList();
-        return new("stock-valuation", "Stock valuation", $"As of {Today:d MMM yyyy} · at average cost",
+        return new("stock-valuation", "Stock valuation", AsOf(Today, "at average cost"),
             [new("group", a.GroupBy == "group" ? "Part group" : "Store"), new("parts", "Parts in stock", "number"), new("quantity", "Quantity", "number"), new("value", "Value", "currency"),
              new("share", "Share", "percent"), new("critical", "Critical parts", "number")],
             rows, new Chart("donut", "group", ["value"]),
@@ -949,7 +951,7 @@ public static class ReportEndpoints
                 ("onOrder", x.OnOrder), ("suggested", uncovered ? Math.Max(need, 0) : 0), ("value", uncovered ? R2(Math.Max(need, 0) * x.Price) : 0), ("critical", x.IsCritical ? "Yes" : ""),
                 ("status", x.QuantityOnHand <= 0 ? "Out of stock" : x.QuantityOnHand < x.MinLevel ? "Below minimum" : uncovered ? "Re-order" : "On order"));
         }).ToList();
-        return new("stock-reorder", "Stock below re-order level", $"As of {Today:d MMM yyyy}",
+        return new("stock-reorder", "Stock below re-order level", AsOf(Today),
             [new("part", "Part"), new("store", "Store"), new("status", "Status"), new("critical", "Critical"), new("onHand", "On hand", "number"),
              new("reserved", "Reserved", "number"), new("available", "Available", "number"), new("minLevel", "Minimum", "number"),
              new("reorderLevel", "Re-order at", "number"), new("onOrder", "On order", "number"), new("suggested", "Suggested order", "number"), new("value", "Est. value", "currency")],
@@ -1053,7 +1055,7 @@ public static class ReportEndpoints
             return Row(("id", x.Id), ("number", x.Number), ("supplier", x.Supplier), ("status", x.Status.ToString()), ("orderDate", x.OrderDate), ("expectedDate", x.ExpectedDate),
                 ("total", PurchaseOrderMath.TotalInBase(po)), ("outstanding", outstanding), ("daysLate", late));
         }).ToList();
-        return new("open-purchase-orders", "Open purchase orders", $"As of {Today:d MMM yyyy} · values in base currency",
+        return new("open-purchase-orders", "Open purchase orders", AsOf(Today, "values in base currency"),
             [new("number", "PO"), new("supplier", "Supplier"), new("status", "Status"), new("orderDate", "Ordered", "date"), new("expectedDate", "Expected", "date"),
              new("total", "Order value", "currency"), new("outstanding", "Outstanding", "currency"), new("daysLate", "Days late", "number")],
             rows, null,

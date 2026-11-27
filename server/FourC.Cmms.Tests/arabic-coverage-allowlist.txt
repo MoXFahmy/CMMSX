@@ -1,0 +1,5 @@
+# Server message texts that have no Arabic in Localization/ar.json, on purpose. ArabicCoverageTests reads this file.
+# One entry per text and file: "path-from-server/File.cs | first 40 characters of the text (holes as {0}, {1}…, whitespace squashed) | why it stays English".
+# Allowed reasons: "stored line — Task 4" (a line CMX writes itself and stores in English; it is translated when shown), "editable record text — not translated"
+# (text that becomes part of a record people edit), or a log line, AI prompt, SQL or sample data that the scan caught.
+# An entry that matches no text without Arabic fails the build, so remove it when the text moves, changes or gets its Arabic.

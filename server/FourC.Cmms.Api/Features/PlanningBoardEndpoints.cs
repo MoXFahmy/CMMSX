@@ -174,7 +174,7 @@ public static class PlanningBoardEndpoints
             {
                 // The form refuses a planned start after the due date; on the board it only warns (the supervisor sees the clash).
                 w.PlannedStart = day;
-                if (w.DueDate is { } due && day > due) warning = $"Planned after its due date ({due:d MMM yyyy}).";
+                if (w.DueDate is { } due && day > due) warning = Translator.T($"Planned after its due date ({Translator.Date(due)}).");
             }
             var before = w.Assignees.Select(a => a.EmployeeId).ToHashSet();
             if (input.FromEmployeeId is { } from)
@@ -272,7 +272,8 @@ public static class PlanningBoardEndpoints
             if (a.Available == 0 && a.Slots.FirstOrDefault(x => x.Kind == FourC.Cmms.Core.Planning.AvailabilityKind.Away) is { } away)
                 notes.Add(Translator.T($"{name} is away on that day ({away.Name})."));
             else if (planned.GetValueOrDefault((id, day)) is var hours && hours > a.Available)
-                notes.Add(Translator.T($"This takes {name} to {hours:0.##} of {a.Available:0.##} hours on {day:d MMM}."));
+                // The day is written in the reader's months before the sentence is translated (0.29.2).
+                notes.Add(Translator.T($"This takes {name} to {hours:0.##} of {a.Available:0.##} hours on {Translator.Date(day, "d MMM")}."));
         }
         return Join([.. notes]);
     }

@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net.Http.Json;
 using System.Text.Json;
 using static FourC.Cmms.Tests.BudgetTests;
@@ -28,6 +29,36 @@ public class BudgetReportTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var wo = await WorkOrderAsync(o.Admin, o.Site, asset, $"Work {code}");
         await Ok(await o.Admin.PostAsJsonAsync($"/api/work-orders/{wo}/labor", new { employeeId = e, workDate = D(Today), hours, overtimeHours = 0m }));
         return wo;
+    }
+
+    /// <summary>0.29.2 (0.20.0-2): an Arabic reader gets Arabic months in the month rows, the period and the other reports' "As of"; English stays as it was.</summary>
+    [SkippableFact]
+    public async Task Months_and_dates_follow_the_readers_language()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var arabic = CultureInfo.GetCultureInfo("ar-EG");
+        var english = CultureInfo.InvariantCulture.DateTimeFormat.AbbreviatedMonthNames.Where(m => m.Length > 0).ToList();
+        var url = "/api/reports/budget-vs-actual?from=2026-10-01&to=2026-12-31&groupBy=month";
+        var ar = await BilingualEditTests.GetAsync(o.Admin, url, "ar");
+        var labels = Rows(ar).Select(r => r.GetProperty("group").GetString()!).ToList();
+        Assert.Equal(3, labels.Count);
+        for (var n = 0; n < 3; n++) Assert.Contains(new DateOnly(2026, 10 + n, 1).ToString("MMM", arabic), labels[n]);
+        var subtitle = ar.GetProperty("subtitle").GetString()!;
+        Assert.Contains(new DateOnly(2026, 10, 1).ToString("d MMM yyyy", arabic), subtitle);
+        foreach (var month in english) Assert.DoesNotContain(month, subtitle + " " + string.Join(" ", labels));
+
+        var en = await Ok(await o.Admin.GetAsync(url));
+        Assert.Equal(["Oct 2026", "Nov 2026", "Dec 2026"], Rows(en).Select(r => r.GetProperty("group").GetString()));
+        Assert.Equal("1 Oct 2026 – 31 Dec 2026", en.GetProperty("subtitle").GetString());
+
+        // Another report's "As of" subtitle.
+        var backlog = (await BilingualEditTests.GetAsync(o.Admin, "/api/reports/wo-backlog", "ar")).GetProperty("subtitle").GetString()!;
+        foreach (var month in english) Assert.DoesNotContain(month, backlog);
+        Assert.DoesNotContain("As of", backlog);
+        Assert.Contains(DateTime.UtcNow.ToString("MMM", arabic), backlog);
+        Assert.Equal($"As of {DateOnly.FromDateTime(DateTime.UtcNow).ToString("d MMM yyyy", CultureInfo.InvariantCulture)}",
+            (await Ok(await o.Admin.GetAsync("/api/reports/wo-backlog"))).GetProperty("subtitle").GetString());
     }
 
     [SkippableFact]

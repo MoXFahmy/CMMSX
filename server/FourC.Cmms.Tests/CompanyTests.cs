@@ -65,6 +65,49 @@ public class CompanyTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(160m, s.GetProperty("rates")[0].GetProperty("rate").GetDecimal());
     }
 
+    private static Dictionary<Guid, decimal> Rates(JsonElement company) =>
+        company.GetProperty("rates").EnumerateArray().ToDictionary(r => r.GetProperty("categoryId").GetGuid(), r => r.GetProperty("rate").GetDecimal());
+
+    private static List<Guid> Ids(JsonElement company, string list) => company.GetProperty(list).EnumerateArray().Select(x => x.GetProperty("id").GetGuid()).ToList();
+
+    /// <summary>0.29.2 (0.17.0-10): contacts, an address and a rate added to a company that already exists are saved with the old rows kept, edit after edit.</summary>
+    [SkippableFact]
+    public async Task Adding_to_an_existing_company_keeps_old_rows()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var elec = await CategoryAsync(o.Admin, "ELEC", 120);
+        var mech = await CategoryAsync(o.Admin, "MECH", 100);
+        var civil = await CategoryAsync(o.Admin, "CIVIL", 90);
+        var id = await ContractorAsync(o.Admin, "LIFT", (elec, 150m));
+        var omar = Assert.Single(Ids(await Ok(await o.Admin.GetAsync($"/api/suppliers/{id}")), "contacts"));
+        static object Contact(Guid? id, string name) => new { id, name, role = (string?)null, phone = (string?)null, email = (string?)null };
+        static object Address(Guid? id, string label) => new { id, label, address = label + " road", city = "Cairo", country = "Egypt" };
+
+        await Ok(await o.Admin.PutAsJsonAsync($"/api/suppliers/{id}", CompanyBody("LIFT", false, true, false,
+            [Contact(omar, "Omar Lift"), Contact(null, "Sara")], [Address(null, "Workshop")], [new { categoryId = elec, rate = 150m }, new { categoryId = mech, rate = 110m }])));
+        var s = await Ok(await o.Admin.GetAsync($"/api/suppliers/{id}"));
+        var contacts = Ids(s, "contacts");
+        Assert.Equal(2, contacts.Count);
+        Assert.Equal(omar, contacts[0]);
+        var workshop = Assert.Single(Ids(s, "addresses"));
+        Assert.Equal(new Dictionary<Guid, decimal> { [elec] = 150m, [mech] = 110m }, Rates(s));
+
+        // A second edit adds again and keeps what the first one added.
+        await Ok(await o.Admin.PutAsJsonAsync($"/api/suppliers/{id}", CompanyBody("LIFT", false, true, false,
+            [Contact(omar, "Omar Lift"), Contact(contacts[1], "Sara"), Contact(null, "Hany")], [Address(workshop, "Workshop"), Address(null, "Store")],
+            [new { categoryId = elec, rate = 150m }, new { categoryId = mech, rate = 110m }, new { categoryId = civil, rate = 95m }])));
+        s = await Ok(await o.Admin.GetAsync($"/api/suppliers/{id}"));
+        var again = Ids(s, "contacts");
+        Assert.Equal(3, again.Count);
+        Assert.Equal(contacts, again.Take(2));
+        Assert.Equal(["Omar Lift", "Sara", "Hany"], s.GetProperty("contacts").EnumerateArray().Select(c => c.GetProperty("name").GetString()));
+        var addresses = Ids(s, "addresses");
+        Assert.Equal(2, addresses.Count);
+        Assert.Equal(workshop, addresses[0]);
+        Assert.Equal(new Dictionary<Guid, decimal> { [elec] = 150m, [mech] = 110m, [civil] = 95m }, Rates(s));
+    }
+
     [SkippableFact]
     public async Task Company_needs_a_role_and_named_contacts()
     {

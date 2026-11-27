@@ -1,3 +1,4 @@
+using System.Globalization;
 using System.Net;
 using System.Net.Http.Json;
 using System.Text.Json;
@@ -89,6 +90,32 @@ public class PlanningAvailabilityTests(ApiFixture fx) : IClassFixture<ApiFixture
         var big = await JobAsync(o.Admin, o.Site, "Big", [a], sunday.AddDays(3), 10);
         var over = await Ok(await o.Admin.PostAsJsonAsync("/api/planning/move", new { workOrderId = big, day = D(sunday.AddDays(1)) }));
         Assert.Contains("This takes Ann Fitter to 10 of 8 hours", over.GetProperty("warning").GetString());
+    }
+
+    /// <summary>0.29.2 (0.19.0-4): in Arabic the board's warnings name their days with Arabic months, never English ones.</summary>
+    [SkippableFact]
+    public async Task Warnings_in_arabic_name_the_day_with_an_arabic_month()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx);
+        var a = await PersonAsync(o.Admin, "A", "Ann Fitter", o.Site);
+        var due = NextSunday;
+        var monday = due.AddDays(1);
+        var big = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/work-orders", new
+        {
+            title = "Big", siteId = o.Site, type = "Corrective", priority = "Medium", assigneeIds = new[] { a }, plannedStart = D(due), dueDate = D(due), estimatedHours = 10m,
+        })));
+        // Moved past its due date onto a day where it takes Ann over her hours: two warnings, each with a day in it.
+        var moved = await Ok(await BilingualEditTests.SendAsync(o.Admin, HttpMethod.Post, "/api/planning/move", "ar", new { workOrderId = big, day = D(monday) }));
+        var warning = moved.GetProperty("warning").GetString()!;
+        var arabic = CultureInfo.GetCultureInfo("ar-EG");
+        Assert.Contains(monday.ToString("d MMM", arabic), warning);
+        Assert.Contains(due.ToString("d MMM yyyy", arabic), warning);
+        foreach (var english in CultureInfo.InvariantCulture.DateTimeFormat.AbbreviatedMonthNames.Where(m => m.Length > 0))
+            Assert.DoesNotContain(english, warning);
+        Assert.Contains("Ann Fitter", warning);
+        Assert.DoesNotContain("Planned after", warning);
+        Assert.DoesNotContain("This takes", warning);
     }
 
     [SkippableFact]
