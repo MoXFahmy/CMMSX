@@ -599,12 +599,14 @@ public static class PmEndpoints
         if (who.Count > 0 && await db.Users.People().CountAsync(u => who.Contains(u.Id) && u.TenantId == db.CurrentTenantId, ct) != who.Count) v.Add("recipientIds", "Unknown user.");
     }
 
-    /// <summary>Where a template is used: the PMs (and how), the asset checklists, and its open work orders.</summary>
+    /// <summary>Where a template is used: the PMs (and how), the asset checklists, and its open work orders. Names in the reader's language (0.29.2).</summary>
     private static async Task<object> UsedByAsync(CmmsDbContext db, Guid id, CancellationToken ct)
     {
+        var ar = Bilingual.Arabic;
         var rows = await db.PmSchedules.AsNoTracking().Where(s => s.PmTaskId == id || s.LowerTaskId == id || s.UpperTaskId == id || s.ExtraTasks.Any(e => e.PmTaskId == id)
                 || s.Assets.Any(a => a.PmTaskId == id))
-            .OrderBy(s => s.Code).Select(s => new { s.Id, s.Code, s.Name, s.PmTaskId, s.LowerTaskId, s.UpperTaskId, Nth = s.ExtraTasks.Any(e => e.PmTaskId == id) }).ToListAsync(ct);
+            .OrderBy(s => s.Code).Select(s => new { s.Id, s.Code, Name = ar && s.NameAr != null ? s.NameAr : s.Name, s.PmTaskId, s.LowerTaskId, s.UpperTaskId,
+                Nth = s.ExtraTasks.Any(e => e.PmTaskId == id) }).ToListAsync(ct);
         var schedules = rows.Select(s => new
         {
             s.Id, s.Code, s.Name,
@@ -614,8 +616,8 @@ public static class PmEndpoints
             .Select(c => new
             {
                 c.Id, c.AssetId, c.AssetCategoryId,
-                Name = c.AssetId != null ? db.Assets.Where(a => a.Id == c.AssetId).Select(a => a.AssetNumber + " · " + a.Name).FirstOrDefault()
-                    : db.AssetCategories.Where(k => k.Id == c.AssetCategoryId).Select(k => k.Name).FirstOrDefault(),
+                Name = c.AssetId != null ? db.Assets.Where(a => a.Id == c.AssetId).Select(a => a.AssetNumber + " · " + (ar && a.NameAr != null ? a.NameAr : a.Name)).FirstOrDefault()
+                    : db.AssetCategories.Where(k => k.Id == c.AssetCategoryId).Select(k => ar && k.NameAr != null ? k.NameAr : k.Name).FirstOrDefault(),
             }).ToListAsync(ct);
         var open = await db.WorkOrders.CountAsync(w => w.PmTaskId == id && (w.Status == WorkOrderStatus.Open || w.Status == WorkOrderStatus.InProgress || w.Status == WorkOrderStatus.OnHold), ct);
         return new { Schedules = schedules, Checklists = checklists, OpenWorkOrders = open };

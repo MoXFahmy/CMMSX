@@ -76,6 +76,34 @@ public class BilingualLeftoverTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal("Safety check", S((await GetAsync(o.Admin, $"/api/asset-checklists?assetId={asset}", "en")).EnumerateArray().Single(), "name"));
     }
 
+    /// <summary>M4 (0.29.2 final review): the measurement point's and the template's "used by" lists show the names the reader reads.</summary>
+    [SkippableFact]
+    public async Task Point_and_template_used_by_follow_the_reader()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await OrgAsync(fx, emailOn: false);
+        var point = await Ck13.PointAsync(o.Admin, "UBT");
+        var task = await Ck13.TypedTemplateAsync(o.Admin, "UB", [new { description = "Supply air", type = "Number", measurementPointId = point }],
+            new() { ["name"] = "Safety check", ["nameAr"] = "فحص السلامة" });
+        Assert.Equal("فحص السلامة", S((await GetAsync(o.Admin, $"/api/measurement-points/{point}", "ar")).GetProperty("usedBy").EnumerateArray().Single(), "name"));
+        Assert.Equal("Safety check", S((await GetAsync(o.Admin, $"/api/measurement-points/{point}", "en")).GetProperty("usedBy").EnumerateArray().Single(), "name"));
+
+        // The template's schedules and its checklists' asset and category names.
+        var cat = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/asset-categories", new { code = "UBK", name = "Pump kit", nameAr = "مجموعة المضخات", isActive = true })));
+        var asset = await AssetAsync(o.Admin, o.Site, category: cat);
+        var number = S(await GetAsync(o.Admin, $"/api/assets/{asset}", "en"), "assetNumber");
+        await Pm12.SaveScheduleAsync(o.Admin, Pm12.Schedule(o.Site, task, Today, asset, extra: new() { ["name"] = "Monthly pump PM", ["nameAr"] = "صيانة المضخة الشهرية" }));
+        await Ok(await o.Admin.PostAsJsonAsync("/api/asset-checklists", new { assetId = asset, pmTaskId = task }));
+        await Ok(await o.Admin.PostAsJsonAsync("/api/asset-checklists", new { assetCategoryId = cat, pmTaskId = task }));
+
+        var ar = (await GetAsync(o.Admin, $"/api/pm-tasks/{task}", "ar")).GetProperty("usedBy");
+        Assert.Equal("صيانة المضخة الشهرية", S(ar.GetProperty("schedules").EnumerateArray().Single(), "name"));
+        Assert.Equal(new[] { $"{number} · {PumpAr}", "مجموعة المضخات" }.Order(), ar.GetProperty("checklists").EnumerateArray().Select(c => S(c, "name")!).Order());
+        var en = (await GetAsync(o.Admin, $"/api/pm-tasks/{task}", "en")).GetProperty("usedBy");
+        Assert.Equal("Monthly pump PM", S(en.GetProperty("schedules").EnumerateArray().Single(), "name"));
+        Assert.Equal(new[] { $"{number} · {Pump}", "Pump kit" }.Order(), en.GetProperty("checklists").EnumerateArray().Select(c => S(c, "name")!).Order());
+    }
+
     // ---------------------------------------------------------------- 0.28.0-3: PM schedule sort
 
     [SkippableFact]

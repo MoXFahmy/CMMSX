@@ -45,8 +45,9 @@ public static class MeasurementPointEndpoints
             if (p is null) return Results.NotFound();
             var assets = await (from x in db.MeasurementPointAssets where x.PointId == id join a in db.Assets on x.AssetId equals a.Id orderby a.AssetNumber
                                 select new { a.Id, a.AssetNumber, Name = Bilingual.Arabic && a.NameAr != null ? a.NameAr : a.Name, a.SiteId }).ToListAsync(ct);
+            var ar = Bilingual.Arabic; // template names in the reader's language (0.29.2)
             var usedBy = await db.PmTasks.AsNoTracking().Where(t => t.Steps.Any(s => s.MeasurementPointId == id)).OrderBy(t => t.Code)
-                .Select(t => new { t.Id, t.Code, t.Name }).ToListAsync(ct);
+                .Select(t => new { t.Id, t.Code, Name = ar && t.NameAr != null ? t.NameAr : t.Name }).ToListAsync(ct);
             return Results.Ok(new
             {
                 p.Id, p.Code, p.Name, p.Kind, p.Unit, p.Decimals, p.ValidMin, p.ValidMax, p.AlarmLow, p.AlertLow, p.Target, p.AlertHigh, p.AlarmHigh,
