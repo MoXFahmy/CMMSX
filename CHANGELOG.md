@@ -6,39 +6,55 @@ The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); num
 
 ## [0.29.2] - 2026-11-27
 
-An Arabic and two-language polish release, from the reviews of 0.6.0 and 0.17.0–0.28.0. Nothing new to learn: screens and
-exports look as before in English, and read correctly in Arabic. No database change.
+An Arabic and two-language polish release, from the reviews of 0.6.0 and 0.17.0–0.28.0. Nothing new to learn, and no database
+change. In Arabic, screens and exports now read correctly. In English they look as before, except for three things: a safety
+note written only in Arabic now shows, the message shown when no free number is found for a new record is worded differently,
+and the AI "fill in missing Arabic" window has new states (all three are described below).
 
 ### Arabic reading direction
-- Pages, tables, print layouts and the location tree now line up from the reading side: text that sat on the right in English
-  sits on the right in Arabic too, and indents start from the correct side.
-- Charts (asset costs, measurements, the home dashboard, reports and AI usage) mirror in Arabic, and their axis labels sit on the
-  right side of each tick.
+- Pages, tables and print layouts line up from the reading side: number and action columns sit at the end of the line (on the
+  right in English, on the left in Arabic), and spacing, borders and the location tree's indents follow the reading side.
+- Charts (asset costs, measurements, the home dashboard, reports and AI usage) mirror in Arabic: time and category axes run
+  right to left, and the value axis moves to the right.
 
 ### Server messages, dates and reports in Arabic
-- Messages, labels and warnings that had no Arabic now have it (for example "Person", "Supplier's part number", "Pack", the name
-  clash message, and the numbering failure for work orders and purchase orders). The clash message shows the name as the reader sees it.
+- Messages, labels and warnings that had no Arabic now have it (for example "Person", "Supplier's part number", "Pack" and the
+  name clash message). The clash message shows the name as the reader sees it.
+- When no free number is found for a new record (a work order, purchase order, asset and so on), the message names the kind of
+  record in the reader's language, in English too ("Could not generate a unique work order number…"), instead of the internal
+  sequence name.
 - Dates inside sentences, the budget report's month rows and the "As of" lines of reports use Arabic month names in Arabic.
-- A new automatic test fails the build when a message reaches a reader in English only, or an Arabic text still holds an English word.
+- Two automatic checks keep it that way: a new server message (a text handed to the translator) without Arabic, or with English
+  left in its Arabic, fails the build; and a web check stops new layout fixed to the left or right.
 
 ### Exports and history in the app's language
-- Exports (lists and reports) are written in the language the screen is in, sheet names and choice words included. A file
-  exported in Arabic imports back as before.
-- Lines CMX wrote for you (bulk-change summaries in the activity log and in a record's history, old ones too) show in the reader's
-  language. The stored text is unchanged.
+- Exports (lists and reports) are written in the language the screen is in, sheet names and choice words included. The choice
+  words in an Arabic export (statuses, types, yes/no) are words the importer accepts, and the importers still accept English.
+- Lines CMX writes itself show in the reader's language, old ones too: bulk-change summaries in the activity log and in a
+  record's history, work order history notes (such as "Created on the phone" or "Generated from PM …"), the reasons in PM
+  generation results, stock movement notes and the note on a request approved automatically. The stored text is unchanged, and
+  notes people typed are shown exactly as typed.
 
 ### Arabic names everywhere
-- The PM compliance report, the PM calendar's "used by", asset checklist template names and the work orders page's symptom, cause
-  and remedy filters show the reader's name. The PM schedule list sorts by the shown name for Arabic readers.
-- Phone parts and templates can be found by their other-language name, offline too, and the web location picker matches both names.
-- A safety note written only in Arabic is no longer hidden on the work order page or the job card, whatever language the reader uses.
+- The PM compliance report, the "used by" lists of PM calendars, measurement points and templates, asset checklist template
+  names and the work orders page's symptom, cause and remedy filters show the reader's name. The PM schedule list sorts by the
+  shown name for Arabic readers.
+- Phone parts and templates can be found by their other-language name, offline too. Each phone downloads its offline parts
+  list once again after the update, to pick up those names. The web location picker and the location tree's search match both
+  names.
+- A safety note is never hidden: each reader sees it in their own language when it is written there, else in the other one.
+  This applies on the work order page, the job card, in e-mails and on the phone, so an English reader now sees a safety note
+  written only in Arabic.
 - The AI "consistency" examples for template steps follow the most recently changed templates.
 
 ### Language switch and the AI "fill in missing Arabic" window
-- Switching language refreshes every open list and page, so names change at once, also if saving the choice to your account failed.
-- The window can no longer end in a dead end. When the assistant can't draft a batch it offers Try again, Skip these and go on,
-  or Close. Texts you untick, and texts it couldn't draft, aren't asked for again (or charged again) while the window stays open;
-  a note says how many were left out. Closing the window and opening it again offers everything.
+- Switching language refreshes every open list and page, so names change at once, also if saving the choice to your account
+  failed. What you have typed on an edit page is kept.
+- After you save or skip a batch, the window always goes on: to the next batch, then to the list's next text (for example from
+  asset names to notes to technicians), and says so when nothing is left. With no row kept, the main button becomes "Skip these
+  and go on". When the assistant can't draft a batch it offers Try again, Skip these and go on, or Close. Texts you untick or
+  leave blank, and texts it couldn't draft, aren't asked for again (or charged again) while the window stays open; a note says
+  how many were left out. Closing the window and opening it again offers everything.
 
 ### Deploying
 - The deploy's tag step names the commit the version tag is on (it used to print the tag's own id and warn wrongly when a tagged
