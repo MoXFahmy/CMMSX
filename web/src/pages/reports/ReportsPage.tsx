@@ -19,7 +19,7 @@ import { AssetPicker } from '@/components/AssetPicker';
 import { CostCentrePicker, useCostCentres } from '@/components/CostCentrePicker';
 import { PrintHeader } from '@/components/PrintHeader';
 import { printFilters } from './printFilters';
-import { isTree, PLAN_PARTS, planText, rowLink, treeRows, type PlanCell } from './reportCells';
+import { isTree, PLAN_PARTS, planText, rowLink, statusColor, treeRows, type PlanCell } from './reportCells';
 import { localToday, PRESETS } from './presets';
 import { fmtDate, fmtDateTime, fmtNumber, fmtPrice } from '@/components/utils';
 import { downloadCsv } from '../inventory/InventoryPage';
@@ -214,7 +214,7 @@ export function ReportViewPage() {
                     return to ? <Anchor component={Link} to={to} fz="sm" style={style}>{v}</Anchor> : <Text fz="sm" style={style}>{v}</Text>;
                   }
                   if (to) return <Anchor component={Link} to={to} fz="sm">{v}</Anchor>;
-                  if (c.key === 'status' && typeof r[c.key] === 'string') return <Badge variant="light" color={/out of stock|below/i.test(String(r[c.key])) ? 'red' : /re-order/i.test(String(r[c.key])) ? 'orange' : 'gray'}>{v}</Badge>;
+                  if (c.key === 'status' && typeof r[c.key] === 'string') return <Badge variant="light" color={statusColor(r)}>{v}</Badge>;
                   return <Text fz="sm" c={c.key === 'daysLate' && r[c.key] ? 'red' : undefined} fw={c.key === 'total' ? 600 : undefined}>{v}</Text>;
                 },
               }))}

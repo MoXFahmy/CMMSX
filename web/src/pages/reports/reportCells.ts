@@ -21,6 +21,15 @@ export function rowLink(r: Record<string, unknown>, key: string): string | null 
   return null;
 }
 
+/**
+ * A status badge's colour. The stock re-order report names each line's state in `stockState` (0.29.2), because its status words come in
+ * the reader's language: out of stock and below minimum are red, re-order is orange; on order and every other report's status are grey.
+ */
+export function statusColor(r: Record<string, unknown>): 'red' | 'orange' | 'gray' {
+  if (r.stockState === 'out' || r.stockState === 'below') return 'red';
+  return r.stockState === 'reorder' ? 'orange' : 'gray';
+}
+
 /** The rows a chart shows: a tree report's top level (level 0), else every row. */
 export function treeRows<T extends Record<string, unknown>>(rows: T[]): T[] {
   return rows.filter((r) => r.level === undefined || r.level === null || r.level === 0);

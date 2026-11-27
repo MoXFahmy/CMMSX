@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { TFunction } from 'i18next';
-import { planText, rowLink, treeRows } from './reportCells';
+import { planText, rowLink, statusColor, treeRows } from './reportCells';
 
 const t = ((k: string) => k.replace('rep.plan.', '')) as unknown as TFunction;
 
@@ -23,5 +23,23 @@ describe('report cells (0.14.0)', () => {
     const rows = [{ node: 'S1', level: 0 }, { node: 'C1', level: 1 }, { node: 'R1', level: 2 }, { node: 'S2', level: 0 }];
     expect(treeRows(rows).map((r) => r.node)).toEqual(['S1', 'S2']);
     expect(treeRows([{ month: 'Jan' }])).toEqual([{ month: 'Jan' }]);
+  });
+});
+
+// G2 (0.29.2 last review): the stock re-order report's status words come in the reader's language, so the badge colour follows the
+// row's stockState, not the English words; every other status stays grey, as before.
+describe('status badge colour (0.29.2)', () => {
+  it('colours the stock re-order states in any language', () => {
+    expect(statusColor({ status: 'نفد المخزون', stockState: 'out' })).toBe('red');
+    expect(statusColor({ status: 'أقل من الحد الأدنى', stockState: 'below' })).toBe('red');
+    expect(statusColor({ status: 'إعادة الطلب', stockState: 'reorder' })).toBe('orange');
+    expect(statusColor({ status: 'تحت الطلب', stockState: 'onOrder' })).toBe('gray');
+  });
+
+  it('keeps the English colours and leaves other reports grey', () => {
+    expect(statusColor({ status: 'Out of stock', stockState: 'out' })).toBe('red');
+    expect(statusColor({ status: 'Re-order', stockState: 'reorder' })).toBe('orange');
+    expect(statusColor({ status: 'Submitted' })).toBe('gray');
+    expect(statusColor({ status: 'Expired' })).toBe('gray');
   });
 });

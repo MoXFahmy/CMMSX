@@ -342,7 +342,8 @@ public static class ReportEndpoints
             "trade" => xs.GroupBy(x => x.Trade ?? "No trade"),
             "team" => xs.GroupBy(x => x.Team ?? "No team"),
             "type" => xs.GroupBy(x => Lists.Name(a.Settings, x.Type)),
-            _ => xs.GroupBy(x => x.Employee + (x.IsContractor ? " (contractor)" : "")),
+            // A contractor's name carries the word in the reader's language (0.29.2); the name stays as stored.
+            _ => xs.GroupBy(x => x.IsContractor ? string.Format(CultureInfo.InvariantCulture, Translator.T("{0} (contractor)"), x.Employee) : x.Employee),
         };
         var rows = groups.Select(g => Row(("group", g.Key), ("hours", g.Sum(x => x.Hours)), ("overtime", g.Sum(x => x.OvertimeHours)), ("total", g.Sum(x => x.Hours + x.OvertimeHours)),
             ("cost", R2(g.Sum(x => x.Cost))), ("workOrders", g.Select(x => x.WorkOrderId).Distinct().Count()))).OrderByDescending(r => (decimal)r["total"]!).ToList();
@@ -943,14 +944,17 @@ public static class ReportEndpoints
                 .Sum(x => (decimal?)((x.Quantity - x.QuantityReceived) * x.PackSize)) ?? 0,
             Price = l.Part.LastPurchasePrice ?? l.Part.AverageCost,
         }).ToListAsync(ct);
+        // The status and "Yes" in the reader's language (0.29.2); stockState names the status for the page's badge colour, whatever the language.
+        var yes = Translator.T("Yes");
         var rows = xs.OrderByDescending(x => x.IsCritical).ThenBy(x => x.QuantityOnHand - x.MinLevel).Select(x =>
         {
             var need = InventoryEndpoints.SuggestedQuantity(x.QuantityOnHand, x.Reserved, x.OnOrder, x.ReorderQuantity, x.MaxLevel);
             var uncovered = x.QuantityOnHand - x.Reserved + x.OnOrder <= x.ReorderLevel;
+            var (state, status) = x.QuantityOnHand <= 0 ? ("out", "Out of stock") : x.QuantityOnHand < x.MinLevel ? ("below", "Below minimum") : uncovered ? ("reorder", "Re-order") : ("onOrder", "On order");
             return Row(("partId", x.PartId), ("part", $"{x.PartNumber} · {x.Name}"), ("store", x.Store), ("onHand", x.QuantityOnHand), ("reserved", x.Reserved),
                 ("available", x.QuantityOnHand - x.Reserved), ("minLevel", x.MinLevel), ("reorderLevel", x.ReorderLevel),
-                ("onOrder", x.OnOrder), ("suggested", uncovered ? Math.Max(need, 0) : 0), ("value", uncovered ? R2(Math.Max(need, 0) * x.Price) : 0), ("critical", x.IsCritical ? "Yes" : ""),
-                ("status", x.QuantityOnHand <= 0 ? "Out of stock" : x.QuantityOnHand < x.MinLevel ? "Below minimum" : uncovered ? "Re-order" : "On order"));
+                ("onOrder", x.OnOrder), ("suggested", uncovered ? Math.Max(need, 0) : 0), ("value", uncovered ? R2(Math.Max(need, 0) * x.Price) : 0), ("critical", x.IsCritical ? yes : ""),
+                ("status", Translator.T(status)), ("stockState", state));
         }).ToList();
         return new("stock-reorder", "Stock below re-order level", AsOf(Today),
             [new("part", "Part"), new("store", "Store"), new("status", "Status"), new("critical", "Critical"), new("onHand", "On hand", "number"),
@@ -1053,7 +1057,8 @@ public static class ReportEndpoints
             var po = new PurchaseOrder { Number = x.Number, TaxPercent = x.TaxPercent, ShippingCost = x.ShippingCost, ExchangeRate = x.ExchangeRate, Lines = x.Lines };
             var outstanding = R2(x.Lines.Sum(l => Math.Max(l.Quantity - l.QuantityReceived, 0) * l.NetUnitPrice) * x.ExchangeRate);
             var late = x.Status != PurchaseOrderStatus.Submitted && x.ExpectedDate < Today ? Today.DayNumber - x.ExpectedDate!.Value.DayNumber : (int?)null;
-            return Row(("id", x.Id), ("number", x.Number), ("supplier", x.Supplier), ("status", x.Status.ToString()), ("orderDate", x.OrderDate), ("expectedDate", x.ExpectedDate),
+            // The status in the reader's language (0.29.2); English keeps the word it always showed.
+            return Row(("id", x.Id), ("number", x.Number), ("supplier", x.Supplier), ("status", Translator.T(x.Status.ToString())), ("orderDate", x.OrderDate), ("expectedDate", x.ExpectedDate),
                 ("total", PurchaseOrderMath.TotalInBase(po)), ("outstanding", outstanding), ("daysLate", late));
         }).ToList();
         return new("open-purchase-orders", "Open purchase orders", AsOf(Today, "values in base currency"),

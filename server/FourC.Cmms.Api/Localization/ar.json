@@ -1425,5 +1425,9 @@
  "the previous work order is still open": "أمر العمل السابق لا يزال مفتوحًا",
  "{0} request unlinked": "فُكّ ربط {0} طلب",
  "{0} requests unlinked": "فُكّ ربط {0} طلب",
- "Too many texts to leave out.": "عدد النصوص المستبعدة كبير جدًا."
+ "Too many texts to leave out.": "عدد النصوص المستبعدة كبير جدًا.",
+ "0–7 days": "0–7 أيام",
+ "31–90 days": "31–90 يومًا",
+ "8–30 days": "8–30 يومًا",
+ "{0} (contractor)": "{0} (مقاول)"
 }
