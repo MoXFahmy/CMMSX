@@ -361,7 +361,7 @@ public static class AuditEndpoints
             var lines = await db.AuditEntries.AsNoTracking().Where(a => a.ParentType == entityType && a.ParentId == entityId)
                 .OrderByDescending(a => a.Timestamp).Take(300).ToListAsync(ct);
             return Results.Ok(own.Concat(lines).OrderByDescending(a => a.Timestamp)
-                .Select(a => new { a.Id, a.Action, a.Changes, a.UserName, a.Timestamp, a.EntityType, a.EntityId, a.Source, a.ChangeId }));
+                .Select(a => new { a.Id, a.Action, Changes = StoredText.Changes(a.Changes), a.UserName, a.Timestamp, a.EntityType, a.EntityId, a.Source, a.ChangeId }));
         }).WithTags("Audit").RequireAuthorization();
     }
 }

@@ -366,7 +366,7 @@ public static class PmEndpoints
                 .AsSplitQuery().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (sch is null) return Results.NotFound();
             var result = await PmGenerator.GenerateOccurrenceAsync(db, ctx, sch, input.Date, ct, mail);
-            return Results.Ok(result);
+            return Results.Ok(PmGenerator.Shown(result));
         }).RequirePermission(Permissions.PmGenerate);
 
         // "Make a copy for this PM" (0.12.0): later edits to the shared template no longer reach this PM.
@@ -398,12 +398,12 @@ public static class PmEndpoints
 
         var pm = api.MapGroup("/pm").WithTags("PM generation");
         pm.MapGet("/preview", async (DateOnly until, Guid? siteId, CmmsDbContext db, ITenantContext ctx, CancellationToken ct) =>
-            await PmGenerator.RunAsync(db, ctx, until, siteId, null, dryRun: true, ct)).RequirePermission(Permissions.PmView);
+            PmGenerator.Shown(await PmGenerator.RunAsync(db, ctx, until, siteId, null, dryRun: true, ct))).RequirePermission(Permissions.PmView);
         pm.MapPost("/generate", async (GenerateInput input, CmmsDbContext db, ITenantContext ctx, EmailOutbox mail, CancellationToken ct) =>
         {
             if (input.Until > Today.AddYears(1)) throw new DomainException("Generate at most one year ahead.");
             var results = await PmGenerator.RunAsync(db, ctx, input.Until, input.SiteId, input.ScheduleIds, dryRun: false, ct, mail);
-            return Results.Ok(new { created = results.Sum(r => r.Made), results });
+            return Results.Ok(new { created = results.Sum(r => r.Made), results = PmGenerator.Shown(results) });
         }).RequirePermission(Permissions.PmGenerate);
         pm.MapGet("/forecast", async (DateOnly from, DateOnly to, Guid? siteId, CmmsDbContext db, CancellationToken ct) =>
         {
@@ -469,7 +469,7 @@ public static class PmEndpoints
             var meter = await db.Meters.FirstOrDefaultAsync(x => x.Id == id, ct);
             if (meter is null) return Results.NotFound();
             var (v, generated) = await RecordReadingAsync(db, ctx, mail, meter, input, ct);
-            return v.IsValid ? Results.Ok(new { ok = true, generated }) : v.Problem();
+            return v.IsValid ? Results.Ok(new { ok = true, generated = PmGenerator.Shown(generated) }) : v.Problem();
         }).RequirePermission(Permissions.MetersRecord);
     }
 

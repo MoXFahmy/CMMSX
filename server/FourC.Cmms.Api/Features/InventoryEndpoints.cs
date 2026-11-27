@@ -321,11 +321,12 @@ public static class InventoryEndpoints
             if (from is not null) q = q.Where(x => x.Date >= from);
             if (to is not null) q = q.Where(x => x.Date <= to);
             var ar = Bilingual.Arabic;
+            // CMX's own movement notes ("From the phone", "Stock take …") in the reader's language (0.29.2); typed notes as typed.
             return await q.OrderByDescending(x => x.Date).ThenByDescending(x => x.CreatedAt).Select(x => new
             {
                 x.Id, x.Type, x.Date, x.PartId, PartNumber = x.Part!.PartNumber, PartName = ar && x.Part.NameAr != null ? x.Part.NameAr : x.Part.Name, Unit = x.Part.UnitOfMeasure, x.StoreId, StoreCode = x.Store!.Code,
                 x.Quantity, x.UnitCost, Total = Math.Round(x.Quantity * x.UnitCost, 2), x.WorkOrderId, WorkOrderNumber = db.WorkOrders.Where(w => w.Id == x.WorkOrderId).Select(w => w.Number).FirstOrDefault(),
-                x.PurchaseOrderId, x.Reference, x.BatchNumber, x.ExpiryDate, x.Notes, x.CreatedByName, x.CreatedAt, x.LocationId, x.CostCentreId,
+                x.PurchaseOrderId, x.Reference, x.BatchNumber, x.ExpiryDate, Notes = StoredText.Show(x.Notes), x.CreatedByName, x.CreatedAt, x.LocationId, x.CostCentreId,
             }).ToPagedAsync(page ?? 1, pageSize ?? 50, ct);
         }).RequirePermission(Permissions.InventoryView);
 

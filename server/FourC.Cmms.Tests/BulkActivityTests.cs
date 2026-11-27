@@ -48,6 +48,29 @@ public class BulkActivityTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Contains("1 asset", summary.Changes);
     }
 
+    /// <summary>0.29.2 (0.25.0-5): the summary is stored in English and shown in the reader's language.</summary>
+    [SkippableFact]
+    public async Task Merge_summary_shows_in_the_readers_language()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await OrgAsync(fx);
+        var grundfos = await BrandTests.BrandAsync(o.Admin, "Grundfos");
+        var pumps = await BrandTests.BrandAsync(o.Admin, "Grundfos Pumps");
+        await BrandTests.AssetAsync(o.Admin, o.Site, "Pump B", pumps, null);
+        await Ok(await o.Admin.PutAsJsonAsync($"/api/brands/{pumps}", new { name = "Grundfos", isActive = true, merge = true }));
+
+        async Task<string?> SummaryAsync(string language)
+        {
+            var page = await BilingualEditTests.GetAsync(o.Admin, "/api/activity?entityType=Brand", language);
+            var row = page.GetProperty("items").EnumerateArray().Single(r => r.GetProperty("entityId").GetGuid() == grundfos && (r.GetProperty("changes").GetString() ?? "").Contains("Summary"));
+            return System.Text.Json.JsonDocument.Parse(row.GetProperty("changes").GetString()!).RootElement.GetProperty("Summary").GetProperty("to").GetString();
+        }
+        Assert.Equal("دُمجت العلامة التجارية في Grundfos: 1 أصل", await SummaryAsync("ar"));
+        Assert.Equal("Brand merged into Grundfos: 1 asset", await SummaryAsync("en"));
+        var stored = Assert.Single(await EntriesAsync(e => e.EntityId == grundfos && e.Changes?.Contains("Summary") == true));
+        Assert.Equal("""{"Summary":{"to":"Brand merged into Grundfos: 1 asset"}}""", stored.Changes);
+    }
+
     [SkippableFact]
     public async Task Unit_rename_writes_a_summary()
     {

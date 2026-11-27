@@ -18,6 +18,11 @@ public static class PmGenerator
         public int Made => WorkOrderId is not null ? 1 : Children;
     }
 
+    /// <summary>Results as the reader sees them: the reason in their language (0.29.2). The generator itself keeps the English.</summary>
+    public static List<Result> Shown(IEnumerable<Result> results) => results.Select(Shown).ToList();
+
+    public static Result Shown(Result r) => r.Skipped is null ? r : r with { Skipped = StoredText.Show(r.Skipped) };
+
     private static readonly WorkOrderStatus[] Active = [WorkOrderStatus.Open, WorkOrderStatus.InProgress, WorkOrderStatus.OnHold];
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
 

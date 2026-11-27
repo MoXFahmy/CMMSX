@@ -177,7 +177,7 @@ public static class WorkOrderEndpoints
             var parts = await db.StockTransactions.AsNoTracking().Where(t => t.WorkOrderId == id && (t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Issue || t.Type == FourC.Cmms.Core.Inventory.StockTransactionType.Return))
                 .OrderByDescending(t => t.Date).ThenByDescending(t => t.CreatedAt)
                 .Select(t => new { t.Id, t.Type, t.Date, t.PartId, t.Part!.PartNumber, PartName = Bilingual.Arabic && t.Part.NameAr != null ? t.Part.NameAr : t.Part.Name, t.Part.UnitOfMeasure, t.StoreId, StoreCode = t.Store!.Code,
-                    Quantity = -t.Quantity, t.UnitCost, Total = Math.Round(-t.Quantity * t.UnitCost, 2), t.BatchNumber, t.Notes, t.CreatedByName }).ToListAsync(ct);
+                    Quantity = -t.Quantity, t.UnitCost, Total = Math.Round(-t.Quantity * t.UnitCost, 2), t.BatchNumber, Notes = StoredText.Show(t.Notes), t.CreatedByName }).ToListAsync(ct);
             var request = w.WorkRequestId is { } rid ? await db.WorkRequests.AsNoTracking().Where(r => r.Id == rid)
                 .Select(r => new { r.Id, r.Number, r.RequesterName, r.RespondBy, r.DecidedAt, r.Status, AwaitingFeedback = r.AwaitingFeedbackSince != null }).FirstOrDefaultAsync(ct) : null;
             // The requester's latest answer to the finished work.
@@ -608,8 +608,9 @@ public static class WorkOrderEndpoints
         {
             var comments = await db.WorkOrderComments.AsNoTracking().Where(c => c.WorkOrderId == id)
                 .Select(c => new { c.Id, Kind = "comment", Body = (string?)c.Body, From = (WorkOrderStatus?)null, To = (WorkOrderStatus?)null, HoldReason = (HoldReason?)null, By = c.UserName, At = c.CreatedAt }).ToListAsync(ct);
+            // CMX's own history notes in the reader's language (0.29.2); a note a person typed comes back as typed.
             var changes = await db.WorkOrderStatusChanges.AsNoTracking().Where(c => c.WorkOrderId == id)
-                .Select(c => new { c.Id, Kind = "status", Body = c.Note, From = c.FromStatus, To = (WorkOrderStatus?)c.ToStatus, c.HoldReason, By = c.ChangedByName, At = c.ChangedAt }).ToListAsync(ct);
+                .Select(c => new { c.Id, Kind = "status", Body = StoredText.Show(c.Note), From = c.FromStatus, To = (WorkOrderStatus?)c.ToStatus, c.HoldReason, By = c.ChangedByName, At = c.ChangedAt }).ToListAsync(ct);
             return comments.Concat(changes).OrderByDescending(x => x.At);
         }).RequirePermission(Permissions.WorkOrdersView);
 

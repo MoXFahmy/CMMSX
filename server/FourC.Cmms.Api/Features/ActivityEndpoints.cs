@@ -93,7 +93,9 @@ public static class ActivityEndpoints
         {
             var record = labels.GetValueOrDefault((a.ParentType ?? a.EntityType, a.ParentId ?? a.EntityId)) ?? a.ParentType ?? a.EntityType;
             var label = a.ParentType is null ? record : $"{record} › {a.EntityType}";
-            return new ActivityRow(a.Id, a.Timestamp, a.UserId, a.UserName, a.Source, a.ChangeId, a.EntityType, a.EntityId, a.ParentType, a.ParentId, label, a.Action, a.Changes);
+            // A bulk change's summary in the reader's language, the export's too (0.29.2); the stored JSON stays English.
+            return new ActivityRow(a.Id, a.Timestamp, a.UserId, a.UserName, a.Source, a.ChangeId, a.EntityType, a.EntityId, a.ParentType, a.ParentId, label, a.Action,
+                StoredText.Changes(a.Changes));
         }).ToList(), paged.Total, paged.Page, paged.PageSize);
     }
 

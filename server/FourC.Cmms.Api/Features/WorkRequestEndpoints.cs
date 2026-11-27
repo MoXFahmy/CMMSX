@@ -124,7 +124,7 @@ public static class WorkRequestEndpoints
                 r.Id, r.Number, r.Title, r.Description, r.Status, r.Priority, r.Type, r.SiteId, Site = new { r.Site!.Id, r.Site.Name }, r.LocationId, LocationName = r.Location is null ? null : Bilingual.Pick(r.Location.Name, r.Location.NameAr),
                 r.AssetId, Asset = r.Asset is null ? null : new { r.Asset.Id, r.Asset.AssetNumber, Name = Bilingual.Pick(r.Asset.Name, r.Asset.NameAr) }, r.RequesterName, r.RequesterEmail, r.RequesterPhone,
                 r.RequiredBy, r.RespondBy, DueAt = r.Status is WorkRequestStatus.Approved or WorkRequestStatus.Closed && work is not null ? work.DueAt : r.DueAt, r.DueFromTarget, Sla = sla,
-                r.DecisionNote, r.DecidedAt, DecidedBy = r.DecidedById is { } d ? users.GetValueOrDefault(d) : null, WorkOrder = wo, r.DowntimeEventId,
+                DecisionNote = StoredText.Show(r.DecisionNote), r.DecidedAt, DecidedBy = r.DecidedById is { } d ? users.GetValueOrDefault(d) : null, WorkOrder = wo, r.DowntimeEventId,
                 r.CreatedAt, CreatedBy = r.CreatedById is { } c ? users.GetValueOrDefault(c) : null, CanCancel = r.Status == WorkRequestStatus.New && r.CreatedById == ctx.UserId,
                 r.RequestTypeId, RequestType = r.RequestType is null ? null : new { r.RequestType.Id, Name = Bilingual.Pick(r.RequestType.Name, r.RequestType.NameAr), r.RequestType.DefaultTradeId },
                 ExtraRecipients = extra, r.AccessWindows, r.OnlyWhenStopped,
