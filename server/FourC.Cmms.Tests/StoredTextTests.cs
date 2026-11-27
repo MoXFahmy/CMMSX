@@ -21,6 +21,7 @@ public class StoredTextTests(ApiFixture fx) : IClassFixture<ApiFixture>
     private const string OldSummary = """{"Summary":{"to":"Brand renamed to Acme: 14 assets"}}""";
 
     public static IEnumerable<object[]> Forms() => StoredText.Forms.Select(f => new object[] { f });
+    public static IEnumerable<object[]> PmForms() => StoredText.PmForms.Select(f => new object[] { f });
 
     /// <summary>The guard can't see stored lines (they aren't messages), so this is their coverage: every form has Arabic all through.</summary>
     [Theory, MemberData(nameof(Forms))]
@@ -32,6 +33,20 @@ public class StoredTextTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Empty(ArabicCoverageTests.EnglishLeft(arabic));
         Assert.Equal(sample, StoredText.Show(sample, "en"));
     }
+
+    /// <summary>The same for PM generation results, through their own exit.</summary>
+    [Theory, MemberData(nameof(PmForms))]
+    public void Every_pm_result_has_arabic(string english)
+    {
+        var sample = ArabicCoverageTests.Sample(english);
+        var arabic = StoredText.PmResult(sample, "ar");
+        Assert.NotEqual(sample, arabic);
+        Assert.Empty(ArabicCoverageTests.EnglishLeft(arabic));
+        Assert.Equal(sample, StoredText.PmResult(sample, "en"));
+    }
+
+    [Fact]
+    public void The_two_families_do_not_overlap() => Assert.Empty(StoredText.Forms.Intersect(StoredText.PmForms));
 
     [Fact]
     public void Counts_in_summaries_show_in_arabic_singular_and_plural()
@@ -64,13 +79,49 @@ public class StoredTextTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal("", StoredText.Show("", "ar"));
     }
 
+    /// <summary>
+    /// I3 (0.29.2 final review): PM generation results are never stored, so their forms ("Skipped: {0}", "Waiting: {0}", "the asset is {0}")
+    /// don't apply to the note columns people type in, and a typed note shaped like one is shown as typed.
+    /// </summary>
+    [Fact]
+    public void Typed_notes_shaped_like_pm_results_stay_as_typed()
+    {
+        Assert.Equal("Waiting: parts", StoredText.Show("Waiting: parts", "ar"));
+        Assert.Equal("the asset is running", StoredText.Show("the asset is running", "ar"));
+        Assert.Equal("Skipped: Open", StoredText.Show("Skipped: Open", "ar"));
+        Assert.Equal("Previous PM work order is still open", StoredText.Show("Previous PM work order is still open", "ar"));
+    }
+
+    /// <summary>I3 through the exits: a typed hold note, rejection note and stock note shaped like PM results come back as typed in Arabic.</summary>
+    [SkippableFact]
+    public async Task Typed_notes_shaped_like_pm_results_show_as_typed()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var o = await PurchaseRequestTests.OrgAsync(fx);
+        var wo = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/work-orders", new { title = "Fix", siteId = o.Site, type = "Corrective", priority = "Low" })));
+        await Ok(await o.Admin.PostAsJsonAsync($"/api/work-orders/{wo}/status", new { status = "OnHold", holdReason = "WaitingForParts", note = "Waiting: parts" }));
+        var bodies = (await GetAsync(o.Admin, $"/api/work-orders/{wo}/activity", "ar")).EnumerateArray()
+            .Where(x => x.GetProperty("kind").GetString() == "status" && x.GetProperty("body").ValueKind == JsonValueKind.String).Select(x => x.GetProperty("body").GetString()).ToList();
+        Assert.Contains("Waiting: parts", bodies);
+
+        var request = Id(await Ok(await o.Admin.PostAsJsonAsync("/api/work-requests", new { title = "Noise", siteId = o.Site, priority = "Low", type = "Corrective" })));
+        await Ok(await o.Admin.PostAsJsonAsync($"/api/work-requests/{request}/reject", new { note = "the asset is running" }));
+        Assert.Equal("the asset is running", (await GetAsync(o.Admin, $"/api/work-requests/{request}", "ar")).GetProperty("decisionNote").GetString());
+
+        await Ok(await o.Admin.PostAsJsonAsync("/api/inventory/receive", new { partId = o.Part, storeId = o.Store, quantity = 1, unitCost = 2, notes = "Skipped: Open" }));
+        var notes = (await GetAsync(o.Admin, $"/api/inventory/transactions?partId={o.Part}", "ar")).GetProperty("items").EnumerateArray().Select(x => x.GetProperty("notes").GetString()).ToList();
+        Assert.Contains("Skipped: Open", notes);
+    }
+
     [Fact]
     public void Pm_reasons_inside_a_line_are_translated_too()
     {
-        Assert.Equal("تم التخطي: الأصل قيد الإصلاح", StoredText.Show("Skipped: the asset is Under repair", "ar"));
-        Assert.Equal("بالانتظار: أمر العمل السابق لا يزال مفتوحًا", StoredText.Show("Waiting: the previous work order is still open", "ar"));
-        Assert.Equal("تم التخطي: غيّرته عملية إنشاء أخرى", StoredText.Show("Skipped: changed by another generation run", "ar"));
-        Assert.Equal("Skipped: the asset is Under repair", StoredText.Show("Skipped: the asset is Under repair", "en"));
+        Assert.Equal("تم التخطي: الأصل قيد الإصلاح", StoredText.PmResult("Skipped: the asset is Under repair", "ar"));
+        Assert.Equal("بالانتظار: أمر العمل السابق لا يزال مفتوحًا", StoredText.PmResult("Waiting: the previous work order is still open", "ar"));
+        Assert.Equal("تم التخطي: غيّرته عملية إنشاء أخرى", StoredText.PmResult("Skipped: changed by another generation run", "ar"));
+        Assert.Equal("Skipped: the asset is Under repair", StoredText.PmResult("Skipped: the asset is Under repair", "en"));
+        // A PM result never takes a stored line's form, and a stored line never takes a PM one.
+        Assert.Equal("Created on the phone", StoredText.PmResult("Created on the phone", "ar"));
     }
 
     [Fact]

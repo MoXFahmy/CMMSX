@@ -7,18 +7,23 @@ using System.Text.Unicode;
 namespace FourC.Cmms.Api.Infrastructure;
 
 /// <summary>
-/// Lines CMX writes itself and stores in English (0.29.2, spec decision 6): activity summaries, work order history notes, PM generation
-/// results, stock movement notes, a request's automatic approval. They stay stored exactly as written (searches and old rows rely on it)
-/// and are put into the reader's language where they leave the server for a screen or an export, so rows written before 0.29.2 show in
-/// Arabic too. The Arabic is in Localization/ar.json under the English form.
-/// <para>Only these forms are translated. A note column also holds what people typed: that text never matches a form and is shown as
-/// written, even when it happens to be a phrase the catalogue knows. Inside a form the values (a name, a number, a code, a date, a person's
-/// own words) are shown as written too, except where the value is itself one of these lines (a PM skip reason).</para>
+/// Lines CMX writes itself in English (0.29.2, spec decision 6), put into the reader's language where they leave the server for a screen
+/// or an export. Two families, never mixed:
+/// <list type="bullet">
+/// <item><see cref="Forms"/> / <see cref="Show"/>: lines that are stored (activity summaries, work order history notes, stock movement notes,
+/// a request's automatic approval). They stay stored exactly as written (searches and old rows rely on it), so rows written before 0.29.2
+/// show in Arabic too. Their columns also hold what people typed: that text never matches a form and is shown as written, even when it
+/// happens to be a phrase the catalogue knows. Inside a form the values (a name, a number, a code, a date, a person's own words) are shown
+/// as written.</item>
+/// <item><see cref="PmForms"/> / <see cref="PmResult"/>: PM generation results, never stored, only returned by the PM endpoints
+/// (<c>PmGenerator.Shown</c>). Here a value can itself be a line CMX wrote (a skip reason, an asset status) and is translated in turn.</item>
+/// </list>
+/// The Arabic is in Localization/ar.json under the English form.
 /// </summary>
 public static partial class StoredText
 {
     /// <summary>
-    /// Every line, exactly as the code writes it, <c>{0}</c>… for the values. A count written by <c>AuditLog.Count</c> ("1 asset" /
+    /// Every stored line, exactly as the code writes it, <c>{0}</c>… for the values. A count written by <c>AuditLog.Count</c> ("1 asset" /
     /// "14 assets") is spelt out in each form, singular and plural, so a count needs no catch-all "{0} assets" entry that would rewrite
     /// names ending in "assets" in other messages.
     /// </summary>
@@ -39,23 +44,27 @@ public static partial class StoredText
         "Generated from PM {0}", "Generated from PM {0} (group {1})", "Follow-up of a reading", "Follow-up of {0}", "Refused by {0}", "Refused by {0}: {1}",
         // A request's decision note when nobody decided.
         "Approved automatically (type: {0})",
-        // PM generation results and their reasons.
-        "Skipped: {0}", "Waiting: {0}", "the asset is {0}", "the previous work order is still open", "every asset on the round has a status that skips PM work",
-        "changed by another generation run", "Waiting for the last work order to be completed", "Previous PM work order is still open", "PM task not found",
-        "Already generated", "No active assets in this part", "Nothing to generate", "No active assets in the list", "The asset group is inactive.",
-        "No next date: its calendars have no dates after {0}.",
         // Stock movement notes.
         "From the phone", "Stock take {0}", "Stock take {0}: {1}", "Stock count {0}", "Received on {0}", "Opening balance (import)", "Unit found",
         "Unit {0} fitted to {1}", "Unit {0} removed", "Unit {0} sent for repair", "Unit {0} back from repair", "Unit {0} scrapped",
     ];
 
-    /// <summary>Forms whose value is itself a line CMX wrote (a PM skip reason, an asset status), translated in turn.</summary>
+    /// <summary>PM generation results and their reasons (<c>PmGenerator</c>): never stored, so never matched against a note column.</summary>
+    public static IReadOnlyList<string> PmForms { get; } =
+    [
+        "Skipped: {0}", "Waiting: {0}", "the asset is {0}", "the previous work order is still open", "every asset on the round has a status that skips PM work",
+        "changed by another generation run", "Waiting for the last work order to be completed", "Previous PM work order is still open", "PM task not found",
+        "Already generated", "No active assets in this part", "Nothing to generate", "No active assets in the list", "The asset group is inactive.",
+        "No next date: its calendars have no dates after {0}.",
+    ];
+
+    /// <summary>PM forms whose value is itself a line CMX wrote (a PM skip reason, an asset status), translated in turn.</summary>
     private static readonly HashSet<string> ValuesTranslated = ["Skipped: {0}", "Waiting: {0}", "the asset is {0}"];
 
     private sealed record Form(Regex Pattern, string Arabic, bool TranslateValues);
 
     /// <summary>The forms with the most fixed text first, so "Refused by {0}" doesn't take "Refused by {0}: {1}"'s lines.</summary>
-    private static readonly Form[] Compiled = Forms
+    private static Form[] Compile(IEnumerable<string> forms) => forms
         .OrderByDescending(f => Hole().Replace(f, "").Length)
         .Select(f => new Form(
             new Regex("^" + Hole().Replace(Regex.Escape(f).Replace(@"\{", "{"), h => $"(?<p{h.Groups[1].Value}>.+?)") + "$",
@@ -64,14 +73,26 @@ public static partial class StoredText
             ValuesTranslated.Contains(f)))
         .ToArray();
 
-    /// <summary>A stored line in the reader's language (or <paramref name="language"/>); anything that isn't one of <see cref="Forms"/> as it is.</summary>
-    [return: NotNullIfNotNull(nameof(english))]
-    public static string? Show(string? english, string? language = null) =>
-        string.IsNullOrEmpty(english) || (language ?? Translator.CurrentLanguage) != "ar" ? english : Arabic(english, 0) ?? english;
+    private static readonly Form[] Stored = Compile(Forms);
+    private static readonly Form[] Pm = Compile(PmForms);
 
-    private static string? Arabic(string text, int depth)
+    /// <summary>
+    /// A stored line in the reader's language (or <paramref name="language"/>); anything that isn't one of <see cref="Forms"/> as it is.
+    /// For note columns (history, decision and stock notes) and activity summaries; values inside a form are never translated.
+    /// </summary>
+    [return: NotNullIfNotNull(nameof(english))]
+    public static string? Show(string? english, string? language = null) => Shown(Stored, english, language);
+
+    /// <summary>A PM generation result's reason in the reader's language (one of <see cref="PmForms"/>; anything else as it is).</summary>
+    [return: NotNullIfNotNull(nameof(english))]
+    public static string? PmResult(string? english, string? language = null) => Shown(Pm, english, language);
+
+    private static string? Shown(Form[] forms, string? english, string? language) =>
+        string.IsNullOrEmpty(english) || (language ?? Translator.CurrentLanguage) != "ar" ? english : Arabic(forms, english, 0) ?? english;
+
+    private static string? Arabic(Form[] forms, string text, int depth)
     {
-        foreach (var form in Compiled)
+        foreach (var form in forms)
         {
             Match m;
             try { m = form.Pattern.Match(text); }
@@ -80,7 +101,7 @@ public static partial class StoredText
             return Hole().Replace(form.Arabic, h =>
             {
                 var value = m.Groups["p" + h.Groups[1].Value].Value;
-                return form.TranslateValues && depth < 2 ? Arabic(value, depth + 1) ?? Translator.T(value, "ar") : value;
+                return form.TranslateValues && depth < 2 ? Arabic(forms, value, depth + 1) ?? Translator.T(value, "ar") : value;
             });
         }
         return null;
