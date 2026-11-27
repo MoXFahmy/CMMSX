@@ -3,6 +3,7 @@ using System.Net.Http.Json;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using FourC.Cmms.Api.Features.Ai;
+using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Ai;
 using Microsoft.EntityFrameworkCore;
 using static FourC.Cmms.Tests.BilingualEditTests;
@@ -206,4 +207,81 @@ public class AiTranslateTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Contains("Pump ⇒ مضخة", Assert.Single(fx.Ai.Asks).SharedContext);
         Assert.Equal(AiFeature.Translation, fx.Ai.Asks[0].Feature);
     }
+
+    private static Task<HttpResponseMessage> DraftSkipAsync(HttpClient c, string list, IEnumerable<Guid> skip) =>
+        c.PostAsJsonAsync("/api/translations/draft", new { list, skip });
+
+    private static List<Guid> Ids(JsonElement r, string name) => r.GetProperty(name).EnumerateArray().Select(i => i.GetGuid()).ToList();
+
+    [SkippableFact]
+    public async Task Skip_list_leaves_texts_out_of_the_batch()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await AiOrgAsync();
+        var a = await AssetAsync(o.Admin, o.Site, name: "Pump A", nameAr: null);
+        var b = await AssetAsync(o.Admin, o.Site, name: "Pump B", nameAr: null);
+        await AssetAsync(o.Admin, o.Site, name: "Pump C", nameAr: null);
+        Echo();
+        var r = await Ok(await DraftSkipAsync(o.Admin, "assets", [a, b]));
+        var item = r.GetProperty("items").EnumerateArray().Single();
+        Assert.Equal("Pump C", S(item, "text"));
+        Assert.Equal(["1"], SentIds(Assert.Single(fx.Ai.Asks))); // only the one text was sent (and charged)
+        Assert.Equal(0, r.GetProperty("remaining").GetInt32()); // the skipped two are not "remaining"
+        Assert.Equal(2, r.GetProperty("skippedLeft").GetInt32());
+    }
+
+    [SkippableFact]
+    public async Task Skipping_every_missing_text_says_everything_is_done_without_asking_the_ai()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await AiOrgAsync();
+        var a = await AssetAsync(o.Admin, o.Site, name: "Pump A", nameAr: null);
+        Echo();
+        var r = await Ok(await DraftSkipAsync(o.Admin, "assets", [a]));
+        Assert.Equal(JsonValueKind.Null, r.GetProperty("field").ValueKind);
+        Assert.Empty(fx.Ai.Asks);
+        Assert.Equal(1, r.GetProperty("skippedLeft").GetInt32());
+    }
+
+    [SkippableFact]
+    public async Task A_batch_that_drafts_nothing_names_its_texts()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await AiOrgAsync();
+        var a = await AssetAsync(o.Admin, o.Site, name: "Pump A", nameAr: null);
+        var b = await AssetAsync(o.Admin, o.Site, name: "Pump B", nameAr: null);
+        fx.Ai.Responder = _ => Task.FromResult(FakeAiClient.Answer(new JsonObject { ["items"] = new JsonArray() }.ToJsonString()));
+        var r = await Ok(await DraftAsync(o.Admin, "assets"));
+        Assert.Equal(0, r.GetProperty("items").GetArrayLength());
+        Assert.Equal(2, r.GetProperty("couldNot").GetInt32());
+        Assert.Equal(new[] { a, b }.OrderBy(x => x), Ids(r, "couldNotIds").OrderBy(x => x));
+        // Passing them back as skipped moves past them.
+        Echo();
+        var next = await Ok(await DraftSkipAsync(o.Admin, "assets", Ids(r, "couldNotIds")));
+        Assert.Equal(JsonValueKind.Null, next.GetProperty("field").ValueKind);
+    }
+
+    [SkippableFact]
+    public async Task Skip_list_is_only_a_filter()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await AiOrgAsync();
+        var other = await AiOrgAsync();
+        var mine = await AssetAsync(o.Admin, o.Site, name: "Pump A", nameAr: null);
+        var theirs = await AssetAsync(other.Admin, other.Site, name: "Their pump", nameAr: null);
+        Echo();
+        // A foreign id, an unknown id and a repeated id are ignored; nothing is written.
+        var r = await Ok(await DraftSkipAsync(o.Admin, "assets", [theirs, Guid.NewGuid(), Guid.NewGuid(), theirs]));
+        Assert.Equal(mine, r.GetProperty("items").EnumerateArray().Single().GetProperty("id").GetGuid());
+        Assert.Equal(0, r.GetProperty("skippedLeft").GetInt32());
+        Assert.All(await DbAsync(fx, db => db.Assets.IgnoreQueryFilters().Where(a => a.Id == mine || a.Id == theirs).ToListAsync()), a => Assert.Null(a.NameAr));
+        // The cap: 2,000 ids are fine, 2,001 are refused.
+        Assert.Equal(HttpStatusCode.OK, (await DraftSkipAsync(o.Admin, "assets", Enumerable.Range(0, 2000).Select(_ => Guid.NewGuid()))).StatusCode);
+        var over = await DraftSkipAsync(o.Admin, "assets", Enumerable.Range(0, 2001).Select(_ => Guid.NewGuid()));
+        Assert.Equal(HttpStatusCode.BadRequest, over.StatusCode);
+        Assert.Contains("Too many texts to leave out", await over.Content.ReadAsStringAsync());
+    }
+
+    [Fact]
+    public void Skip_cap_message_has_arabic() => Assert.NotEqual(AiTranslate.TooManySkipped, Translator.T(AiTranslate.TooManySkipped, "ar"));
 }

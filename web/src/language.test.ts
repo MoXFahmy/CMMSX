@@ -1,10 +1,15 @@
-import { afterEach, describe, expect, it } from 'vitest';
-import { applyLanguage, directionOf, numberLocale, pickLanguage } from './language';
+import { QueryClient } from '@tanstack/react-query';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { put } from '@/api/client';
+import i18n from './i18n';
+import { applyLanguage, directionOf, numberLocale, pickLanguage, switchLanguage } from './language';
 import { fmtDate, fmtNumber, fromNow } from '@/components/utils';
 import { span } from '@/components/sla';
 import { fmtDateTime, fmtMoney, fmtPrice, hoursText } from '@/components/utils';
 
-afterEach(() => applyLanguage('en'));
+vi.mock('@/api/client', () => ({ put: vi.fn() }));
+
+afterEach(() => { applyLanguage('en'); vi.mocked(put).mockReset(); });
 
 describe('language', () => {
   it('Arabic reads right to left, English left to right', () => {
@@ -56,5 +61,34 @@ describe('language', () => {
     expect(fmtNumber(1234.5)).toMatch(/^1.?234.5$/);
     applyLanguage('en');
     expect(numberLocale()).toBeUndefined();
+  });
+});
+
+describe('switching language (0.29.2)', () => {
+  it('refreshes every query, not only the profile', async () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, 'invalidateQueries').mockResolvedValue();
+    vi.mocked(put).mockResolvedValue(undefined);
+    await switchLanguage('ar', qc, true);
+    expect(put).toHaveBeenCalledWith('/auth/me/language', { language: 'ar' });
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledWith();
+  });
+
+  it('still refreshes everything when saving to the account fails, and reports the failure', async () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, 'invalidateQueries').mockResolvedValue();
+    vi.mocked(put).mockRejectedValue(new Error('offline'));
+    await expect(switchLanguage('ar', qc, true)).rejects.toThrow('offline');
+    expect(i18n.language).toBe('ar'); // the screen did change
+    expect(spy).toHaveBeenCalledWith();
+  });
+
+  it('on the sign-in page nothing is saved but everything is refreshed', async () => {
+    const qc = new QueryClient();
+    const spy = vi.spyOn(qc, 'invalidateQueries').mockResolvedValue();
+    await switchLanguage('ar', qc, false);
+    expect(put).not.toHaveBeenCalled();
+    expect(spy).toHaveBeenCalledWith();
   });
 });

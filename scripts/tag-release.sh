@@ -19,7 +19,8 @@ is_semver "$version" || { echo "::error::VERSION in ${commit:0:7} is '$version',
 tag="v$version"
 
 # The commit the tag marks on GitHub: an annotated tag's "^{}" line, else the tag itself; empty when there is none.
-tagged=$(git ls-remote --tags origin "refs/tags/$tag" | awk -v t="refs/tags/$tag" '
+# Both patterns are asked for: an exact "refs/tags/$tag" alone returns only the tag object, never the peeled commit line.
+tagged=$(git ls-remote --tags origin "refs/tags/$tag" "refs/tags/$tag^{}" | awk -v t="refs/tags/$tag" '
   $2 == t "^{}" { peeled = $1 }  $2 == t { direct = $1 }  END { print (peeled != "" ? peeled : direct) }')
 
 if [ "$tagged" = "$commit" ]; then

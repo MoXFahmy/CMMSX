@@ -15,6 +15,12 @@ check() { # check <description> <expected exit: 0|1> <command...>
 equals() { # equals <description> <expected> <actual>
   if [ "$2" = "$3" ]; then echo "ok   $1"; else printf 'FAIL %s\n  expected: %q\n  actual:   %q\n' "$1" "$2" "$3"; failures=$((failures + 1)); fi
 }
+contains() { # contains <description> <text> <output>
+  case $3 in *"$2"*) echo "ok   $1" ;; *) printf 'FAIL %s\n  wanted to find: %s\n  in: %s\n' "$1" "$2" "$3"; failures=$((failures + 1)) ;; esac
+}
+not_contains() { # not_contains <description> <text> <output>
+  case $3 in *"$2"*) printf 'FAIL %s\n  found: %s\n  in: %s\n' "$1" "$2" "$3"; failures=$((failures + 1)) ;; *) echo "ok   $1" ;; esac
+}
 
 check "0.0.0 is a version"        0 is_semver 0.0.0
 check "1.10.3 is a version"       0 is_semver 1.10.3
@@ -89,12 +95,18 @@ equals "v0.0.1 marks the deployed commit on GitHub" "$c1" "$(github_tag_commit v
 first_tag=$(github_tag v0.0.1)
 equals "v0.0.1 is an annotated tag" "tag" "$(git -C "$work" cat-file -t "$first_tag" 2>/dev/null)"
 check "deploying the same commit again succeeds" 0 tag_release "$c1"
+again=$(tag_release "$c1" 2>&1)
+contains "deploying it again says the tag is on the commit" "is already on ${c1:0:7}" "$again"
+not_contains "deploying it again does not warn" "::warning::" "$again"
 equals "deploying it again leaves the tag alone" "$first_tag" "$(github_tag v0.0.1)"
 
 c2=$(commit_version 0.0.1)
 check "a later commit with an unchanged VERSION still deploys" 0 tag_release "$c2"
 equals "it does not move v0.0.1" "$c1" "$(github_tag_commit v0.0.1)"
 check "it warns that the deploy is not a release" 0 bash -c "cd '$work' && bash '$tag_script' '$c2' | grep -q '::warning::.*not a release'"
+later=$(tag_release "$c2" 2>&1)
+contains "the warning names the commit the tag is on" "v0.0.1 is already on ${c1:0:7}" "$later"
+not_contains "the warning does not name the tag object" "${first_tag:0:7}" "$later"
 
 c3=$(commit_version 1.0)
 check "a malformed VERSION fails" 1 tag_release "$c3"

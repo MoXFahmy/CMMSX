@@ -1424,5 +1424,6 @@
  "the asset is {0}": "الأصل {0}",
  "the previous work order is still open": "أمر العمل السابق لا يزال مفتوحًا",
  "{0} request unlinked": "فُكّ ربط {0} طلب",
- "{0} requests unlinked": "فُكّ ربط {0} طلب"
+ "{0} requests unlinked": "فُكّ ربط {0} طلب",
+ "Too many texts to leave out.": "عدد النصوص المستبعدة كبير جدًا."
 }

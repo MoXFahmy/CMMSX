@@ -4,6 +4,46 @@ All notable changes to CMX (formerly 4C CMMS) — the cloud app and the Android 
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); numbering follows the rules in
 [docs/VERSIONING.md](docs/VERSIONING.md): a new feature raises the middle number, a fix or small task the last one.
 
+## [0.29.2] - 2026-11-27
+
+An Arabic and two-language polish release, from the reviews of 0.6.0 and 0.17.0–0.28.0. Nothing new to learn: screens and
+exports look as before in English, and read correctly in Arabic. No database change.
+
+### Arabic reading direction
+- Pages, tables, print layouts and the location tree now line up from the reading side: text that sat on the right in English
+  sits on the right in Arabic too, and indents start from the correct side.
+- Charts (asset costs, measurements, the home dashboard, reports and AI usage) mirror in Arabic, and their axis labels sit on the
+  right side of each tick.
+
+### Server messages, dates and reports in Arabic
+- Messages, labels and warnings that had no Arabic now have it (for example "Person", "Supplier's part number", "Pack", the name
+  clash message, and the numbering failure for work orders and purchase orders). The clash message shows the name as the reader sees it.
+- Dates inside sentences, the budget report's month rows and the "As of" lines of reports use Arabic month names in Arabic.
+- A new automatic test fails the build when a message reaches a reader in English only, or an Arabic text still holds an English word.
+
+### Exports and history in the app's language
+- Exports (lists and reports) are written in the language the screen is in, sheet names and choice words included. A file
+  exported in Arabic imports back as before.
+- Lines CMX wrote for you (bulk-change summaries in the activity log and in a record's history, old ones too) show in the reader's
+  language. The stored text is unchanged.
+
+### Arabic names everywhere
+- The PM compliance report, the PM calendar's "used by", asset checklist template names and the work orders page's symptom, cause
+  and remedy filters show the reader's name. The PM schedule list sorts by the shown name for Arabic readers.
+- Phone parts and templates can be found by their other-language name, offline too, and the web location picker matches both names.
+- A safety note written only in Arabic is no longer hidden on the work order page or the job card, whatever language the reader uses.
+- The AI "consistency" examples for template steps follow the most recently changed templates.
+
+### Language switch and the AI "fill in missing Arabic" window
+- Switching language refreshes every open list and page, so names change at once, also if saving the choice to your account failed.
+- The window can no longer end in a dead end. When the assistant can't draft a batch it offers Try again, Skip these and go on,
+  or Close. Texts you untick, and texts it couldn't draft, aren't asked for again (or charged again) while the window stays open;
+  a note says how many were left out. Closing the window and opening it again offers everything.
+
+### Deploying
+- The deploy's tag step names the commit the version tag is on (it used to print the tag's own id and warn wrongly when a tagged
+  commit was deployed again). The release test checks the message.
+
 ## [0.29.1] - 2026-11-25
 
 A fix release: the privacy, safety and data-loss problems left by the reviews of 0.7.0–0.26.1 (the few items from 0.6.0 and

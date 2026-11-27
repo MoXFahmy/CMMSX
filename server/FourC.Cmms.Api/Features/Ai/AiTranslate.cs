@@ -12,11 +12,13 @@ using static FourC.Cmms.Api.Features.Ai.AiText;
 
 namespace FourC.Cmms.Api.Features.Ai;
 
-public sealed record TranslateDraftInput(string? List);
+/// <summary><c>Skip</c> (0.29.2): texts the person left out or the AI couldn't draft; a filter only (at most <see cref="AiTranslate.MaxSkip"/> ids).</summary>
+public sealed record TranslateDraftInput(string? List, List<Guid>? Skip = null);
 public sealed record TranslateItem(Guid Id, string? Ar);
 public sealed record TranslateSaveInput(string? List, string? Field, List<TranslateItem>? Items);
 public sealed record TranslateDraftItem(Guid Id, string Text, string Draft);
-public sealed record TranslateDraft(string? Field, List<TranslateDraftItem> Items, int CouldNot, int Remaining);
+/// <summary><c>CouldNotIds</c>: the texts of this batch with no draft; <c>SkippedLeft</c>: missing texts left out by the skip list.</summary>
+public sealed record TranslateDraft(string? Field, List<TranslateDraftItem> Items, int CouldNot, int Remaining, List<Guid> CouldNotIds, int SkippedLeft);
 
 /// <summary>
 /// "Fill in missing Arabic" (0.28.0): Claude drafts the Arabic texts a list is missing, a batch at a time; a person checks them and saves.
@@ -31,7 +33,9 @@ public static class AiTranslate
     public const string ContextHeader = "Existing translations in this organization (keep the same words):";
     public const string UnknownList = "Choose a list to translate.";
     public const string UnknownField = "Choose a text to save.";
+    public const string TooManySkipped = "Too many texts to leave out.";
     public const int ContextPairs = 200;
+    public const int MaxSkip = 2000;
 
     /// <summary>A new schema each time (a JSON node can belong to one request only).</summary>
     private static JsonObject Schema() => Obj(("items", Arr(Obj(("id", Str()), ("ar", Str())))));
@@ -42,7 +46,8 @@ public static class AiTranslate
         string Field { get; }
         int Batch { get; }
         int Max { get; }
-        Task<(List<(Guid Id, string Text)> Items, int Missing)> NextAsync(CmmsDbContext db, CancellationToken ct);
+        /// <summary>The next batch without the <paramref name="skip"/> ids; <c>Missing</c> counts the texts not skipped, <c>SkippedLeft</c> the skipped ones still missing.</summary>
+        Task<(List<(Guid Id, string Text)> Items, int Missing, int SkippedLeft)> NextAsync(CmmsDbContext db, IReadOnlyCollection<Guid> skip, CancellationToken ct);
         Task<List<(string Main, string Ar)>> PairsAsync(CmmsDbContext db, CancellationToken ct);
         /// <summary>Sets the Arabic text of each record that has none yet; returns how many it set.</summary>
         Task<int> SaveAsync(CmmsDbContext db, IReadOnlyDictionary<Guid, string> texts, CancellationToken ct);
@@ -60,11 +65,13 @@ public static class AiTranslate
         private IQueryable<T> Missing(CmmsDbContext db) => set(db).Where(Both(main, ar, (m, a) =>
             Expression.AndAlso(Expression.AndAlso(Expression.NotEqual(m, Null), Expression.NotEqual(m, Empty)), Expression.Equal(a, Null))));
 
-        public async Task<(List<(Guid Id, string Text)> Items, int Missing)> NextAsync(CmmsDbContext db, CancellationToken ct)
+        public async Task<(List<(Guid Id, string Text)> Items, int Missing, int SkippedLeft)> NextAsync(CmmsDbContext db, IReadOnlyCollection<Guid> skip, CancellationToken ct)
         {
-            var q = Missing(db);
+            // Only this organization's rows are in the query, so a foreign or unknown id in the skip list matches nothing.
+            var all = Missing(db);
+            var q = all.Where(x => !skip.Contains(x.Id));
             var rows = await q.OrderBy(order).Take(batch).Select(Pair(x => x.Id, main)).ToListAsync(ct);
-            return (rows.Select(r => (r.Id, r.Text!)).ToList(), await q.CountAsync(ct));
+            return (rows.Select(r => (r.Id, r.Text!)).ToList(), await q.CountAsync(ct), skip.Count == 0 ? 0 : await all.CountAsync(x => skip.Contains(x.Id), ct));
         }
 
         public async Task<List<(string Main, string Ar)>> PairsAsync(CmmsDbContext db, CancellationToken ct)
@@ -93,12 +100,13 @@ public static class AiTranslate
 
         private static IQueryable<Core.Pm.PmTaskStep> Visible(CmmsDbContext db) => db.PmTaskSteps.Where(s => db.PmTasks.Any(t => t.Id == s.PmTaskId));
 
-        public async Task<(List<(Guid Id, string Text)> Items, int Missing)> NextAsync(CmmsDbContext db, CancellationToken ct)
+        public async Task<(List<(Guid Id, string Text)> Items, int Missing, int SkippedLeft)> NextAsync(CmmsDbContext db, IReadOnlyCollection<Guid> skip, CancellationToken ct)
         {
-            var q = Visible(db).Where(s => s.Description != "" && s.DescriptionAr == null);
+            var all = Visible(db).Where(s => s.Description != "" && s.DescriptionAr == null);
+            var q = all.Where(s => !skip.Contains(s.Id));
             var rows = await (from s in q join t in db.PmTasks on s.PmTaskId equals t.Id orderby t.Code, s.Sequence select new { s.Id, s.Description })
                 .Take(Batch).ToListAsync(ct);
-            return (rows.Select(r => (r.Id, r.Description)).ToList(), await q.CountAsync(ct));
+            return (rows.Select(r => (r.Id, r.Description)).ToList(), await q.CountAsync(ct), skip.Count == 0 ? 0 : await all.CountAsync(s => skip.Contains(s.Id), ct));
         }
 
         public async Task<List<(string Main, string Ar)>> PairsAsync(CmmsDbContext db, CancellationToken ct) =>
@@ -164,9 +172,13 @@ public static class AiTranslate
     private static async Task<IResult> DraftAsync(TranslateDraftInput input, HttpContext http, CmmsDbContext db, AiService ai, PermissionService perms, CancellationToken ct)
     {
         if (await RefuseAsync(input.List, http, perms) is { } refused) return refused;
+        if (input.Skip is { Count: > MaxSkip }) return Results.Problem(title: Translator.T(TooManySkipped), statusCode: 400);
+        var skip = (input.Skip ?? []).Distinct().ToList();
+        var skippedLeft = 0;
         foreach (var source in Lists[input.List!].Fields)
         {
-            var (items, missing) = await source.NextAsync(db, ct);
+            var (items, missing, left) = await source.NextAsync(db, skip, ct);
+            skippedLeft += left;
             if (items.Count == 0) continue;
             var pairs = await source.PairsAsync(db, ct);
             var context = $"{ContextHeader}\n{Lines(pairs, p => $"{p.Main} ⇒ {p.Ar}")}";
@@ -178,9 +190,11 @@ public static class AiTranslate
             var answered = Answers(run.Reply).Where(a => keys.ContainsKey(a.Key)).ToDictionary(a => keys[a.Key], a => a.Value);
             var drafts = items.Where(i => answered.TryGetValue(i.Id, out var ar) && ar.Length <= source.Max)
                 .Select(i => new TranslateDraftItem(i.Id, i.Text, answered[i.Id])).ToList();
-            return Results.Ok(new TranslateDraft(source.Field, drafts, items.Count - drafts.Count, missing - items.Count));
+            var drafted = drafts.Select(d => d.Id).ToHashSet();
+            return Results.Ok(new TranslateDraft(source.Field, drafts, items.Count - drafts.Count, missing - items.Count,
+                items.Where(i => !drafted.Contains(i.Id)).Select(i => i.Id).ToList(), skippedLeft));
         }
-        return Results.Ok(new TranslateDraft(null, [], 0, 0));
+        return Results.Ok(new TranslateDraft(null, [], 0, 0, [], skippedLeft));
     }
 
     /// <summary>Claude's Arabic text per short id: non-blank answers only (a refusal or an unreadable answer gives none).</summary>

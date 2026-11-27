@@ -7,7 +7,7 @@ import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { aiOn, useAiStatus } from './aiStatus';
 import { notifyError, notifySuccess } from './utils';
-import { toRows, toSaveBody, type ReviewRow, type TranslationDraft, type TranslationList } from './translations';
+import { draftState, passedIds, toRows, toSaveBody, type ReviewRow, type TranslationDraft, type TranslationList } from './translations';
 
 /** The permission that edits each list's texts (the server checks the same). */
 const EDIT: Record<TranslationList, string> = {
@@ -19,6 +19,8 @@ const EDIT: Record<TranslationList, string> = {
 /**
  * "Fill in missing Arabic" (0.28.0): the AI drafts a batch of the list's missing Arabic texts; the person checks, edits, unticks and saves.
  * Shown to people who can edit the list, when the AI assistant is on. <c>refresh</c>: the query keys to reload after saving.
+ * 0.29.2: while the window is open it remembers the texts the person unticked and the ones the assistant couldn't draft, and doesn't
+ * ask for them again (no charge twice); closing it forgets them. A batch that drafts nothing offers Try again / Skip these and go on / Close.
  */
 export function TranslateButton({ list, refresh = [] }: { list: TranslationList; refresh?: unknown[][] }) {
   const { t } = useTranslation();
@@ -29,12 +31,17 @@ export function TranslateButton({ list, refresh = [] }: { list: TranslationList;
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<TranslationDraft | null>(null);
   const [rows, setRows] = useState<ReviewRow[]>([]);
+  const [passed, setPassed] = useState<string[]>([]);
   if (!aiOn(ai) || !can(EDIT[list])) return null;
 
-  const next = async () => {
+  /** Closing forgets what was passed: opening the window again offers everything. */
+  const close = () => { setOpen(false); setPassed([]); setDraft(null); setRows([]); };
+  /** The next batch, leaving out <c>skip</c> (texts the person passed on while this window has been open). */
+  const next = async (skip: string[] = []) => {
     setBusy(true);
     try {
-      const d = await post<TranslationDraft>('/translations/draft', { list });
+      setPassed(skip);
+      const d = await post<TranslationDraft>('/translations/draft', { list, skip });
       setDraft(d); setRows(toRows(d)); setOpen(true);
       void qc.invalidateQueries({ queryKey: ['ai-status'] });
     } catch (e) { notifyError(e); } finally { setBusy(false); }
@@ -47,17 +54,37 @@ export function TranslateButton({ list, refresh = [] }: { list: TranslationList;
       const r = await post<{ saved: number; skipped: number }>('/translations/save', toSaveBody(list, draft.field, rows));
       notifySuccess(t('bilingual.saved', { n: r.saved }));
       for (const key of refresh) void qc.invalidateQueries({ queryKey: key });
-      if (draft.remaining > 0) await next(); else setOpen(false);
+      const left = [...new Set([...passed, ...passedIds(rows), ...draft.couldNotIds])];
+      if (draft.remaining > 0) await next(left); else close();
     } catch (e) { notifyError(e); } finally { setBusy(false); }
   };
 
+  const state = draft ? draftState(draft) : 'done';
+  // Left out so far: the earlier passes plus this batch's unticked rows.
+  const leftOut = new Set([...passed, ...passedIds(rows), ...(draft?.couldNotIds ?? [])]).size;
   const change = (id: string, patch: Partial<ReviewRow>) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
   return (
     <>
       <Button variant="default" leftSection={<IconLanguage size={16} />} loading={busy && !open} onClick={() => void next()}>{t('bilingual.fill')}</Button>
-      <Modal opened={open} onClose={() => setOpen(false)} title={t('bilingual.review')} size="xl">
-        {draft && draft.items.length === 0 && draft.field === null ? <Text>{t('bilingual.none')}</Text> : (
+      <Modal opened={open} onClose={close} title={t('bilingual.review')} size="xl">
+        {draft && state === 'done' ? (
+          <Stack>
+            <Text>{passed.length > 0 ? t('bilingual.nothingMore') : t('bilingual.none')}</Text>
+            {passed.length > 0 && <Text fz="sm" c="dimmed">{t('bilingual.leftOut', { n: passed.length })}</Text>}
+            <Group justify="flex-end"><Button variant="default" onClick={close}>{t('bilingual.close')}</Button></Group>
+          </Stack>
+        ) : draft && state === 'nothing' ? (
+          <Stack>
+            <Text c="orange">{t('bilingual.nothingDrafted', { n: draft.couldNot })}</Text>
+            {passed.length > 0 && <Text fz="sm" c="dimmed">{t('bilingual.leftOut', { n: passed.length })}</Text>}
+            <Group justify="flex-end">
+              <Button variant="default" onClick={close}>{t('bilingual.close')}</Button>
+              <Button variant="default" loading={busy} onClick={() => void next(passed)}>{t('bilingual.tryAgain')}</Button>
+              <Button loading={busy} onClick={() => void (draft.remaining > 0 ? next([...new Set([...passed, ...draft.couldNotIds])]) : close())}>{t('bilingual.skipAndGo')}</Button>
+            </Group>
+          </Stack>
+        ) : (
           <Stack>
             {draft && draft.couldNot > 0 && <Text c="orange" fz="sm">{t('bilingual.couldNot', { n: draft.couldNot })}</Text>}
             <ScrollArea.Autosize mah="60vh">
@@ -75,9 +102,12 @@ export function TranslateButton({ list, refresh = [] }: { list: TranslationList;
               </Table>
             </ScrollArea.Autosize>
             <Group justify="space-between">
-              <Text fz="sm" c="dimmed">{draft && draft.remaining > 0 ? t('bilingual.remaining', { n: draft.remaining }) : ''}</Text>
+              <Stack gap={2}>
+                <Text fz="sm" c="dimmed">{draft && draft.remaining > 0 ? t('bilingual.remaining', { n: draft.remaining }) : ''}</Text>
+                {leftOut > 0 && <Text fz="sm" c="dimmed">{t('bilingual.leftOut', { n: leftOut })}</Text>}
+              </Stack>
               <Group>
-                <Button variant="default" onClick={() => setOpen(false)}>{t('common.cancel')}</Button>
+                <Button variant="default" onClick={close}>{t('common.cancel')}</Button>
                 <Button loading={busy} onClick={() => void save()} disabled={!rows.some((r) => r.keep && r.ar.trim())}>
                   {draft && draft.remaining > 0 ? t('bilingual.saveNext') : t('bilingual.save')}
                 </Button>

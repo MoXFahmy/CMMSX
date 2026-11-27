@@ -1,8 +1,7 @@
 import { SegmentedControl } from '@mantine/core';
 import { useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
-import { put } from '@/api/client';
-import { applyLanguage, LANGUAGES, pickLanguage, type Language } from '@/language';
+import { LANGUAGES, pickLanguage, switchLanguage, type Language } from '@/language';
 import { notifyError } from '@/components/utils';
 
 /**
@@ -14,13 +13,7 @@ export function LanguageSwitch({ saveToAccount = true, size = 'xs', onChanged }:
   const { i18n } = useTranslation();
   const qc = useQueryClient();
   const change = async (code: Language) => {
-    applyLanguage(code);
-    if (saveToAccount) {
-      try {
-        await put('/auth/me/language', { language: code });
-        await qc.invalidateQueries({ queryKey: ['me'] });
-      } catch (e) { notifyError(e); }
-    }
+    try { await switchLanguage(code, qc, saveToAccount); } catch (e) { notifyError(e); }
     onChanged?.();
   };
   return (
