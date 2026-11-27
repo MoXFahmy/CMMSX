@@ -26,6 +26,7 @@ import { generateNow } from './generateNow';
 import { fmtDate, fmtDateTime, fmtMoney, handleFormError, notifyError, notifySuccess, notifyWarning, toIsoDate } from '@/components/utils';
 import { listItems } from '@/components/listLabels';
 import { groupData, useAssetGroups } from '@/components/ReferencePickers';
+import { formKey } from '@/components/formInit';
 
 export type V = {
   code: string; name: string; /** 0.28.0, as stored (blank clears) */ nameAr: string; description: string; siteId: string | null; locationId: string | null; assetId: string | null; tradeId: string | null; teamId: string | null; priority: string;
@@ -120,7 +121,7 @@ export function PmScheduleFormPage() {
       form.resetDirty(saved); // the saved schedule is the baseline: "unsaved changes" means edits since
     } else if (asset) form.setValues({ ...blank, siteId: asset.siteId, locationId: asset.locationId ?? null, assetId: asset.id, name: `PM · ${asset.name}` });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [s, asset]);
+  }, [formKey(s, asset)]);
 
   const v = form.values;
   const calendar = v.type !== 'Meter' || v.timeBased;
@@ -150,6 +151,8 @@ export function PmScheduleFormPage() {
       for (const w of r.warnings ?? []) notifyWarning(w);
       await qc.invalidateQueries({ queryKey: ['pm-schedules'] }); await qc.invalidateQueries({ queryKey: ['pm-schedule'] });
       if (!editing) navigate(`/pm/schedules/${r.id}`, { replace: true });
+      // What was typed is saved: the new baseline, also when only the schedule's lists changed and its version stayed the same.
+      else form.resetDirty();
     } catch (e) { handleFormError(form, e); }
   });
   if (editing && isLoading) return <Center h={300}><Loader /></Center>;

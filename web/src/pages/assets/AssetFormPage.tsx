@@ -16,6 +16,7 @@ import { handleFormError, notifySuccess, toIsoDate } from '@/components/utils';
 import { listDefault, listItems } from '@/components/listLabels';
 import { BrandModelPicker, useAssetGroups } from '@/components/ReferencePickers';
 import { pick } from '@/components/bilingual';
+import { formKey } from '@/components/formInit';
 
 type Values = {
   assetNumber: string; name: string; description: string; categoryId: string | null; siteId: string | null; locationId: string | null; parentAssetId: string | null;
@@ -88,7 +89,7 @@ export function AssetFormPage() {
       if (siteId) form.setValues({ ...start, siteId, locationId: params.get('locationId') });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [asset, parent]);
+  }, [formKey(asset, parent)]);
 
   const categoryId = form.values.categoryId;
   const applicable = useMemo(() => (fields ?? []).filter((f) => f.categoryIds.length === 0 || (categoryId && f.categoryIds.includes(categoryId))), [fields, categoryId]);

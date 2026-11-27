@@ -14,6 +14,7 @@ import { useHierarchy } from '@/components/LocationPicker';
 import { PartPicker, useStores } from '@/components/PartPicker';
 import { WorkOrderPicker } from '@/components/WorkOrderPicker';
 import { fmtPrice, fmtQty, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
+import { formKey } from '@/components/formInit';
 import dayjs from 'dayjs';
 import { perPieceOf, piecesOf, refill } from './packs';
 
@@ -67,7 +68,7 @@ export function PoFormPage() {
         unitId: l.unitId ?? null, unitLabel: l.unitSerial ?? null })),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [po]);
+  }, [formKey(po)]);
   // Seed a new order from a part or a work order (links on those pages).
   useEffect(() => {
     if (editing || seeded.current || !h || !stores) return;

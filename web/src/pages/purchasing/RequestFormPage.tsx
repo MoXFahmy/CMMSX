@@ -13,6 +13,7 @@ import { useHierarchy } from '@/components/LocationPicker';
 import { PartPicker, useStores } from '@/components/PartPicker';
 import { WorkOrderPicker } from '@/components/WorkOrderPicker';
 import { handleFormError, notifySuccess, toIsoDate } from '@/components/utils';
+import { formKey } from '@/components/formInit';
 import type { PrLineDraft, PurchaseRequestDetail } from './purchaseRequests';
 
 type Line = {
@@ -50,7 +51,7 @@ export function RequestFormPage() {
         workOrder: l.workOrder ? { id: l.workOrder.id, number: l.workOrder.number } : null, neededBy: l.neededBy ?? null, estimatedUnitPrice: l.estimatedUnitPrice ?? '', reason: l.reason ?? '' })),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [r]);
+  }, [formKey(r)]);
   useEffect(() => {
     if (editing || seeded.current || !h) return;
     seeded.current = true;

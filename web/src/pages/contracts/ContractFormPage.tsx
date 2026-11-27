@@ -13,6 +13,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { AssetPicker } from '@/components/AssetPicker';
 import { useHierarchy } from '@/components/LocationPicker';
 import { handleFormError, notifySuccess, toIsoDate } from '@/components/utils';
+import { formKey } from '@/components/formInit';
 
 type CoveredAsset = { assetId: string; label: string; yearlyCost: number | '' };
 type Values = {
@@ -52,7 +53,7 @@ export function ContractFormPage() {
       assets: existing.assets.map((a) => ({ assetId: a.assetId, label: `${a.assetNumber} · ${a.name}`, yearlyCost: a.yearlyCost ?? '' })),
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [existing]);
+  }, [formKey(existing)]);
   const submit = form.onSubmit(async (v) => {
     const num = (x: number | '') => (x === '' ? null : x);
     const body = {

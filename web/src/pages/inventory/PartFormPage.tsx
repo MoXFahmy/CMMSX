@@ -12,6 +12,7 @@ import { PageHeader } from '@/components/PageHeader';
 import { useStores } from '@/components/PartPicker';
 import { handleFormError, notifySuccess } from '@/components/utils';
 import { unitData, useUnits } from '@/components/ReferencePickers';
+import { formKey } from '@/components/formInit';
 
 type Level = { storeId: string | null; bin: string; minLevel: number | ''; reorderLevel: number | ''; maxLevel: number | ''; reorderQuantity: number | ''; quantityOnHand?: number };
 type Values = {
@@ -59,7 +60,7 @@ export function PartFormPage() {
     });
     form.resetDirty();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [part]);
+  }, [formKey(part)]);
   useEffect(() => {
     if (!editing && stores?.length === 1 && form.getValues().levels.length === 0) form.setFieldValue('levels', [{ storeId: stores[0].id, bin: '', minLevel: 0, reorderLevel: 0, maxLevel: 0, reorderQuantity: 0 }]);
     // eslint-disable-next-line react-hooks/exhaustive-deps

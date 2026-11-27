@@ -22,6 +22,7 @@ import { AssetCheck } from '@/components/AssetCheck';
 import { teamOptions, useTeams } from '@/components/teams';
 import { dateTimeFormat, handleFormError, notifyError, notifySuccess, toIsoDate } from '@/components/utils';
 import { listDefault, listItems } from '@/components/listLabels';
+import { formKey } from '@/components/formInit';
 
 type Values = {
   title: string; description: string; type: string; priority: string; siteId: string | null; locationId: string | null; assetId: string | null;
@@ -116,7 +117,7 @@ export function WorkOrderFormPage() {
       form.setValues({ ...start, siteId: params.get('siteId'), locationId: params.get('locationId') });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [wo, asset, source]);
+  }, [formKey(wo, asset, source)]);
 
   const submit = form.onSubmit(async (v) => {
     const body = {

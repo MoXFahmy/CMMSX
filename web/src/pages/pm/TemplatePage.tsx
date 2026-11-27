@@ -15,6 +15,7 @@ import { Attachments } from '@/components/Attachments';
 import { confirmDelete } from '@/components/confirm';
 import { fmtMoney, handleFormError, notifyError, notifySuccess } from '@/components/utils';
 import { listItems } from '@/components/listLabels';
+import { formKey } from '@/components/formInit';
 
 type PartRow = { partId: string; label: string; unit: string; quantity: number | ''; unitCost: number };
 type F = {
@@ -55,7 +56,7 @@ export function TemplatePage() {
     };
     form.setValues(saved); form.resetDirty(saved);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [x]);
+  }, [formKey(x)]);
 
   const v = form.values;
   const submit = form.onSubmit(async (vals) => {
