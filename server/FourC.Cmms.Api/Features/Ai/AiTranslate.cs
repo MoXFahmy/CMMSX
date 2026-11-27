@@ -12,8 +12,13 @@ using static FourC.Cmms.Api.Features.Ai.AiText;
 
 namespace FourC.Cmms.Api.Features.Ai;
 
-/// <summary><c>Skip</c> (0.29.2): texts the person left out or the AI couldn't draft; a filter only (at most <see cref="AiTranslate.MaxSkip"/> ids).</summary>
-public sealed record TranslateDraftInput(string? List, List<Guid>? Skip = null);
+/// <summary>
+/// A text the person left out or the AI couldn't draft (0.29.2): its field and its record. Per field, because one record has several texts
+/// (an asset's name and notes, a template's name, title and safety notes): a record left out of one field is still offered in the next.
+/// </summary>
+public sealed record TranslateSkip(string? Field, Guid Id);
+/// <summary><c>Skip</c> (0.29.2): a filter only, at most <see cref="AiTranslate.MaxSkip"/> entries; an entry for another list's field or with no field is ignored.</summary>
+public sealed record TranslateDraftInput(string? List, List<TranslateSkip?>? Skip = null);
 public sealed record TranslateItem(Guid Id, string? Ar);
 public sealed record TranslateSaveInput(string? List, string? Field, List<TranslateItem>? Items);
 public sealed record TranslateDraftItem(Guid Id, string Text, string Draft);
@@ -46,7 +51,7 @@ public static class AiTranslate
         string Field { get; }
         int Batch { get; }
         int Max { get; }
-        /// <summary>The next batch without the <paramref name="skip"/> ids; <c>Missing</c> counts the texts not skipped, <c>SkippedLeft</c> the skipped ones still missing.</summary>
+        /// <summary>The next batch without the <paramref name="skip"/> ids (this field's only); <c>Missing</c> counts the texts not skipped, <c>SkippedLeft</c> the skipped ones still missing.</summary>
         Task<(List<(Guid Id, string Text)> Items, int Missing, int SkippedLeft)> NextAsync(CmmsDbContext db, IReadOnlyCollection<Guid> skip, CancellationToken ct);
         Task<List<(string Main, string Ar)>> PairsAsync(CmmsDbContext db, CancellationToken ct);
         /// <summary>Sets the Arabic text of each record that has none yet; returns how many it set.</summary>
@@ -173,11 +178,12 @@ public static class AiTranslate
     {
         if (await RefuseAsync(input.List, http, perms) is { } refused) return refused;
         if (input.Skip is { Count: > MaxSkip }) return Results.Problem(title: Translator.T(TooManySkipped), statusCode: 400);
-        var skip = (input.Skip ?? []).Distinct().ToList();
+        // Each field leaves out only its own entries (N1): an unknown field name, an entry with no field or an empty entry matches nothing.
+        var skip = (input.Skip ?? []).OfType<TranslateSkip>().Where(s => s.Field is not null).ToLookup(s => s.Field!, s => s.Id, StringComparer.OrdinalIgnoreCase);
         var skippedLeft = 0;
         foreach (var source in Lists[input.List!].Fields)
         {
-            var (items, missing, left) = await source.NextAsync(db, skip, ct);
+            var (items, missing, left) = await source.NextAsync(db, skip[source.Field].Distinct().ToList(), ct);
             skippedLeft += left;
             if (items.Count == 0) continue;
             var pairs = await source.PairsAsync(db, ct);

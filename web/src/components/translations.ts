@@ -41,21 +41,46 @@ function unsavedIds(rows: ReviewRow[]): string[] {
 }
 
 /**
+ * A text passed on while the window is open (0.29.2), sent back as `skip`: its field and its record. Per field, because one record has
+ * several texts (an asset's name and notes to technician, a template's name, title and safety notes): a record passed on for one field
+ * is still offered for the next.
+ */
+export type Skipped = { field: string; id: string };
+
+/** Each text once, in first-seen order. */
+function unique(xs: Skipped[]): Skipped[] {
+  const seen = new Set<string>();
+  return xs.filter((x) => {
+    const key = `${x.field}\n${x.id}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+/**
  * What the window does when the person saves or skips a batch (0.29.2): close when nothing was left to draft; otherwise save the
  * kept rows (none: a skip, no request) and ask for the next batch without the texts passed on so far (the earlier passes, this
- * batch's unticked or blank rows and the ones the assistant couldn't draft). It always asks: a field's last batch goes on to the
- * list's next field, and when nothing is left the server says so without asking the assistant.
+ * batch's unticked or blank rows and the ones the assistant couldn't draft, each under this batch's field). It always asks: a field's
+ * last batch goes on to the list's next field, and when nothing is left the server says so without asking the assistant.
  */
-export type NextStep = { kind: 'close' } | { kind: 'next'; save: ReturnType<typeof toSaveBody> | null; skip: string[] };
+export type NextStep = { kind: 'close' } | { kind: 'next'; save: ReturnType<typeof toSaveBody> | null; skip: Skipped[] };
 
-export function nextStep(list: TranslationList, draft: TranslationDraft | null, rows: ReviewRow[], passed: string[]): NextStep {
+export function nextStep(list: TranslationList, draft: TranslationDraft | null, rows: ReviewRow[], passed: Skipped[]): NextStep {
   if (!draft?.field) return { kind: 'close' };
-  const body = toSaveBody(list, draft.field, rows);
+  const field = draft.field;
+  const body = toSaveBody(list, field, rows);
   return {
     kind: 'next',
     save: body.items.length > 0 ? body : null,
-    skip: [...new Set([...passed, ...unsavedIds(rows), ...draft.couldNotIds])],
+    skip: unique([...passed, ...[...unsavedIds(rows), ...draft.couldNotIds].map((id) => ({ field, id }))]),
   };
+}
+
+/** How many texts are left out so far ("N left out"): the earlier passes plus this batch's; a record left out on two fields counts twice. */
+export function leftOutCount(list: TranslationList, draft: TranslationDraft | null, rows: ReviewRow[], passed: Skipped[]): number {
+  const after = nextStep(list, draft, rows, passed);
+  return after.kind === 'next' ? after.skip.length : passed.length;
 }
 
 /** The review's main button: save (and draft the next batch while this field has more), or skip when no row is kept with a text. */

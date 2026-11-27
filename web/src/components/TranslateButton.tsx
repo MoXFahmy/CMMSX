@@ -7,7 +7,7 @@ import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { aiOn, useAiStatus } from './aiStatus';
 import { notifyError, notifySuccess } from './utils';
-import { draftState, nextStep, primaryAction, toRows, type ReviewRow, type TranslationDraft, type TranslationList } from './translations';
+import { draftState, leftOutCount, nextStep, primaryAction, toRows, type ReviewRow, type Skipped, type TranslationDraft, type TranslationList } from './translations';
 
 /** The permission that edits each list's texts (the server checks the same). */
 const EDIT: Record<TranslationList, string> = {
@@ -36,15 +36,15 @@ export function TranslateButton({ list, refresh = [] }: { list: TranslationList;
   const [busy, setBusy] = useState(false);
   const [draft, setDraft] = useState<TranslationDraft | null>(null);
   const [rows, setRows] = useState<ReviewRow[]>([]);
-  const [passed, setPassed] = useState<string[]>([]);
+  const [passed, setPassed] = useState<Skipped[]>([]);
   // Bumped on every close: an answer to a request sent before it belongs to a window that is gone and must not reopen it.
   const session = useRef(0);
   if (!aiOn(ai) || !can(EDIT[list])) return null;
 
   /** Closing forgets what was passed: opening the window again offers everything. */
   const close = () => { session.current++; setOpen(false); setPassed([]); setDraft(null); setRows([]); };
-  /** The next batch, leaving out <c>skip</c> (texts the person passed on while this window has been open). */
-  const next = async (skip: string[] = []) => {
+  /** The next batch, leaving out <c>skip</c> (texts the person passed on while this window has been open, each with its field). */
+  const next = async (skip: Skipped[] = []) => {
     const mine = session.current;
     setBusy(true);
     try {
@@ -72,9 +72,8 @@ export function TranslateButton({ list, refresh = [] }: { list: TranslationList;
   };
 
   const state = draft ? draftState(draft) : 'done';
-  // Left out so far: the earlier passes plus this batch's unticked or blank rows and the ones not drafted.
-  const after = nextStep(list, draft, rows, passed);
-  const leftOut = after.kind === 'next' ? after.skip.length : passed.length;
+  // Texts left out so far: the earlier passes plus this batch's unticked or blank rows and the ones not drafted.
+  const leftOut = leftOutCount(list, draft, rows, passed);
   const change = (id: string, patch: Partial<ReviewRow>) => setRows((rs) => rs.map((r) => (r.id === id ? { ...r, ...patch } : r)));
 
   return (

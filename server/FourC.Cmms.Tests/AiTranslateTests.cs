@@ -208,8 +208,11 @@ public class AiTranslateTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(AiFeature.Translation, fx.Ai.Asks[0].Feature);
     }
 
-    private static Task<HttpResponseMessage> DraftSkipAsync(HttpClient c, string list, IEnumerable<Guid> skip) =>
-        c.PostAsJsonAsync("/api/translations/draft", new { list, skip });
+    /// <summary>A draft request leaving out <paramref name="skip"/>: each entry names its field and its record (N1, 0.29.2).</summary>
+    private static Task<HttpResponseMessage> DraftSkipAsync(HttpClient c, string list, params (string Field, Guid Id)[] skip) =>
+        c.PostAsJsonAsync("/api/translations/draft", new { list, skip = skip.Select(s => new { field = s.Field, id = s.Id }) });
+
+    private static (string Field, Guid Id)[] Names(IEnumerable<Guid> ids) => ids.Select(id => ("name", id)).ToArray();
 
     private static List<Guid> Ids(JsonElement r, string name) => r.GetProperty(name).EnumerateArray().Select(i => i.GetGuid()).ToList();
 
@@ -222,7 +225,7 @@ public class AiTranslateTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var b = await AssetAsync(o.Admin, o.Site, name: "Pump B", nameAr: null);
         await AssetAsync(o.Admin, o.Site, name: "Pump C", nameAr: null);
         Echo();
-        var r = await Ok(await DraftSkipAsync(o.Admin, "assets", [a, b]));
+        var r = await Ok(await DraftSkipAsync(o.Admin, "assets", ("name", a), ("name", b)));
         var item = r.GetProperty("items").EnumerateArray().Single();
         Assert.Equal("Pump C", S(item, "text"));
         Assert.Equal(["1"], SentIds(Assert.Single(fx.Ai.Asks))); // only the one text was sent (and charged)
@@ -237,7 +240,7 @@ public class AiTranslateTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var o = await AiOrgAsync();
         var a = await AssetAsync(o.Admin, o.Site, name: "Pump A", nameAr: null);
         Echo();
-        var r = await Ok(await DraftSkipAsync(o.Admin, "assets", [a]));
+        var r = await Ok(await DraftSkipAsync(o.Admin, "assets", ("name", a)));
         Assert.Equal(JsonValueKind.Null, r.GetProperty("field").ValueKind);
         Assert.Empty(fx.Ai.Asks);
         Assert.Equal(1, r.GetProperty("skippedLeft").GetInt32());
@@ -256,15 +259,58 @@ public class AiTranslateTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal("name", S(first, "field"));
         Assert.Equal(0, first.GetProperty("remaining").GetInt32()); // the name field's last batch
         // The person unticks it: the window passes it back as skipped and gets the notes.
-        var next = await Ok(await DraftSkipAsync(o.Admin, "assets", [a]));
+        var next = await Ok(await DraftSkipAsync(o.Admin, "assets", ("name", a)));
         Assert.Equal("notesToTechnician", S(next, "field"));
         Assert.Equal(b, next.GetProperty("items").EnumerateArray().Single().GetProperty("id").GetGuid());
         Assert.Equal(1, next.GetProperty("skippedLeft").GetInt32());
         // Skipping the notes too: nothing is left, and the AI is not asked again.
         var asks = fx.Ai.Asks.Count;
-        var done = await Ok(await DraftSkipAsync(o.Admin, "assets", [a, b]));
+        var done = await Ok(await DraftSkipAsync(o.Admin, "assets", ("name", a), ("notesToTechnician", b)));
         Assert.Equal(JsonValueKind.Null, done.GetProperty("field").ValueKind);
         Assert.Equal(asks, fx.Ai.Asks.Count);
+    }
+
+    /// <summary>
+    /// N1 (0.29.2 last review): the skip list is per field. An asset whose NAME was passed on still has its notes to technician offered
+    /// in the next field (they share the asset's id); before, passing the name left the notes out too, so they could never be drafted here.
+    /// </summary>
+    [SkippableFact]
+    public async Task Skipping_an_asset_name_still_offers_its_notes()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await AiOrgAsync();
+        var a = await AssetAsync(o.Admin, o.Site, name: "Pump A", nameAr: null, notes: "Isolate first");
+        Echo();
+        var first = await Ok(await DraftAsync(o.Admin, "assets"));
+        Assert.Equal("name", S(first, "field"));
+        Assert.Equal(a, first.GetProperty("items").EnumerateArray().Single().GetProperty("id").GetGuid());
+        // The name is passed on: the same asset's notes are offered next.
+        var next = await Ok(await DraftSkipAsync(o.Admin, "assets", ("name", a)));
+        Assert.Equal("notesToTechnician", S(next, "field"));
+        var item = next.GetProperty("items").EnumerateArray().Single();
+        Assert.Equal((a, "Isolate first"), (item.GetProperty("id").GetGuid(), S(item, "text")));
+        Assert.Equal(1, next.GetProperty("skippedLeft").GetInt32()); // the name, a text
+        // Passing the notes as well: nothing is left.
+        var done = await Ok(await DraftSkipAsync(o.Admin, "assets", ("name", a), ("notesToTechnician", a)));
+        Assert.Equal(JsonValueKind.Null, done.GetProperty("field").ValueKind);
+        Assert.Equal(2, done.GetProperty("skippedLeft").GetInt32()); // two texts of one asset
+    }
+
+    /// <summary>N1: the same for a template, whose name, title and safety notes share its id: a passed name still offers the title.</summary>
+    [SkippableFact]
+    public async Task Skipping_a_template_name_still_offers_its_title()
+    {
+        Skip.IfNot(fx.Enabled);
+        var o = await AiOrgAsync();
+        var task = await Pm12.TemplateAsync(o.Admin, "CHK", extra: new() { ["name"] = "Chiller check", ["title"] = "Monthly check" });
+        Echo();
+        var first = await Ok(await DraftAsync(o.Admin, "templates"));
+        Assert.Equal("name", S(first, "field"));
+        Assert.Equal(task, first.GetProperty("items").EnumerateArray().Single().GetProperty("id").GetGuid());
+        var next = await Ok(await DraftSkipAsync(o.Admin, "templates", ("name", task)));
+        Assert.Equal("title", S(next, "field"));
+        var item = next.GetProperty("items").EnumerateArray().Single();
+        Assert.Equal((task, "Monthly check"), (item.GetProperty("id").GetGuid(), S(item, "text")));
     }
 
     [SkippableFact]
@@ -281,7 +327,7 @@ public class AiTranslateTests(ApiFixture fx) : IClassFixture<ApiFixture>
         Assert.Equal(new[] { a, b }.OrderBy(x => x), Ids(r, "couldNotIds").OrderBy(x => x));
         // Passing them back as skipped moves past them.
         Echo();
-        var next = await Ok(await DraftSkipAsync(o.Admin, "assets", Ids(r, "couldNotIds")));
+        var next = await Ok(await DraftSkipAsync(o.Admin, "assets", Names(Ids(r, "couldNotIds"))));
         Assert.Equal(JsonValueKind.Null, next.GetProperty("field").ValueKind);
     }
 
@@ -295,13 +341,19 @@ public class AiTranslateTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var theirs = await AssetAsync(other.Admin, other.Site, name: "Their pump", nameAr: null);
         Echo();
         // A foreign id, an unknown id and a repeated id are ignored; nothing is written.
-        var r = await Ok(await DraftSkipAsync(o.Admin, "assets", [theirs, Guid.NewGuid(), Guid.NewGuid(), theirs]));
+        var r = await Ok(await DraftSkipAsync(o.Admin, "assets", Names([theirs, Guid.NewGuid(), Guid.NewGuid(), theirs])));
         Assert.Equal(mine, r.GetProperty("items").EnumerateArray().Single().GetProperty("id").GetGuid());
         Assert.Equal(0, r.GetProperty("skippedLeft").GetInt32());
         Assert.All(await DbAsync(fx, db => db.Assets.IgnoreQueryFilters().Where(a => a.Id == mine || a.Id == theirs).ToListAsync()), a => Assert.Null(a.NameAr));
-        // The cap: 2,000 ids are fine, 2,001 are refused.
-        Assert.Equal(HttpStatusCode.OK, (await DraftSkipAsync(o.Admin, "assets", Enumerable.Range(0, 2000).Select(_ => Guid.NewGuid()))).StatusCode);
-        var over = await DraftSkipAsync(o.Admin, "assets", Enumerable.Range(0, 2001).Select(_ => Guid.NewGuid()));
+        // N1: an entry counts for its own field only: my asset left out of another field, or of an unknown one, is still offered here.
+        var elsewhere = await Ok(await DraftSkipAsync(o.Admin, "assets", ("notesToTechnician", mine), ("price", mine), ("", mine)));
+        Assert.Equal(("name", mine), (S(elsewhere, "field"), elsewhere.GetProperty("items").EnumerateArray().Single().GetProperty("id").GetGuid()));
+        // An entry with no field, and an empty entry, are ignored too.
+        var odd = await Ok(await o.Admin.PostAsJsonAsync("/api/translations/draft", new { list = "assets", skip = new object?[] { new { id = mine }, null } }));
+        Assert.Equal(mine, odd.GetProperty("items").EnumerateArray().Single().GetProperty("id").GetGuid());
+        // The cap counts entries: 2,000 are fine, 2,001 are refused.
+        Assert.Equal(HttpStatusCode.OK, (await DraftSkipAsync(o.Admin, "assets", Names(Enumerable.Range(0, 2000).Select(_ => Guid.NewGuid())))).StatusCode);
+        var over = await DraftSkipAsync(o.Admin, "assets", Names(Enumerable.Range(0, 2001).Select(_ => Guid.NewGuid())));
         Assert.Equal(HttpStatusCode.BadRequest, over.StatusCode);
         Assert.Contains("Too many texts to leave out", await over.Content.ReadAsStringAsync());
     }
