@@ -83,6 +83,22 @@ export function leftOutCount(list: TranslationList, draft: TranslationDraft | nu
   return after.kind === 'next' ? after.skip.length : passed.length;
 }
 
+/**
+ * Runs a request for the window as it is now (0.29.2): `done` gets its answer and `failed` its error only while that window lasts.
+ * Closing the window bumps `session`, so a late answer doesn't reopen it and a late failure doesn't show an error.
+ */
+export async function inSession<T>(session: { current: number }, request: () => Promise<T>, done: (value: T) => void, failed: (error: unknown) => void): Promise<void> {
+  const mine = session.current;
+  let value: T;
+  try {
+    value = await request();
+  } catch (e) {
+    if (session.current === mine) failed(e);
+    return;
+  }
+  if (session.current === mine) done(value);
+}
+
 /** The review's main button: save (and draft the next batch while this field has more), or skip when no row is kept with a text. */
 export function primaryAction(rows: ReviewRow[], draft: TranslationDraft | null): 'save' | 'saveNext' | 'skip' {
   if (!rows.some((r) => r.keep && r.ar.trim().length > 0)) return 'skip';

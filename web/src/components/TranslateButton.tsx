@@ -7,7 +7,7 @@ import { post } from '@/api/client';
 import { P, useAuth } from '@/auth/AuthContext';
 import { aiOn, useAiStatus } from './aiStatus';
 import { notifyError, notifySuccess } from './utils';
-import { draftState, leftOutCount, nextStep, primaryAction, toRows, type ReviewRow, type Skipped, type TranslationDraft, type TranslationList } from './translations';
+import { draftState, inSession, leftOutCount, nextStep, primaryAction, toRows, type ReviewRow, type Skipped, type TranslationDraft, type TranslationList } from './translations';
 
 /** The permission that edits each list's texts (the server checks the same). */
 const EDIT: Record<TranslationList, string> = {
@@ -25,7 +25,7 @@ const PRIMARY = { save: 'bilingual.save', saveNext: 'bilingual.saveNext', skip: 
  * 0.29.2: while the window is open it remembers the texts the person unticked and the ones the assistant couldn't draft, and doesn't
  * ask for them again (no charge twice); closing it forgets them. A batch that drafts nothing offers Try again / Skip these and go on / Close.
  * After a save or a skip it always asks for the next batch, so a field's last batch goes on to the list's next field; a batch with no
- * row kept is skipped, not stuck behind a disabled Save. An answer that arrives after the window was closed is ignored.
+ * row kept is skipped, not stuck behind a disabled Save. An answer, or a failure, that arrives after the window was closed is ignored.
  */
 export function TranslateButton({ list, refresh = [] }: { list: TranslationList; refresh?: unknown[][] }) {
   const { t } = useTranslation();
@@ -45,14 +45,15 @@ export function TranslateButton({ list, refresh = [] }: { list: TranslationList;
   const close = () => { session.current++; setOpen(false); setPassed([]); setDraft(null); setRows([]); };
   /** The next batch, leaving out <c>skip</c> (texts the person passed on while this window has been open, each with its field). */
   const next = async (skip: Skipped[] = []) => {
-    const mine = session.current;
     setBusy(true);
     try {
-      const d = await post<TranslationDraft>('/translations/draft', { list, skip });
-      void qc.invalidateQueries({ queryKey: ['ai-status'] });
-      if (session.current !== mine) return;
-      setPassed(skip); setDraft(d); setRows(toRows(d)); setOpen(true);
-    } catch (e) { notifyError(e); } finally { setBusy(false); }
+      // Its answer and its failure are dropped once the window has been closed since it was asked (no reopening, no error toast).
+      await inSession(session, async () => {
+        const d = await post<TranslationDraft>('/translations/draft', { list, skip });
+        void qc.invalidateQueries({ queryKey: ['ai-status'] }); // a drafted batch counts, closed window or not
+        return d;
+      }, (d) => { setPassed(skip); setDraft(d); setRows(toRows(d)); setOpen(true); }, notifyError);
+    } finally { setBusy(false); }
   };
 
   /** Save (or skip) this batch, then go on to the next one. */

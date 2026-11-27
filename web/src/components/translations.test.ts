@@ -1,5 +1,5 @@
-import { describe, expect, it } from 'vitest';
-import { draftState, leftOutCount, nextStep, passedIds, primaryAction, toRows, toSaveBody } from './translations';
+import { describe, expect, it, vi } from 'vitest';
+import { draftState, inSession, leftOutCount, nextStep, passedIds, primaryAction, toRows, toSaveBody } from './translations';
 
 const draft = {
   field: 'name',
@@ -118,5 +118,50 @@ describe('AI window: passed-on texts are per field (0.29.2)', () => {
     expect(leftOutCount('assets', notes, [{ ...rs[0], keep: true }], [{ field: 'name', id: 'a' }])).toBe(1);
     // With nothing left to draft, the earlier passes are what was left out.
     expect(leftOutCount('assets', { ...notes, field: null, items: [] }, [], [{ field: 'name', id: 'a' }, { field: 'notesToTechnician', id: 'a' }])).toBe(2);
+  });
+});
+
+// N3 (0.29.2 last review): a batch request belongs to the window it was asked from. Once that window is closed, its answer is dropped
+// (it must not reopen the window) and so is its failure (no error toast for a window that is gone).
+describe('AI window: requests after closing (0.29.2)', () => {
+  /** A request that settles when told to, and a session the test can bump (as closing the window does). */
+  function pending() {
+    let settle: { ok: (v: string) => void; fail: (e: unknown) => void } = { ok: () => {}, fail: () => {} };
+    const request = () => new Promise<string>((ok, fail) => { settle = { ok, fail }; });
+    return { request, settle: () => settle, session: { current: 0 } };
+  }
+
+  it('drops a failure that arrives after the window was closed', async () => {
+    const p = pending();
+    const done = vi.fn(); const failed = vi.fn();
+    const run = inSession(p.session, p.request, done, failed);
+    p.session.current++; // closed while the request was out
+    p.settle().fail(new Error('used up'));
+    await run;
+    expect(failed).not.toHaveBeenCalled();
+    expect(done).not.toHaveBeenCalled();
+  });
+
+  it('drops an answer that arrives after the window was closed', async () => {
+    const p = pending();
+    const done = vi.fn(); const failed = vi.fn();
+    const run = inSession(p.session, p.request, done, failed);
+    p.session.current++;
+    p.settle().ok('batch');
+    await run;
+    expect(done).not.toHaveBeenCalled();
+  });
+
+  it('reports the answer or the failure while the window is open', async () => {
+    const ok = pending(); const done = vi.fn();
+    const first = inSession(ok.session, ok.request, done, vi.fn());
+    ok.settle().ok('batch');
+    await first;
+    expect(done).toHaveBeenCalledWith('batch');
+    const bad = pending(); const failed = vi.fn(); const error = new Error('used up');
+    const second = inSession(bad.session, bad.request, vi.fn(), failed);
+    bad.settle().fail(error);
+    await second;
+    expect(failed).toHaveBeenCalledWith(error);
   });
 });
