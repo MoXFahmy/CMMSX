@@ -24,16 +24,21 @@ and the AI "fill in missing Arabic" window has new states (all three are describ
   record in the reader's language, in English too ("Could not generate a unique work order number…"), instead of the internal
   sequence name.
 - Dates inside sentences, the budget report's month rows and the "As of" lines of reports use Arabic month names in Arabic.
-- Two automatic checks keep it that way: a new server message (a text handed to the translator) without Arabic, or with English
-  left in its Arabic, fails the build; and a web check stops new layout fixed to the left or right.
+- Reports read in Arabic all through: column names (such as the backlog report's "0–7 days" age columns) and the words CMX
+  writes in report cells (the stock re-order and open purchase order statuses, "Yes" for a critical part, "(contractor)" after a
+  contractor's name). Names, codes and units stay as entered, and English reports are unchanged.
+- Three automatic checks keep it that way: a new server message (a text handed to the translator) without Arabic, or with English
+  left in its Arabic, fails the build; every report is read in Arabic on sample data, and English left in its names, column
+  names or CMX's own words fails the build; and a web check stops new layout fixed to the left or right.
 
 ### Exports and history in the app's language
 - Exports (lists and reports) are written in the language the screen is in, sheet names and choice words included. The choice
   words in an Arabic export (statuses, types, yes/no) are words the importer accepts, and the importers still accept English.
 - Lines CMX writes itself show in the reader's language, old ones too: bulk-change summaries in the activity log and in a
   record's history, work order history notes (such as "Created on the phone" or "Generated from PM …"), the reasons in PM
-  generation results, stock movement notes and the note on a request approved automatically. The stored text is unchanged, and
-  notes people typed are shown exactly as typed.
+  generation results, stock movement notes and the note on a request approved automatically. The stored text is unchanged. A
+  note someone typed is shown as typed, unless it is worded exactly like one of these lines (for example "Received on site"):
+  then CMX's part of it shows in Arabic too.
 
 ### Arabic names everywhere
 - The PM compliance report, the "used by" lists of PM calendars, measurement points and templates, asset checklist template
@@ -54,7 +59,8 @@ and the AI "fill in missing Arabic" window has new states (all three are describ
   asset names to notes to technicians), and says so when nothing is left. With no row kept, the main button becomes "Skip these
   and go on". When the assistant can't draft a batch it offers Try again, Skip these and go on, or Close. Texts you untick or
   leave blank, and texts it couldn't draft, aren't asked for again (or charged again) while the window stays open; a note says
-  how many were left out. Closing the window and opening it again offers everything.
+  how many were left out. Each text counts on its own: an asset whose name you left out still has its notes to technicians
+  offered. Closing the window and opening it again offers everything.
 
 ### Deploying
 - The deploy's tag step names the commit the version tag is on (it used to print the tag's own id and warn wrongly when a tagged
