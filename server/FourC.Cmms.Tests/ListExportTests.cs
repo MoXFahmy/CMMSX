@@ -173,4 +173,22 @@ public class ListExportTests(ApiFixture fx) : IClassFixture<ApiFixture>
         var file = ListExport.Build(query, "work-orders", new PagedResult<object>(items, 1, 1, ListExport.MaxRows), TimeZoneInfo.Utc);
         Assert.StartsWith("number,title\r\n", Encoding.UTF8.GetString(file.Bytes).TrimStart('﻿'));
     }
+
+    [SkippableFact]
+    public async Task Contract_status_follows_ui_culture()
+    {
+        Skip.IfNot(fx.Enabled, "Set CMMS_TEST_SQL to run integration tests.");
+        var w = await ContractTests.WorldAsync(fx);
+        await ContractTests.ContractAsync(w.O.Admin, ContractTests.Body(w.C, ContractTests.Today.AddDays(-10), ContractTests.Today.AddDays(355)));
+        const string url = "/api/contracts/export?format=csv&c=status&t=Status";
+        var arabic = Translator.T("Active", "ar");
+        Assert.NotEqual("Active", arabic);
+        // The link carries the app's language (a download link cannot send a header); that outranks the browser's own.
+        Assert.Contains($"\r\n{arabic}\r\n", await CsvAsync(await w.O.Admin.GetAsync(url + "&ui-culture=ar")));
+        var req = new HttpRequestMessage(HttpMethod.Get, url + "&ui-culture=en");
+        req.Headers.AcceptLanguage.ParseAdd("ar");
+        var english = await CsvAsync(await w.O.Admin.SendAsync(req));
+        Assert.Contains("\r\nActive\r\n", english);
+        Assert.DoesNotContain(arabic, english);
+    }
 }

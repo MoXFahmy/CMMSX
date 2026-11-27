@@ -114,8 +114,9 @@ public static class TableExport
         null => null,
         string s => s,
         Enum e when settings is not null && Lists.Key(e.GetType()) is not null => Lists.Name(settings, e),
-        Enum e => Words(e.ToString()),
-        bool b => b ? "Yes" : "No",
+        // Words in the reader's language (the app's, which the export link carries): the same word the screens show.
+        Enum e => Translator.T(Words(e.ToString())),
+        bool b => Translator.T(b ? "Yes" : "No"),
         DateOnly d => d,
         DateTimeOffset o => TimeZoneInfo.ConvertTime(o, tz).DateTime,
         DateTime dt => dt,

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { applyLanguage } from '@/language';
 import { exportUrl } from './ListTools';
 import type { ListColumn } from './types';
 
@@ -20,6 +21,14 @@ describe('exportUrl', () => {
     const url = exportUrl('/work-orders/export', {}, [{ accessor: 'title', title: 'Title' }] as ListColumn<{ title: string }>[], 'csv');
     expect(new URLSearchParams(url.split('?')[1]).get('cmxSite')).toBe('cairo');
   });
+
+  it('carries the app language, so the file is written in it and not in the browser\'s own (0.29.2)', () => {
+    const cols = [{ accessor: 'title', title: 'Title' }] as ListColumn<{ title: string }>[];
+    applyLanguage('ar');
+    expect(new URLSearchParams(exportUrl('/contracts/export', {}, cols, 'csv').split('?')[1]).get('ui-culture')).toBe('ar');
+    applyLanguage('en');
+    expect(new URLSearchParams(exportUrl('/contracts/export', {}, cols, 'xlsx').split('?')[1]).get('ui-culture')).toBe('en');
+  });
 });
 
-afterEach(() => { vi.unstubAllGlobals(); });
+afterEach(() => { vi.unstubAllGlobals(); applyLanguage('en'); });

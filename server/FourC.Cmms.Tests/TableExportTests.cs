@@ -1,5 +1,9 @@
 using System.IO.Compression;
 using System.Text;
+using System.Reflection;
+using FourC.Cmms.Api.Features;
+using FourC.Cmms.Api.Features.Ai;
+using FourC.Cmms.Api.Features.Import;
 using FourC.Cmms.Api.Infrastructure;
 using FourC.Cmms.Core.Work;
 
@@ -135,5 +139,123 @@ public class TableExportTests
         Assert.Contains("<autoFilter ref=\"A1:E3\"/>", sheet);
         Assert.Contains("state=\"frozen\"", sheet);
         Assert.Contains("<c r=\"A1\" s=\"1\" t=\"inlineStr\">", sheet);
+    }
+
+    [Fact]
+    public void Arabic_export_words()
+    {
+        var cols = new[] { new ExportColumn("status", "Status"), new ExportColumn("flag", "Flag") };
+        using (Translator.Use("ar"))
+        {
+            var row = TableExport.Rows([Sample()], cols, Plus2).Single();
+            Assert.Equal(Translator.T("In progress", "ar"), row[0]);
+            Assert.NotEqual("In progress", row[0]);
+            Assert.Equal(Translator.T("Yes", "ar"), row[1]);
+            Assert.NotEqual("Yes", row[1]);
+            var no = TableExport.Rows([Sample() with { Flag = false }], cols, Plus2).Single();
+            Assert.Equal(Translator.T("No", "ar"), no[1]);
+            Assert.NotEqual("No", no[1]);
+        }
+    }
+
+    [Fact]
+    public void English_export_words_unchanged()
+    {
+        var cols = new[] { new ExportColumn("status", "Status"), new ExportColumn("flag", "Flag") };
+        using (Translator.Use("en"))
+        {
+            var row = TableExport.Rows([Sample()], cols, Plus2).Single();
+            Assert.Equal("In progress", row[0]);
+            Assert.Equal("Yes", row[1]);
+            Assert.Equal("No", TableExport.Rows([Sample() with { Flag = false }], cols, Plus2).Single()[1]);
+        }
+        Assert.Equal("Partially received", Translator.T(TableExport.Words(nameof(FourC.Cmms.Core.Purchasing.PurchaseOrderStatus.PartiallyReceived)), "en"));
+    }
+
+    /// <summary>The row types the ten list exports write (code map 17), so a new enum column is covered without editing this test.</summary>
+    private static readonly Type[] ExportRows =
+    [
+        typeof(WorkOrderEndpoints.WorkOrderListItem), typeof(WorkRequestEndpoints.WorkRequestListItem), typeof(AssetEndpoints.AssetListItem),
+        typeof(InventoryEndpoints.PartListItem), typeof(PurchasingEndpoints.PoListItem), typeof(PurchaseRequestEndpoints.PrListItem),
+        typeof(PmEndpoints.PmScheduleListItem), typeof(ContractEndpoints.ContractListItem), typeof(ActivityEndpoints.ActivityRow), typeof(AiCallRow),
+    ];
+
+    private static IEnumerable<Type> ExportedEnums() => ExportRows
+        .SelectMany(t => t.GetProperties(BindingFlags.Public | BindingFlags.Instance))
+        .Select(p => p.PropertyType)
+        .Select(t => Nullable.GetUnderlyingType(t) ?? t)
+        .Select(t => t.IsGenericType && t.GetGenericTypeDefinition() == typeof(List<>) ? t.GetGenericArguments()[0] : t)
+        .Where(t => t.IsEnum).Distinct().OrderBy(t => t.Name);
+
+    [Fact]
+    public void The_ten_export_row_types_hold_enums() => Assert.True(ExportedEnums().Count() >= 8, string.Join(", ", ExportedEnums().Select(t => t.Name)));
+
+    [Fact]
+    public void Exported_enums_have_distinct_arabic()
+    {
+        var problems = new List<string>();
+        foreach (var type in ExportedEnums())
+        {
+            var seen = new Dictionary<string, string>();
+            foreach (Enum v in Enum.GetValues(type))
+            {
+                var english = TableExport.Words(v.ToString());
+                var arabic = Translator.T(english, "ar");
+                if (arabic == english) problems.Add($"{type.Name}.{v}: no Arabic for \"{english}\"");
+                else if (seen.TryGetValue(arabic, out var other)) problems.Add($"{type.Name}: {other} and {v} are both \"{arabic}\"");
+                else seen[arabic] = v.ToString();
+            }
+        }
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    [Fact]
+    public void Arabic_export_words_import_back()
+    {
+        var checkedEnums = 0;
+        var problems = new List<string>();
+        foreach (var type in ExportedEnums().Where(t => Lists.Key(t) is null))
+        {
+            var values = Enum.GetValues(type).Cast<Enum>().ToList();
+            // Enums the importer names with other words ("Every", "Due date") don't take the export word even in English: left as is.
+            if (values.Any(v => ImportSheets.ChoiceWord(v) != TableExport.Words(v.ToString()))) continue;
+            checkedEnums++;
+            var col = new ColumnDef("x", "X", "س", ValueKind.Choice, false, type);
+            foreach (var v in values)
+            {
+                var arabic = Translator.T(TableExport.Words(v.ToString()), "ar");
+                Assert.True(ImportValues.TryRead(arabic, col, out var read, out var why), $"{type.Name}.{v} \"{arabic}\": {why}");
+                if (!Equals(read, v)) problems.Add($"{type.Name}.{v} \"{arabic}\" reads back as {read}");
+            }
+        }
+        Assert.True(checkedEnums >= 5, $"only {checkedEnums} enums checked");
+        Assert.True(problems.Count == 0, string.Join("\n", problems));
+    }
+
+    [Theory]
+    [InlineData("work-orders")]
+    [InlineData("work-requests")]
+    [InlineData("assets")]
+    [InlineData("parts")]
+    [InlineData("purchase-orders")]
+    [InlineData("purchase-requests")]
+    [InlineData("pm-schedules")]
+    [InlineData("contracts")]
+    [InlineData("activity")]
+    [InlineData("ai-calls")]
+    public void Sheet_name_is_in_the_readers_language(string list)
+    {
+        string Name(string language)
+        {
+            using var _ = Translator.Use(language);
+            var file = ListExport.Build(new Microsoft.AspNetCore.Http.QueryCollection(new Dictionary<string, Microsoft.Extensions.Primitives.StringValues> { ["c"] = "x" }), list,
+                new FourC.Cmms.Core.Common.PagedResult<object>([], 0, 1, 25), Plus2);
+            using var zip = new ZipArchive(new MemoryStream(file.Bytes));
+            using var r = new StreamReader(zip.GetEntry("xl/workbook.xml")!.Open());
+            return System.Text.RegularExpressions.Regex.Match(r.ReadToEnd(), "<sheet name=\"([^\"]*)\"").Groups[1].Value;
+        }
+        var en = Name("en");
+        Assert.NotEqual(en, Name("ar"));
+        Assert.Equal(char.ToUpperInvariant(list[0]) + list[1..].Replace('-', ' '), en);
     }
 }

@@ -46,7 +46,7 @@ public static class ListExport
         var truncated = page.Total > items.Count;
         return string.Equals(query["format"], "csv", StringComparison.OrdinalIgnoreCase)
             ? new ExportFile(TableExport.Csv(cols, rows), "text/csv", $"{list}-{stamp}.csv", truncated)
-            : new ExportFile(TableExport.Xlsx(SheetName(list), cols, rows), XlsxType, $"{list}-{stamp}.xlsx", truncated);
+            : new ExportFile(TableExport.Xlsx(Translator.T(SheetName(list)), cols, rows), XlsxType, $"{list}-{stamp}.xlsx", truncated);
     }
 
     /// <summary>"work-orders" → "Work orders".</summary>

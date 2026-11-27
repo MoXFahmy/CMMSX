@@ -3,6 +3,7 @@ import { ActionIcon, Button, Checkbox, Group, Menu, Modal, Select, Stack, Text, 
 import { useLocation } from 'react-router';
 import { P, useAuth } from '@/auth/AuthContext';
 import { getSite } from '@/components/siteSwitch';
+import i18n from '@/i18n';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useTranslation } from 'react-i18next';
 import { IconBookmark, IconCheck, IconColumns3, IconDeviceFloppy, IconDownload, IconPencil, IconPinned, IconPinnedOff, IconRestore, IconStar, IconStarOff, IconTrash, IconUsersGroup } from '@tabler/icons-react';
@@ -35,6 +36,8 @@ export function exportUrl<T>(path: string, query: Query, cols: ListColumn<T>[], 
   // The site switch: a download link can't send it as a header, so it goes in the address.
   const site = getSite();
   if (site) sp.set('cmxSite', site);
+  // The words in the file (statuses, Yes/No) follow the app's language, not the browser's: a download link sends the browser's own.
+  sp.set('ui-culture', i18n.language === 'ar' ? 'ar' : 'en');
   for (const c of exportColumns(cols)) { sp.append('c', c.key); sp.append('t', c.title ?? c.key); }
   return `/api${path}?${sp.toString()}`;
 }
