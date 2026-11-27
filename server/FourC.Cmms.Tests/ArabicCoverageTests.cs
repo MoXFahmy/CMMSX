@@ -331,8 +331,9 @@ internal static partial class ArabicTextScanner
 }
 
 /// <summary>
-/// Guard (0.29.2): every server message text has Arabic in Localization/ar.json, and English stays as written. A text without Arabic fails the
-/// build unless it is listed in <c>arabic-coverage-allowlist.txt</c> with a reason (a line CMX stores in English and translates when shown, Task 4;
+/// Guard (0.29.2): every server message text has Arabic in Localization/ar.json, all through: an Arabic result that still holds English words
+/// (a catch-all template or one known sentence translated around new English) does not count. A text without full Arabic fails the build
+/// unless it is listed in <c>arabic-coverage-allowlist.txt</c> with a reason (a line CMX stores in English and translates when shown, Task 4;
 /// text that becomes part of a record people edit). See <see cref="ArabicTextScanner"/> for what is scanned and what is not.
 /// </summary>
 public class ArabicCoverageTests(Xunit.Abstractions.ITestOutputHelper output)
@@ -359,20 +360,45 @@ public class ArabicCoverageTests(Xunit.Abstractions.ITestOutputHelper output)
 
     private static readonly Lazy<IReadOnlyList<ArabicTextScanner.Hit>> All = new(() => ArabicTextScanner.Scan(Sources().ToList()));
 
-    /// <summary>The keys of the Arabic catalogue the server ships (the embedded ar.json).</summary>
-    private static readonly Lazy<HashSet<string>> Keys = new(() =>
+    /// <summary>The Arabic catalogue the server ships (the embedded ar.json): English key to Arabic.</summary>
+    private static readonly Lazy<Dictionary<string, string>> Catalogue = new(() =>
     {
         using var stream = typeof(Translator).Assembly.GetManifestResourceStream("FourC.Cmms.Api.Localization.ar.json")!;
-        return JsonSerializer.Deserialize<Dictionary<string, string>>(stream)!.Keys.ToHashSet(StringComparer.Ordinal);
+        return JsonSerializer.Deserialize<Dictionary<string, string>>(stream)!;
     });
 
-    /// <summary>The text with a sample value in each hole, as the translator would see it at run time.</summary>
+    /// <summary>The text with a sample value in each hole, as the translator would see it at run time ("X" is too short to count as English left over).</summary>
     internal static string Sample(string text) => Regex.Replace(text, @"\{\d+\}", "X");
 
-    /// <summary>A label needs an exact key (it is put into "{0} is required."); a message needs the translator to change it.</summary>
-    internal static bool HasArabic(ArabicTextScanner.Hit h) => h.Label ? Keys.Value.Contains(h.Text) : Translator.T(Sample(h.Text), "ar") != Sample(h.Text);
+    /// <summary>
+    /// Latin words the Arabic catalogue keeps on purpose: the product's name, report abbreviations, file types, a date format, a content type
+    /// and an example time zone. Taken from the ar.json values as they are (<see cref="Kept_latin_words_come_from_the_catalogue"/> checks
+    /// each one is still used there); anything else in Latin letters in an Arabic result is English left over.
+    /// </summary>
+    internal static readonly string[] KeptLatin =
+        ["multipart/form-data", "yyyy-mm-dd", "Africa/Cairo", "4CSQL", "CMX", "MTBF", "MTTR", "JPEG", "PNG", "WebP", "WebM", "MOV", "PDF", "Excel", "Word", "xlsx", "csv"];
 
-    internal static string Show(ArabicTextScanner.Hit h) => $"{h.File}:{h.Line} \"{h.Text}\"";
+    /// <summary>The runs of three or more Latin letters left in an Arabic result, apart from <see cref="KeptLatin"/>.</summary>
+    internal static List<string> EnglishLeft(string arabic)
+    {
+        foreach (var kept in KeptLatin) arabic = Regex.Replace(arabic, $"(?<![A-Za-z]){Regex.Escape(kept)}(?![A-Za-z])", " ");
+        return Regex.Matches(arabic, "[A-Za-z]{3,}").Select(m => m.Value).ToList();
+    }
+
+    /// <summary>What an Arabic reader gets: a label's own entry (it is put into "{0} is required.", so it needs an exact key), else the translated sample; null when nothing changes.</summary>
+    internal static string? ArabicOf(ArabicTextScanner.Hit h)
+    {
+        if (h.Label) return Catalogue.Value.TryGetValue(h.Text, out var own) ? own : null;
+        var sample = Sample(h.Text);
+        var arabic = Translator.T(sample, "ar");
+        return arabic == sample ? null : arabic;
+    }
+
+    /// <summary>Arabic all through: translated, and no English words left in the result.</summary>
+    internal static bool HasArabic(ArabicTextScanner.Hit h) => ArabicOf(h) is { } arabic && EnglishLeft(arabic).Count == 0;
+
+    internal static string Show(ArabicTextScanner.Hit h) =>
+        $"{h.File}:{h.Line} \"{h.Text}\"" + (ArabicOf(h) is { } partly ? $"  (English left in the Arabic: {string.Join(", ", EnglishLeft(partly))})" : "");
 
     private sealed record Entry(string File, string Fingerprint, string Reason, int Number);
 
@@ -428,13 +454,6 @@ public class ArabicCoverageTests(Xunit.Abstractions.ITestOutputHelper output)
     }
 
     [Fact]
-    public void English_messages_stay_as_written()
-    {
-        var changed = All.Value.Where(h => Translator.T(Sample(h.Text), "en") != Sample(h.Text)).ToList();
-        Assert.True(changed.Count == 0, "The translator changed these English texts:\n" + string.Join("\n", changed.Select(Show)));
-    }
-
-    [Fact]
     public void Scan_reaches_the_known_messages()
     {
         // A scan that silently found nothing would pass everything: it must see the messages of every kind it claims to.
@@ -481,6 +500,42 @@ public class ArabicCoverageTests(Xunit.Abstractions.ITestOutputHelper output)
         var listed = Pair([hit], [new Entry("New.cs", Fingerprint(hit.Text), "a reason for the test", 1)]);
         Assert.Empty(listed.Unlisted);
         Assert.Empty(listed.Stale);
+    }
+
+    /// <summary>Review fix: a catch-all template or a known sentence wrapped around new English is not Arabic.</summary>
+    [Fact]
+    public void Partly_english_arabic_is_reported()
+    {
+        const string planted = """
+            if (a) throw new DomainException($"Widget {code} not found.");
+            if (b) v.Add("lines", $"Line {n}: Something new happened.");
+            if (c) throw new DomainException("Choose an active person. Then ring the bell twice.");
+            """;
+        var hits = ArabicTextScanner.Scan([new("Planted.cs", planted)]);
+        Assert.Equal(3, hits.Count);
+        foreach (var hit in hits)
+        {
+            // The translator does change each one (a catch-all template, or the known first sentence), but English is left in it.
+            Assert.NotNull(ArabicOf(hit));
+            Assert.NotEmpty(EnglishLeft(ArabicOf(hit)!));
+            Assert.False(HasArabic(hit));
+        }
+        Assert.Equal(hits, Pair(hits, []).Unlisted);
+        // Whole Arabic, and Arabic that keeps a deliberate Latin word, still pass.
+        Assert.True(HasArabic(new("A.cs", 1, false, "Site {0} not found.")));
+        Assert.True(HasArabic(new("A.cs", 1, false, "Upload must be multipart/form-data.")));
+        Assert.True(HasArabic(new("A.cs", 1, true, "Supplier's part number")));
+    }
+
+    [Fact]
+    public void Kept_latin_words_come_from_the_catalogue()
+    {
+        // The exceptions stay a short list of words ar.json really keeps; a word dropped from every Arabic text must leave the list too.
+        foreach (var kept in KeptLatin)
+            Assert.True(Catalogue.Value.Values.Any(v => Regex.IsMatch(v, $"(?<![A-Za-z]){Regex.Escape(kept)}(?![A-Za-z])")), $"{kept} is in no Arabic text any more");
+        // And the catalogue's own Arabic holds no other English.
+        var leftovers = Catalogue.Value.Where(kv => EnglishLeft(kv.Value).Count > 0).Select(kv => $"\"{kv.Key}\": {string.Join(", ", EnglishLeft(kv.Value))}").ToList();
+        Assert.True(leftovers.Count == 0, "These Arabic texts hold English words:\n" + string.Join("\n", leftovers));
     }
 
     [Fact]
