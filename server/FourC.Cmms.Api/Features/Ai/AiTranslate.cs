@@ -102,8 +102,10 @@ public static class AiTranslate
         }
 
         public async Task<List<(string Main, string Ar)>> PairsAsync(CmmsDbContext db, CancellationToken ct) =>
-            (await Visible(db).Where(s => s.DescriptionAr != null).OrderBy(s => s.PmTaskId).ThenBy(s => s.Sequence).Take(ContextPairs)
-                .Select(s => new { s.Description, s.DescriptionAr }).ToListAsync(ct)).Select(r => (r.Description, r.DescriptionAr!)).ToList();
+            // Steps carry no change time of their own: the templates' last change orders them, newest first (0.29.2).
+            (await (from s in Visible(db).Where(s => s.DescriptionAr != null) join t in db.PmTasks on s.PmTaskId equals t.Id
+                    orderby (t.UpdatedAt ?? t.CreatedAt) descending, s.Sequence select new { s.Description, s.DescriptionAr })
+                .Take(ContextPairs).ToListAsync(ct)).Select(r => (r.Description, r.DescriptionAr!)).ToList();
 
         public async Task<int> SaveAsync(CmmsDbContext db, IReadOnlyDictionary<Guid, string> texts, CancellationToken ct)
         {

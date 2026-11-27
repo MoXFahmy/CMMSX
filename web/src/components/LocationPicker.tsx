@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next';
 import { get } from '@/api/client';
 import type { Hierarchy, HierarchyLocation } from '@/api/types';
 import { useAuth } from '@/auth/AuthContext';
+import { placeFilter } from './bilingualSearch';
 
 export function useHierarchy() {
   return useQuery({ queryKey: ['hierarchy'], queryFn: () => get<Hierarchy>('/locations/hierarchy'), staleTime: 60_000 });
@@ -21,12 +22,12 @@ export function locationOptions(locations: HierarchyLocation[], siteId: string |
     const k = l.parentId && ids.has(l.parentId) ? l.parentId : null;
     children.set(k, [...(children.get(k) ?? []), l]);
   }
-  const out: { value: string; label: string }[] = [];
+  const out: { value: string; label: string; otherName: string | null }[] = [];
   const walk = (parent: string | null, trail: string[]) => {
     for (const l of (children.get(parent) ?? []).sort((a, b) => a.name.localeCompare(b.name))) {
       if (l.id === excludeSubtreeOf) continue;
       const path = [...trail, l.name];
-      out.push({ value: l.id, label: path.join(' › ') + (l.isActive ? '' : ' (inactive)') });
+      out.push({ value: l.id, label: path.join(' › ') + (l.isActive ? '' : ' (inactive)'), otherName: l.otherName ?? null });
       walk(l.id, path);
     }
   };
@@ -52,11 +53,14 @@ export function LocationPicker({ siteId, locationId, onChange, siteError, locati
   const { data } = useHierarchy();
   const siteOptions = useMemo(() => (data?.sites ?? []).map((s) => ({ value: s.id, label: `${s.name} (${s.code})` })), [data]);
   const locOptions = useMemo(() => locationOptions(data?.locations ?? [], siteId, excludeSubtreeOf), [data, siteId, excludeSubtreeOf]);
+  // Searching finds a place by its other-language name too (0.29.2; the leaf name only, not the whole path).
+  const locFilter = useMemo(() => placeFilter(new Map(locOptions.map((o) => [o.value, o.otherName]))), [locOptions]);
+  const locData = useMemo(() => locOptions.map(({ value, label }) => ({ value, label })), [locOptions]);
   return (
     <SimpleGrid cols={{ base: 1, sm: cols }}>
       <Select label={terms.site} data={siteOptions} value={siteId} searchable required={required} error={siteError}
         onChange={(v) => onChange(v, null)} nothingFoundMessage={t('common.noRecords')} />
-      <Select label={locationLabel ?? terms.location} data={locOptions} value={locationId} searchable clearable disabled={!siteId}
+      <Select label={locationLabel ?? terms.location} data={locData} value={locationId} searchable clearable disabled={!siteId} filter={locFilter}
         onChange={(v) => onChange(siteId, v)} error={locationError} nothingFoundMessage={t('common.noRecords')}
         comboboxProps={{ width: 'max-content', position: 'bottom-start' }} maxDropdownHeight={320} />
     </SimpleGrid>

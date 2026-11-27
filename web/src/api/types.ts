@@ -93,6 +93,8 @@ export type HierarchySite = { id: string; code: string; name: string; isActive: 
 export type HierarchyLocation = {
   id: string; siteId: string; parentId?: string | null; code: string; name: string; type: LocationType;
   criticality: Criticality; isActive: boolean; assetCount: number;
+  /** 0.29.2: the name in the other language (null when there is none), so a search finds the place by either. */
+  otherName?: string | null;
 };
 export type Hierarchy = { sites: HierarchySite[]; locations: HierarchyLocation[] };
 export type LocationDetail = {

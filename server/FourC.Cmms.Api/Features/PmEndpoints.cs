@@ -58,6 +58,12 @@ public static class PmEndpoints
         ["lastGeneratedAt"] = s => s.LastGeneratedAt,
     };
 
+    /// <summary>The same sort for Arabic readers: by the Arabic name when there is one (0.29.2).</summary>
+    private static readonly Dictionary<string, Expression<Func<PmSchedule, object?>>> SortMapAr = new(SortMap, StringComparer.OrdinalIgnoreCase)
+    {
+        ["name"] = s => s.NameAr ?? s.Name,
+    };
+
     private static DateOnly Today => DateOnly.FromDateTime(DateTime.UtcNow);
 
     public sealed class PmScheduleFilter
@@ -90,7 +96,7 @@ public static class PmEndpoints
         if (f.Type is not null) q = q.Where(x => x.Type == f.Type);
         if (f.ActiveOnly == true) q = q.Where(x => x.IsActive);
         if (f.DueWithinDays is { } d) { var until = Today.AddDays(d); q = q.Where(x => x.IsActive && x.NextDueDate != null && x.NextDueDate <= until); }
-        var paged = await q.SortBy(f.Sort, f.Dir, SortMap, "nextDueDate").Include(x => x.Meter).Include(x => x.ExtraTasks)
+        var paged = await q.SortBy(f.Sort, f.Dir, Bilingual.Arabic ? SortMapAr : SortMap, "nextDueDate").Include(x => x.Meter).Include(x => x.ExtraTasks)
             .Select(x => new { S = x, SiteName = x.Site!.Name, AssetNumber = x.Asset!.AssetNumber, AssetName = Bilingual.Arabic && x.Asset.NameAr != null ? x.Asset.NameAr : x.Asset.Name, LocationName = Bilingual.Arabic && x.Location!.NameAr != null ? x.Location.NameAr : x.Location!.Name, TaskCode = x.PmTask!.Code, TaskName = Bilingual.Arabic && x.PmTask.NameAr != null ? x.PmTask.NameAr : x.PmTask.Name,
                 MeterUnit = x.Meter!.Unit, MeterReading = x.Meter.CurrentReading, AssetCount = x.Assets.Count,
                 LastWorkOrderNumber = db.WorkOrders.Where(w => w.Id == x.LastWorkOrderId).Select(w => w.Number).FirstOrDefault(),
@@ -148,6 +154,9 @@ public static class PmEndpoints
             if (!v.IsValid) return v.Problem();
             if (input.RowVersion is not null) db.Entry(x).Property(y => y.RowVersion).OriginalValue = input.RowVersion.ToVersion();
             UpdateTask(db, x, input);
+            // The steps are rows of their own: an edit that only changes them leaves the template row unchanged to EF, so the save
+            // marks it here (the AI window orders its step examples by the template's last change, 0.29.2).
+            x.UpdatedAt = DateTimeOffset.UtcNow;
             await db.SaveChangesAsync(ct);
             return Results.Ok(new { x.Id });
         }).RequirePermission(Permissions.PmManage);

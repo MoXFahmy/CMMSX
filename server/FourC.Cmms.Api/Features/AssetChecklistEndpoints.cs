@@ -52,12 +52,13 @@ public static class AssetChecklists
         g.MapGet("/", async (Guid? assetId, Guid? categoryId, CmmsDbContext db, CancellationToken ct) =>
         {
             if (assetId is null && categoryId is null) throw new DomainException("Choose an asset or a category.");
+            var ar = Bilingual.Arabic; // template names in the reader's language (0.29.2)
             var q = db.AssetChecklists.AsNoTracking().Where(c => (assetId != null && c.AssetId == assetId) || (categoryId != null && c.AssetCategoryId == categoryId));
             return await q.OrderBy(c => c.CreatedAt).Select(c => new
             {
                 c.Id, c.AssetId, c.AssetCategoryId, c.PmTaskId,
                 Code = db.PmTasks.Where(t => t.Id == c.PmTaskId).Select(t => t.Code).FirstOrDefault(),
-                Name = db.PmTasks.Where(t => t.Id == c.PmTaskId).Select(t => t.Name).FirstOrDefault(),
+                Name = db.PmTasks.Where(t => t.Id == c.PmTaskId).Select(t => ar && t.NameAr != null ? t.NameAr : t.Name).FirstOrDefault(),
                 StepCount = db.PmTaskSteps.Count(s => s.PmTaskId == c.PmTaskId),
             }).ToListAsync(ct);
         }).RequirePermission(Permissions.AssetsView);

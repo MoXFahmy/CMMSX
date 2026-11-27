@@ -299,9 +299,10 @@ public static class ReportEndpoints
 
     private static async Task<ReportResult> PmComplianceAsync(CmmsDbContext db, ReportArgs a, CancellationToken ct)
     {
+        var ar = Bilingual.Arabic; // names in the reader's language (0.29.2)
         var items = await Wo(db, a).Where(w => w.PmScheduleId != null && (w.PmDueDate ?? w.DueDate) >= a.From && (w.PmDueDate ?? w.DueDate) <= a.To)
-            .Select(w => new { Due = (w.PmDueDate ?? w.DueDate)!.Value, w.CompletedAt, w.Status, w.PmScheduleId, Schedule = db.PmSchedules.Where(p => p.Id == w.PmScheduleId).Select(p => p.Code + " " + p.Name).FirstOrDefault(),
-                Trade = w.Trade!.Name, Category = w.Asset!.Category!.Name }).ToListAsync(ct);
+            .Select(w => new { Due = (w.PmDueDate ?? w.DueDate)!.Value, w.CompletedAt, w.Status, w.PmScheduleId, Schedule = db.PmSchedules.Where(p => p.Id == w.PmScheduleId).Select(p => p.Code + " " + (ar && p.NameAr != null ? p.NameAr : p.Name)).FirstOrDefault(),
+                Trade = w.Trade!.Name, Category = ar && w.Asset!.Category!.NameAr != null ? w.Asset.Category.NameAr : w.Asset!.Category!.Name }).ToListAsync(ct);
         string Outcome(DateOnly due, DateTimeOffset? completed, WorkOrderStatus st) =>
             st == WorkOrderStatus.Cancelled ? "skipped"
             : completed is { } c ? (DateOnly.FromDateTime(c.UtcDateTime) <= due ? "onTime" : "late")

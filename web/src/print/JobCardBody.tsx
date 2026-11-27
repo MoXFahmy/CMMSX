@@ -6,7 +6,7 @@ import { printedStep } from '@/components/measure';
 import { fmtDate, fmtDateTime, fmtQty } from '@/components/utils';
 import { blocksInOrder, layoutText, pairRows, shows, type PrintBlock, type PrintLayout } from './layouts';
 import { FooterText, PlainText, TermsBlock, type PrintContext } from './PrintTexts';
-import { pick } from '@/components/bilingual';
+import { pick, safetyText } from '@/components/bilingual';
 
 /** Blank rows for the technician to fill in by hand. */
 const BLANK_ROWS = 4;
@@ -25,6 +25,7 @@ export function JobCardBody({ w, layout, orgName, terms, logoUrl, language, asse
   const { t } = useTranslation();
   const has = (block: string, field?: string) => shows(layout, block, field);
   const location = w.locationTrail.map((l) => l.name).join(' › ');
+  const safety = safetyText(w.safetyNotes, w.safetyNotesAr); // never hidden: the other language when the reader's has none (0.29.2)
   const tasks = [...w.tasks].sort((a, b) => a.sequence - b.sequence);
   // PM rounds list their assets in order, then any step not tied to one of them (as on the work order page); other work orders have one group.
   const groups = w.assets.length > 0
@@ -96,9 +97,9 @@ export function JobCardBody({ w, layout, orgName, terms, logoUrl, language, asse
         return shown.length > 0 && <SimpleGrid cols={4} spacing="sm" mb="md">{shown.map(([, label, value]) => field(label, value))}</SimpleGrid>;
       }
       // 0.28.0: the safety notes print with the description, in the reader's language.
-      case 'description': return (w.description || w.safetyNotes) && <>
+      case 'description': return (w.description || safety) && <>
         {w.description && <Text fz="sm" mb="md" style={{ whiteSpace: 'pre-wrap' }}>{w.description}</Text>}
-        {w.safetyNotes && <Text fz="sm" mb="md" style={{ whiteSpace: 'pre-wrap' }}><b>{t('wo.safety')}:</b> {pick(w.safetyNotes, w.safetyNotesAr)}</Text>}</>;
+        {safety && <Text fz="sm" mb="md" style={{ whiteSpace: 'pre-wrap' }}><b>{t('wo.safety')}:</b> {safety}</Text>}</>;
       case 'technician-notes': return (w.asset?.notesToTechnician || w.locationNotesToTechnician) && (
         <Stack gap={2} mb="md" p="xs" style={{ border: '1px solid #000' }}>
           <Text fz="xs" fw={700} tt="uppercase">{t('wo.notesForTech')}</Text>

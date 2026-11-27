@@ -6,7 +6,7 @@ import type { HierarchyLocation } from '@/api/types';
 import { LocationTypeIcon, SiteIcon } from '@/components/Badges';
 
 export type TreeNode = {
-  kind: 'site' | 'location'; id: string; siteId: string; name: string; code: string; loc?: HierarchyLocation; children: TreeNode[]; assetCount: number; isActive: boolean;
+  kind: 'site' | 'location'; id: string; siteId: string; name: string; otherName?: string | null; code: string; loc?: HierarchyLocation; children: TreeNode[]; assetCount: number; isActive: boolean;
 };
 
 export function buildTree(h: { sites: { id: string; code: string; name: string; isActive: boolean; assetCount: number }[]; locations: HierarchyLocation[] }): TreeNode[] {
@@ -18,7 +18,7 @@ export function buildTree(h: { sites: { id: string; code: string; name: string; 
     kids.set(k, [...(kids.get(k) ?? []), l]);
   }
   const make = (l: HierarchyLocation): TreeNode => ({
-    kind: 'location', id: l.id, siteId: l.siteId, name: l.name, code: l.code, loc: l, isActive: l.isActive, assetCount: l.assetCount,
+    kind: 'location', id: l.id, siteId: l.siteId, name: l.name, otherName: l.otherName, code: l.code, loc: l, isActive: l.isActive, assetCount: l.assetCount,
     children: (kids.get(l.id) ?? []).sort((a, b) => a.name.localeCompare(b.name)).map(make),
   });
   return h.sites.map((s) => ({
@@ -34,7 +34,7 @@ export function filterTree(nodes: TreeNode[], q: string): TreeNode[] {
   const needle = q.toLowerCase();
   return nodes.flatMap((n) => {
     const kids = filterTree(n.children, q);
-    const hit = n.name.toLowerCase().includes(needle) || n.code.toLowerCase().includes(needle);
+    const hit = n.name.toLowerCase().includes(needle) || (n.otherName ?? '').toLowerCase().includes(needle) || n.code.toLowerCase().includes(needle);
     return hit || kids.length ? [{ ...n, children: hit ? n.children : kids }] : [];
   });
 }

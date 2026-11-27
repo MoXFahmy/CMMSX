@@ -9,7 +9,7 @@ import { FILE_ACCEPT, fileKind, sizeProblem } from './files';
 import { useTech } from './useTech';
 import type { TechJob } from './types';
 import { listItems } from '@/components/listLabels';
-import { placeFilter } from './bilingualSearch';
+import { placeFilter } from '@/components/bilingualSearch';
 
 /** A picker's local "YYYY-MM-DD HH:mm:ss" (or Date) as an ISO instant. */
 const iso = (v: string | Date | null) => (v ? new Date(typeof v === 'string' ? v.replace(' ', 'T') : v).toISOString() : new Date().toISOString());
@@ -77,7 +77,8 @@ export function JobActions({ job }: { job: TechJob }) {
       {bundle?.can?.cancel && <Button size="xs" variant="subtle" color="red" leftSection={<IconX size={14} />} onClick={() => setCancelling(true)}>{t('techJob.cancelJob')}</Button>}
       <Modal opened={checklist} onClose={() => setChecklist(false)} title={t('techJob.addChecklist')}>
         <Stack>
-          <Select label={t('techJob.pmTask')} searchable data={pmTasks.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))} value={task} onChange={setTask} />
+          <Select label={t('techJob.pmTask')} searchable data={pmTasks.map((p) => ({ value: p.id, label: `${p.code} · ${p.name}` }))} value={task} onChange={setTask}
+            filter={placeFilter(new Map(pmTasks.map((p) => [p.id, p.otherName])))} />
           {task && <Stack gap={2}>{pmTasks.find((p) => p.id === task)?.steps.map((s, i) => <Text key={i} fz="sm">{i + 1}. {s}</Text>)}</Stack>}
           <Button disabled={!task} onClick={() => { void send('tasks.fromPm', { pmTaskId: task }); setChecklist(false); setTask(null); }}>{t('techJob.addSteps')}</Button>
         </Stack>

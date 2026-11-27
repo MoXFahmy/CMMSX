@@ -668,7 +668,8 @@ public sealed class EmailOutbox(IOptions<EmailOptions> options, IConfiguration c
 
     private static async Task<WorkOrderFacts> FactsAsync(CmmsDbContext db, WorkOrder w, CancellationToken ct) =>
         new(w.Number, new LocalWords(w.Title, w.TitleAr ?? w.Title), await PriorityAsync(db, w.Priority, ct), w.DueDate, await PlaceAsync(db, w.SiteId, w.LocationId, w.AssetId, ct), w.Description, w.CompletionNotes,
-            w.SafetyNotes is { } sn ? new LocalWords(sn, w.SafetyNotesAr ?? sn) : null);
+            // 0.29.2: notes in one language only are shown to every reader, and blank texts count as missing.
+            Bilingual.Either(w.SafetyNotes, w.SafetyNotesAr, false) is { } sn ? new LocalWords(sn, Bilingual.Either(w.SafetyNotes, w.SafetyNotesAr, true)!) : null);
 
     private static async Task<RequestFacts> FactsAsync(CmmsDbContext db, WorkRequest r, CancellationToken ct) =>
         new(r.Number, r.Title, await PriorityAsync(db, r.Priority, ct), await PlaceAsync(db, r.SiteId, r.LocationId, r.AssetId, ct));

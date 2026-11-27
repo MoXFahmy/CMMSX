@@ -24,6 +24,7 @@ import { ChangeCostCentreModal } from './ChangeCostCentre';
 import { apiQuery, WO_TABS } from '@/components/list/apiQueries';
 import { BulkBar, FilterChips, ListTools, listText, rangeText, showBulkResult, useListColumns, useListParams, type BulkResult, type FilterDef, type ListColumn } from '@/components/list';
 import { listItems } from '@/components/listLabels';
+import { codeFilterOptions, lookupName } from '@/components/codes';
 import { groupData, useAssetGroups } from '@/components/ReferencePickers';
 import { pick } from '@/components/bilingual';
 
@@ -62,8 +63,9 @@ export function WorkOrdersPage() {
   const { data: symptoms } = useQuery({ queryKey: ['codes', '/symptoms'], queryFn: () => get<Lookup[]>('/symptoms') });
   const { data: causes } = useQuery({ queryKey: ['codes', '/failure-codes'], queryFn: () => get<Lookup[]>('/failure-codes') });
   const { data: remedies } = useQuery({ queryKey: ['codes', '/remedies'], queryFn: () => get<Lookup[]>('/remedies') });
-  const codeName = (list: Lookup[] | undefined) => ([v]: string[]) => (v === 'none' ? t('codes.notRecorded') : list?.find((x) => x.id === v)?.name ?? '…');
-  const codeFilter = (list: Lookup[] | undefined) => [{ value: 'none', label: t('codes.notRecorded') }, ...(list ?? []).map((x) => ({ value: x.id, label: `${x.code} · ${x.name}` }))];
+  // Chips and options read the reader's name (0.28.0-2); the filter values stay ids.
+  const codeName = (list: Lookup[] | undefined) => ([v]: string[]) => (v === 'none' ? t('codes.notRecorded') : lookupName(list, v));
+  const codeFilter = (list: Lookup[] | undefined) => codeFilterOptions(list, t('codes.notRecorded'));
   const { data: filterAsset } = useQuery({ queryKey: ['asset', p('assetId')], queryFn: () => get<{ assetNumber: string; name: string }>(`/assets/${p('assetId')}`), enabled: !!p('assetId') });
   const count = (s: WorkOrderStatus[] | null) => (summary?.byStatus ?? []).filter((x) => !s || s.includes(x.status)).reduce((a, b) => a + b.count, 0);
   const filtersActive = ['search', 'siteId', 'priority', 'type', 'tradeId', ...EXTRA_FILTERS].some((k) => p(k));
@@ -133,7 +135,7 @@ export function WorkOrdersPage() {
     { keys: ['inFailureTree'], label: t('codes.inFailureTree'), format: () => t('common.yes') },
     { keys: ['dueFrom', 'dueTo'], label: t('wo.dueBetween'), format: rangeText(fmtDate, t) },
     { keys: ['source'], label: t('wo.source'), format: ([v]) => sources[v] ?? v },
-    { keys: ['cancelReasonId'], label: t('wo.cancelReason'), format: ([v]) => cancelReasons?.find((x) => x.id === v)?.name ?? '…' },
+    { keys: ['cancelReasonId'], label: t('wo.cancelReason'), format: ([v]) => lookupName(cancelReasons, v) },
     { keys: ['onlyWhenStopped'], label: t('accessWindows.onlyWhenStopped'), format: () => t('common.yes') },
     { keys: ['groupId'], label: t('groups.group'), format: () => data?.items.find((w) => w.groupId === p('groupId'))?.groupNumber ?? '…' },
   ];

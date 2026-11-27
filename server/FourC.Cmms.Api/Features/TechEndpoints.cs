@@ -53,7 +53,10 @@ public static partial class TechEndpoints
                 .Select(w => new
                 {
                     w.Id, w.Number, Title = ar && w.TitleAr != null ? w.TitleAr : w.Title, w.Description,
-                    SafetyNotes = ar && w.SafetyNotesAr != null ? w.SafetyNotesAr : w.SafetyNotes, w.Type, w.Priority, w.Status, w.HoldReason, w.DueDate, w.DueAt, w.PlannedStart, w.SiteId,
+                    // Safety notes are never hidden (0.29.2): the phone's language when it has text, else the other one (blank counts as missing).
+                    SafetyNotes = ar
+                        ? (w.SafetyNotesAr != null && w.SafetyNotesAr.Trim() != "" ? w.SafetyNotesAr : w.SafetyNotes != null && w.SafetyNotes.Trim() != "" ? w.SafetyNotes : null)
+                        : (w.SafetyNotes != null && w.SafetyNotes.Trim() != "" ? w.SafetyNotes : w.SafetyNotesAr != null && w.SafetyNotesAr.Trim() != "" ? w.SafetyNotesAr : null), w.Type, w.Priority, w.Status, w.HoldReason, w.DueDate, w.DueAt, w.PlannedStart, w.SiteId,
                     TeamName = w.Team == null ? null : w.Team.Name,
                     Asset = w.Asset == null ? null : new { w.Asset.Id, w.Asset.AssetNumber, Name = ar && w.Asset.NameAr != null ? w.Asset.NameAr : w.Asset.Name,
                         NotesToTechnician = ar && w.Asset.NotesToTechnicianAr != null ? w.Asset.NotesToTechnicianAr : w.Asset.NotesToTechnician,
@@ -232,7 +235,8 @@ public static partial class TechEndpoints
                     .Select(a => new { a.EntityId, a.Id, a.IsPrimaryImage, a.CreatedAt }).ToListAsync(ct))
                 .GroupBy(a => a.EntityId).ToDictionary(g => g.Key, g => g.OrderByDescending(a => a.IsPrimaryImage).ThenBy(a => a.CreatedAt).First().Id);
             var parts = await db.Parts.AsNoTracking().Where(p => partIds.Contains(p.Id)).OrderBy(p => p.PartNumber)
-                .Select(p => new { p.Id, p.PartNumber, Name = ar && p.NameAr != null ? p.NameAr : p.Name, p.UnitOfMeasure, p.Barcode, p.IsShelfItem, p.AllowNegativeStock, p.IsSerialTracked }).ToListAsync(ct);
+                .Select(p => new { p.Id, p.PartNumber, Name = ar && p.NameAr != null ? p.NameAr : p.Name,
+                    OtherName = p.NameAr == null ? null : ar ? p.Name : p.NameAr, p.UnitOfMeasure, p.Barcode, p.IsShelfItem, p.AllowNegativeStock, p.IsSerialTracked }).ToListAsync(ct);
             // Serial units in store at my sites (0.24.0), newest first, for Fit a unit offline.
             var spareUnits = await db.Assets.AllSites().AsNoTracking()
                 .Where(a => a.PartId != null && a.StoreId != null && storeIds.Contains(a.StoreId.Value) && a.ParentAssetId == null
@@ -244,14 +248,14 @@ public static partial class TechEndpoints
                 Stores = stores,
                 Parts = parts.Select(p => new
                 {
-                    p.Id, p.PartNumber, p.Name, p.UnitOfMeasure, p.Barcode, p.IsShelfItem, p.AllowNegativeStock, p.IsSerialTracked,
+                    p.Id, p.PartNumber, p.Name, p.OtherName, p.UnitOfMeasure, p.Barcode, p.IsShelfItem, p.AllowNegativeStock, p.IsSerialTracked,
                     PhotoId = photos.TryGetValue(p.Id, out var ph) ? ph : (Guid?)null,
                     Levels = levels[p.Id].Select(l => new { l.StoreId, OnHand = l.QuantityOnHand, Reserved = reserved.GetValueOrDefault((p.Id, l.StoreId)), l.Bin }),
                 }),
                 Units = spareUnits,
                 CancelReasons = await db.CancelReasons.AsNoTracking().Where(r => r.IsActive).OrderBy(r => r.Name).Select(r => new { r.Id, Name = ar && r.NameAr != null ? r.NameAr : r.Name }).ToListAsync(ct),
                 PmTasks = await db.PmTasks.AsNoTracking().Where(t => t.IsActive).OrderBy(t => t.Code)
-                    .Select(t => new { t.Id, t.Code, Name = ar && t.NameAr != null ? t.NameAr : t.Name, Steps = t.Steps.OrderBy(s => s.Sequence).Select(s => ar && s.DescriptionAr != null ? s.DescriptionAr : s.Description) }).ToListAsync(ct),
+                    .Select(t => new { t.Id, t.Code, Name = ar && t.NameAr != null ? t.NameAr : t.Name, OtherName = t.NameAr == null ? null : ar ? t.Name : t.NameAr, Steps = t.Steps.OrderBy(s => s.Sequence).Select(s => ar && s.DescriptionAr != null ? s.DescriptionAr : s.Description) }).ToListAsync(ct),
                 // Counting needs the stock permission (0.29.1): the others don't get the open counts, and the server refuses their lines.
                 Counts = allowed.Contains(Permissions.InventoryTransact)
                     ? await db.StockCounts.AsNoTracking().Where(c => c.Status == FourC.Cmms.Core.Inventory.StockCountStatus.Open && storeIds.Contains(c.StoreId))

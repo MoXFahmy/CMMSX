@@ -56,7 +56,7 @@ export type UsedPart = { partId: string; storeId: string; issued: number };
 
 /** A part as the phone keeps it (GET /api/tech/stock, 0.11.0): stock and bin in each store of my sites. */
 export type StockPart = {
-  id: string; partNumber: string; name: string; unitOfMeasure: string; barcode?: string | null; isShelfItem: boolean; allowNegativeStock: boolean;
+  id: string; partNumber: string; name: string; /** 0.29.2: the name in the other language, for search. */ otherName?: string | null; unitOfMeasure: string; barcode?: string | null; isShelfItem: boolean; allowNegativeStock: boolean;
   photoId?: string | null; levels: { storeId: string; onHand: number; reserved: number; bin?: string | null }[];
   /** 0.24.0: its stock is serial units: fitted and removed, not used by quantity. */
   isSerialTracked?: boolean;
@@ -67,7 +67,7 @@ export type TechStock = {
   stores: { id: string; code: string; name: string; siteId: string }[];
   parts: StockPart[];
   cancelReasons: { id: string; name: string }[];
-  pmTasks: { id: string; code: string; name: string; steps: string[] }[];
+  pmTasks: { id: string; code: string; name: string; otherName?: string | null; steps: string[] }[];
   counts: { id: string; name: string; storeId: string }[];
   /** 0.24.0: serial units in store at my sites (the newest 500). */
   units?: StockUnit[];

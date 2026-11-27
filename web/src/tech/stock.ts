@@ -24,7 +24,7 @@ export function findPart(stock: TechStock | undefined, code: string): StockPart 
 export function searchParts(stock: TechStock | undefined, text: string): StockPart[] {
   const words = text.trim().toLowerCase().split(/\s+/).filter(Boolean);
   if (!stock || words.length === 0) return [];
-  return stock.parts.filter((p) => words.every((w) => `${p.partNumber} ${p.name} ${p.barcode ?? ''}`.toLowerCase().includes(w))).slice(0, 50);
+  return stock.parts.filter((p) => words.every((w) => `${p.partNumber} ${p.name} ${p.otherName ?? ''} ${p.barcode ?? ''}`.toLowerCase().includes(w))).slice(0, 50);
 }
 
 /** What a planned line still holds in the store: planned less issued. */

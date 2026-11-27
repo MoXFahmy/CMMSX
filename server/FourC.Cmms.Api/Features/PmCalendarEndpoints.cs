@@ -43,8 +43,9 @@ public static class PmCalendarEndpoints
         {
             var c = await db.ScheduleCalendars.AsNoTracking().FirstOrDefaultAsync(x => x.Id == id, ct);
             if (c is null) return Results.NotFound();
+            var ar = Bilingual.Arabic; // schedule names in the reader's language (0.29.2)
             var usedBy = await db.PmSchedules.AsNoTracking().Where(s => s.Calendars.Any(x => x.ScheduleCalendarId == id)).OrderBy(s => s.Code)
-                .Select(s => new { s.Id, s.Code, s.Name }).ToListAsync(ct);
+                .Select(s => new { s.Id, s.Code, Name = ar && s.NameAr != null ? s.NameAr : s.Name }).ToListAsync(ct);
             return Results.Ok(new
             {
                 c.Id, c.Code, c.Name, c.Kind, c.Frequency, c.Unit, c.AnchorDate, Dates = c.Dates.Order(), c.IsActive, Next = NextDates(c, 12), UsedBy = usedBy,

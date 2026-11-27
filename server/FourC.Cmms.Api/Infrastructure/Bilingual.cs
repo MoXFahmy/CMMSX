@@ -22,4 +22,15 @@ public static class Bilingual
     /// <summary>The text not shown (for searching both): the main text when the Arabic one is shown, else the Arabic text (or null).</summary>
     public static string? Other(string main, string? ar) =>
         string.IsNullOrWhiteSpace(ar) ? null : Arabic ? main : ar;
+
+    /// <summary>
+    /// A text that must never be hidden (safety notes, 0.29.2): the reader's own language when it has text, else the other language;
+    /// a blank text (empty or only spaces) counts as missing. <paramref name="arabic"/> names the reader when it isn't the request's
+    /// (an e-mail written for its recipient). In database queries write the same choice inline.
+    /// </summary>
+    public static string? Either(string? main, string? ar, bool? arabic = null)
+    {
+        var (first, second) = arabic ?? Arabic ? (ar, main) : (main, ar);
+        return !string.IsNullOrWhiteSpace(first) ? first : !string.IsNullOrWhiteSpace(second) ? second : null;
+    }
 }

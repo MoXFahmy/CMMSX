@@ -1,4 +1,5 @@
 import type { TFunction } from 'i18next';
+import { pick } from './bilingual';
 
 /** A pair of codes recorded together on completed work (0.14.0): a symptom and a cause, or a cause and a remedy. */
 export type CodePair = { first: string; second: string; count: number };
@@ -25,4 +26,15 @@ export function codeOptions(codes: { id: string; code: string; name: string }[],
   const { top, rest } = orderCodes(codes, pairs, first);
   if (top.length === 0) return rest.map(item);
   return [{ group: t('codes.mostUsed'), items: top.map(item) }, ...(rest.length > 0 ? [{ group: t('codes.all'), items: rest.map(item) }] : [])];
+}
+
+/** A list entry's name in the reader's language, or "…" until the list is loaded (0.28.0-2: filter chips; the filter value stays the id). */
+export function lookupName(list: { id: string; name: string; nameAr?: string | null }[] | undefined, id: string, lang?: string): string {
+  const x = list?.find((y) => y.id === id);
+  return x ? pick(x.name, x.nameAr, lang) : '…';
+}
+
+/** Filter options for a code list (symptom, cause, remedy): "not recorded" first, then each code with the reader's name; the values are ids. */
+export function codeFilterOptions(list: { id: string; code: string; name: string; nameAr?: string | null }[] | undefined, notRecorded: string, lang?: string) {
+  return [{ value: 'none', label: notRecorded }, ...(list ?? []).map((x) => ({ value: x.id, label: `${x.code} · ${pick(x.name, x.nameAr, lang)}` }))];
 }

@@ -181,11 +181,12 @@ public static class LocationEndpoints
                 .Select(s => new { s.Id, s.Code, s.Name, s.IsActive }).ToListAsync(ct);
             var ar = Bilingual.Arabic;
             var locations = await db.Locations.AsNoTracking().OrderBy(l => ar && l.NameAr != null ? l.NameAr : l.Name)
-                .Select(l => new { l.Id, l.SiteId, l.ParentId, l.Code, Name = ar && l.NameAr != null ? l.NameAr : l.Name, l.Type, l.Criticality, l.IsActive }).ToListAsync(ct);
+                .Select(l => new { l.Id, l.SiteId, l.ParentId, l.Code, Name = ar && l.NameAr != null ? l.NameAr : l.Name,
+                    OtherName = l.NameAr == null ? null : ar ? l.Name : l.NameAr, l.Type, l.Criticality, l.IsActive }).ToListAsync(ct);
             return new
             {
                 sites = sites.Select(s => new { s.Id, s.Code, s.Name, s.IsActive, AssetCount = siteAssetCounts.GetValueOrDefault(s.Id) }),
-                locations = locations.Select(l => new { l.Id, l.SiteId, l.ParentId, l.Code, l.Name, l.Type, l.Criticality, l.IsActive, AssetCount = assetCounts.GetValueOrDefault(l.Id) }),
+                locations = locations.Select(l => new { l.Id, l.SiteId, l.ParentId, l.Code, l.Name, l.OtherName, l.Type, l.Criticality, l.IsActive, AssetCount = assetCounts.GetValueOrDefault(l.Id) }),
             };
         }).RequirePermission(Permissions.LocationsView);
 

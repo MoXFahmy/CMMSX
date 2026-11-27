@@ -60,6 +60,14 @@ describe('print bodies', () => {
     expect(html).not.toContain('Completion');
   });
 
+  it('prints Arabic-only safety notes for every reader (0.28.0-8)', () => {
+    const arabicOnly = { ...wo, description: null, safetyNotes: '', safetyNotesAr: 'احذر الكهرباء' } as unknown as WorkOrderDetail;
+    expect(renderHtml(<JobCardBody w={arabicOnly} layout={builtInLayout('job-card')} {...ctx} />)).toContain('احذر الكهرباء');
+    expect(renderHtml(<JobCardBody w={arabicOnly} layout={builtInLayout('job-card')} {...ctx} language="ar" />)).toContain('احذر الكهرباء');
+    const both = { ...wo, safetyNotes: 'Isolate first', safetyNotesAr: 'افصل أولاً' } as unknown as WorkOrderDetail;
+    expect(renderHtml(<JobCardBody w={both} layout={builtInLayout('job-card')} {...ctx} />)).toContain('Isolate first');
+  });
+
   it('texts are escaped', () => {
     const layout = { ...builtInLayout('job-card'), headerText: '<b>x</b>', footerText: 'Rev 3' };
     const html = renderHtml(<JobCardBody w={wo} layout={layout} {...ctx} />);

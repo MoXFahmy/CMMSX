@@ -39,7 +39,7 @@ import { costLines } from './woTotals';
 import { CoveredBanner } from '@/components/CoveredBanner';
 import { BackRunningButton } from '@/pages/assets/AssetDowntime';
 import { downFor } from '@/components/downtime';
-import { pick } from '@/components/bilingual';
+import { pick, safetyText } from '@/components/bilingual';
 
 function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <Stack gap={2}><Text fz="xs" c="dimmed">{label}</Text><Text fz="sm" fw={500} style={{ whiteSpace: 'pre-wrap' }}>{children === undefined || children === null || children === '' ? '—' : children}</Text></Stack>;
@@ -89,6 +89,7 @@ export function WorkOrderDetailPage() {
   const primary = w.allowedTransitions.filter((s) => s !== 'Cancelled' && s !== 'Open');
   const secondary = w.allowedTransitions.filter((s) => s === 'Cancelled' || s === 'Open');
   const doneTasks = w.tasks.filter((x) => x.isDone).length;
+  const safety = safetyText(w.safetyNotes, w.safetyNotesAr); // never hidden: the other language when the reader's has none (0.29.2)
 
   return (
     <>
@@ -181,7 +182,7 @@ export function WorkOrderDetailPage() {
                       <Group gap={8}>{w.assets.map((a) => <Anchor key={a.id} component={Link} to={`/assets/${a.id}`} fz="sm" fw={500} title={a.name}>{a.assetNumber}</Anchor>)}</Group></Group>
                   )}
                   <Field label={t('wo.description')}>{w.description}</Field>
-                  {w.safetyNotes && <Field label={t('wo.safety')}>{pick(w.safetyNotes, w.safetyNotesAr)}</Field>}
+                  {safety && <Field label={t('wo.safety')}>{safety}</Field>}
                 </Card>
                 {(w.completedAt || w.completionNotes || w.signatures.length > 0) && (
                   <Card>

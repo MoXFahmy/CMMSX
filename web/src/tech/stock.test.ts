@@ -33,6 +33,14 @@ describe('phone stock', () => {
     expect(searchParts(s, 'flt').map((p) => p.id)).toEqual(['p2']);
   });
 
+  it("finds parts by the other language's name too (0.28.0-4)", () => {
+    const s = stock([part({ name: 'رولمان 6204', otherName: 'Bearing 6204' }), part({ id: 'p2', partNumber: 'FLT-9', name: 'Air filter', otherName: null, barcode: null })]);
+    expect(searchParts(s, 'bearing').map((p) => p.id)).toEqual(['p1']);
+    expect(searchParts(s, 'رولمان').map((p) => p.id)).toEqual(['p1']);
+    expect(searchParts(s, 'air').map((p) => p.id)).toEqual(['p2']);
+    expect(searchParts(stock([part()]), 'bearing').map((p) => p.id)).toEqual(['p1']); // a stored copy without otherName still works
+  });
+
   it('works out what a planned line still reserves', () => {
     expect(stillReserved({ id: 'l', partId: 'p1', storeId: 's1', quantity: 3, issued: 1 })).toBe(2);
     expect(stillReserved({ id: 'l', partId: 'p1', storeId: 's1', quantity: 3, issued: 5 })).toBe(0);
